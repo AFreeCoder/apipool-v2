@@ -44,7 +44,7 @@ MVP 必须完成：
 - 首页：清晰表达 APIPool 是多模型 API 门户。
 - API 市场：展示 GPT、Claude 首批模型。
 - 模型详情页：展示模型 ID、能力标签、价格、快速接入示例、FAQ。
-- 文档页：说明 OpenAI 兼容接入方式、Base URL、API Key、示例请求。
+- 文档页：说明 Base URL、API Key、模型 ID、示例请求和 SDK 迁移补充说明。
 - 价格展示：使用 APIPool/LiteLLM seed 或人工校验价格，先展示官方价、本站价、计费单位。
 - API Key/控制台占位页：展示未来入口、Base URL、Key 管理 UI 骨架，但明确当前未接真实 New API。
 - 基础品牌替换：APIPool 名称、`apipool.dev` 域名文案、基础导航、页脚。
@@ -229,7 +229,7 @@ MVP 不做：
 MVP 文档至少包含：
 
 - 快速开始。
-- OpenAI 兼容迁移。
+- SDK 迁移补充说明。
 - Chat Completions 示例。
 - API Key 说明。
 - Base URL：`https://newapi.apipool.dev/v1`。
@@ -302,7 +302,7 @@ MVP 完成时应满足：
 - 首页明确表达多模型 API 平台定位。
 - API 市场能展示 GPT 和 Claude 首批模型。
 - 模型详情页有模型 ID、价格、示例和 FAQ。
-- 文档说明 Base URL、API Key、OpenAI 兼容接入。
+- 文档说明 Base URL、API Key、模型 ID、示例请求和 SDK 迁移补充说明。
 - 控制台入口存在，但明确是占位/演示数据。
 - 门户不会提供 New API 控制台入口。
 - SQLite 本地/单机配置能跑通 ShipAny 基础功能。

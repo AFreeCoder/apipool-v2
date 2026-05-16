@@ -7,7 +7,7 @@
 APIPool v2 的目标不是给现有 APIPool 换皮，而是建立一个新的 API 门户网站，参考 APIMart 的产品形态，面向开发者提供：
 
 - API 市场：展示模型品类、能力、价格、折扣和供应商。
-- API 文档：提供 OpenAI 兼容迁移、各类端点和代码示例。
+- API 文档：提供基础接入、各类端点、代码示例和 SDK 迁移补充说明。
 - 客户控制台：第一阶段优先只做 API Key 管理前端页；余额、充值、用量、任务、消费日志等能力后续通过 New API 统计接口补齐。
 - 实际 API 后台：额外部署一个 New API 项目作为独立统一网关，例如 `newapi.apipool.dev`，由 New API 接入 sub2api/APIPool 或其他渠道，并负责“一把 API Key 访问多个模型”的真实调用能力；门户站不在第一版实现通用网关适配层。
 
@@ -23,7 +23,7 @@ APIMart 的核心不是普通 SaaS landing，而是一个“API 市场 + 文档 
 - API 市场是核心入口，按图像、视频、LLM、最新分类，并支持模型能力、供应商筛选。
 - 模型卡片展示模型 ID、简介、单位价格、官方价和折扣。
 - 模型详情页承担转化：模型介绍、Playground、定价表、快速开始、FAQ、相关模型、获取 API Key。
-- 文档站强调 OpenAI 兼容迁移，核心卖点是只改 Base URL 和 API Key。
+- 文档站可以提供 SDK 迁移说明，但 APIPool v2 初期不把兼容性作为首页主卖点；主叙事优先是多模型、统一入口、价格透明和控制台闭环。
 - 控制台是轻控制台，包括总览、API Key、任务日志、消费日志、导出记录、充值账单、活动、Agent。
 - 增长内容包括 API 更新、博客、竞品替代页、垂直场景页，用于 SEO 和转化。
 
@@ -44,7 +44,7 @@ APIPool v2 定位为“多模型 API 门户和商业控制台”，而不是“�
 - 一个端点接入多类模型。
 - 价格透明，能看到官方价、本站价、折扣和计费单位。
 - 可快速获取 API Key，并能查看余额、消耗和充值记录。
-- 文档和示例代码足够清楚，降低从 OpenAI 或其他平台迁移的成本。
+- 文档和示例代码足够清楚，降低从现有 SDK 或其他平台迁移的成本。
 
 ## 4. 总体架构
 
@@ -244,7 +244,7 @@ APIPool v2 的使用方式：
 第一阶段文档：
 
 - 快速开始。
-- OpenAI 兼容迁移：Base URL、API Key、SDK 示例。
+- SDK 迁移补充说明：Base URL、API Key、模型 ID 和代码示例。
 - Chat Completions。
 - Responses 或多模态响应接口。
 - Images。
@@ -569,7 +569,7 @@ APIPool v2 的使用方式：
 - 博客。
 - 模型深度解析页。
 - 竞品替代页：Fal.ai、Wavespeed、CometAPI、Replicate 等。
-- 垂直工具页：OpenClaw、Codex、Claude Code、OpenAI SDK 迁移。
+- 垂直工具页：OpenClaw、Codex、Claude Code、常见 SDK 迁移。
 - Sitemap、结构化 SEO、llms.txt。
 
 验收：

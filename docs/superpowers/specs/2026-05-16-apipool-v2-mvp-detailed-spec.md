@@ -45,7 +45,7 @@ MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂�
 必须避免：
 
 - 把 mock Key 写成真实可调用凭证。
-- 在 MVP 承诺真实充值、真实扣费、真实用量查询。
+- 在 MVP 中把充值、扣费、用量查询描述为已真实可用能力；MVP 只能保留占位入口和演示数据，真实能力需等 New API 接入、支付回调和账本对账完成后验收。
 - 把网关路由、账号池、风控、供应商运维搬进门户站。
 
 ## 2. 用户与场景
@@ -54,7 +54,7 @@ MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂�
 
 MVP 面向三类用户：
 
-- 开发者：想用 OpenAI 兼容方式快速接入多个模型。
+- 开发者：想用一个 API 入口快速发现并调用 GPT / Claude 等模型。
 - 小团队/SaaS 开发者：关心价格透明、接入简单、余额可控。
 - 高消耗工具用户：例如 OpenClaw、Codex、Claude Code 等工具链用户。
 
@@ -63,7 +63,7 @@ MVP 面向三类用户：
 1. 作为新访客，我打开首页后能立刻知道 APIPool 是多模型 API 平台。
 2. 作为开发者，我能在市场里看到 GPT / Claude 模型、模型 ID 和价格。
 3. 作为开发者，我能进入模型详情页复制 Base URL 和示例请求。
-4. 作为开发者，我能阅读快速开始文档，知道如何迁移 OpenAI SDK。
+4. 作为开发者，我能阅读快速开始文档，知道 Base URL、API Key、模型 ID 和基础请求结构。
 5. 作为登录用户，我能进入控制台看到 API Key 管理 UI、Base URL 和统计占位。
 6. 作为登录用户，我能明确知道当前 Key/统计是演示数据，真实能力后续由门户对接 New API。
 
@@ -78,7 +78,7 @@ MVP 必须包含以下页面和能力：
 - 模型详情 `/models/[slug]`
 - 文档首页 `/docs`
 - 快速开始文档 `/docs/quickstart`
-- OpenAI 兼容迁移文档 `/docs/openai-compatible`
+- SDK 迁移补充文档 `/docs/sdk-migration`
 - API Key 说明文档 `/docs/api-keys`
 - 计费与价格说明文档 `/docs/pricing`
 - 登录/注册入口，优先复用 ShipAny 模板能力
@@ -144,9 +144,9 @@ MVP 不做：
 
 页脚至少包含：
 
-- 品牌一句话：多模型 API 门户，兼容 OpenAI 接入。
+- 品牌一句话：多模型 API 门户，统一接入 GPT / Claude 等模型。
 - Product：Models、Docs、Dashboard。
-- Resources：Quickstart、OpenAI Compatible、Pricing。
+- Resources：Quickstart、SDK Migration、Pricing。
 - Legal：Terms、Privacy 可先占位。
 - Base URL：`https://newapi.apipool.dev/v1`
 
@@ -162,7 +162,7 @@ MVP 不做：
 
 1. Hero
    - 标题：强调 `One API for GPT, Claude and more` 或等价中文/英文表达。
-   - 副标题：说明 OpenAI 兼容、价格透明、统一 Base URL。
+   - 副标题：说明多模型入口、价格透明、统一 Base URL。
    - 主 CTA：Start building，跳转登录或 `/dashboard/api-keys`。
    - 次 CTA：View models，跳转 `/models`。
    - 必须展示 Base URL：`https://newapi.apipool.dev/v1`。
@@ -180,13 +180,13 @@ MVP 不做：
    - 需要明确 MVP 阶段真实 Key 后续由 New API 接入或运营开通。
 
 4. 平台优势
-   - OpenAI compatible。
+   - Multi-model catalog。
    - Transparent pricing。
    - Multi-model access。
    - Built for developers。
 
 5. 文档 CTA
-   - 指向 `/docs/quickstart` 和 `/docs/openai-compatible`。
+   - 指向 `/docs/quickstart` 和 `/docs/pricing`。
 
 验收标准：
 
@@ -205,7 +205,7 @@ MVP 不做：
 
 1. 页面标题区
    - 标题：Models。
-   - 描述：统一 Base URL，OpenAI 兼容接入。
+   - 描述：统一入口展示 GPT / Claude 等首批模型。
 
 2. 筛选区
    - Provider：All、OpenAI、Anthropic。
@@ -271,7 +271,7 @@ MVP 不做：
    - GPT/Claude 的场景可复用：代码生成、客服、文档处理、Agent、数据抽取。
 
 6. FAQ
-   - 是否 OpenAI 兼容。
+   - 如何接入这个模型。
    - 如何获取 API Key。
    - 价格是否实时。
    - 是否支持用量统计。
@@ -300,9 +300,9 @@ MVP 文档只解决快速接入，不追求完整 API Reference。
    - 第一次请求。
    - 常见失败原因。
 
-2. `/docs/openai-compatible`
-   - OpenAI SDK 迁移方式。
-   - 只改 `baseURL` 和 `apiKey`。
+2. `/docs/sdk-migration`
+   - SDK 迁移补充说明。
+   - 如果采用兼容模式，说明 `baseURL`、`apiKey` 和模型 ID 的替换方式。
    - Node.js、Python 示例。
 
 3. `/docs/api-keys`
@@ -728,7 +728,7 @@ Logo 和主色未定稿时：
 文案要直接、开发者友好：
 
 - 少用夸张营销词。
-- 明确“OpenAI compatible”。
+- 初期不把兼容性作为首页主卖点；兼容模式只放在文档补充层说明。
 - 明确“New API integration coming next”。
 - 不承诺未完成能力。
 
@@ -770,7 +770,7 @@ src/features/api-console/
 
 src/content/docs/
   quickstart.mdx
-  openai-compatible.mdx
+  sdk-migration.mdx
   api-keys.mdx
   pricing.mdx
   errors.mdx
@@ -808,7 +808,7 @@ MVP 完成时应满足：
 - 首页能清晰表达多模型 API 门户定位。
 - API 市场能展示 GPT / Claude 首批模型。
 - 模型详情页能展示模型 ID、价格、示例和 FAQ。
-- 文档能说明 Base URL、API Key、OpenAI 兼容接入。
+- 文档能说明 Base URL、API Key、模型 ID、基础请求结构和 SDK 迁移补充说明。
 - 登录用户能进入控制台。
 - 控制台能展示 API Key 管理 UI、Base URL、统计、用量、账单占位。
 - 所有演示数据都有清晰 demo 标识。
