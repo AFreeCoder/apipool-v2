@@ -7,7 +7,7 @@
 MVP 不追求一次性打通完整商业闭环。第一版重点是：
 
 - 让 `apipool.dev` 看起来已经是一个新的 API 门户，而不是旧反代项目后台。
-- 先完成首页、API 市场、模型详情、文档、价格展示这些展示层核心页面。
+- 先完成首页、API 市场、模型详情、文档入口、价格展示这些展示层核心页面。
 - 基于 ShipAny 模板最大化复用登录、文档、页面框架、支付扩展、数据库和后台骨架。
 - 为后续 New API 统一网关、API Key 管理、余额/用量统计、支付入账和用户迁移保留清晰接口。
 
@@ -44,7 +44,7 @@ MVP 必须完成：
 - 首页：清晰表达 APIPool 是多模型 API 门户。
 - API 市场：展示 OpenAI、Anthropic 首批模型。
 - 模型详情页：展示模型 ID、能力标签、价格、快速接入示例、FAQ。
-- 文档页：说明 Base URL、API Key、模型 ID、示例请求和 SDK 迁移补充说明。
+- 文档模块：先保留 `/docs` 入口和 Coming soon 信息架构，详细接入文档后续补齐。
 - 价格展示：使用 APIPool/LiteLLM seed 或人工校验价格，先展示官方价、本站价、计费单位。
 - API Key/控制台占位页：展示未来入口、Base URL、Key 管理 UI 骨架，但明确当前未接真实 New API。
 - 基础品牌替换：APIPool 名称、`apipool.dev` 域名文案、基础导航、页脚。
@@ -226,17 +226,23 @@ MVP 不做：
 
 ### 7.4 文档
 
-MVP 文档至少包含：
+MVP 文档只保留模块入口，不要求填充完整细节。
 
-- 快速开始。
-- SDK 迁移补充说明。
-- Chat Completions 示例。
-- API Key 说明。
+入口页建议包含：
+
+- `/docs` 页面。
 - Base URL：`https://newapi.apipool.dev/v1`。
-- 计费与价格说明。
-- 常见错误。
+- Quickstart、API Keys、Pricing、SDK Migration、Errors 的占位卡片。
+- `Coming soon` 或 `Draft` 状态。
+- 说明门户控制台真实 Key 开通能力尚未完成，避免用户误解。
 
-注意：MVP 文档要说明门户控制台真实 Key 开通能力尚未完成，避免用户误解。
+MVP 不要求：
+
+- 完整 quickstart。
+- 完整 API Reference。
+- 完整 SDK 迁移教程。
+- 完整错误码手册。
+- 完整计费说明。
 
 ### 7.5 控制台占位
 
@@ -302,7 +308,7 @@ MVP 完成时应满足：
 - 首页明确表达多模型 API 平台定位。
 - API 市场能展示 OpenAI 和 Anthropic 首批模型。
 - 模型详情页有模型 ID、价格、示例和 FAQ。
-- 文档说明 Base URL、API Key、模型 ID、示例请求和 SDK 迁移补充说明。
+- 文档入口存在，并明确详细接入文档后续补齐。
 - 控制台入口存在，但明确是占位/演示数据。
 - 门户不会提供 New API 控制台入口。
 - SQLite 本地/单机配置能跑通 ShipAny 基础功能。

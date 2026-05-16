@@ -63,7 +63,7 @@ MVP 面向三类用户：
 1. 作为新访客，我打开首页后能立刻知道 APIPool 是多模型 API 平台。
 2. 作为开发者，我能在市场里看到 OpenAI / Anthropic 模型分组、模型 ID 和价格。
 3. 作为开发者，我能进入模型详情页复制 Base URL 和示例请求。
-4. 作为开发者，我能阅读快速开始文档，知道 Base URL、API Key、模型 ID 和基础请求结构。
+4. 作为开发者，我能从导航进入文档模块，看到后续接入文档会在这里补齐。
 5. 作为登录用户，我能进入控制台看到 API Key 管理 UI、Base URL 和统计占位。
 6. 作为登录用户，我能明确知道当前 Key/统计是演示数据，真实能力后续由门户对接 New API。
 
@@ -76,11 +76,7 @@ MVP 必须包含以下页面和能力：
 - 首页 `/`
 - API 市场 `/models`
 - 模型详情 `/models/[slug]`
-- 文档首页 `/docs`
-- 快速开始文档 `/docs/quickstart`
-- SDK 迁移补充文档 `/docs/sdk-migration`
-- API Key 说明文档 `/docs/api-keys`
-- 计费与价格说明文档 `/docs/pricing`
+- 文档模块入口 `/docs`
 - 登录/注册入口，优先复用 ShipAny 模板能力
 - 控制台总览 `/dashboard`
 - API Key 占位页 `/dashboard/api-keys`
@@ -130,7 +126,7 @@ MVP 不做：
 - APIPool Logo/品牌名：跳转 `/`
 - Models：跳转 `/models`
 - Docs：跳转 `/docs`
-- Pricing：MVP 可跳转 `/models` 或 `/docs/pricing`
+- Pricing：MVP 可跳转 `/models`
 - Dashboard：登录后跳转 `/dashboard`
 - Sign in / Start：未登录时进入认证流程
 
@@ -146,7 +142,7 @@ MVP 不做：
 
 - 品牌一句话：多模型 API 门户，统一接入 OpenAI / Anthropic 等首批模型。
 - Product：Models、Docs、Dashboard。
-- Resources：Quickstart、SDK Migration、Pricing。
+- Resources：Docs、Models、Dashboard。
 - Legal：Terms、Privacy 可先占位。
 - Base URL：`https://newapi.apipool.dev/v1`
 
@@ -186,7 +182,7 @@ MVP 不做：
    - Built for developers。
 
 5. 文档 CTA
-   - 指向 `/docs/quickstart` 和 `/docs/pricing`。
+   - 指向 `/docs`。
 
 验收标准：
 
@@ -285,49 +281,35 @@ MVP 不做：
 - 示例代码里的 Base URL 和 model ID 与当前模型一致。
 - 价格缺失时不能渲染空白，应展示“Contact support”或隐藏对应价格行。
 
-### 5.4 文档 `/docs/*`
+### 5.4 文档模块 `/docs`
 
 目标：
 
-MVP 文档只解决快速接入，不追求完整 API Reference。
+MVP 只需要保留文档模块入口，不要求填充完整接入文档。文档入口的作用是证明门户信息架构完整，并给后续接入文档留下稳定位置。
 
-必备文档：
+MVP 页面内容：
 
-1. `/docs/quickstart`
-   - 注册。
-   - 获取 API Key。
-   - Base URL。
-   - 第一次请求。
-   - 常见失败原因。
+- 标题：Docs。
+- 简短说明：APIPool 接入文档会在 New API 接入阶段逐步补齐。
+- Base URL 展示：`https://newapi.apipool.dev/v1`。
+- 占位卡片：Quickstart、API Keys、Pricing、SDK Migration、Errors。
+- 每张卡片可以标记 `Coming soon` 或 `Draft`，不需要进入完整详情页。
 
-2. `/docs/sdk-migration`
-   - SDK 迁移补充说明。
-   - 如果采用兼容模式，说明 `baseURL`、`apiKey` 和模型 ID 的替换方式。
-   - Node.js、Python 示例。
+MVP 不要求：
 
-3. `/docs/api-keys`
-   - Key 的用途。
-   - MVP 阶段 Key 管理页状态。
-   - 后续 New API 接入后支持创建、禁用、额度和白名单。
-
-4. `/docs/pricing`
-   - 价格来源。
-   - 官方价、本站价、计费单位解释。
-   - New API 配额点数与门户展示价暂未自动同步。
-   - 最终以实际扣费为准。
-
-5. `/docs/errors`
-   - 401：API Key 无效。
-   - 402：余额或额度不足。
-   - 429：限流或上游繁忙。
-   - 500/502：上游或网关错误。
-   - MVP 阶段这页是接入说明，不代表门户已经能查询真实错误日志。
+- 编写完整 quickstart。
+- 编写 SDK 迁移教程。
+- 编写完整 API Key 生命周期说明。
+- 编写计费与价格规则长文。
+- 编写错误码手册。
+- 编写完整 API Reference。
 
 验收标准：
 
-- 每篇文档都有明确标题、适用对象和示例。
-- 文档中不承诺 MVP 未完成能力。
-- 所有示例统一使用 `https://newapi.apipool.dev/v1`。
+- `/docs` 入口可访问。
+- 导航和 CTA 不出现死链。
+- 页面明确提示详细文档后续补齐。
+- 页面不承诺真实 Key、真实调用、真实充值或真实用量已经可用。
 
 ### 5.5 控制台总览 `/dashboard`
 
@@ -660,7 +642,7 @@ type NewApiStatsSnapshot = {
 - `Start building`：未登录进入登录/注册；已登录进入 `/dashboard/api-keys`。
 - `View models`：进入 `/models`。
 - `Get API key`：未登录进入登录/注册；已登录进入 `/dashboard/api-keys`。
-- `View docs`：进入 `/docs/quickstart`。
+- `View docs`：进入 `/docs`。
 
 ### 8.2 Mock 能力提示
 
@@ -721,7 +703,7 @@ Logo 和主色未定稿时：
 - 模型市场和控制台要偏工作台风格，信息密度适中。
 - 卡片半径不超过 8px，除非模板设计系统已有不同规范。
 - 按钮、筛选、表格、复制操作要使用常见图标和明确 hover/disabled 状态。
-- 文档页优先清晰代码示例，不做重装饰。
+- 文档入口优先清晰说明模块状态和后续补齐范围，不做重装饰。
 
 ### 9.3 文案语气
 
@@ -769,18 +751,14 @@ src/features/api-console/
   components/usage-summary.tsx
 
 src/content/docs/
-  quickstart.mdx
-  sdk-migration.mdx
-  api-keys.mdx
-  pricing.mdx
-  errors.mdx
+  index.mdx
 ```
 
 具体路径可按 ShipAny 模板实际目录调整，但责任边界应保持：
 
 - catalog 只关心模型展示和价格。
 - console 只关心用户侧控制台演示和未来接入边界。
-- docs 只关心接入文档。
+- docs 只关心文档入口和后续接入文档承载位置。
 - New API 真实调用不进入 MVP 前端模块。
 
 ### 10.3 配置项
@@ -808,7 +786,7 @@ MVP 完成时应满足：
 - 首页能清晰表达多模型 API 门户定位。
 - API 市场能展示 OpenAI / Anthropic 首批模型。
 - 模型详情页能展示模型 ID、价格、示例和 FAQ。
-- 文档能说明 Base URL、API Key、模型 ID、基础请求结构和 SDK 迁移补充说明。
+- 文档模块入口可访问，并清楚标注详细接入文档后续补齐。
 - 登录用户能进入控制台。
 - 控制台能展示 API Key 管理 UI、Base URL、统计、用量、账单占位。
 - 所有演示数据都有清晰 demo 标识。
@@ -824,7 +802,7 @@ MVP 完成时应满足：
 - 所有导航和 CTA 链接有效。
 - 模型 seed 数据能被首页、市场、详情页复用。
 - mock API Key 创建、复制、禁用、删除交互不依赖真实后端。
-- 文档 MDX 构建通过。
+- 文档入口页面构建通过。
 
 ### 11.3 风险验收
 
@@ -844,7 +822,7 @@ MVP 完成时应满足：
 - 打开 `/`，检查第一屏品牌、卖点、CTA、Base URL。
 - 打开 `/models`，检查模型列表、筛选、空状态。
 - 打开每个首批模型详情页，检查 model ID、价格、示例代码。
-- 打开 `/docs/quickstart`，检查 Base URL 和示例。
+- 打开 `/docs`，检查文档入口、Base URL 和 Coming soon 状态。
 - 未登录访问 `/dashboard`，应进入登录流程。
 - 登录后访问 `/dashboard`，检查 demo 数据提示。
 - 在 `/dashboard/api-keys` 创建 mock Key，检查提示和列表新增。
@@ -861,7 +839,7 @@ MVP 完成时应满足：
 - 模型 slug 查找测试。
 - 价格格式化测试。
 - API Key mock reducer/action 测试。
-- smoke test：`/`、`/models`、`/models/[slug]`、`/docs/quickstart`、`/dashboard`。
+- smoke test：`/`、`/models`、`/models/[slug]`、`/docs`、`/dashboard`。
 
 ### 12.3 浏览器验收
 
@@ -902,4 +880,4 @@ MVP 完成后进入 New API 接入阶段，优先级：
 
 MVP 的正确交付物不是一个完整可扣费网关，而是一个可信、可访问、边界清楚的新 APIPool 门户。
 
-只要第一版能让用户完成“了解平台 -> 查看模型 -> 阅读文档 -> 进入控制台 -> 看见未来 API Key 和用量管理形态”的闭环，就达到了 MVP 目标。真实 Key、真实用量、真实支付应在 New API 接入和支付账本设计完成后再进入验收。
+只要第一版能让用户完成“了解平台 -> 查看模型 -> 进入文档入口 -> 进入控制台 -> 看见未来 API Key 和用量管理形态”的闭环，就达到了 MVP 目标。真实 Key、真实用量、真实支付和完整接入文档应在 New API 接入和支付账本设计完成后再进入验收。
