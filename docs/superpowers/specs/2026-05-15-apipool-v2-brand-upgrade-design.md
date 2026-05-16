@@ -761,7 +761,7 @@ APIPool v2 的使用方式：
 3. New API 首批下游渠道是 sub2api/APIPool。
 4. New API 作为独立开源服务部署在同一台服务器上，只作为后台服务和运营后台使用。
 5. 门户站只向用户开放 APIPool 自有控制台，后续对接 New API 做 API Key 管理、余额、额度、请求数、Token 和消费日志展示。
-6. 第一批重点展示模型是 GPT 和 Claude。
+6. 第一批重点展示供应商是 OpenAI 和 Anthropic。
 7. 品牌名继续使用 APIPool，主域名继续使用 `apipool.dev`。
 8. Logo 和主色需要重新设计，但不阻塞第一阶段。
 9. 后续支付优先 Stripe、PayPal 等国际支付，第一版不额外支持支付宝/微信。

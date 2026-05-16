@@ -28,7 +28,7 @@ MVP 明确不阻塞在：
 4. New API 计划部署在同一台服务器上。
 5. 阶段 2/3 的 Key 自动开通、统计细节、商业账本主从关系后续再评审。
 6. 支付方式后续优先 Stripe、PayPal 等国际支付。
-7. 第一批重点模型先覆盖 GPT 和 Claude。
+7. 第一批重点供应商先覆盖 OpenAI 和 Anthropic。
 8. 品牌名继续使用 APIPool。
 9. 主域名继续使用 `apipool.dev`。
 10. Logo 和主色需要重新设计，但不阻塞 MVP。
@@ -42,7 +42,7 @@ MVP 明确不阻塞在：
 MVP 必须完成：
 
 - 首页：清晰表达 APIPool 是多模型 API 门户。
-- API 市场：展示 GPT、Claude 首批模型。
+- API 市场：展示 OpenAI、Anthropic 首批模型。
 - 模型详情页：展示模型 ID、能力标签、价格、快速接入示例、FAQ。
 - 文档页：说明 Base URL、API Key、模型 ID、示例请求和 SDK 迁移补充说明。
 - 价格展示：使用 APIPool/LiteLLM seed 或人工校验价格，先展示官方价、本站价、计费单位。
@@ -144,12 +144,12 @@ DB_SINGLETON_ENABLED=true
 
 ### 6.1 首批模型
 
-MVP 只展示 GPT 和 Claude 模型。
+MVP 只展示 OpenAI 和 Anthropic 两个供应商下的模型。
 
 建议首批：
 
-- GPT：`gpt-4o`、`gpt-4o-mini`、`gpt-5.x` 系列按实际可供给情况确定。
-- Claude：Sonnet、Opus、Haiku 系列按实际可供给情况确定。
+- OpenAI：`gpt-4o`、`gpt-4o-mini`、`gpt-5.x` 系列按实际可供给情况确定。
+- Anthropic：Claude Sonnet、Opus、Haiku 系列按实际可供给情况确定。
 
 模型数据先用 seed 文件维护，不急着做后台 CMS。
 
@@ -190,8 +190,8 @@ MVP 处理方式：
 
 模块：
 
-- Hero：一个 Base URL，接入 GPT / Claude 等模型。
-- 热门模型：GPT 和 Claude 首批卡片。
+- Hero：一个 Base URL，接入 OpenAI / Anthropic 等首批模型。
+- 热门模型：OpenAI 和 Anthropic 首批模型卡片。
 - 快速接入：注册、获取 Key、替换 Base URL、开始调用。
 - 平台优势：统一入口、价格透明、文档清晰、后续支持余额/用量统计。
 - CTA：查看 API 市场、查看文档。
@@ -300,7 +300,7 @@ MVP 完成时应满足：
 
 - `apipool.dev` 能展示新版 APIPool 门户。
 - 首页明确表达多模型 API 平台定位。
-- API 市场能展示 GPT 和 Claude 首批模型。
+- API 市场能展示 OpenAI 和 Anthropic 首批模型。
 - 模型详情页有模型 ID、价格、示例和 FAQ。
 - 文档说明 Base URL、API Key、模型 ID、示例请求和 SDK 迁移补充说明。
 - 控制台入口存在，但明确是占位/演示数据。

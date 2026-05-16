@@ -33,7 +33,7 @@ MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂�
 
 必须优先：
 
-- 清晰定位：一个 Base URL 接入 GPT / Claude 等模型。
+- 清晰定位：一个 Base URL 接入 OpenAI / Anthropic 等首批模型。
 - 清晰转化：用户从首页、市场、详情页都能进入文档或控制台。
 - 清晰边界：控制台里的 Key、余额、统计都明确是演示或待接入状态。
 - 清晰后路：数据结构和页面布局为 New API 接入留接口。
@@ -54,14 +54,14 @@ MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂�
 
 MVP 面向三类用户：
 
-- 开发者：想用一个 API 入口快速发现并调用 GPT / Claude 等模型。
+- 开发者：想用一个 API 入口快速发现并调用 OpenAI / Anthropic 等首批模型。
 - 小团队/SaaS 开发者：关心价格透明、接入简单、余额可控。
 - 高消耗工具用户：例如 OpenClaw、Codex、Claude Code 等工具链用户。
 
 ### 2.2 MVP 核心用户故事
 
 1. 作为新访客，我打开首页后能立刻知道 APIPool 是多模型 API 平台。
-2. 作为开发者，我能在市场里看到 GPT / Claude 模型、模型 ID 和价格。
+2. 作为开发者，我能在市场里看到 OpenAI / Anthropic 模型分组、模型 ID 和价格。
 3. 作为开发者，我能进入模型详情页复制 Base URL 和示例请求。
 4. 作为开发者，我能阅读快速开始文档，知道 Base URL、API Key、模型 ID 和基础请求结构。
 5. 作为登录用户，我能进入控制台看到 API Key 管理 UI、Base URL 和统计占位。
@@ -86,7 +86,7 @@ MVP 必须包含以下页面和能力：
 - API Key 占位页 `/dashboard/api-keys`
 - 用量占位页 `/dashboard/usage`
 - 账单占位页 `/dashboard/billing`
-- GPT / Claude 首批模型 seed 数据
+- OpenAI / Anthropic 首批模型 seed 数据
 - SQLite 本地运行配置
 - 基础品牌替换：APIPool、`apipool.dev`、`newapi.apipool.dev`
 
@@ -144,7 +144,7 @@ MVP 不做：
 
 页脚至少包含：
 
-- 品牌一句话：多模型 API 门户，统一接入 GPT / Claude 等模型。
+- 品牌一句话：多模型 API 门户，统一接入 OpenAI / Anthropic 等首批模型。
 - Product：Models、Docs、Dashboard。
 - Resources：Quickstart、SDK Migration、Pricing。
 - Legal：Terms、Privacy 可先占位。
@@ -156,12 +156,12 @@ MVP 不做：
 
 目标：
 
-让访客在 30 秒内理解 APIPool 是“一个 Base URL 接入 GPT / Claude 等模型”的 API 门户，并进入市场、文档或控制台。
+让访客在 30 秒内理解 APIPool 是“一个 Base URL 接入 OpenAI / Anthropic 等首批模型”的 API 门户，并进入市场、文档或控制台。
 
 页面模块：
 
 1. Hero
-   - 标题：强调 `One API for GPT, Claude and more` 或等价中文/英文表达。
+   - 标题：强调 `One API for OpenAI, Anthropic and more` 或等价中文/英文表达。
    - 副标题：说明多模型入口、价格透明、统一 Base URL。
    - 主 CTA：Start building，跳转登录或 `/dashboard/api-keys`。
    - 次 CTA：View models，跳转 `/models`。
@@ -176,7 +176,7 @@ MVP 不做：
    - Step 1：Create an account。
    - Step 2：Get an API key。
    - Step 3：Replace Base URL。
-   - Step 4：Call GPT / Claude models。
+   - Step 4：Call OpenAI / Anthropic models。
    - 需要明确 MVP 阶段真实 Key 后续由 New API 接入或运营开通。
 
 4. 平台优势
@@ -199,13 +199,13 @@ MVP 不做：
 
 目标：
 
-展示首批 GPT / Claude 模型，承担模型发现、价格比较和详情页转化。
+展示 OpenAI / Anthropic 首批模型，承担模型发现、价格比较和详情页转化。
 
 页面模块：
 
 1. 页面标题区
    - 标题：Models。
-   - 描述：统一入口展示 GPT / Claude 等首批模型。
+   - 描述：按 OpenAI / Anthropic 等正式供应商分组展示首批模型。
 
 2. 筛选区
    - Provider：All、OpenAI、Anthropic。
@@ -268,7 +268,7 @@ MVP 不做：
 
 5. Use cases
    - 3 到 5 个使用场景。
-   - GPT/Claude 的场景可复用：代码生成、客服、文档处理、Agent、数据抽取。
+   - 首批 LLM 模型的场景可复用：代码生成、客服、文档处理、Agent、数据抽取。
 
 6. FAQ
    - 如何接入这个模型。
@@ -806,7 +806,7 @@ UI 不应在多个组件里硬编码 Base URL。
 MVP 完成时应满足：
 
 - 首页能清晰表达多模型 API 门户定位。
-- API 市场能展示 GPT / Claude 首批模型。
+- API 市场能展示 OpenAI / Anthropic 首批模型。
 - 模型详情页能展示模型 ID、价格、示例和 FAQ。
 - 文档能说明 Base URL、API Key、模型 ID、基础请求结构和 SDK 迁移补充说明。
 - 登录用户能进入控制台。
