@@ -14,7 +14,7 @@ MVP 不追求一次性打通完整商业闭环。第一版重点是：
 MVP 明确不阻塞在：
 
 - 现有 APIPool 用户迁移。
-- 门户控制台真实对接 New API。
+- 门户控制台真实对接后台服务。
 - 真实 API Key 自动创建。
 - 真实用量/余额统计。
 - 完整支付入账。
@@ -23,7 +23,7 @@ MVP 明确不阻塞在：
 ## 2. 已确认决策
 
 1. 第一版实际 API 后台确定使用 New API。
-2. API Base URL 使用 `https://newapi.apipool.dev/v1`。
+2. API Base URL 使用 `https://api.apipool.dev/v1`。
 3. New API 首批下游渠道是 sub2api/APIPool。
 4. New API 计划部署在同一台服务器上。
 5. 阶段 2/3 的 Key 自动开通、统计细节、商业账本主从关系后续再评审。
@@ -46,7 +46,7 @@ MVP 必须完成：
 - 模型详情页：展示模型 ID、能力标签、价格、快速接入示例、FAQ。
 - 文档模块：先保留 `/docs` 入口和 Coming soon 信息架构，详细接入文档后续补齐。
 - 价格展示：使用 APIPool/LiteLLM seed 或人工校验价格，先展示官方价、本站价、计费单位。
-- API Key/控制台占位页：展示未来入口、Base URL、Key 管理 UI 骨架，但明确当前未接真实 New API。
+- API Key/控制台占位页：展示未来入口、Base URL、Key 管理 UI 骨架，但明确当前未接真实后台能力。
 - 基础品牌替换：APIPool 名称、`apipool.dev` 域名文案、基础导航、页脚。
 - SQLite 数据库可运行方案。
 
@@ -65,12 +65,12 @@ MVP 必须完成：
 
 MVP 不做：
 
-- 真实 New API 管理接口对接。
+- 真实后台管理接口对接。
 - 真实 API Key 创建、禁用、额度、模型白名单、IP 白名单。
 - New API 余额、额度、请求数、Token、消费日志同步。
 - 现有 APIPool 用户迁移。
 - 支付回调、余额入账、订单对账。
-- 任何面向用户的 New API 控制台相关页面；New API 只作为后台服务承接真实网关能力。
+- 任何面向用户的后台网关控制台相关页面；真实网关只作为后台服务承接调用能力。
 - 复杂 Playground。
 - 邀请返佣。
 - 完整 Admin CMS。
@@ -93,7 +93,7 @@ flowchart LR
 
 MVP 上线后，用户可以看到未来接入方式：
 
-- Base URL：`https://newapi.apipool.dev/v1`
+- Base URL：`https://api.apipool.dev/v1`
 - API Key：后续在门户控制台创建或由运营开通。
 - 模型 ID：在 API 市场和模型详情页展示。
 
@@ -231,7 +231,7 @@ MVP 文档只保留模块入口，不要求填充完整细节。
 入口页建议包含：
 
 - `/docs` 页面。
-- Base URL：`https://newapi.apipool.dev/v1`。
+- Base URL：`https://api.apipool.dev/v1`。
 - Quickstart、API Keys、Pricing、SDK Migration、Errors 的占位卡片。
 - `Coming soon` 或 `Draft` 状态。
 - 说明门户控制台真实 Key 开通能力尚未完成，避免用户误解。
@@ -252,9 +252,9 @@ MVP 不要求：
 - 创建 Key 弹窗 mock。
 - Base URL 展示。
 - 基础统计 mock。
-- “New API 对接后启用真实数据”的提示。
+- “后续接入后台能力后启用真实数据”的提示。
 
-不在门户中设计 New API 控制台入口；New API 在本架构中是后台服务。
+不在门户中设计后台网关控制台入口；真实网关后台在本架构中是后台服务。
 
 ## 8. 部署方案
 
@@ -310,7 +310,7 @@ MVP 完成时应满足：
 - 模型详情页有模型 ID、价格、示例和 FAQ。
 - 文档入口存在，并明确详细接入文档后续补齐。
 - 控制台入口存在，但明确是占位/演示数据。
-- 门户不会提供 New API 控制台入口。
+- 门户不会提供后台网关控制台入口。
 - SQLite 本地/单机配置能跑通 ShipAny 基础功能。
 - Logo 和主色可以先用临时版，但设计上预留替换。
 

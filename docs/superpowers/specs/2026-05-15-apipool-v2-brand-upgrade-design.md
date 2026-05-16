@@ -8,7 +8,7 @@ APIPool v2 的目标不是给现有 APIPool 换皮，而是建立一个新的 AP
 
 - API 市场：展示模型品类、能力、价格、折扣和供应商。
 - API 文档：第一阶段先保留文档模块入口；基础接入、端点、代码示例和 SDK 迁移说明后续逐步补齐。
-- 客户控制台：第一阶段优先只做 API Key 管理前端页；余额、充值、用量、任务、消费日志等能力后续通过 New API 统计接口补齐。
+- 客户控制台：第一阶段优先只做 API Key 管理前端页；余额、充值、用量、任务、消费日志等能力后续通过平台后台统计接口补齐。
 - 实际 API 后台：额外部署一个 New API 项目作为独立统一网关，例如 `newapi.apipool.dev`，由 New API 接入 sub2api/APIPool 或其他渠道，并负责“一把 API Key 访问多个模型”的真实调用能力；门户站不在第一版实现通用网关适配层。
 
 整体方向是“重展示，轻管理”。新站侧重点是市场展示、支付能力和基本控制台管理；复杂账号池、供应商配置、风控、日志排障、模型路由策略继续留在后端网关或运营后台。
@@ -58,7 +58,8 @@ flowchart LR
   Portal --> Console["客户控制台：API Key / 统计"]
   Console -. "阶段 1 mock / 阶段 2 接入" .-> NewAPIBridge["New API 管理与统计桥接"]
   NewAPIBridge -.-> NewAPIAdmin["New API 管理接口"]
-  User -->|"API Base URL: https://newapi.apipool.dev/v1"| NewAPI["New API 独立后台"]
+  User -->|"API Base URL: https://api.apipool.dev/v1"| PublicAPI["APIPool API Endpoint"]
+  PublicAPI --> NewAPI["New API 独立后台"]
   NewAPI --> Sub2API["sub2api / APIPool 后台服务"]
   NewAPI --> OtherChannels["其他模型渠道 / 供应商适配"]
   Sub2API --> Providers["OpenAI / Anthropic / Google / ByteDance / 其他供应"]
@@ -94,14 +95,14 @@ New API 独立后台负责实际 API 调用链路：
 
 当前规划是让 New API 作为独立统一网关，向下接入 sub2api/APIPool 或其他渠道。APIPool v2 第一版不再自己实现模型路由，也不抽象一层通用 Gateway Adapter。建议额外部署独立 New API 实例，例如：
 
-- API Base URL：`https://newapi.apipool.dev/v1`
+- API Base URL：`https://api.apipool.dev/v1`
 - New API 管理后台：仅运营人员访问。
 - APIPool v2 门户站：客户访问，用于看模型、看文档、管理 API Key、查看基础统计。
 
 这样做的好处：
 
 - 第一阶段范围明显变小，不需要重写网关、路由、渠道、日志和计费。
-- 用户文档里可以直接写固定 Base URL：`https://newapi.apipool.dev/v1`。
+- 用户文档里可以直接写固定 Base URL：`https://api.apipool.dev/v1`，不暴露内部网关服务名。
 - New API 承担模型接入、渠道配置、供应商配置和 API Key 实际鉴权。
 - sub2api/APIPool 可以作为 New API 的下游渠道之一继续发挥现有反代与账号池能力。
 - 门户站可以专注在市场展示、SEO、文档、支付入口和轻控制台。
@@ -115,13 +116,13 @@ New API 独立后台负责实际 API 调用链路：
 - 只做 API Key 管理前端页面。
 - 使用 mock/seed 数据展示 Key 列表、创建弹窗、额度、模型权限、IP 白名单和复制交互。
 - 使用 mock/seed 数据展示基础统计卡片，如余额、请求数、Token 数、近 7/30 天消耗。
-- 页面明确标注“当前为前端演示，真实 Key 和统计后续由门户站对接 New API 提供”。
+- 页面明确标注“当前为前端演示，真实 Key 和统计后续由 APIPool 平台提供”。
 
 阶段 2：
 
 - 门户后端对接 New API，创建、禁用、更新 API Key。
 - 门户后端对接 New API，读取余额、额度、请求数、Token、消费日志和模型分布。
-- 如果 New API 的管理/统计 API 不适合直接接入，则由门户后端增加中间服务、只读同步任务或运营工单流程；用户仍只在门户站查看状态，New API 控制台不是用户产品面。
+- 如果 New API 的管理/统计 API 不适合直接接入，则由门户后端增加中间服务、只读同步任务或运营工单流程；用户仍只在门户站查看状态，后台网关控制台不是用户产品面。
 - 门户只保存 `portal_user_id`、`newapi_user_id`、`newapi_key_id`、`key_masked`、`display_name`、`status` 等映射信息，不复制完整密钥和网关内部配置。
 
 ## 5. 商业账本归属
@@ -244,9 +245,9 @@ APIPool v2 的使用方式：
 第一阶段只需要：
 
 - `/docs` 入口页。
-- Base URL 展示：`https://newapi.apipool.dev/v1`。
+- Base URL 展示：`https://api.apipool.dev/v1`。
 - Quickstart、API Keys、Pricing、SDK Migration、Errors 的占位卡片。
-- 明确详细文档会在 New API 接入阶段逐步补齐。
+- 明确详细文档会在后台接入阶段逐步补齐。
 
 技术实现：
 
@@ -273,7 +274,7 @@ APIPool v2 的使用方式：
 - API Key：列表、创建弹窗、删除/禁用、复制、额度限制、模型白名单、IP 白名单的前端交互；不生成真实可调用 Key。
 - 接入信息：展示 API Base URL、当前 Key 的调用示例入口、文档链接。
 - 基础统计：余额/额度、请求次数、Token 消耗、近 7/30 天消耗趋势的演示视图。
-- 空状态/提示：明确真实 Key 后续由门户站对接 New API 开通；暂未自动化时也由门户显示申请状态，New API 只作为后台服务存在。
+- 空状态/提示：明确真实 Key 后续由 APIPool 平台开通；暂未自动化时也由门户显示申请状态，不向用户暴露后台服务名称。
 
 第一阶段可简化：
 
@@ -286,8 +287,8 @@ APIPool v2 的使用方式：
 
 阶段 2 补齐：
 
-- New API Key 管理接入：创建、禁用、更新、展示。
-- New API 统计接入：门户必须展示用户侧余额、额度、请求数、Token、消费日志、模型分布和任务日志；具体来源可以是 New API 管理接口、门户后端同步任务或只读统计表。
+- 后台 Key 管理接入：创建、禁用、更新、展示。
+- 后台统计接入：门户必须展示用户侧余额、额度、请求数、Token、消费日志、模型分布和任务日志；具体来源可以是 New API 管理接口、门户后端同步任务或只读统计表。
 - 任务日志：图像、视频、音频异步任务状态。
 
 阶段 3 补齐：
@@ -457,7 +458,7 @@ APIPool v2 的使用方式：
 - 配置品牌名、Logo、主题、语言。
 - 明确数据库、部署环境、环境变量。
 - 建立模型数据 seed 格式。
-- 明确 New API 独立后台方案和默认 Base URL：`https://newapi.apipool.dev/v1`。
+- 明确 New API 独立后台方案和默认 Base URL：`https://api.apipool.dev/v1`。
 - 明确 New API 下游渠道定位：sub2api/APIPool 或其他渠道由 New API 统一接入。
 - 建立 API Key 管理页和统计页的 mock 数据结构。
 - 从 APIPool 价格 JSON 或导出数据整理第一批官方价格 seed。
@@ -470,7 +471,7 @@ APIPool v2 的使用方式：
 
 ### 阶段 1：MVP 展示站与前端控制台
 
-目标：用户可以发现模型、阅读文档、进入控制台，并看到 API Key 管理与基础统计页面。该阶段不接真实 New API 管理/统计接口。
+目标：用户可以发现模型、阅读文档、进入控制台，并看到 API Key 管理与基础统计页面。该阶段不接真实后台管理/统计接口。
 
 范围：
 
@@ -488,7 +489,7 @@ APIPool v2 的使用方式：
 不做：
 
 - 通用 Gateway Adapter。
-- 真实 New API Key 自动创建。
+- 真实后台 Key 自动创建。
 - 真实余额、订单、支付回调。
 - 真实消费日志和任务日志接口。
 - 真实 API 调用链路。
@@ -503,7 +504,7 @@ APIPool v2 的使用方式：
 
 - 新用户可以完成注册。
 - 用户可以进入控制台并看到 API Key 管理和基础统计页面。
-- API Key 创建、复制、模型权限、IP 白名单等前端交互可演示，但明确标记为未接入真实 New API 后台。
+- API Key 创建、复制、模型权限、IP 白名单等前端交互可演示，但明确标记为未接入真实后台能力。
 - 门户能用 seed 数据显示 masked key、接入信息和基础统计。
 - 至少 10-20 个重点模型可展示。
 - 重点模型价格来自 APIPool/LiteLLM 价格数据或人工校验后的 seed。
@@ -520,14 +521,14 @@ APIPool v2 的使用方式：
 - 门户与 New API 建立用户/Key 映射。
 - 真实 API Key 创建、禁用、额度限制、模型白名单、IP 白名单。
 - New API 统计读取：余额、额度、请求次数、Token、消费日志、模型分布。
-- 文档入口统一展示 `https://newapi.apipool.dev/v1`，详细示例后续补齐。
-- New API 控制台不是用户产品面；余额、用量、消费日志和 Key 状态必须在门户站展示。
-- 如果 New API 缺少直接查询接口，阶段 2 需要补门户后端同步任务、只读统计表或内部服务，不能把 New API 控制台作为用户侧替代方案。
+- 文档入口统一展示 `https://api.apipool.dev/v1`，详细示例后续补齐。
+- 后台网关控制台不是用户产品面；余额、用量、消费日志和 Key 状态必须在门户站展示。
+- 如果 New API 缺少直接查询接口，阶段 2 需要补门户后端同步任务、只读统计表或内部服务，不能把后台网关控制台作为用户侧替代方案。
 
 验收：
 
-- 用户创建或获取的 Key 可以通过 `newapi.apipool.dev` 真实调用至少一个模型。
-- 门户 API Key 页面能展示 New API Key 的 masked key、状态和必要限制。
+- 用户创建或获取的 Key 可以通过 `api.apipool.dev` 真实调用至少一个模型。
+- 门户 API Key 页面能展示真实 Key 的 masked key、状态和必要限制。
 - 门户总览能展示来自 New API 或门户同步层的基础统计。
 - 用户在门户控制台查看余额、额度、请求数、Token 和消费日志。
 - 如果暂时无法自动创建 Key，文档入口或控制台提示必须明确当前仍是占位状态。
@@ -603,7 +604,7 @@ APIPool v2 的使用方式：
 4. 进入控制台 API Key 页。
 5. 打开创建 Key 弹窗，配置名称、额度、模型权限和 IP 白名单。
 6. 前端生成 mock Key 记录并展示 masked key，不产生真实可调用凭证。
-7. 用户看到固定 Base URL：`https://newapi.apipool.dev/v1` 和文档示例入口。
+7. 用户看到固定 Base URL：`https://api.apipool.dev/v1` 和文档示例入口。
 8. 用户在控制台总览看到 mock 统计，如余额、请求次数、Token 消耗和近 7/30 天趋势。
 
 该流程的目标是评审信息架构、页面布局和交互，不承诺真实 API 服务可用。
@@ -621,7 +622,7 @@ APIPool v2 的使用方式：
 9. New API 根据模型和渠道配置，把请求转发到 sub2api/APIPool 或其他渠道。
 10. sub2api/APIPool 或其他渠道继续调用上游模型供应。
 11. New API 记录 usage。
-12. 门户同步或查询 New API usage，并在门户控制台展示余额、额度和消费日志；如果暂未接入查询接口，则门户显示“统计同步中/暂不可用”的状态，不把 New API 控制台作为用户入口。
+12. 门户同步或查询后台 usage，并在门户控制台展示余额、额度和消费日志；如果暂未接入查询接口，则门户显示“统计同步中/暂不可用”的状态，不把后台网关控制台作为用户入口。
 
 该流程属于 New API 接入后的阶段 2。
 
@@ -656,7 +657,7 @@ APIPool v2 的使用方式：
 
 - 真实后端 API。
 - 通用 Gateway Adapter。
-- 真实 New API Key 自动创建和调用。
+- 真实后台 Key 自动创建和调用。
 - 真实用量同步。
 - 真实支付回调和余额入账。
 - 完整替代 APIPool 管理后台。
@@ -696,7 +697,7 @@ APIPool v2 的使用方式：
 - 门户接真实支付后，订单、充值、折扣以门户为准。
 - New API 用量回传后做对账。
 - 每条 Key 记录绑定 `portal_user_id`、`newapi_user_id` 和 `newapi_key_id`。
-- New API 控制台只服务运营后台流程，对账差异、补单、手工调额不进入用户侧控制台。
+- 后台网关控制台只服务运营后台流程，对账差异、补单、手工调额不进入用户侧控制台。
 
 ### 11.3 New API 耦合过深
 
@@ -740,10 +741,10 @@ APIPool v2 的使用方式：
 - 用户能进入控制台并看到 API Key 管理和基础统计页面。
 - API Key 创建弹窗、复制、模型权限、IP 白名单等前端交互能演示。
 - 页面明确使用 mock/seed 数据，不误导为真实可调用服务。
-- 控制台能展示 `https://newapi.apipool.dev/v1` 作为未来 API Base URL。
-- 控制台能展示 mock 统计，且字段能映射到后续 New API 的余额、额度、请求数、Token 和消费日志。
+- 控制台能展示 `https://api.apipool.dev/v1` 作为未来 API Base URL。
+- 控制台能展示 mock 统计，且字段能映射到后续后台服务的余额、额度、请求数、Token 和消费日志。
 - 文档入口可访问，并标注详细接入文档后续补齐。
-- 文档中需要标注真实调用依赖 New API 后台接入，阶段 1 不承诺可真实跑通。
+- 文档中需要标注真实调用依赖平台后台接入，阶段 1 不承诺可真实跑通。
 - 价格展示可追溯到 APIPool/LiteLLM seed 或人工维护数据。
 - APIPool 复杂运维能力没有被错误搬到客户控制台。
 
@@ -752,10 +753,10 @@ APIPool v2 的使用方式：
 以下决策已经确认：
 
 1. 第一版实际 API 后台使用 New API。
-2. API Base URL 使用 `https://newapi.apipool.dev/v1`。
+2. API Base URL 使用 `https://api.apipool.dev/v1`。
 3. New API 首批下游渠道是 sub2api/APIPool。
 4. New API 作为独立开源服务部署在同一台服务器上，只作为后台服务和运营后台使用。
-5. 门户站只向用户开放 APIPool 自有控制台，后续对接 New API 做 API Key 管理、余额、额度、请求数、Token 和消费日志展示。
+5. 门户站只向用户开放 APIPool 自有控制台，后续对接后台服务做 API Key 管理、余额、额度、请求数、Token 和消费日志展示。
 6. 第一批重点展示供应商是 OpenAI 和 Anthropic。
 7. 品牌名继续使用 APIPool，主域名继续使用 `apipool.dev`。
 8. Logo 和主色需要重新设计，但不阻塞第一阶段。

@@ -13,7 +13,7 @@
 
 MVP 一句话目标：
 
-> 在 `apipool.dev` 上线一个可信的多模型 API 门户，完成首页、API 市场、模型详情、文档、登录入口和控制台占位闭环；真实 API Key、真实用量和支付入账留到 New API 接入阶段。
+> 在 `apipool.dev` 上线一个可信的多模型 API 门户，完成首页、API 市场、模型详情、文档、登录入口和控制台占位闭环；真实 API Key、真实用量和支付入账留到后台接入阶段。
 
 ## 1. 核心原则
 
@@ -36,7 +36,7 @@ MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂�
 - 清晰定位：一个 Base URL 接入 OpenAI / Anthropic 等首批模型。
 - 清晰转化：用户从首页、市场、详情页都能进入文档或控制台。
 - 清晰边界：控制台里的 Key、余额、统计都明确是演示或待接入状态。
-- 清晰后路：数据结构和页面布局为 New API 接入留接口。
+- 清晰后路：数据结构和页面布局为后续后台能力接入留接口。
 
 必须澄清的架构边界：
 
@@ -45,7 +45,7 @@ MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂�
 必须避免：
 
 - 把 mock Key 写成真实可调用凭证。
-- 在 MVP 中把充值、扣费、用量查询描述为已真实可用能力；MVP 只能保留占位入口和演示数据，真实能力需等 New API 接入、支付回调和账本对账完成后验收。
+- 在 MVP 中把充值、扣费、用量查询描述为已真实可用能力；MVP 只能保留占位入口和演示数据，真实能力需等后台接入、支付回调和账本对账完成后验收。
 - 把网关路由、账号池、风控、供应商运维搬进门户站。
 
 ## 2. 用户与场景
@@ -65,7 +65,7 @@ MVP 面向三类用户：
 3. 作为开发者，我能进入模型详情页复制 Base URL 和示例请求。
 4. 作为开发者，我能从导航进入文档模块，看到后续接入文档会在这里补齐。
 5. 作为登录用户，我能进入控制台看到 API Key 管理 UI、Base URL 和统计占位。
-6. 作为登录用户，我能明确知道当前 Key/统计是演示数据，真实能力后续由门户对接 New API。
+6. 作为登录用户，我能明确知道当前 Key/统计是演示数据，真实能力后续由 APIPool 平台补齐。
 
 ## 3. MVP 范围
 
@@ -84,7 +84,7 @@ MVP 必须包含以下页面和能力：
 - 账单占位页 `/dashboard/billing`
 - OpenAI / Anthropic 首批模型 seed 数据
 - SQLite 本地运行配置
-- 基础品牌替换：APIPool、`apipool.dev`、`newapi.apipool.dev`
+- 基础品牌替换：APIPool、`apipool.dev`、`api.apipool.dev`
 
 ### 3.2 可以保留但不作为验收核心
 
@@ -105,12 +105,12 @@ MVP 必须包含以下页面和能力：
 
 MVP 不做：
 
-- 真实 New API 管理接口对接。
+- 真实后台管理接口对接。
 - 真实 API Key 自动创建、禁用、额度限制、模型白名单、IP 白名单。
 - New API 余额、额度、请求数、Token、消费日志同步。
 - 真实支付回调、余额入账、订单对账。
 - 现有 APIPool 用户资产迁移。
-- 任何面向用户的 New API 控制台相关页面；New API 只作为后台服务承接真实网关能力。
+- 任何面向用户的后台网关控制台相关页面；真实网关只作为后台服务承接调用能力。
 - Playground。
 - 邀请返佣。
 - 复杂 Admin CMS。
@@ -144,7 +144,7 @@ MVP 不做：
 - Product：Models、Docs、Dashboard。
 - Resources：Docs、Models、Dashboard。
 - Legal：Terms、Privacy 可先占位。
-- Base URL：`https://newapi.apipool.dev/v1`
+- Base URL：`https://api.apipool.dev/v1`
 
 ## 5. 页面详设
 
@@ -161,7 +161,7 @@ MVP 不做：
    - 副标题：说明多模型入口、价格透明、统一 Base URL。
    - 主 CTA：Start building，跳转登录或 `/dashboard/api-keys`。
    - 次 CTA：View models，跳转 `/models`。
-   - 必须展示 Base URL：`https://newapi.apipool.dev/v1`。
+   - 必须展示 Base URL：`https://api.apipool.dev/v1`。
 
 2. 热门模型
    - 展示 6 个首批模型。
@@ -173,7 +173,7 @@ MVP 不做：
    - Step 2：Get an API key。
    - Step 3：Replace Base URL。
    - Step 4：Call OpenAI / Anthropic models。
-   - 需要明确 MVP 阶段真实 Key 后续由 New API 接入或运营开通。
+   - 需要明确 MVP 阶段真实 Key 后续由 APIPool 平台开放创建或申请。
 
 4. 平台优势
    - Multi-model catalog。
@@ -249,7 +249,7 @@ MVP 不做：
    - 价格提示：最终以实际扣费为准。
 
 3. Quickstart
-   - Base URL：`https://newapi.apipool.dev/v1`
+   - Base URL：`https://api.apipool.dev/v1`
    - Endpoint：优先展示 `/chat/completions`。
    - curl 示例。
    - JavaScript 示例。
@@ -290,8 +290,8 @@ MVP 只需要保留文档模块入口，不要求填充完整接入文档。文�
 MVP 页面内容：
 
 - 标题：Docs。
-- 简短说明：APIPool 接入文档会在 New API 接入阶段逐步补齐。
-- Base URL 展示：`https://newapi.apipool.dev/v1`。
+- 简短说明：APIPool 接入文档会随着平台能力逐步补齐。
+- Base URL 展示：`https://api.apipool.dev/v1`。
 - 占位卡片：Quickstart、API Keys、Pricing、SDK Migration、Errors。
 - 每张卡片可以标记 `Coming soon` 或 `Draft`，不需要进入完整详情页。
 
@@ -315,7 +315,7 @@ MVP 不要求：
 
 目标：
 
-建立客户控制台的信息架构，让用户知道后续余额、用量、Key 状态都会在门户侧展示；New API 控制台不是用户产品面。
+建立客户控制台的信息架构，让用户知道后续余额、用量、Key 状态都会在 APIPool 门户侧展示。
 
 页面模块：
 
@@ -340,7 +340,7 @@ MVP 不要求：
    - 字段：时间、模型、状态、Token、Cost。
 
 5. 状态提示
-   - 文案必须明确：真实 API Key 和用量统计将在 New API 接入后启用。
+   - 文案必须明确：真实 API Key 和用量统计将在后续平台能力接入后启用。
 
 验收标准：
 
@@ -358,7 +358,7 @@ MVP 不要求：
 
 1. Header
    - 标题：API Keys。
-   - 描述：Manage keys for `https://newapi.apipool.dev/v1`。
+   - 描述：Manage keys for `https://api.apipool.dev/v1`。
    - 主按钮：Create key。
 
 2. Key 列表
@@ -391,7 +391,7 @@ MVP 不要求：
 
 - 创建、复制、禁用、删除等前端交互可演示。
 - 任何地方都不能把 mock key 描述为真实可调用。
-- 不提供 New API 控制台入口。
+- 不提供后台网关控制台入口。
 
 ### 5.7 用量占位页 `/dashboard/usage`
 
@@ -410,7 +410,7 @@ MVP 不要求：
 验收标准：
 
 - 用户能理解未来会在门户查看用量。
-- 不显示 New API 控制台链接，因为它不是用户产品面。
+- 不显示后台网关控制台链接，因为它不是用户产品面。
 - 所有数据都来自 mock/seed。
 
 ### 5.8 账单占位页 `/dashboard/billing`
@@ -580,7 +580,7 @@ SQLite 只用于 MVP 单机上线，不作为长期账本方案。进入真实�
 
 所有页面统一展示：
 
-- API Base URL：`https://newapi.apipool.dev/v1`
+- API Base URL：`https://api.apipool.dev/v1`
 - 真实网关后台：New API
 - 首批下游渠道：sub2api/APIPool
 
@@ -648,11 +648,11 @@ type NewApiStatsSnapshot = {
 
 控制台必须有全局提示：
 
-> API Key and usage data on this page are demo data. Real New API integration will be enabled in the next phase.
+> API Key and usage data on this page are demo data. Real key management and usage data will be enabled in a later phase.
 
 如页面中文化，可使用：
 
-> 当前 API Key 和用量为演示数据。真实 New API 开通、禁用、额度和统计将在下一阶段启用。
+> 当前 API Key 和用量为演示数据。真实开通、禁用、额度和统计将在下一阶段启用。
 
 ### 8.3 价格提示
 
@@ -711,7 +711,7 @@ Logo 和主色未定稿时：
 
 - 少用夸张营销词。
 - 初期不把兼容性作为首页主卖点；兼容模式只放在文档补充层说明。
-- 明确“New API integration coming next”。
+- 明确“真实 Key、额度和统计将在后续启用”，但不向用户暴露后台服务名称。
 - 不承诺未完成能力。
 
 ## 10. 技术落地约束
@@ -769,7 +769,7 @@ src/content/docs/
 export const APIPOOL_CONFIG = {
   brandName: "APIPool",
   siteUrl: "https://apipool.dev",
-  apiBaseUrl: "https://newapi.apipool.dev/v1",
+  apiBaseUrl: "https://api.apipool.dev/v1",
   supportEmail: "support@apipool.dev",
   isNewApiIntegrationEnabled: false,
 };
@@ -790,7 +790,7 @@ MVP 完成时应满足：
 - 登录用户能进入控制台。
 - 控制台能展示 API Key 管理 UI、Base URL、统计、用量、账单占位。
 - 所有演示数据都有清晰 demo 标识。
-- 门户不提供 New API 控制台入口，New API 仅作为后台服务存在。
+- 门户不提供后台网关控制台入口，真实网关仅作为后台服务存在。
 
 ### 11.2 技术验收
 
@@ -810,7 +810,7 @@ MVP 完成时应满足：
 
 - 没有把 mock Key 当真实 Key 展示。
 - 没有开放真实支付入口。
-- 没有把 New API 控制台链接做成用户侧入口。
+- 没有把后台网关控制台链接做成用户侧入口。
 - 没有承诺真实余额、用量、充值已启用。
 - 价格都带参考提示。
 - 未确认供给的模型标为 Coming soon 或不展示。
@@ -880,4 +880,4 @@ MVP 完成后进入 New API 接入阶段，优先级：
 
 MVP 的正确交付物不是一个完整可扣费网关，而是一个可信、可访问、边界清楚的新 APIPool 门户。
 
-只要第一版能让用户完成“了解平台 -> 查看模型 -> 进入文档入口 -> 进入控制台 -> 看见未来 API Key 和用量管理形态”的闭环，就达到了 MVP 目标。真实 Key、真实用量、真实支付和完整接入文档应在 New API 接入和支付账本设计完成后再进入验收。
+只要第一版能让用户完成“了解平台 -> 查看模型 -> 进入文档入口 -> 进入控制台 -> 看见未来 API Key 和用量管理形态”的闭环，就达到了 MVP 目标。真实 Key、真实用量、真实支付和完整接入文档应在后台接入和支付账本设计完成后再进入验收。
