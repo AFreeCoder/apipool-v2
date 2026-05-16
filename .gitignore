@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local databases and generated data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Local Superpowers brainstorming session artifacts
+.superpowers/
+
+# macOS
+.DS_Store
