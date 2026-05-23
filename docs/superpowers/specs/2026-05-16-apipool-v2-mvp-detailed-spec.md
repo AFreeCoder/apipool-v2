@@ -4,7 +4,7 @@
 
 本文是 `APIPool v2 品牌升级设计方案` 和 `APIPool v2 MVP 快速上线方案` 的下钻版本，用于约束第一版可开发、可验收的 MVP。
 
-本文不替代完整品牌方案，也不展开 New API 后台部署细节。它只回答一件事：基于 ShipAny 模板启动 APIPool v2 门户时，第一版具体要做哪些页面、数据、交互、状态和验收。
+本文只回答一件事：基于 ShipAny 模板启动 APIPool v2 门户时，第一版具体要做哪些页面、数据、交互、后台对接、状态和验收。
 
 来源文档：
 
@@ -13,7 +13,7 @@
 
 MVP 一句话目标：
 
-> 在 `apipool.dev` 上线一个可信的多模型 API 门户，完成首页、API 市场、模型详情、文档、登录入口和控制台占位闭环；真实 API Key、真实用量和支付入账留到后台接入阶段。
+> 在 `apipool.dev` 上线一个可信的多模型 API 门户，完成首页、API 市场、模型详情、文档入口、登录、客户控制台和 New API 真实对接；用户可以在 APIPool 门户创建真实 API Key、查看真实额度/用量，并通过 `https://api.apipool.dev/v1` 发起真实模型调用。
 
 ## 1. 核心原则
 
@@ -21,32 +21,31 @@ MVP 一句话目标：
 
 APIPool v2 是面向客户的新 API 门户，不是现有 APIPool 运维后台换皮。
 
-MVP 必须坚持三条边界：
+MVP 必须坚持四条边界：
 
-- 门户站负责展示、获客、文档、登录、控制台入口和演示数据。
-- New API 负责真实 API Key、模型路由、渠道接入、额度扣减和调用日志。
-- sub2api/APIPool 作为 New API 的下游渠道之一，不直接暴露给终端用户。
+- 门户站负责展示、获客、文档入口、登录、客户控制台、用户侧 API Key 管理和统计展示。
+- New API 负责真实 API Key、模型路由、渠道接入、额度扣减和调用日志，是内部后台服务与运营后台。
+- sub2api/APIPool 作为 New API 的首批下游渠道之一，不直接暴露给终端用户。
+- 用户只看到 APIPool 品牌、APIPool 控制台和 `https://api.apipool.dev/v1`，不需要知道后台服务名称或进入后台网关控制台。
 
 ### 1.2 MVP 取舍
 
-MVP 要做出“新平台已经成立”的感知，但不做未验证的复杂闭环。
+MVP 要做出“新平台已经可用”的闭环，而不是只做展示站。
 
 必须优先：
 
 - 清晰定位：一个 Base URL 接入 OpenAI / Anthropic 等首批模型。
 - 清晰转化：用户从首页、市场、详情页都能进入文档或控制台。
-- 清晰边界：控制台里的 Key、余额、统计都明确是演示或待接入状态。
-- 清晰后路：数据结构和页面布局为后续后台能力接入留接口。
-
-必须澄清的架构边界：
-
-- New API 在本架构中是后台服务和运营后台，只由门户后端或运营侧访问；它不是用户产品面，也不是门户要提供的客户控制台。
+- 真实接入：登录用户能创建或获取真实可调用的 API Key。
+- 真实统计：门户能展示真实额度、请求数、Token、消费日志和模型分布的最小集合。
+- 清晰边界：后台网关控制台只服务运营，不作为用户侧产品入口。
 
 必须避免：
 
-- 把 mock Key 写成真实可调用凭证。
-- 在 MVP 中把充值、扣费、用量查询描述为已真实可用能力；MVP 只能保留占位入口和演示数据，真实能力需等后台接入、支付回调和账本对账完成后验收。
+- 在用户可见文案里暴露 New API、后台接线方式或内部服务域名。
+- 把后台网关控制台链接做成用户入口。
 - 把网关路由、账号池、风控、供应商运维搬进门户站。
+- 在支付能力未接通时展示“已支付、已自动入账”等自助支付状态。
 
 ## 2. 用户与场景
 
@@ -63,9 +62,10 @@ MVP 面向三类用户：
 1. 作为新访客，我打开首页后能立刻知道 APIPool 是多模型 API 平台。
 2. 作为开发者，我能在市场里看到 OpenAI / Anthropic 模型分组、模型 ID 和价格。
 3. 作为开发者，我能进入模型详情页复制 Base URL 和示例请求。
-4. 作为开发者，我能从导航进入文档模块，看到后续接入文档会在这里补齐。
-5. 作为登录用户，我能进入控制台看到 API Key 管理 UI、Base URL 和统计占位。
-6. 作为登录用户，我能明确知道当前 Key/统计是演示数据，真实能力后续由 APIPool 平台补齐。
+4. 作为开发者，我能从导航进入文档模块，看到文档入口、Base URL 和后续文档结构。
+5. 作为登录用户，我能在 APIPool 控制台创建、查看、禁用或删除 API Key。
+6. 作为登录用户，我能看到自己的真实余额/额度、请求数、Token、消费日志和模型分布。
+7. 作为开发者，我能用门户创建的 Key 调用 `https://api.apipool.dev/v1` 下至少一个首批模型。
 
 ## 3. MVP 范围
 
@@ -79,11 +79,17 @@ MVP 必须包含以下页面和能力：
 - 文档模块入口 `/docs`
 - 登录/注册入口，优先复用 ShipAny 模板能力
 - 控制台总览 `/dashboard`
-- API Key 占位页 `/dashboard/api-keys`
-- 用量占位页 `/dashboard/usage`
-- 账单占位页 `/dashboard/billing`
+- API Key 管理页 `/dashboard/api-keys`
+- 用量页 `/dashboard/usage`
+- 账单/额度页 `/dashboard/billing`
+- 门户用户与 New API 用户映射
+- 门户 API Key 与 New API Key 映射
+- New API Key 创建、列表、状态读取、禁用/删除的最小闭环
+- New API 额度、请求数、Token、消费日志、模型分布的读取或同步
+- `https://api.apipool.dev/v1` 到 New API 的真实调用链路
+- New API 接入 sub2api/APIPool 作为首批下游渠道
 - OpenAI / Anthropic 首批模型 seed 数据
-- SQLite 本地运行配置
+- SQLite 本地运行配置；如部署形态要求多实例或稳定账本，切换 PostgreSQL
 - 基础品牌替换：APIPool、`apipool.dev`、`api.apipool.dev`
 
 ### 3.2 可以保留但不作为验收核心
@@ -92,30 +98,33 @@ MVP 必须包含以下页面和能力：
 
 - 更新日志 `/changelog`
 - 博客 `/blog`
-- 充值套餐 UI
+- 自助充值套餐 UI
 - 折扣码输入框
 - 兑换码入口
 - 主题切换
 - 多语言切换
 - Admin 后台入口
 
-这些入口如果存在，页面必须保持清晰空状态，不能伪装成真实已完成能力。
+这些入口如果存在，页面必须保持清晰状态。未接通支付时不能伪装成真实自助充值成功。
 
 ### 3.3 明确不做
 
 MVP 不做：
 
-- 真实后台管理接口对接。
-- 真实 API Key 自动创建、禁用、额度限制、模型白名单、IP 白名单。
-- New API 余额、额度、请求数、Token、消费日志同步。
-- 真实支付回调、余额入账、订单对账。
 - 现有 APIPool 用户资产迁移。
-- 任何面向用户的后台网关控制台相关页面；真实网关只作为后台服务承接调用能力。
+- Stripe / PayPal 自助支付回调、余额自动入账和订单对账。
+- 任何面向用户的后台网关控制台相关页面。
 - Playground。
 - 邀请返佣。
 - 复杂 Admin CMS。
 - 大规模 SEO 内容矩阵。
 - 图像、视频、音频模型完整市场。
+- 多网关抽象层或通用 Gateway Adapter。
+
+说明：
+
+- 真实 API 调用扣费和真实用量查询属于 MVP 必做，因为它们来自 New API 对接。
+- 真实充值可以先以运营调额、内部工单或手工入账方式完成；自助支付闭环不阻塞第一版。
 
 ## 4. 信息架构与路由
 
@@ -126,7 +135,7 @@ MVP 不做：
 - APIPool Logo/品牌名：跳转 `/`
 - Models：跳转 `/models`
 - Docs：跳转 `/docs`
-- Pricing：MVP 可跳转 `/models`
+- Pricing：MVP 可跳转 `/models` 或 `/dashboard/billing`
 - Dashboard：登录后跳转 `/dashboard`
 - Sign in / Start：未登录时进入认证流程
 
@@ -171,14 +180,14 @@ MVP 不做：
 3. 快速接入
    - Step 1：Create an account。
    - Step 2：Get an API key。
-   - Step 3：Replace Base URL。
+   - Step 3：Use the APIPool Base URL。
    - Step 4：Call OpenAI / Anthropic models。
-   - 需要明确 MVP 阶段真实 Key 后续由 APIPool 平台开放创建或申请。
+   - 不在这段文案中提 New API 或后台服务名称。
 
 4. 平台优势
    - Multi-model catalog。
    - Transparent pricing。
-   - Multi-model access。
+   - Usage visibility。
    - Built for developers。
 
 5. 文档 CTA
@@ -309,13 +318,13 @@ MVP 不要求：
 - `/docs` 入口可访问。
 - 导航和 CTA 不出现死链。
 - 页面明确提示详细文档后续补齐。
-- 页面不承诺真实 Key、真实调用、真实充值或真实用量已经可用。
+- 页面不暴露后台服务名称。
 
 ### 5.5 控制台总览 `/dashboard`
 
 目标：
 
-建立客户控制台的信息架构，让用户知道后续余额、用量、Key 状态都会在 APIPool 门户侧展示。
+建立客户控制台的信息架构，让用户能在 APIPool 门户侧查看真实 API Key、余额、用量和最近调用状态。
 
 页面模块：
 
@@ -326,33 +335,35 @@ MVP 不要求：
    - API Key 页面链接。
 
 2. 统计卡片
-   - Balance：mock。
-   - Requests：mock。
-   - Tokens：mock。
-   - Spend：mock。
+   - Balance / available quota：来自 New API 或门户同步层。
+   - Requests：当前时间范围请求数。
+   - Tokens：input / output token 汇总。
+   - Spend：当前时间范围消费。
 
 3. 近期消耗趋势
-   - 7 天 mock 折线或柱状图。
-   - 标记为 Demo data。
+   - 7 天折线或柱状图。
+   - 数据来自 New API 统计接口或门户同步快照。
+   - 无数据时展示真实空状态，不使用演示数字。
 
 4. 最近请求
-   - mock 列表或空状态。
    - 字段：时间、模型、状态、Token、Cost。
+   - 至少展示最近 20 条或空状态。
 
-5. 状态提示
-   - 文案必须明确：真实 API Key 和用量统计将在后续平台能力接入后启用。
+5. 同步状态
+   - 显示最近同步时间或“统计同步中”。
+   - 不能引导用户去后台网关控制台查看数据。
 
 验收标准：
 
 - 普通用户能从总览进入 API Key、Usage、Billing。
-- 页面没有真实扣费暗示。
-- 所有 mock 数据在 UI 中有明确 demo 标识。
+- 页面展示真实数据或真实空状态。
+- 如果 New API 统计接口临时不可用，页面展示错误/同步中状态，而不是假数据。
 
-### 5.6 API Key 占位页 `/dashboard/api-keys`
+### 5.6 API Key 管理页 `/dashboard/api-keys`
 
 目标：
 
-展示最终 API Key 管理形态，但不生成真实可调用 Key。
+让用户在 APIPool 门户创建并管理真实可调用 Key。
 
 页面模块：
 
@@ -366,7 +377,7 @@ MVP 不要求：
    - Masked key。
    - Status。
    - Models。
-   - Monthly limit。
+   - Monthly limit / quota limit。
    - IP allowlist。
    - Created at。
    - Last used。
@@ -375,13 +386,14 @@ MVP 不要求：
 3. 创建 Key 弹窗
    - Name。
    - Allowed models。
-   - Monthly budget。
+   - Monthly budget 或 quota limit。
    - IP allowlist。
-   - Submit 后只新增本地 mock 记录。
+   - Submit 后调用门户后端，由门户后端调用 New API 创建真实 Key。
 
 4. Key 创建结果
-   - 展示一个 mock Key：`apipool_demo_...`。
-   - 必须提示：This demo key is not active yet。
+   - 只在创建成功后展示一次完整 Key。
+   - 列表里只展示 masked key。
+   - 创建失败时显示可操作错误，不生成本地假 Key。
 
 5. 空状态
    - 文案：No API keys yet。
@@ -389,15 +401,16 @@ MVP 不要求：
 
 验收标准：
 
-- 创建、复制、禁用、删除等前端交互可演示。
-- 任何地方都不能把 mock key 描述为真实可调用。
+- 创建 Key 后可以通过 `https://api.apipool.dev/v1` 调用至少一个可售模型。
+- 禁用或删除 Key 后，真实调用应失效。
+- 复制动作只复制真实 Key 或 masked key 对应的一次性展示值。
 - 不提供后台网关控制台入口。
 
-### 5.7 用量占位页 `/dashboard/usage`
+### 5.7 用量页 `/dashboard/usage`
 
 目标：
 
-展示未来统计口径，包括请求数、Token、消费金额、模型分布。
+展示真实统计口径，包括请求数、Token、消费金额、模型分布和请求日志。
 
 页面模块：
 
@@ -405,38 +418,40 @@ MVP 不要求：
 - 指标卡：Requests、Input tokens、Output tokens、Spend。
 - 模型分布：按模型聚合。
 - 请求日志：时间、Key、模型、状态、Token、Cost。
-- Demo data 标识。
+- 同步状态：最近同步时间、同步失败提示。
 
 验收标准：
 
-- 用户能理解未来会在门户查看用量。
-- 不显示后台网关控制台链接，因为它不是用户产品面。
-- 所有数据都来自 mock/seed。
+- 用户能在门户查看真实用量。
+- 不显示后台网关控制台链接。
+- 无请求时展示真实空状态。
+- 统计接口失败时展示错误状态，不回退成演示数据。
 
-### 5.8 账单占位页 `/dashboard/billing`
+### 5.8 账单/额度页 `/dashboard/billing`
 
 目标：
 
-为后续 Stripe / PayPal 支付留入口，但 MVP 不做真实支付。
+让用户查看真实可用余额/额度、历史调额或订单记录，并为后续 Stripe / PayPal 自助支付留入口。
 
 页面模块：
 
-- 当前余额：mock。
-- 充值套餐：$10、$50、$100、$500。
-- 支付方式：Stripe、PayPal 标记为 Coming soon 或 Disabled。
-- 交易记录：mock 或空状态。
-- 提示：真实充值和余额入账将在支付接入阶段启用。
+- 当前余额/可用额度：来自 New API 或门户同步层。
+- 额度记录：充值、扣费、调额、退款等记录；MVP 可先展示运营调额和网关扣费记录。
+- 充值套餐：$10、$50、$100、$500，可标记为 Coming soon 或 Contact sales。
+- 支付方式：Stripe、PayPal 可保留入口但默认 Disabled，除非真实支付已接通。
+- 交易记录：真实订单或真实调额记录；没有数据时展示空状态。
 
 验收标准：
 
-- 不能创建真实支付订单。
-- 不显示“已入账”类真实状态，除非是明确 demo。
+- API 调用产生的扣费或额度消耗能在门户可查。
+- 未接支付时不能创建真实支付订单。
+- 不显示“已入账”类状态，除非确实来自真实订单或运营调额。
 
 ## 6. 数据设计
 
 ### 6.1 模型 seed
 
-MVP 使用 seed 数据，不做后台 CMS。
+MVP 使用 seed 数据展示模型市场，不要求后台 CMS。
 
 推荐结构：
 
@@ -504,105 +519,15 @@ type ApiModelFaq = {
 
 如果某些型号供给未确认，状态应设为 `coming_soon`，不要以可用模型展示。
 
-### 6.3 API Key mock 数据
-
-```ts
-type ApiKeyMock = {
-  id: string;
-  name: string;
-  maskedKey: string;
-  status: "active" | "disabled" | "demo";
-  allowedModels: string[];
-  monthlyBudgetUsd?: number;
-  ipAllowlist: string[];
-  createdAt: string;
-  lastUsedAt?: string;
-  isDemo: true;
-};
-```
-
-规则：
-
-- mock Key 前缀使用 `apipool_demo_`。
-- masked key 展示格式：`apipool_demo_****abcd`。
-- 新建 Key 后必须将 `isDemo` 设为 `true`。
-- 复制动作可以复制 mock 字符串，但 toast 必须提示该 Key 尚未激活。
-
-### 6.4 用量 mock 数据
-
-```ts
-type UsageSummaryMock = {
-  range: "7d" | "30d" | "month";
-  balanceUsd: number;
-  requestCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  spendUsd: number;
-  daily: Array<{
-    date: string;
-    requests: number;
-    tokens: number;
-    spendUsd: number;
-  }>;
-  byModel: Array<{
-    modelId: string;
-    requests: number;
-    tokens: number;
-    spendUsd: number;
-  }>;
-};
-```
-
-规则：
-
-- 用量页、总览页共用同一份 mock 统计。
-- mock 数据必须稳定，避免刷新后随机变化影响评审。
-- UI 必须带 `Demo data` 或中文等价标识。
-
-### 6.5 数据库
-
-MVP 可使用 SQLite。
-
-环境变量建议：
-
-```env
-DATABASE_PROVIDER=sqlite
-DATABASE_URL=file:./data/apipool-v2.db
-DB_SCHEMA_FILE=./src/config/db/schema.sqlite.ts
-DB_SINGLETON_ENABLED=true
-```
-
-SQLite 只用于 MVP 单机上线，不作为长期账本方案。进入真实支付、真实用量同步、用户迁移前，应重新评估 PostgreSQL。
-
-## 7. New API 边界
-
-### 7.1 MVP 固定展示
-
-所有页面统一展示：
-
-- API Base URL：`https://api.apipool.dev/v1`
-- 真实网关后台：New API
-- 首批下游渠道：sub2api/APIPool
-
-### 7.2 MVP 不调用
-
-MVP 不调用 New API 管理接口，也不读取 New API 统计接口。
-
-原因：
-
-- 首版重点是门户站和信息架构。
-- New API 的用户、Key、额度、统计接口稳定性需要单独验证。
-- 不把真实业务状态混进前端演示，避免用户误解。
-
-### 7.3 后续接入预留
-
-后续阶段需要补三类映射：
+### 6.3 门户到 New API 映射
 
 ```ts
 type NewApiUserBinding = {
   portalUserId: string;
   newapiUserId: string;
   status: "pending" | "active" | "disabled";
+  createdAt: string;
+  updatedAt: string;
 };
 ```
 
@@ -614,26 +539,131 @@ type NewApiKeyBinding = {
   keyMasked: string;
   displayName: string;
   status: "active" | "disabled" | "revoked";
+  allowedModels: string[];
+  quotaLimit?: number;
+  ipAllowlist: string[];
+  createdAt: string;
+  lastUsedAt?: string;
 };
 ```
 
+规则：
+
+- 门户不保存完整明文 Key；创建成功后只做一次性展示。
+- 门户只保存映射、masked key、状态、展示名和用户可见限制。
+- 如果 New API 原生字段不足，门户后端做 DTO 转换，不让前端依赖 New API 数据库结构。
+
+### 6.4 用量与额度快照
+
 ```ts
-type NewApiStatsSnapshot = {
+type UsageSummary = {
   portalUserId: string;
   newapiUserId: string;
+  range: "7d" | "30d" | "month";
   balanceUsd?: number;
-  quotaUsed?: number;
+  quotaRemaining?: number;
   requestCount: number;
   inputTokens: number;
   outputTokens: number;
   spendUsd?: number;
-  rangeStart: string;
-  rangeEnd: string;
+  daily: Array<{
+    date: string;
+    requests: number;
+    tokens: number;
+    spendUsd?: number;
+  }>;
+  byModel: Array<{
+    modelId: string;
+    requests: number;
+    tokens: number;
+    spendUsd?: number;
+  }>;
   syncedAt: string;
 };
 ```
 
-这些类型只作为后续接口边界，不要求 MVP 建表。
+```ts
+type UsageLogItem = {
+  id: string;
+  portalUserId: string;
+  newapiRequestId?: string;
+  keyMasked: string;
+  modelId: string;
+  status: "success" | "failed" | "cancelled";
+  inputTokens: number;
+  outputTokens: number;
+  spendUsd?: number;
+  createdAt: string;
+};
+```
+
+规则：
+
+- 用量页、总览页共用同一份真实统计或同步快照。
+- 无数据时展示空状态。
+- 同步失败时展示错误状态和最近成功同步时间。
+
+### 6.5 数据库
+
+MVP 可使用 SQLite，但要以真实映射和统计为前提。
+
+环境变量建议：
+
+```env
+DATABASE_PROVIDER=sqlite
+DATABASE_URL=file:./data/apipool-v2.db
+DB_SCHEMA_FILE=./src/config/db/schema.sqlite.ts
+DB_SINGLETON_ENABLED=true
+```
+
+SQLite 适合单机第一版。如果门户、新 API、支付和对账进入多实例生产形态，应切换 PostgreSQL。
+
+## 7. New API 对接边界
+
+### 7.1 内部架构固定项
+
+所有用户可见页面统一展示：
+
+- API Base URL：`https://api.apipool.dev/v1`
+- 首批模型供应商分组：OpenAI / Anthropic
+- 用户控制台：APIPool 门户控制台
+
+内部实现固定项：
+
+- 真实网关后台：New API
+- 内部管理域名：`newapi.apipool.dev`
+- 首批下游渠道：sub2api/APIPool
+
+### 7.2 MVP 必须对接
+
+MVP 必须完成以下 New API 对接：
+
+- 用户映射：创建或绑定 `portal_user_id -> newapi_user_id`。
+- Key 管理：创建、列表、状态读取、禁用/删除。
+- 调用链路：`api.apipool.dev/v1 -> New API -> sub2api/APIPool -> 上游模型`。
+- 额度/余额：读取可用额度或余额。
+- 用量统计：读取或同步请求数、Token、消费、模型分布。
+- 消费日志：展示最小日志列表或可分页列表。
+
+### 7.3 不允许的替代方案
+
+以下方式不能作为 MVP 验收通过：
+
+- 只做 Key 管理页面，但不生成真实可调用 Key。
+- 只展示静态统计数字，而没有 New API 统计或同步来源。
+- 让用户进入 New API 控制台查看余额、请求数或消费日志。
+- 在前端直连 New API 数据库。
+- 在用户文案中解释后台服务名称或内部域名。
+
+### 7.4 接口不稳定时的降级
+
+如果 New API 管理接口能力不足，MVP 仍必须给出用户侧闭环：
+
+- Key 自动创建不可用时，可短期采用“门户提交申请 -> 运营开通 -> 门户展示 Key 状态”的半自动流程，但上线验收时至少要有一条真实 Key 能通过门户状态流转给用户。
+- 统计实时查询不可用时，可由门户后端定时同步只读快照。
+- 消费日志不可用时，至少展示额度、请求数、Token、消费的聚合统计，并把日志列表显示为“同步中/暂不可用”。
+
+降级状态必须在门户侧表达，不能把后台网关控制台作为用户替代入口。
 
 ## 8. 关键交互与状态
 
@@ -644,35 +674,47 @@ type NewApiStatsSnapshot = {
 - `Get API key`：未登录进入登录/注册；已登录进入 `/dashboard/api-keys`。
 - `View docs`：进入 `/docs`。
 
-### 8.2 Mock 能力提示
+### 8.2 Key 创建状态
 
-控制台必须有全局提示：
+Key 创建至少覆盖：
 
-> API Key and usage data on this page are demo data. Real key management and usage data will be enabled in a later phase.
+- `idle`：未提交。
+- `creating`：门户正在创建本地记录并调用后台服务。
+- `active`：真实 Key 创建成功，可调用。
+- `pending_manual_activation`：需要运营开通或补充额度。
+- `failed`：创建失败，展示错误和重试入口。
 
-如页面中文化，可使用：
+### 8.3 统计状态
 
-> 当前 API Key 和用量为演示数据。真实开通、禁用、额度和统计将在下一阶段启用。
+统计展示至少覆盖：
 
-### 8.3 价格提示
+- `ready`：有最新统计。
+- `empty`：真实无调用记录。
+- `syncing`：后台同步中。
+- `stale`：统计可展示但不是最新数据。
+- `failed`：统计读取失败。
+
+### 8.4 价格提示
 
 模型列表和详情页必须有价格提示：
 
-> Displayed prices are for reference. Final billing follows the actual gateway charge.
+> Displayed prices are for reference. Final billing follows actual APIPool API usage.
 
 中文等价：
 
-> 页面价格用于接入前参考，最终以实际网关扣费为准。
+> 页面价格用于接入前参考，最终以 APIPool API 实际用量扣费为准。
 
-### 8.4 错误与空状态
+### 8.5 错误与空状态
 
 MVP 至少覆盖：
 
 - 模型筛选无结果。
 - 模型 slug 不存在。
 - API Key 列表为空。
-- 用量数据为空。
-- 账单记录为空。
+- Key 创建失败。
+- 统计同步中。
+- 统计读取失败。
+- 账单/额度记录为空。
 - 用户未登录访问控制台。
 
 处理规则：
@@ -711,8 +753,8 @@ Logo 和主色未定稿时：
 
 - 少用夸张营销词。
 - 初期不把兼容性作为首页主卖点；兼容模式只放在文档补充层说明。
-- 明确“真实 Key、额度和统计将在后续启用”，但不向用户暴露后台服务名称。
-- 不承诺未完成能力。
+- 用户可见区域不出现 New API、后台接线方式或内部服务域名。
+- 不承诺未完成的自助支付、迁移、Playground、导出等能力。
 
 ## 10. 技术落地约束
 
@@ -743,12 +785,20 @@ src/features/api-catalog/
   lib/filter-models.ts
 
 src/features/api-console/
-  data/demo-api-keys.ts
-  data/demo-usage.ts
   components/api-key-table.tsx
   components/create-api-key-dialog.tsx
-  components/demo-data-banner.tsx
   components/usage-summary.tsx
+  components/usage-log-table.tsx
+  components/sync-status-banner.tsx
+  lib/format-usage.ts
+
+src/features/newapi-bridge/
+  server/client.ts
+  server/users.ts
+  server/keys.ts
+  server/usage.ts
+  server/quota.ts
+  types.ts
 
 src/content/docs/
   index.mdx
@@ -757,9 +807,9 @@ src/content/docs/
 具体路径可按 ShipAny 模板实际目录调整，但责任边界应保持：
 
 - catalog 只关心模型展示和价格。
-- console 只关心用户侧控制台演示和未来接入边界。
+- console 只关心用户侧控制台体验和状态展示。
+- newapi-bridge 只关心门户后端到 New API 的内部接入。
 - docs 只关心文档入口和后续接入文档承载位置。
-- New API 真实调用不进入 MVP 前端模块。
 
 ### 10.3 配置项
 
@@ -771,7 +821,7 @@ export const APIPOOL_CONFIG = {
   siteUrl: "https://apipool.dev",
   apiBaseUrl: "https://api.apipool.dev/v1",
   supportEmail: "support@apipool.dev",
-  isNewApiIntegrationEnabled: false,
+  isNewApiIntegrationEnabled: true,
 };
 ```
 
@@ -788,30 +838,33 @@ MVP 完成时应满足：
 - 模型详情页能展示模型 ID、价格、示例和 FAQ。
 - 文档模块入口可访问，并清楚标注详细接入文档后续补齐。
 - 登录用户能进入控制台。
-- 控制台能展示 API Key 管理 UI、Base URL、统计、用量、账单占位。
-- 所有演示数据都有清晰 demo 标识。
-- 门户不提供后台网关控制台入口，真实网关仅作为后台服务存在。
+- 控制台能展示真实 API Key 管理、Base URL、额度、统计、用量和账单/额度记录。
+- 用户能用门户创建或获取的 Key 调用 `https://api.apipool.dev/v1` 下至少一个首批模型。
+- 门户不提供后台网关控制台入口。
+- 用户可见文案不暴露 New API。
 
 ### 11.2 技术验收
 
 MVP 完成时应满足：
 
 - 本地能启动。
-- SQLite 配置可用。
+- SQLite 配置可用；如部署需要多实例，已切换 PostgreSQL。
 - 主要页面无运行时错误。
 - 所有导航和 CTA 链接有效。
 - 模型 seed 数据能被首页、市场、详情页复用。
-- mock API Key 创建、复制、禁用、删除交互不依赖真实后端。
+- 门户后端能创建或绑定 New API 用户。
+- 门户后端能创建、列出、禁用或删除 New API Key。
+- 门户后端能读取或同步 New API 额度、请求数、Token、消费日志和模型分布。
 - 文档入口页面构建通过。
 
 ### 11.3 风险验收
 
 上线前必须确认：
 
-- 没有把 mock Key 当真实 Key 展示。
-- 没有开放真实支付入口。
 - 没有把后台网关控制台链接做成用户侧入口。
-- 没有承诺真实余额、用量、充值已启用。
+- 没有在用户可见文案里写 New API 或内部域名。
+- 没有开放未接通的自助支付入口。
+- 没有展示静态假用量冒充真实数据。
 - 价格都带参考提示。
 - 未确认供给的模型标为 Coming soon 或不展示。
 
@@ -824,12 +877,13 @@ MVP 完成时应满足：
 - 打开每个首批模型详情页，检查 model ID、价格、示例代码。
 - 打开 `/docs`，检查文档入口、Base URL 和 Coming soon 状态。
 - 未登录访问 `/dashboard`，应进入登录流程。
-- 登录后访问 `/dashboard`，检查 demo 数据提示。
-- 在 `/dashboard/api-keys` 创建 mock Key，检查提示和列表新增。
-- 复制 mock Key，toast 应说明该 Key 未激活。
-- 禁用/删除 mock Key，列表状态正确更新。
-- 打开 `/dashboard/usage`，检查 demo 标识和范围切换。
-- 打开 `/dashboard/billing`，确认不能创建真实支付订单。
+- 登录后访问 `/dashboard`，检查真实数据或真实空状态。
+- 在 `/dashboard/api-keys` 创建 Key，检查一次性完整 Key 展示和列表 masked key。
+- 使用创建的 Key 调用 `https://api.apipool.dev/v1` 下至少一个模型。
+- 禁用/删除 Key 后再次调用，应失败。
+- 打开 `/dashboard/usage`，检查请求数、Token、消费日志、模型分布。
+- 打开 `/dashboard/billing`，检查余额/额度和调额/扣费记录。
+- 确认页面没有后台网关控制台入口。
 
 ### 12.2 自动化测试建议
 
@@ -838,7 +892,9 @@ MVP 完成时应满足：
 - `filterModels` 单元测试。
 - 模型 slug 查找测试。
 - 价格格式化测试。
-- API Key mock reducer/action 测试。
+- New API bridge client 错误映射测试。
+- API Key 创建/禁用 action 测试。
+- 用量 DTO 格式化测试。
 - smoke test：`/`、`/models`、`/models/[slug]`、`/docs`、`/dashboard`。
 
 ### 12.3 浏览器验收
@@ -849,28 +905,15 @@ MVP 页面完成后需要用浏览器检查：
 - 移动端首页、市场、详情、控制台。
 - 文案不溢出按钮或卡片。
 - 导航、筛选、弹窗、复制按钮可交互。
-- 空状态和 disabled 状态视觉清楚。
+- 空状态、错误状态和 disabled 状态视觉清楚。
 
-## 13. 阶段交接
-
-### 13.1 MVP 完成后的下一步
-
-MVP 完成后进入 New API 接入阶段，优先级：
-
-1. 部署 New API 到 `newapi.apipool.dev`。
-2. New API 接入 sub2api/APIPool。
-3. 门户建立 `portal_user_id` 到 `newapi_user_id` 的映射。
-4. 门户 API Key 页面接真实创建、禁用、状态读取。
-5. 门户读取 New API 余额、请求数、Token、模型分布和消费日志。
-6. 再接 Stripe / PayPal 支付入账。
-
-### 13.2 需要单独设计的后续专题
+## 13. 后续专题
 
 以下事项不塞进本 MVP spec：
 
-- New API 部署与安全加固。
-- New API 管理接口鉴权方案。
-- 门户订单支付成功后给 New API 加额度的对账流程。
+- New API 部署与安全加固细案。
+- New API 管理接口鉴权方案细案。
+- Stripe / PayPal 支付成功后给 New API 加额度的对账流程。
 - 现有 APIPool 用户资产迁移。
 - 模型价格自动同步。
 - 真实 Playground。
@@ -878,6 +921,6 @@ MVP 完成后进入 New API 接入阶段，优先级：
 
 ## 14. 当前结论
 
-MVP 的正确交付物不是一个完整可扣费网关，而是一个可信、可访问、边界清楚的新 APIPool 门户。
+MVP 的正确交付物不是纯展示站，而是一个可信、可访问、能真实调用的 APIPool 门户。
 
-只要第一版能让用户完成“了解平台 -> 查看模型 -> 进入文档入口 -> 进入控制台 -> 看见未来 API Key 和用量管理形态”的闭环，就达到了 MVP 目标。真实 Key、真实用量、真实支付和完整接入文档应在后台接入和支付账本设计完成后再进入验收。
+只要第一版能让用户完成“了解平台 -> 查看模型 -> 进入文档入口 -> 登录控制台 -> 创建真实 Key -> 调用 APIPool API -> 查看真实额度和用量”的闭环，就达到了 MVP 目标。自助支付、现有用户迁移、Playground、完整文档和复杂后台可以后置。
