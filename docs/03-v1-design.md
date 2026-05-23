@@ -1,15 +1,15 @@
-# APIPool v2 MVP 详设 Spec
+# APIPool v2 第一版设计文档
 
 ## 0. 文档定位
 
-本文是 `APIPool v2 品牌升级设计方案` 和 `APIPool v2 MVP 快速上线方案` 的下钻版本，用于约束第一版可开发、可验收的 MVP。
+本文是 `APIPool v2 背景文档` 和 `APIPool v2 阶段规划` 的下钻版本，用于约束第一版可开发、可验收的 MVP。
 
 本文只回答一件事：基于 ShipAny 模板启动 APIPool v2 门户时，第一版具体要做哪些页面、数据、交互、后台对接、状态和验收。
 
 来源文档：
 
-- `docs/superpowers/specs/2026-05-15-apipool-v2-brand-upgrade-design.md`
-- `docs/superpowers/specs/2026-05-16-apipool-v2-mvp-launch-design.md`
+- `docs/01-background.md`
+- `docs/02-roadmap.md`
 
 MVP 一句话目标：
 
