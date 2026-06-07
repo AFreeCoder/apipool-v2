@@ -1,0 +1,32 @@
+---
+title: Privacy Policy
+description: APIPool privacy policy
+created_at: 2026-05-24
+---
+
+## Overview
+
+APIPool is an API portal for issuing API keys, showing usage, and routing requests through the APIPool API gateway. This MVP stores only the account, key metadata, usage snapshots, recent log snapshots, and manual quota ledger records needed to operate the service.
+
+## Data We Collect
+
+- Account information: name, email, login provider identifiers, and session metadata.
+- API key metadata: masked key display, key status, creation time, disable/delete status, and the related APIPool internal binding identifiers.
+- Usage and billing data: quota balance, request counts, token totals, recent usage logs, manual adjustments, operator, reason, and rollback status.
+- Operational logs: server-side request identifiers, error codes, and audit events required for support and incident review.
+
+## How We Use Data
+
+We use this data to authenticate users, create and manage API keys, display balances and usage, perform manual quota adjustments, troubleshoot failed server-side operations, and protect the service from abuse.
+
+## Sharing
+
+APIPool does not sell user data. For the MVP, real quota enforcement and usage billing are handled by APIPool server-side systems. Related calls are server-side only, and the browser never receives internal user identifiers.
+
+## Security
+
+API key plaintext is shown once after creation. Stored key values are masked for display. Admin credentials must stay in server-only environment variables. Operations that change remote state are audited.
+
+## Contact
+
+For privacy questions, contact [support@apipool.dev](mailto:support@apipool.dev).

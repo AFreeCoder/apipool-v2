@@ -1,0 +1,61 @@
+name: APIPool MVP Verify
+
+on:
+  pull_request:
+    branches: ["main", "dev"]
+  push:
+    branches: ["main", "dev"]
+  workflow_dispatch:
+
+jobs:
+  local-mvp-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit --pretty false
+      - run: pnpm test
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm smoke:mvp
+        env:
+          APIPOOL_SMOKE_REQUIRE_LIVE: "false"
+
+  live-mvp-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    needs: local-mvp-verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm smoke:mvp
+        env:
+          APIPOOL_SMOKE_REQUIRE_LIVE: "true"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEWAPI_BASE_URL: ${{ secrets.NEWAPI_BASE_URL }}
+          NEWAPI_ADMIN_TOKEN: ${{ secrets.NEWAPI_ADMIN_TOKEN }}
+          APIPOOL_SMOKE_PORTAL_USER_ID: ${{ secrets.APIPOOL_SMOKE_PORTAL_USER_ID }}
+          APIPOOL_SMOKE_OPERATOR_USER_ID: ${{ secrets.APIPOOL_SMOKE_OPERATOR_USER_ID }}
+          APIPOOL_SMOKE_MODEL: ${{ secrets.APIPOOL_SMOKE_MODEL }}
+          APIPOOL_SMOKE_QUOTA_USD: ${{ secrets.APIPOOL_SMOKE_QUOTA_USD }}

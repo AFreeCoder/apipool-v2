@@ -1,0 +1,142 @@
+{
+  "header": {
+    "id": "header",
+    "brand": {
+      "title": "APIPool",
+      "logo": {
+        "src": "/logo.png",
+        "alt": "APIPool",
+        "width": 100,
+        "height": 100
+      },
+      "url": "/"
+    },
+    "nav": {
+      "items": [
+        {
+          "title": "Models",
+          "url": "/models",
+          "icon": "Layers3"
+        },
+        {
+          "title": "Docs",
+          "url": "/docs",
+          "icon": "BookOpenText"
+        },
+        {
+          "title": "Dashboard",
+          "url": "/dashboard",
+          "icon": "Gauge"
+        }
+      ]
+    },
+    "buttons": [],
+    "user_nav": {
+      "show_name": true,
+      "show_credits": false,
+      "show_sign_out": true,
+      "items": [
+        {
+          "title": "API Keys",
+          "url": "/dashboard/api-keys",
+          "icon": "KeyRound"
+        },
+        {
+          "title": "Usage",
+          "url": "/dashboard/usage",
+          "icon": "BarChart3"
+        },
+        {
+          "title": "Billing",
+          "url": "/dashboard/billing",
+          "icon": "ReceiptText"
+        }
+      ]
+    },
+    "show_sign": true,
+    "show_theme": true,
+    "show_locale": true
+  },
+  "footer": {
+    "id": "footer",
+    "brand": {
+      "title": "APIPool",
+      "description": "A multi-model API portal with one Base URL, API key management, quota visibility, and usage logs.",
+      "logo": {
+        "src": "/logo.png",
+        "alt": "APIPool",
+        "width": 100,
+        "height": 100
+      },
+      "url": "/"
+    },
+    "nav": {
+      "items": [
+        {
+          "title": "Product",
+          "children": [
+            {
+              "title": "Models",
+              "url": "/models",
+              "target": "_self"
+            },
+            {
+              "title": "Docs",
+              "url": "/docs",
+              "target": "_self"
+            },
+            {
+              "title": "Dashboard",
+              "url": "/dashboard",
+              "target": "_self"
+            }
+          ]
+        },
+        {
+          "title": "Account",
+          "children": [
+            {
+              "title": "API Keys",
+              "url": "/dashboard/api-keys",
+              "target": "_self"
+            },
+            {
+              "title": "Usage",
+              "url": "/dashboard/usage",
+              "target": "_self"
+            },
+            {
+              "title": "Billing",
+              "url": "/dashboard/billing",
+              "target": "_self"
+            }
+          ]
+        }
+      ]
+    },
+    "social": {
+      "items": [
+        {
+          "title": "Email",
+          "icon": "Mail",
+          "url": "mailto:support@apipool.dev",
+          "target": "_self"
+        }
+      ]
+    },
+    "agreement": {
+      "items": [
+        {
+          "title": "Privacy Policy",
+          "url": "/privacy-policy"
+        },
+        {
+          "title": "Terms of Service",
+          "url": "/terms-of-service"
+        }
+      ]
+    },
+    "show_theme": true,
+    "show_locale": true
+  }
+}

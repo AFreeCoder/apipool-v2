@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  canDeleteKeyStatus,
+  canDisableKeyStatus,
+  canRetryKeyStatus,
+  getNextKeyStatus,
+  getUsageSyncState,
+} from '@/features/api-console/lib/status';
+
+test('key status moves to active only after local binding succeeds', () => {
+  assert.equal(
+    getNextKeyStatus('creating_remote', 'remote_created_local_saved'),
+    'active'
+  );
+  assert.equal(
+    getNextKeyStatus('creating_remote', 'remote_created_local_failed'),
+    'remote_created_binding_failed'
+  );
+});
+
+test('disable and delete failures remain pending or retriable instead of completed', () => {
+  assert.equal(
+    getNextKeyStatus('disable_pending', 'remote_failed_retriable'),
+    'failed_retriable'
+  );
+  assert.equal(
+    getNextKeyStatus('disable_pending', 'remote_confirmed'),
+    'disabled'
+  );
+  assert.equal(
+    getNextKeyStatus('delete_pending', 'remote_confirmed'),
+    'deleted'
+  );
+});
+
+test('retriable statuses are explicit', () => {
+  assert.equal(canRetryKeyStatus('failed_retriable'), true);
+  assert.equal(canRetryKeyStatus('remote_created_binding_failed'), true);
+  assert.equal(canRetryKeyStatus('failed_terminal'), false);
+});
+
+test('key mutation actions are available only for remotely actionable statuses', () => {
+  assert.equal(canDisableKeyStatus('active'), true);
+  assert.equal(canDisableKeyStatus('disabled'), false);
+  assert.equal(canDisableKeyStatus('disable_pending'), false);
+  assert.equal(canDisableKeyStatus('failed_retriable'), false);
+
+  assert.equal(canDeleteKeyStatus('active'), true);
+  assert.equal(canDeleteKeyStatus('disabled'), true);
+  assert.equal(canDeleteKeyStatus('deleted'), false);
+  assert.equal(canDeleteKeyStatus('delete_pending'), false);
+  assert.equal(canDeleteKeyStatus('remote_created_binding_failed'), false);
+});
+
+test('usage sync state marks stale and failed windows', () => {
+  const now = new Date('2026-05-24T12:00:00.000Z');
+
+  assert.equal(getUsageSyncState(null, now), 'empty');
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T11:56:00.000Z'), now),
+    'ready'
+  );
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T11:20:00.000Z'), now),
+    'stale'
+  );
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T09:30:00.000Z'), now),
+    'failed'
+  );
+});

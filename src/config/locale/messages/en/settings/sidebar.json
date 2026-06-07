@@ -1,0 +1,36 @@
+{
+  "title": "Settings",
+  "nav": {
+    "items": [
+      {
+        "title": "Dashboard",
+        "url": "/dashboard",
+        "icon": "Gauge"
+      },
+      {
+        "title": "APIPool Billing",
+        "url": "/dashboard/billing",
+        "icon": "CreditCard"
+      },
+      {
+        "title": "APIPool API Keys",
+        "url": "/dashboard/api-keys",
+        "icon": "RiKeyLine"
+      }
+    ]
+  },
+  "top_nav": {
+    "items": [
+      {
+        "title": "Dashboard",
+        "url": "/dashboard",
+        "icon": "Activity"
+      },
+      {
+        "title": "Dashboard",
+        "url": "/dashboard",
+        "icon": "Gauge"
+      }
+    ]
+  }
+}

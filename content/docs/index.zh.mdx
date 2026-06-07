@@ -1,0 +1,82 @@
+---
+title: APIPool 快速接入
+description: 创建 Key 并调用 APIPool API 的 MVP 最小文档。
+---
+
+## Base URL
+
+```text
+https://api.apipool.dev/v1
+```
+
+请使用 APIPool 门户创建的 API Key 调用这个 Base URL。
+
+## 鉴权
+
+在请求中传入 `Authorization` header：
+
+```text
+Authorization: Bearer $APIPOOL_API_KEY
+```
+
+完整 Key 只会在创建成功后展示一次。之后控制台列表只显示 masked key。
+
+## curl
+
+```bash
+curl https://api.apipool.dev/v1/chat/completions \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
+```
+
+## JavaScript
+
+```ts
+const response = await fetch("https://api.apipool.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.APIPOOL_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Hello from APIPool" }],
+  }),
+});
+
+console.log(await response.json());
+```
+
+## Python
+
+```python
+import os
+import requests
+
+response = requests.post(
+    "https://api.apipool.dev/v1/chat/completions",
+    headers={
+        "Authorization": f"Bearer {os.environ['APIPOOL_API_KEY']}",
+        "Content-Type": "application/json",
+    },
+    json={
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "Hello from APIPool"}],
+    },
+)
+
+print(response.json())
+```
+
+## 常见状态
+
+- `401`：Key 缺失、无效、已禁用或已删除。
+- `403`：Key 没有目标模型权限。
+- `429`：账户或上游路由被限频。
+- `402` 或额度错误：账户需要运营人工调额。
+
+## MVP 计费说明
+
+MVP 不开放自助支付。新用户默认 0 额度，由运营人工调额；门户会在
+APIPool 账本 v0 中记录调额证据。
