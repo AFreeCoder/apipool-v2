@@ -16,17 +16,11 @@ import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
 
 const nav = [
-  { href: '/models', label: 'Model Market' },
+  { href: '/models', label: 'Models & Pricing' },
   { href: '/docs', label: 'API Docs' },
-  { href: '/pricing', label: 'Pricing' },
 ];
 
-const mobileNav = [
-  ...nav,
-  { href: '/updates', label: 'API Updates' },
-  { href: '/blog', label: 'Blog' },
-  { href: '/dashboard', label: 'Dashboard' },
-];
+const mobileNav = [...nav, { href: '/dashboard', label: 'Dashboard' }];
 
 export function SiteShell({ children }: { children: ReactNode }) {
   return (
@@ -169,8 +163,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <div className="space-y-3">
             <div className="font-medium">Resources</div>
             <div className="text-muted-foreground grid gap-2">
-              <Link href="/updates">API Updates</Link>
-              <Link href="/blog">Blog</Link>
+              <Link href="/models">Models & Pricing</Link>
+              <Link href="/docs">API Docs</Link>
               <Link href="/privacy-policy">Privacy Policy</Link>
               <Link href="/terms-of-service">Terms of Service</Link>
             </div>

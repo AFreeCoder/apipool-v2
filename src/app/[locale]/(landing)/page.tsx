@@ -254,7 +254,7 @@ My question: How do I send my first chat request with ${APIPOOL_CONFIG.defaultLa
                 {popularModels.slice(0, 4).map((model) => (
                   <Link
                     key={model.slug}
-                    href={`/models/${model.slug}`}
+                    href="/models"
                     className="bg-background hover:border-primary/40 rounded-xl border p-4 transition hover:shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -338,7 +338,7 @@ My question: How do I send my first chat request with ${APIPOOL_CONFIG.defaultLa
               return (
                 <Link
                   key={model.slug}
-                  href={`/models/${model.slug}`}
+                  href="/models"
                   className="group bg-card hover:border-primary/40 flex min-h-60 flex-col rounded-xl border p-5 transition hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-3">

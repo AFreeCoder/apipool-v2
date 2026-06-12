@@ -9,7 +9,6 @@ import {
   publicModels,
 } from '@/features/api-catalog/lib/catalog';
 import {
-  ArrowRight,
   CircleDollarSign,
   Layers3,
   SlidersHorizontal,
@@ -143,10 +142,9 @@ export default async function ModelsPage({
                 const price = formatModelPrice(model);
 
                 return (
-                  <Link
+                  <div
                     key={model.slug}
-                    href={`/models/${model.slug}`}
-                    className="group bg-card hover:border-primary/40 flex min-h-72 flex-col rounded-xl border p-5 transition hover:shadow-md"
+                    className="group bg-card flex min-h-72 flex-col rounded-xl border p-5"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -205,12 +203,8 @@ export default async function ModelsPage({
                           </div>
                         </div>
                       </div>
-                      <div className="text-primary mt-4 inline-flex items-center gap-2 text-sm font-medium">
-                        View details
-                        <ArrowRight className="size-4 transition group-hover:translate-x-1" />
-                      </div>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>

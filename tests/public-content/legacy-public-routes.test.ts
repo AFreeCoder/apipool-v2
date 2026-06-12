@@ -24,6 +24,10 @@ const legacyPublicRedirects = [
     destination: '/models',
   },
   {
+    file: 'src/app/[locale]/(landing)/models/[slug]/page.tsx',
+    destination: '/models',
+  },
+  {
     file: 'src/app/[locale]/(landing)/updates/page.tsx',
     destination: '/docs',
   },
