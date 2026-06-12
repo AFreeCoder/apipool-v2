@@ -24,6 +24,18 @@ function formatContextWindow(tokens: number) {
   return String(tokens);
 }
 
+const FILTER_OPTION_LABELS: Record<string, string> = {
+  available: 'Available',
+  coming_soon: 'Coming soon',
+};
+
+function formatFilterOption(option: string) {
+  return (
+    FILTER_OPTION_LABELS[option] ||
+    option.charAt(0).toUpperCase() + option.slice(1)
+  );
+}
+
 export default async function ModelsPage({
   params,
   searchParams,
@@ -80,11 +92,11 @@ export default async function ModelsPage({
                       })}
                       className={
                         active
-                          ? 'bg-primary text-primary-foreground rounded-md px-2.5 py-1 text-xs font-medium'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted rounded-md border px-2.5 py-1 text-xs transition-colors'
+                          ? 'bg-primary text-primary-foreground focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
                       }
                     >
-                      {option}
+                      {formatFilterOption(option)}
                     </Link>
                   );
                 })}

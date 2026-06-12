@@ -121,7 +121,7 @@ export default async function HomePage({
                 <code>{quickstartCurl}</code>
               </pre>
               <div className="border-t border-white/10 px-4 py-3 font-mono text-xs leading-6">
-                <span className="text-white/40">{'// response'}</span>
+                <span className="text-white/60">{'// response'}</span>
                 <div className="text-white/70">
                   {'{ "choices": [ { "message": { "content": "Hello!" } } ] }'}
                 </div>

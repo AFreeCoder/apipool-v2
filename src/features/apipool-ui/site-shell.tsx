@@ -1,9 +1,10 @@
 import { ReactNode } from 'react';
 import Image from 'next/image';
-import { ArrowRight, Github, Mail } from 'lucide-react';
+import { ArrowRight, Mail } from 'lucide-react';
 
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
+import { SignUser } from '@/shared/blocks/sign/sign-user';
 import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
 
@@ -47,15 +48,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center justify-end gap-2">
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="hidden sm:inline-flex"
-            >
-              <Link href="/sign-in">Log in</Link>
-            </Button>
-            <Button asChild size="sm">
+            <SignUser
+              signButtonSize="sm"
+              userNav={{ items: [], show_name: true, show_sign_out: true }}
+            />
+            <Button asChild size="sm" variant="outline">
               <Link href="/dashboard">
                 Console
                 <ArrowRight className="size-4" />
@@ -71,7 +68,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
-              className="text-muted-foreground hover:text-foreground shrink-0 rounded-md px-3 py-1.5 text-sm whitespace-nowrap"
+              className="text-muted-foreground hover:text-foreground shrink-0 rounded-md px-3 py-3 text-sm whitespace-nowrap"
             >
               {item.label}
             </Link>
@@ -104,16 +101,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
               <a
                 href={`mailto:${APIPOOL_CONFIG.supportEmail}`}
                 aria-label="Email support"
-                className="hover:text-foreground transition-colors"
+                className="hover:text-foreground inline-flex items-center gap-2 transition-colors"
               >
                 <Mail className="size-4" />
-              </a>
-              <a
-                href="https://github.com"
-                aria-label="GitHub"
-                className="hover:text-foreground transition-colors"
-              >
-                <Github className="size-4" />
+                <span className="text-xs">{APIPOOL_CONFIG.supportEmail}</span>
               </a>
             </div>
           </div>

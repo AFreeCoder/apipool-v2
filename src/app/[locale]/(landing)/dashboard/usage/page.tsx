@@ -4,6 +4,12 @@ import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
 import { StatCard } from '@/features/api-console/components/stat-card';
 import { getUserInfo } from '@/shared/models/user';
 
+// 常规金额 2 位小数；仅 1 美分以下的微额展示 4 位
+function formatSpend(value: number | undefined | null) {
+  if (value === undefined || value === null) return '—';
+  return `$${value.toFixed(value > 0 && value < 0.01 ? 4 : 2)}`;
+}
+
 export default async function UsagePage({
   params,
 }: {
@@ -30,10 +36,13 @@ export default async function UsagePage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Usage</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Last 7 days · sync state: {usage.summary.status}
-          {usage.summary.syncedAt
-            ? ` · synced ${new Date(usage.summary.syncedAt).toLocaleString()}`
-            : ''}
+          {usage.summary.status === 'empty'
+            ? 'No usage in the last 7 days yet.'
+            : `Last 7 days${
+                usage.summary.syncedAt
+                  ? ` · synced ${new Date(usage.summary.syncedAt).toLocaleString()}`
+                  : ''
+              }`}
         </p>
       </div>
 
@@ -50,14 +59,7 @@ export default async function UsagePage({
           label="Output tokens"
           value={usage.summary.outputTokens.toLocaleString()}
         />
-        <StatCard
-          label="Spend"
-          value={
-            usage.summary.spendUsd === undefined
-              ? '—'
-              : `$${usage.summary.spendUsd.toFixed(4)}`
-          }
-        />
+        <StatCard label="Spend" value={formatSpend(usage.summary.spendUsd)} />
       </div>
 
       <div className="bg-background overflow-hidden rounded-xl border">
@@ -96,9 +98,7 @@ export default async function UsagePage({
                       {model.tokens.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {model.spendUsd === undefined
-                        ? '—'
-                        : `$${model.spendUsd.toFixed(4)}`}
+                      {formatSpend(model.spendUsd)}
                     </td>
                   </tr>
                 ))}

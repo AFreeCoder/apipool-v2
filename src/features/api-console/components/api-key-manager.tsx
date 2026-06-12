@@ -255,6 +255,7 @@ export function ApiKeyManager({
                           navigator.clipboard.writeText(key.keyMasked)
                         }
                         title="Copy masked key"
+                        aria-label="Copy masked key"
                       >
                         <Copy className="size-4" />
                       </Button>
@@ -268,6 +269,7 @@ export function ApiKeyManager({
                             ? 'Disable key'
                             : 'Key cannot be disabled in this state'
                         }
+                        aria-label="Disable key"
                       >
                         <Ban className="size-4" />
                       </Button>
@@ -281,6 +283,7 @@ export function ApiKeyManager({
                             ? 'Delete key'
                             : 'Key cannot be deleted in this state'
                         }
+                        aria-label="Delete key"
                       >
                         <Trash2 className="size-4" />
                       </Button>

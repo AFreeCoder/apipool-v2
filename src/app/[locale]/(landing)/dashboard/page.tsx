@@ -150,7 +150,12 @@ export default async function DashboardPage({
                     <td className="px-4 py-2.5 text-right font-mono">
                       {log.spendUsd === undefined || log.spendUsd === null
                         ? '—'
-                        : `$${Number(log.spendUsd).toFixed(4)}`}
+                        : `$${Number(log.spendUsd).toFixed(
+                            Number(log.spendUsd) > 0 &&
+                              Number(log.spendUsd) < 0.01
+                              ? 4
+                              : 2
+                          )}`}
                     </td>
                   </tr>
                 ))}

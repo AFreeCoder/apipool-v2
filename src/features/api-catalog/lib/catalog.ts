@@ -304,7 +304,10 @@ export function getQuickstartCurl(modelId = getDefaultCallableModelId()) {
   return `curl ${APIPOOL_CONFIG.apiBaseUrl}/chat/completions \\
   -H "Authorization: Bearer $APIPOOL_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"${modelId}","messages":[{"role":"user","content":"Hello from APIPool"}]}'`;
+  -d '{
+    "model": "${modelId}",
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'`;
 }
 
 export function getCallableModelQuickstartCurl(model: ApiModel) {
