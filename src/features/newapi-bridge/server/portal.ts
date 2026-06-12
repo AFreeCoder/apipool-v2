@@ -26,13 +26,17 @@ import {
 import { getUuid } from '@/shared/lib/hash';
 import { User } from '@/shared/models/user';
 
+import { createHash, randomBytes } from 'node:crypto';
+
 import {
   createNewApiClient,
   NewApiBridgeError,
   NewApiClient,
   type NewApiBridgeErrorCode,
+  type NewApiUserCredentials,
   type RemoteKey,
 } from './client';
+import { decryptCredential, encryptCredential } from './crypto';
 
 export type PortalKeyCreateInput = {
   name: string;
@@ -256,61 +260,114 @@ export async function getPortalUserBinding(portalUserId: string) {
   return binding;
 }
 
+// 远端 token 名称上限 30 字符，用本地 keyId 压缩出唯一技术名，
+// 兼作门户侧幂等键（client.createKey 先查同名 token 再创建）
+function deriveRemoteKeyName(localKeyId: string) {
+  return `pk_${localKeyId.replace(/-/g, '').slice(0, 24)}`;
+}
+
+function deriveNewapiUsername(portalUserId: string) {
+  const digest = createHash('sha256').update(portalUserId).digest('hex');
+  return `pu_${digest.slice(0, 16)}`;
+}
+
+function generateNewapiPassword() {
+  // New API 密码校验 8-20 字符；15 字节 base64url 恰为 20 字符
+  return randomBytes(15).toString('base64url');
+}
+
+function bindingToUserCredentials(binding: {
+  newapiUserId: string;
+  newapiAccessTokenEnc?: string | null;
+}): NewApiUserCredentials {
+  if (!binding.newapiAccessTokenEnc) {
+    throw new NewApiBridgeError({
+      code: 'not_configured',
+      message: 'New API user binding has no stored access token',
+    });
+  }
+  return {
+    newapiUserId: binding.newapiUserId,
+    accessToken: decryptCredential(binding.newapiAccessTokenEnc),
+  };
+}
+
 export async function ensurePortalUserBinding(
   user: Pick<User, 'id' | 'email'>,
   client: NewApiClient = createNewApiClient()
 ) {
   const existing = await getPortalUserBinding(user.id);
-  if (existing && existing.status === 'active') return existing;
+  if (
+    existing &&
+    existing.status === 'active' &&
+    existing.newapiAccessTokenEnc
+  ) {
+    return existing;
+  }
 
   const idempotencyKey = `portal-user:${user.id}`;
-  try {
-    const remote = await client.createUser({
-      portalUserId: user.id,
-      email: user.email,
-    });
-    const row = {
-      id: existing?.id || getUuid(),
-      portalUserId: user.id,
-      newapiUserId: remote.id,
-      status: 'active',
-    };
+  const username = existing?.newapiUsername || deriveNewapiUsername(user.id);
+  const password = existing?.newapiPasswordEnc
+    ? decryptCredential(existing.newapiPasswordEnc)
+    : generateNewapiPassword();
 
-    if (existing) {
-      const [updated] = await db()
-        .update(newApiUserBinding)
-        .set({
-          newapiUserId: remote.id,
-          status: 'active',
-        })
-        .where(eq(newApiUserBinding.id, existing.id))
-        .returning();
-      await recordAudit({
-        portalUserId: user.id,
-        action: 'newapi.user.bind',
-        targetType: 'newapi_user',
-        targetId: remote.id,
-        status: 'success',
-        idempotencyKey,
-        responseBody: remote,
-      });
-      return updated;
-    }
-
+  // 凭据先行落库：远端供给中途失败时，重试能用同一套用户名/密码恢复
+  // （provisionUser 对已存在的远端用户是幂等的）
+  let row = existing;
+  if (existing) {
+    const [updated] = await db()
+      .update(newApiUserBinding)
+      .set({
+        newapiUsername: username,
+        newapiPasswordEnc: encryptCredential(password),
+        status: 'pending',
+      })
+      .where(eq(newApiUserBinding.id, existing.id))
+      .returning();
+    row = updated;
+  } else {
     const [created] = await db()
       .insert(newApiUserBinding)
-      .values(row)
+      .values({
+        id: getUuid(),
+        portalUserId: user.id,
+        newapiUserId: `pending:${getUuid()}`,
+        status: 'pending',
+        newapiUsername: username,
+        newapiPasswordEnc: encryptCredential(password),
+      })
       .returning();
+    row = created;
+  }
+
+  try {
+    const remote = await client.provisionUser({
+      username,
+      password,
+      displayName: username,
+    });
+
+    const [bound] = await db()
+      .update(newApiUserBinding)
+      .set({
+        newapiUserId: remote.newapiUserId,
+        newapiAccessTokenEnc: encryptCredential(remote.accessToken),
+        status: 'active',
+      })
+      .where(eq(newApiUserBinding.id, row.id))
+      .returning();
+
     await recordAudit({
       portalUserId: user.id,
       action: 'newapi.user.bind',
       targetType: 'newapi_user',
-      targetId: remote.id,
+      targetId: remote.newapiUserId,
       status: 'success',
       idempotencyKey,
-      responseBody: remote,
+      // 审计绝不落凭据，只记用户名与远端 ID
+      responseBody: { username, newapiUserId: remote.newapiUserId },
     });
-    return created;
+    return bound;
   } catch (error: any) {
     await recordAudit({
       portalUserId: user.id,
@@ -318,6 +375,7 @@ export async function ensurePortalUserBinding(
       targetType: 'newapi_user',
       status: 'failed',
       idempotencyKey,
+      requestBody: { username },
       errorMessage: error?.message || 'bind failed',
     });
     throw error;
@@ -330,8 +388,10 @@ export async function createPortalApiKey(
   client: NewApiClient = createNewApiClient()
 ) {
   const binding = await ensurePortalUserBinding(user, client);
+  const credentials = bindingToUserCredentials(binding);
   const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
   const localKeyId = getUuid();
+  const remoteName = deriveRemoteKeyName(localKeyId);
   const allowedModels =
     input.allowedModels && input.allowedModels.length > 0
       ? input.allowedModels
@@ -358,12 +418,11 @@ export async function createPortalApiKey(
   let remote: Awaited<ReturnType<NewApiClient['createKey']>>;
   try {
     remote = await client.createKey({
-      newapiUserId: binding.newapiUserId,
-      name: input.name,
+      user: credentials,
+      remoteName,
       allowedModels,
-      quotaLimit: input.quotaLimit,
+      quotaLimitUsd: input.quotaLimit,
       ipAllowlist: input.ipAllowlist || [],
-      idempotencyKey,
     });
   } catch (error: any) {
     const status = getFailedKeyMutationStatus(error);
@@ -486,7 +545,7 @@ async function syncPortalApiKeyStatuses(
   if (!binding || binding.status !== 'active') return rows;
 
   try {
-    const remoteKeys = await client.listKeys(binding.newapiUserId);
+    const remoteKeys = await client.listKeys(bindingToUserCredentials(binding));
     const remoteById = new Map(remoteKeys.map((key) => [key.id, key]));
     const syncedRows = [];
 
@@ -559,6 +618,12 @@ export async function disablePortalApiKey(
     throw new Error('API key is not in active state');
   }
 
+  const binding = await getPortalUserBinding(portalUserId);
+  if (!binding || binding.status !== 'active') {
+    throw new Error('New API user binding not found');
+  }
+  const credentials = bindingToUserCredentials(binding);
+
   const idempotencyKey = `portal-key-disable:${portalUserId}:${keyId}:${getUuid()}`;
 
   await db()
@@ -567,7 +632,7 @@ export async function disablePortalApiKey(
     .where(eq(newApiKeyBinding.id, keyId));
 
   try {
-    const remote = await client.disableKey(row.newapiKeyId, idempotencyKey);
+    const remote = await client.disableKey(credentials, row.newapiKeyId);
     if (remote.status !== 'disabled') {
       throw new NewApiBridgeError({
         code: 'remote_error',
@@ -635,6 +700,12 @@ export async function deletePortalApiKey(
     throw new Error('API key is not in deletable state');
   }
 
+  const binding = await getPortalUserBinding(portalUserId);
+  if (!binding || binding.status !== 'active') {
+    throw new Error('New API user binding not found');
+  }
+  const credentials = bindingToUserCredentials(binding);
+
   const idempotencyKey = `portal-key-delete:${portalUserId}:${keyId}:${getUuid()}`;
 
   await db()
@@ -643,7 +714,7 @@ export async function deletePortalApiKey(
     .where(eq(newApiKeyBinding.id, keyId));
 
   try {
-    const remote = await client.deleteKey(row.newapiKeyId, idempotencyKey);
+    const remote = await client.deleteKey(credentials, row.newapiKeyId);
     if (remote.id !== row.newapiKeyId) {
       throw new NewApiBridgeError({
         code: 'remote_error',
@@ -753,10 +824,11 @@ export async function getPortalUsage(
     });
 
   try {
+    const credentials = bindingToUserCredentials(binding);
     const [quota, summary, logs] = await Promise.all([
-      client.getQuota(binding.newapiUserId),
-      client.getUsageSummary(binding.newapiUserId, range),
-      client.listUsageLogs(binding.newapiUserId, 20),
+      client.getQuota(credentials),
+      client.getUsageSummary(credentials, range),
+      client.listUsageLogs(credentials, 20),
     ]);
     const syncedAt = new Date();
 
@@ -939,10 +1011,10 @@ export async function adjustPortalQuota(input: {
 
   try {
     const remote = await client.adjustQuota({
-      newapiUserId: binding.newapiUserId,
+      user: bindingToUserCredentials(binding),
       amountUsd: input.amountUsd,
       reason: input.reason,
-      idempotencyKey,
+      reference: idempotencyKey,
     });
     const [updated] = await db()
       .update(apipoolLedgerEntry)

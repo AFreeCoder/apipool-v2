@@ -420,6 +420,9 @@ export const newApiUserBinding = table(
       .references(() => user.id, { onDelete: 'cascade' }),
     newapiUserId: text('newapi_user_id').notNull(),
     status: text('status').notNull(), // pending, active, disabled
+    newapiUsername: text('newapi_username'),
+    newapiPasswordEnc: text('newapi_password_enc'),
+    newapiAccessTokenEnc: text('newapi_access_token_enc'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)
       .notNull(),

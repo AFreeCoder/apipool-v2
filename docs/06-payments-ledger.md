@@ -24,7 +24,7 @@
 ```
 1. webhook 确认订单 paid、本地 credit 入账
 2. 写 apipoolLedgerEntry（source='recharge'，status='pending'，关联 order_no）
-3. 管理员上下文 POST /api/redemption/ 生成一次性兑换码（金额 = 订单美元 × QUOTA_PER_UNIT，名称含 order_no 便于对账）
+3. 管理员上下文 POST /api/redemption/ 生成一次性兑换码（金额 = 订单美元 × QUOTA_PER_UNIT；名称限长 20 字符，存 order_no 的短哈希，对账以兑换码值关联 ledger）
 4. 用户上下文 POST /api/user/topup { key: 兑换码 } 完成兑换
 5. ledger 置 applied，记录兑换码 ID 作为 changeId
 ```

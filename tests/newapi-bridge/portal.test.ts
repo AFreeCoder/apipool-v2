@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createClient } from '@libsql/client';
@@ -18,13 +18,13 @@ async function setupPortalDb() {
   process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
   process.env.DB_MIGRATIONS_OUT = './src/config/db/migrations_sqlite';
   process.env.DB_SINGLETON_ENABLED = 'false';
+  process.env.APIPOOL_CREDENTIALS_SECRET = 'portal-test-secret';
 
   const client = createClient({ url: `file:${dbPath}` });
-  const migration = await readFile(
-    join(process.cwd(), 'src/config/db/migrations_sqlite/0000_quiet_stick.sql'),
-    'utf8'
-  );
-  await client.executeMultiple(migration);
+  const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  for (const file of (await readdir(migrationsDir)).filter((name) => name.endsWith('.sql')).sort()) {
+    await client.executeMultiple(await readFile(join(migrationsDir, file), 'utf8'));
+  }
 
   const { user } = await import('@/config/db/schema');
   const { newApiBridgeAuditLog, newApiKeyBinding, usageLogSnapshot, usageSnapshot } =
@@ -58,8 +58,9 @@ async function insertUser(id: string, email: string) {
 
 function createSuccessfulRemoteClient() {
   return {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     createKey: async () => {
       remoteKeySeq += 1;
@@ -70,12 +71,12 @@ function createSuccessfulRemoteClient() {
         status: 'active',
       };
     },
-    disableKey: async (newapiKeyId: string) => ({
+    disableKey: async (_user: any, newapiKeyId: string) => ({
       id: newapiKeyId,
       maskedKey: 'sk-...disabled',
       status: 'disabled',
     }),
-    deleteKey: async (newapiKeyId: string) => ({
+    deleteKey: async (_user: any, newapiKeyId: string) => ({
       id: newapiKeyId,
       deleted: true,
     }),
@@ -101,7 +102,7 @@ test('createPortalApiKey keeps a retriable local key row when remote creation fa
   );
 
   const fakeRemote = {
-    createUser: async () => ({ id: 'remote_user_1' }),
+    provisionUser: async () => ({ newapiUserId: 'remote_user_1', accessToken: 'test-access-token' }),
     createKey: async () => {
       throw new modules.NewApiBridgeError({
         code: 'timeout',
@@ -141,7 +142,7 @@ test('createPortalApiKey rejects remote-created keys that are not active', async
   );
 
   const fakeRemote = {
-    createUser: async () => ({ id: 'remote_user_disabled_key' }),
+    provisionUser: async () => ({ newapiUserId: 'remote_user_disabled_key', accessToken: 'test-access-token' }),
     createKey: async () => ({
       id: 'remote_key_disabled_on_create',
       key: 'sk-disabled-on-create',
@@ -191,8 +192,9 @@ test('createPortalApiKey preserves remote-created evidence when local binding fa
   const conflictingRemoteId = existingRow.newapiKeyId;
 
   const failingRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     createKey: async () => ({
       id: conflictingRemoteId,
@@ -456,7 +458,7 @@ test('disablePortalApiKey keeps retriable failure when remote does not confirm d
 
   const unconfirmedRemote = {
     ...remote,
-    disableKey: async (newapiKeyId: string) => ({
+    disableKey: async (_user: any, newapiKeyId: string) => ({
       id: newapiKeyId,
       maskedKey: 'sk-...still-active',
       status: 'active',
@@ -701,8 +703,9 @@ test('adjustPortalQuota applies ledger only after New API returns a change id', 
     'ops-success@example.com'
   );
   const fakeRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     adjustQuota: async () => ({
       changeId: 'change_success_1',
@@ -733,8 +736,9 @@ test('customer ledger list does not expose New API or operator internals', async
     'safe-ledger-ops@example.com'
   );
   const fakeRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     adjustQuota: async () => ({
       changeId: 'change_safe_ledger_1',
@@ -771,8 +775,9 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
     'ops@example.com'
   );
   const fakeRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     adjustQuota: async () => {
       throw new modules.NewApiBridgeError({
@@ -816,8 +821,9 @@ test('getPortalUsage snapshots repeated remote logs only once', async () => {
     createdAt: '2026-05-24T10:00:00.000Z',
   };
   const fakeRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     getQuota: async () => ({ balanceUsd: 25, quotaRemaining: 25 }),
     getUsageSummary: async () => ({
@@ -870,8 +876,9 @@ test('cached usage logs do not expose internal snapshot or New API request field
     createdAt: '2026-05-24T11:00:00.000Z',
   };
   const healthyRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
     getQuota: async () => ({ balanceUsd: 30, quotaRemaining: 30 }),
     getUsageSummary: async () => ({
@@ -922,8 +929,9 @@ test('getPortalUsage returns syncing snapshot without duplicate remote reads', a
     'usage-syncing@example.com'
   );
   const healthyRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
   } as any;
 
@@ -982,8 +990,9 @@ test('getPortalUsage returns failed when initial usage sync has no cached data',
     'usage-initial-failure@example.com'
   );
   const healthyRemote = {
-    createUser: async (input: { portalUserId: string }) => ({
-      id: `remote_${input.portalUserId}`,
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
   } as any;
   const failingRemote = {

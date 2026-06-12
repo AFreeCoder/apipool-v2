@@ -61,7 +61,7 @@ New-Api-User: <该令牌所属用户的 ID>
 | 门户操作 | 凭据上下文 | 方法与路径 | 实测说明 |
 |---|---|---|---|
 | 健康检查 | 无 | `GET /api/status` | ✅公开接口，返回 `version`、`quota_per_unit` |
-| 创建用户 | 管理员 | `POST /api/user/` | ✅body `{username, password, display_name}`；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查 |
+| 创建用户 | 管理员 | `POST /api/user/` | ✅body `{username, password, display_name}`；**密码限长 8-20 字符**（超长报 `Password failed on the 'max' tag`）；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查 |
 | 读取用户额度 | 用户 | `GET /api/user/self` | ✅`data.quota` 为整数 |
 | 创建 Key | 用户 | `POST /api/token/` | ✅字段：`name`、`remain_quota`、`unlimited_quota`、`expired_time`(-1 永久)、`model_limits_enabled`+`model_limits`、`allow_ips`、`group`；**响应不含 key**；自带 `key` 字段会被忽略 |
 | 读取完整 Key | 用户 | `POST /api/token/:id/key` | ✅返回 48 字符明文（限流保护）；**用户实际调用需加 `sk-` 前缀**；列表/单查接口的 key 一律掩码 |
@@ -70,7 +70,7 @@ New-Api-User: <该令牌所属用户的 ID>
 | 删除 Key | 用户 | `DELETE /api/token/:id` | |
 | 用量汇总 | 用户 | `GET /api/data/self` | ✅参数 `start_timestamp`/`end_timestamp`/`default_time=hour\|day` |
 | 消费日志 | 用户 | `GET /api/log/self?p=1&page_size=N&type=0` | ✅分页；type=1 为充值记录、type=2 为消费记录 |
-| 生成兑换码 | 管理员 | `POST /api/redemption/` | ✅body `{name, quota, count}`（quota 为整数额度单位）；**响应 `data` 直接返回码值数组**；name 写 order_no 便于对账 |
+| 生成兑换码 | 管理员 | `POST /api/redemption/` | ✅body `{name, quota, count}`（quota 为整数额度单位）；**响应 `data` 直接返回码值数组**；name 限长 20 字符（源码校验），存 reference 短哈希，对账以码值关联 |
 | 兑换加额 | 用户 | `POST /api/user/topup` | ✅body `{key}`；返回 `data:<加额数>`；**一码一兑实测成立**，重复兑换报错 |
 | 手动调额（兜底） | 管理员 | `PUT /api/user/` 全量更新 quota | 读改写有竞态，只作降级方案且需串行化 |
 
