@@ -20,6 +20,7 @@ import {
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 
+import { LegalNotice } from './legal-notice';
 import { SocialProviders } from './social-providers';
 
 export function SignIn({
@@ -210,6 +211,8 @@ export function SignIn({
             loading={loading}
             setLoading={setLoading}
           />
+
+          <LegalNotice />
         </div>
       </CardContent>
       {isEmailAuthEnabled && (

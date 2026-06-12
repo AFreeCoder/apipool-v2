@@ -42,7 +42,10 @@
     "verify_email_account_mismatch": "Signed in as {current}. This page is waiting for {expected}.",
     "resend_verification_countdown": "Resend verification email ({seconds}s)",
     "resend_verification_wait": "Please wait {seconds}s before resending.",
-    "back_to_sign_in": "Back to Sign In"
+    "back_to_sign_in": "Back to Sign In",
+    "agree_terms": "By continuing, you agree to our <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>.",
+    "region_notice_title": "Important Notice",
+    "region_notice": "{brand} does not provide services to users in mainland China. By continuing, you confirm that you are not located in mainland China and that your use of the service complies with the laws of your region. If you topped up by mistake from an unsupported region, contact {email} for a refund."
   },
   "payment": {
     "choose_payment_method": "Choose Payment Method",

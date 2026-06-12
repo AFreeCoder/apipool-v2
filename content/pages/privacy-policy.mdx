@@ -1,32 +1,113 @@
 ---
 title: Privacy Policy
 description: APIPool privacy policy
-created_at: 2026-05-24
+created_at: 2026-06-13
 ---
 
-## Overview
+Last Updated: June 13, 2026
 
-APIPool is an API portal for issuing API keys, showing usage, and routing requests through the APIPool API gateway. This MVP stores only the account, key metadata, usage snapshots, recent log snapshots, and manual quota ledger records needed to operate the service.
+APIPool ("we", "us", or "our") respects your privacy. This Privacy Policy explains how we collect, use, store, protect, and disclose your personal data when you use the APIPool website, console, and API gateway (collectively, the "Services"). Terms not defined here have the meaning given in our [Terms of Service](/terms-of-service).
 
-## Data We Collect
+By using the Services, you consent to the collection and use of your personal data as described in this Privacy Policy. If you do not agree with any part of this policy, please do not use the Services.
 
-- Account information: name, email, login provider identifiers, and session metadata.
-- API key metadata: masked key display, key status, creation time, disable/delete status, and the related APIPool internal binding identifiers.
-- Usage and billing data: quota balance, request counts, token totals, recent usage logs, manual adjustments, operator, reason, and rollback status.
-- Operational logs: server-side request identifiers, error codes, and audit events required for support and incident review.
+## 1. Data We Collect
 
-## How We Use Data
+### 1.1 Information You Provide
 
-We use this data to authenticate users, create and manage API keys, display balances and usage, perform manual quota adjustments, troubleshoot failed server-side operations, and protect the service from abuse.
+- Account information: your name, email address, password (stored in hashed form), and identifiers provided by third-party login providers (such as Google or GitHub) when you sign in with them.
+- Communications: records of your correspondence with us, including support emails.
 
-## Sharing
+### 1.2 Payment Information
 
-APIPool does not sell user data. For the MVP, real quota enforcement and usage billing are handled by APIPool server-side systems. Related calls are server-side only, and the browser never receives internal user identifiers.
+Payments are processed by third-party payment processors, currently [Stripe](https://stripe.com) and [Creem](https://www.creem.io). Your card numbers and other sensitive payment details are collected and processed by these processors, not by us. We retain transaction records such as order numbers, amounts, currency, payment status, and timestamps for billing and reconciliation.
 
-## Security
+### 1.3 Information Collected Automatically
 
-API key plaintext is shown once after creation. Stored key values are masked for display. Admin credentials must stay in server-only environment variables. Operations that change remote state are audited.
+When you use the Services, we automatically collect technical information such as your IP address, browser type and version, operating system, time zone, pages visited, and server-side request logs (request identifiers, error codes, and audit events) used for security, support, and incident review.
 
-## Contact
+### 1.4 API Usage Data
 
-For privacy questions, contact [support@apipool.dev](mailto:support@apipool.dev).
+To operate the gateway and bill your usage, we record:
+
+- API key metadata: masked key display, key status, creation time, and internal binding identifiers. Key plaintext is shown only once at creation and is not displayed again.
+- Usage and billing data: credit balance, request counts, token totals, models used, timestamps, status codes, recent usage logs, and quota ledger records (including adjustments, operator, reason, and rollback status).
+
+### 1.5 API Inputs and Outputs
+
+Content you submit through the API ("Inputs") is transmitted to the relevant upstream AI model provider to generate responses ("Outputs"). We do not use your Inputs or Outputs to train AI models. We retain the operational logs needed for billing, abuse prevention, and support. Upstream providers process your content under their own privacy policies, for example:
+
+- OpenAI: https://openai.com/policies/privacy-policy
+- Anthropic: https://www.anthropic.com/legal/privacy
+- Google: https://policies.google.com/privacy
+
+## 2. Cookies and Analytics
+
+We use strictly necessary cookies to keep you signed in and to secure your session. These are essential for the Services to function and cannot be disabled.
+
+We may also use analytics services (such as Google Analytics or similar tools) to understand how visitors use the website and to improve the Services. Analytics data is collected in aggregate and is not used to serve targeted advertising. You can refuse or delete cookies through your browser settings; disabling cookies may prevent parts of the Services from working properly.
+
+## 3. How We Use Your Data
+
+We use your personal data to:
+
+- provide the Services, including authentication, API key management, request routing, and displaying balances and usage;
+- process payments and maintain accurate billing records;
+- send service notifications, such as email verification, account and billing notices, and changes to our policies;
+- respond to your questions and support requests;
+- monitor, prevent, and investigate fraud, abuse, security incidents, and violations of our Terms of Service;
+- comply with applicable laws and regulations; and
+- analyze aggregate usage to operate and improve the Services.
+
+We do not sell your personal data.
+
+## 4. How We Share Your Data
+
+We share personal data only in the following circumstances:
+
+- Service providers: with vendors that help us operate the Services, such as cloud hosting, payment processing (Stripe, Creem), email delivery, and analytics providers. They may access personal data only to perform tasks on our behalf and are obligated to protect it.
+- Upstream AI model providers: your API Inputs are transmitted to the relevant model provider as necessary to generate responses.
+- Legal requirements: where required by law, regulation, legal process, or governmental request, or where we believe in good faith that disclosure is reasonably necessary to enforce our terms, protect the security of the Services, or protect the rights, property, or safety of APIPool, our users, or the public.
+- Corporate transactions: in connection with a merger, acquisition, restructuring, or sale of assets, in which case we will require the successor to honor this Privacy Policy.
+- With your consent: for any other purpose disclosed to you with your consent.
+
+## 5. Your Rights and Choices
+
+Depending on your place of residence and applicable law (including the GDPR and certain U.S. state privacy laws), you may have the right to:
+
+- know what personal data we process about you, and request access to it and a portable copy;
+- request correction of inaccurate personal data;
+- request deletion of your personal data and your account;
+- object to, or request restriction of, certain processing; and
+- withdraw consent where processing is based on consent, without affecting the lawfulness of processing before withdrawal.
+
+To exercise these rights, contact us at [support@apipool.dev](mailto:support@apipool.dev). We may ask you to verify your identity before fulfilling a request, and we may decline requests where permitted by law.
+
+## 6. Data Security
+
+We implement technical and administrative measures designed to protect your data, including encrypted transmission (HTTPS), hashed password storage, masked display of API keys, encrypted storage of sensitive credentials, and audit logging of state-changing operations.
+
+No method of transmission or storage is completely secure. You are responsible for keeping your password and API keys confidential. If you believe your account has been compromised, contact us immediately.
+
+## 7. Data Retention
+
+We retain personal data for as long as your account is active or as needed to provide the Services, comply with legal and accounting obligations (for example, transaction records), resolve disputes, and enforce our agreements. When data is no longer needed, we delete it or convert it to an anonymized form.
+
+## 8. Eligibility and Children's Privacy
+
+The Services are intended only for users aged 18 and older, and are provided only to users located outside mainland China. We do not knowingly collect personal data from anyone under 18. If you believe a minor has provided us personal data, contact us and we will delete it.
+
+## 9. International Data Transfers
+
+Your personal data may be stored and processed on servers located outside your country or region. Where required by applicable law (such as the GDPR for transfers outside the European Economic Area or the United Kingdom), we rely on appropriate safeguards such as adequacy decisions or standard contractual clauses.
+
+## 10. Changes to This Policy
+
+We may update this Privacy Policy from time to time. The revised policy will be posted on this page with an updated "Last Updated" date. For material changes, we will notify registered users in advance by email or by a notice on the website. Your continued use of the Services after a change takes effect constitutes acceptance of the revised policy.
+
+## 11. Governing Law
+
+Any dispute arising out of or relating to this Privacy Policy is governed by the laws of Hong Kong, without regard to its conflict of laws principles.
+
+## 12. Contact
+
+For privacy questions or to exercise your rights, contact us at [support@apipool.dev](mailto:support@apipool.dev).

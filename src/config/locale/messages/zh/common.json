@@ -42,7 +42,10 @@
     "verify_email_account_mismatch": "当前已登录 {current}，本页面等待 {expected} 的验证结果。",
     "resend_verification_countdown": "重新发送验证邮件（{seconds}秒）",
     "resend_verification_wait": "请等待 {seconds} 秒后再重新发送。",
-    "back_to_sign_in": "返回登录"
+    "back_to_sign_in": "返回登录",
+    "agree_terms": "继续即表示您已阅读并同意我们的<terms>用户协议</terms>与<privacy>隐私政策</privacy>。",
+    "region_notice_title": "重要提示",
+    "region_notice": "{brand} 不向中国大陆地区用户提供服务。继续操作即表示您确认当前不在中国大陆境内，且在您所在地区使用本服务符合当地法律。如您误从不受支持的地区充值，请联系 {email} 申请退款。"
   },
   "payment": {
     "choose_payment_method": "选择支付方式",
