@@ -1,6 +1,7 @@
 import { setRequestLocale } from 'next-intl/server';
 
 import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
+import { StatCard } from '@/features/api-console/components/stat-card';
 import { getUserInfo } from '@/shared/models/user';
 
 export default async function UsagePage({
@@ -27,90 +28,126 @@ export default async function UsagePage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Usage</h1>
-        <p className="mt-2 text-muted-foreground">
-          APIPool API usage synced into the customer portal.
+        <h1 className="text-2xl font-semibold tracking-tight">Usage</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Last 7 days · sync state: {usage.summary.status}
+          {usage.summary.syncedAt
+            ? ` · synced ${new Date(usage.summary.syncedAt).toLocaleString()}`
+            : ''}
         </p>
       </div>
-      <div className="rounded-lg border bg-background p-5">
-        <div className="mb-4 text-sm text-muted-foreground">
-          Sync state: {usage.summary.status}
-          {usage.summary.syncedAt
-            ? ` · Last sync ${new Date(usage.summary.syncedAt).toLocaleString()}`
-            : ''}
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          <div>
-            <div className="text-sm text-muted-foreground">Requests</div>
-            <div className="mt-1 text-2xl font-semibold">
-              {usage.summary.requestCount}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-muted-foreground">Input tokens</div>
-            <div className="mt-1 text-2xl font-semibold">
-              {usage.summary.inputTokens.toLocaleString()}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-muted-foreground">Output tokens</div>
-            <div className="mt-1 text-2xl font-semibold">
-              {usage.summary.outputTokens.toLocaleString()}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-muted-foreground">Spend</div>
-            <div className="mt-1 text-2xl font-semibold">
-              {usage.summary.spendUsd === undefined
-                ? '-'
-                : `$${usage.summary.spendUsd}`}
-            </div>
-          </div>
-        </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Requests"
+          value={usage.summary.requestCount.toLocaleString()}
+        />
+        <StatCard
+          label="Input tokens"
+          value={usage.summary.inputTokens.toLocaleString()}
+        />
+        <StatCard
+          label="Output tokens"
+          value={usage.summary.outputTokens.toLocaleString()}
+        />
+        <StatCard
+          label="Spend"
+          value={
+            usage.summary.spendUsd === undefined
+              ? '—'
+              : `$${usage.summary.spendUsd.toFixed(4)}`
+          }
+        />
       </div>
-      <div className="rounded-lg border bg-background">
-        <div className="border-b p-5 font-medium">Model distribution</div>
+
+      <div className="bg-background overflow-hidden rounded-xl border">
+        <div className="border-b px-5 py-4 font-medium">
+          Model distribution
+        </div>
         {usage.summary.byModel.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            No model distribution is synced yet.
+          <div className="text-muted-foreground p-8 text-center text-sm">
+            No model distribution synced yet.
           </div>
         ) : (
-          <div className="divide-y">
-            {usage.summary.byModel.map((model) => (
-              <div
-                key={model.modelId}
-                className="grid gap-2 p-4 text-sm md:grid-cols-4"
-              >
-                <span>{model.modelId}</span>
-                <span>{model.requests.toLocaleString()} requests</span>
-                <span>{model.tokens.toLocaleString()} tokens</span>
-                <span>
-                  {model.spendUsd === undefined ? '-' : `$${model.spendUsd}`}
-                </span>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    Requests
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    Tokens
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.summary.byModel.map((model) => (
+                  <tr key={model.modelId} className="border-b last:border-b-0">
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {model.modelId}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {model.requests.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {model.tokens.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {model.spendUsd === undefined
+                        ? '—'
+                        : `$${model.spendUsd.toFixed(4)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-      <div className="rounded-lg border bg-background">
-        <div className="border-b p-5 font-medium">Request log</div>
+
+      <div className="bg-background overflow-hidden rounded-xl border">
+        <div className="border-b px-5 py-4 font-medium">Request log</div>
         {usage.logs.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            No request logs are synced yet.
+          <div className="text-muted-foreground p-8 text-center text-sm">
+            No request logs synced yet.
           </div>
         ) : (
-          <div className="divide-y">
-            {usage.logs.map((log) => (
-              <div key={log.id} className="grid gap-2 p-4 text-sm md:grid-cols-5">
-                <span>{log.createdAt.toLocaleString()}</span>
-                <span>{log.keyMasked}</span>
-                <span>{log.modelId}</span>
-                <span>{log.status}</span>
-                <span>
-                  {(log.inputTokens + log.outputTokens).toLocaleString()} tokens
-                </span>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Key</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
+                  <th className="px-4 py-2.5 text-right font-medium">In</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Out</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.logs.map((log) => (
+                  <tr key={log.id} className="border-b last:border-b-0">
+                    <td className="text-muted-foreground px-4 py-2.5">
+                      {log.createdAt.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {log.keyMasked}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {log.modelId}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {log.inputTokens.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {log.outputTokens.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

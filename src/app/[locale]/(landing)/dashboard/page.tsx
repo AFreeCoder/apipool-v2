@@ -1,4 +1,4 @@
-import { BarChart3, CreditCard, KeyRound, Activity } from 'lucide-react';
+import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
 import { setRequestLocale } from 'next-intl/server';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
@@ -43,91 +43,121 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border bg-background p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Dashboard</h1>
-            <p className="mt-2 text-muted-foreground">
-              Manage APIPool keys and monitor quota from the customer portal.
-            </p>
-          </div>
-          <Button asChild>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Keys, balance, and usage for the APIPool API.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/dashboard/billing">Add credit</Link>
+          </Button>
+          <Button asChild size="sm">
             <Link href="/dashboard/api-keys">
               <KeyRound className="size-4" />
-              API Keys
+              Create key
             </Link>
           </Button>
         </div>
-        <div className="mt-5 rounded-md border bg-muted/50 p-4">
-          <div className="text-xs font-medium uppercase text-muted-foreground">
-            Base URL
-          </div>
-          <code className="mt-2 block overflow-x-auto text-sm">
-            {APIPOOL_CONFIG.apiBaseUrl}
-          </code>
-        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatCard
-          label="API Keys"
-          value={keys.length}
-          help="Keys created from this portal"
-          icon={<KeyRound className="size-4 text-muted-foreground" />}
-        />
-        <StatCard
-          label="Requests"
-          value={usage.summary.requestCount}
-          help={`Sync state: ${usage.summary.status}`}
-          icon={<Activity className="size-4 text-muted-foreground" />}
-        />
-        <StatCard
-          label="Tokens"
-          value={(
-            usage.summary.inputTokens + usage.summary.outputTokens
-          ).toLocaleString()}
-          help="Input and output tokens"
-          icon={<BarChart3 className="size-4 text-muted-foreground" />}
-        />
+      <div className="bg-background flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
+        <span className="text-muted-foreground text-xs tracking-wide uppercase">
+          Base URL
+        </span>
+        <code className="bg-muted overflow-x-auto rounded-md border px-2.5 py-1 font-mono text-xs">
+          {APIPOOL_CONFIG.apiBaseUrl}
+        </code>
+        <Link href="/docs" className="text-primary ml-auto text-sm font-medium">
+          Quickstart →
+        </Link>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Balance"
           value={
             usage.summary.balanceUsd === undefined
-              ? 'Not synced'
-              : `$${usage.summary.balanceUsd}`
+              ? '—'
+              : `$${usage.summary.balanceUsd.toFixed(2)}`
           }
-          help="New users start with zero quota"
-          icon={<CreditCard className="size-4 text-muted-foreground" />}
+          help="Billed per token"
+          icon={<Wallet className="text-muted-foreground size-4" />}
+        />
+        <StatCard
+          label="Requests · 7d"
+          value={usage.summary.requestCount.toLocaleString()}
+          help={`Sync: ${usage.summary.status}`}
+          icon={<Activity className="text-muted-foreground size-4" />}
+        />
+        <StatCard
+          label="Tokens · 7d"
+          value={(
+            usage.summary.inputTokens + usage.summary.outputTokens
+          ).toLocaleString()}
+          help="Input + output"
+          icon={<BarChart3 className="text-muted-foreground size-4" />}
+        />
+        <StatCard
+          label="API Keys"
+          value={keys.length}
+          help="Created from this console"
+          icon={<KeyRound className="text-muted-foreground size-4" />}
         />
       </div>
 
-      <div className="rounded-lg border bg-background">
-        <div className="border-b p-5">
+      <div className="bg-background overflow-hidden rounded-xl border">
+        <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="font-medium">Recent requests</h2>
+          <Link
+            href="/dashboard/usage"
+            className="text-primary text-sm font-medium"
+          >
+            View usage →
+          </Link>
         </div>
-        <div className="divide-y">
-          {usage.logs.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
-              No usage yet. Create a key, request quota, and make your first
-              APIPool API call.
-            </div>
-          ) : (
-            usage.logs.map((log) => (
-              <div
-                key={log.id}
-                className="grid gap-2 p-4 text-sm md:grid-cols-5"
-              >
-                <span>{log.createdAt.toLocaleString()}</span>
-                <span>{log.modelId}</span>
-                <span>{log.status}</span>
-                <span>
-                  {(log.inputTokens + log.outputTokens).toLocaleString()} tokens
-                </span>
-                <span>{log.spendUsd === undefined ? '-' : `$${log.spendUsd}`}</span>
-              </div>
-            ))
-          )}
-        </div>
+        {usage.logs.length === 0 ? (
+          <div className="text-muted-foreground p-8 text-center text-sm">
+            No usage yet. Create a key, add credit, and make your first call.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    Tokens
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.logs.slice(0, 8).map((log) => (
+                  <tr key={log.id} className="border-b last:border-b-0">
+                    <td className="text-muted-foreground px-4 py-2.5">
+                      {log.createdAt.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {log.modelId}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {(log.inputTokens + log.outputTokens).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {log.spendUsd === undefined || log.spendUsd === null
+                        ? '—'
+                        : `$${Number(log.spendUsd).toFixed(4)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

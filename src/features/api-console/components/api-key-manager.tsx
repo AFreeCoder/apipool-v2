@@ -32,6 +32,31 @@ type ApiKeyRow = {
 const KEY_CREATION_PAUSED_MESSAGE =
   'API key creation is temporarily paused. Existing keys remain manageable.';
 
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  disabled: 'Disabled',
+  deleted: 'Deleted',
+  creating_remote: 'Creating…',
+  disable_pending: 'Disabling…',
+  delete_pending: 'Deleting…',
+};
+
+function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
+  const className =
+    status === 'active'
+      ? 'bg-primary/10 text-primary'
+      : status.startsWith('failed') || status === 'remote_created_binding_failed'
+        ? 'bg-destructive/10 text-destructive'
+        : 'bg-muted text-muted-foreground';
+  return (
+    <span
+      className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${className}`}
+    >
+      {STATUS_LABELS[status] || status.replaceAll('_', ' ')}
+    </span>
+  );
+}
+
 export function ApiKeyManager({
   initialKeys,
   creationEnabled = true,
@@ -148,8 +173,8 @@ export function ApiKeyManager({
           </Button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          New users start with zero quota. An operator must apply quota before
-          the key can complete paid calls.
+          Add credit on the Balance tab before making paid calls. The full key
+          is shown once after creation.
         </p>
         {!creationEnabled && (
           <p className="mt-2 text-xs text-muted-foreground">
@@ -210,12 +235,16 @@ export function ApiKeyManager({
 
                 return (
                   <TableRow key={key.id}>
-                    <TableCell>{key.displayName}</TableCell>
+                    <TableCell className="font-medium">
+                      {key.displayName}
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
                       {key.keyMasked}
                     </TableCell>
-                    <TableCell>{key.status}</TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell>
+                      <StatusBadge status={key.status} />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
                       {(key.allowedModels || []).join(', ')}
                     </TableCell>
                     <TableCell className="space-x-2 text-right">

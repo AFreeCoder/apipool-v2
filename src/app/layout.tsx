@@ -1,6 +1,6 @@
 import '@/config/style/global.css';
 
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist, JetBrains_Mono } from 'next/font/google';
 import { getLocale, setRequestLocale } from 'next-intl/server';
 import NextTopLoader from 'nextjs-toploader';
 
@@ -20,7 +20,7 @@ const geistSans = Geist({
   preload: true,
 });
 
-const geistMono = Geist_Mono({
+const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-mono',
   display: 'swap',
@@ -96,7 +96,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={`${geistSans.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       <head>

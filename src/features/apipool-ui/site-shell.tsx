@@ -1,14 +1,6 @@
 import { ReactNode } from 'react';
 import Image from 'next/image';
-import {
-  ArrowRight,
-  BookOpen,
-  ChevronDown,
-  Gauge,
-  Github,
-  KeyRound,
-  Mail,
-} from 'lucide-react';
+import { ArrowRight, Github, Mail } from 'lucide-react';
 
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
@@ -17,51 +9,44 @@ import { cn } from '@/shared/lib/utils';
 
 const nav = [
   { href: '/models', label: 'Models & Pricing' },
-  { href: '/docs', label: 'API Docs' },
+  { href: '/docs', label: 'Docs' },
 ];
 
-const mobileNav = [...nav, { href: '/dashboard', label: 'Dashboard' }];
+const mobileNav = [...nav, { href: '/dashboard', label: 'Console' }];
 
 export function SiteShell({ children }: { children: ReactNode }) {
   return (
     <div className="bg-background text-foreground min-h-screen">
-      <header className="border-border/80 bg-background/95 sticky top-0 z-40 border-b backdrop-blur-sm">
-        <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-4 px-4 sm:h-16 sm:px-6 lg:px-8">
+      <header className="border-border bg-background/95 sticky top-0 z-40 border-b backdrop-blur-sm">
+        <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 sm:h-16 sm:px-6 lg:px-8">
           <Link
             href="/"
-            className="inline-flex shrink-0 items-center gap-2 text-lg font-bold"
+            className="inline-flex shrink-0 items-center gap-2 text-base font-semibold"
           >
-            <span className="relative size-7 overflow-hidden rounded-md">
+            <span className="relative size-6 overflow-hidden rounded-md">
               <Image
                 src="/logo.png"
                 alt={APIPOOL_CONFIG.brandName}
-                width={28}
-                height={28}
+                width={24}
+                height={24}
                 className="object-contain"
                 priority
               />
             </span>
             <span>{APIPOOL_CONFIG.brandName}</span>
           </Link>
-          <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 text-sm lg:flex">
+          <nav className="hidden items-center gap-1 text-sm lg:flex">
             {nav.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md px-3 py-2 transition-colors"
+                className="text-muted-foreground hover:text-foreground rounded-md px-3 py-2 transition-colors"
               >
                 {item.label}
               </Link>
             ))}
-            <button
-              type="button"
-              className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center gap-1 rounded-md px-3 py-2 transition-colors"
-            >
-              Resources
-              <ChevronDown className="size-3" />
-            </button>
           </nav>
-          <div className="ml-auto flex min-w-32 items-center justify-end gap-2 sm:min-w-48 lg:min-w-[15rem]">
+          <div className="ml-auto flex items-center justify-end gap-2">
             <Button
               asChild
               variant="ghost"
@@ -70,21 +55,17 @@ export function SiteShell({ children }: { children: ReactNode }) {
             >
               <Link href="/sign-in">Log in</Link>
             </Button>
-            <Button
-              asChild
-              size="sm"
-              className="bg-primary hover:bg-primary/90 px-3"
-            >
-              <Link href="/dashboard/api-keys">
-                <KeyRound className="size-4" />
-                Sign Up
+            <Button asChild size="sm">
+              <Link href="/dashboard">
+                Console
+                <ArrowRight className="size-4" />
               </Link>
             </Button>
           </div>
         </div>
         <nav
           aria-label="main-navigation-mobile"
-          className="border-border/70 flex gap-1 overflow-x-auto border-t px-4 py-2 lg:hidden"
+          className="border-border flex gap-1 overflow-x-auto border-t px-4 py-2 lg:hidden"
         >
           {mobileNav.map((item) => (
             <Link
@@ -99,36 +80,38 @@ export function SiteShell({ children }: { children: ReactNode }) {
         </nav>
       </header>
       <main>{children}</main>
-      <footer className="border-border/80 border-t">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 text-sm sm:px-6 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr] lg:px-8">
+      <footer className="border-border border-t">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 text-sm sm:px-6 md:grid-cols-[1.6fr_0.7fr_0.7fr] lg:px-8">
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-lg font-bold">
+            <div className="flex items-center gap-2 text-base font-semibold">
               <Image
                 src="/logo.png"
                 alt={APIPOOL_CONFIG.brandName}
-                width={26}
-                height={26}
+                width={22}
+                height={22}
                 className="object-contain"
               />
               <span>{APIPOOL_CONFIG.brandName}</span>
             </div>
             <p className="text-muted-foreground max-w-sm leading-6">
-              Official AI API hub with transparent pricing. Manage keys, quota,
-              and usage in one place.
+              One API endpoint for frontier models. Transparent pricing, real
+              usage data, no subscriptions.
             </p>
-            <code className="bg-muted block w-fit rounded-md border px-3 py-2 font-mono text-xs">
+            <code className="bg-muted text-muted-foreground block w-fit rounded-md border px-3 py-2 font-mono text-xs">
               {APIPOOL_CONFIG.apiBaseUrl}
             </code>
             <div className="text-muted-foreground flex items-center gap-3">
               <a
                 href={`mailto:${APIPOOL_CONFIG.supportEmail}`}
-                className="hover:text-foreground transition"
+                aria-label="Email support"
+                className="hover:text-foreground transition-colors"
               >
                 <Mail className="size-4" />
               </a>
               <a
                 href="https://github.com"
-                className="hover:text-foreground transition"
+                aria-label="GitHub"
+                className="hover:text-foreground transition-colors"
               >
                 <Github className="size-4" />
               </a>
@@ -137,44 +120,38 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <div className="space-y-3">
             <div className="font-medium">Product</div>
             <div className="text-muted-foreground grid gap-2">
-              <Link href="/models">Model Market</Link>
-              <Link href="/docs">API Docs</Link>
-              <Link href="/pricing">Pricing</Link>
-              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/models" className="hover:text-foreground transition-colors">
+                Models & Pricing
+              </Link>
+              <Link href="/docs" className="hover:text-foreground transition-colors">
+                API Docs
+              </Link>
+              <Link href="/dashboard" className="hover:text-foreground transition-colors">
+                Console
+              </Link>
             </div>
           </div>
           <div className="space-y-3">
-            <div className="font-medium">Workflow</div>
+            <div className="font-medium">Legal</div>
             <div className="text-muted-foreground grid gap-2">
-              <span className="inline-flex items-center gap-2">
-                <KeyRound className="size-4" />
-                Create Key
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <Gauge className="size-4" />
-                Check usage
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <BookOpen className="size-4" />
-                Read docs
-              </span>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className="font-medium">Resources</div>
-            <div className="text-muted-foreground grid gap-2">
-              <Link href="/models">Models & Pricing</Link>
-              <Link href="/docs">API Docs</Link>
-              <Link href="/privacy-policy">Privacy Policy</Link>
-              <Link href="/terms-of-service">Terms of Service</Link>
+              <Link
+                href="/privacy-policy"
+                className="hover:text-foreground transition-colors"
+              >
+                Privacy Policy
+              </Link>
+              <Link
+                href="/terms-of-service"
+                className="hover:text-foreground transition-colors"
+              >
+                Terms of Service
+              </Link>
             </div>
           </div>
         </div>
-        <div className="border-border/70 text-muted-foreground mx-auto flex max-w-7xl flex-col gap-2 border-t px-4 py-6 text-xs sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+        <div className="border-border text-muted-foreground mx-auto flex max-w-7xl flex-col gap-2 border-t px-4 py-6 text-xs sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© 2026 {APIPOOL_CONFIG.brandName}. All rights reserved.</span>
-          <span className="font-semibold tracking-normal uppercase">
-            {APIPOOL_CONFIG.brandName}
-          </span>
+          <span className="font-mono">{APIPOOL_CONFIG.apiBaseUrl}</span>
         </div>
       </footer>
     </div>

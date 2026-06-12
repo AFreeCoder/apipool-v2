@@ -1,6 +1,6 @@
 ---
 title: APIPool Quickstart
-description: Minimal launch documentation for creating a key and calling the APIPool API.
+description: Create a key, add credit, and make your first API call in minutes.
 ---
 
 ## Base URL
@@ -9,7 +9,8 @@ description: Minimal launch documentation for creating a key and calling the API
 https://api.apipool.dev/v1
 ```
 
-Use the APIPool Base URL with the API key created in your APIPool portal.
+The API is OpenAI-compatible: most SDKs and tools work by pointing the base URL
+at APIPool and using your APIPool key.
 
 ## Authentication
 
@@ -19,8 +20,16 @@ Send your key in the `Authorization` header:
 Authorization: Bearer $APIPOOL_API_KEY
 ```
 
-The portal only shows the full key once after creation. The key list shows a
-masked value afterward.
+Create keys in the [console](/dashboard/api-keys). The full key is shown only
+once after creation — the list shows a masked value afterward.
+
+## Get started
+
+1. [Sign up](/sign-up) and open the console.
+2. Add credit on the [balance page](/dashboard/billing). Usage is billed per
+   token; your balance never expires.
+3. [Create an API key](/dashboard/api-keys) and copy it once.
+4. Call any model from the [model list](/models) using the examples below.
 
 ## curl
 
@@ -31,7 +40,44 @@ curl https://api.apipool.dev/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
 ```
 
-## JavaScript
+## OpenAI SDK (JavaScript)
+
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'https://api.apipool.dev/v1',
+  apiKey: process.env.APIPOOL_API_KEY,
+});
+
+const completion = await client.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: 'Hello from APIPool' }],
+});
+
+console.log(completion.choices[0].message.content);
+```
+
+## OpenAI SDK (Python)
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.apipool.dev/v1",
+    api_key=os.environ["APIPOOL_API_KEY"],
+)
+
+completion = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello from APIPool"}],
+)
+
+print(completion.choices[0].message.content)
+```
+
+## Plain HTTP (fetch)
 
 ```ts
 const response = await fetch("https://api.apipool.dev/v1/chat/completions", {
@@ -49,36 +95,24 @@ const response = await fetch("https://api.apipool.dev/v1/chat/completions", {
 console.log(await response.json());
 ```
 
-## Python
+## Streaming
 
-```python
-import os
-import requests
+Set `"stream": true` in the request body to receive server-sent events, exactly
+like the OpenAI API. The official SDKs handle this with their built-in
+streaming helpers.
 
-response = requests.post(
-    "https://api.apipool.dev/v1/chat/completions",
-    headers={
-        "Authorization": f"Bearer {os.environ['APIPOOL_API_KEY']}",
-        "Content-Type": "application/json",
-    },
-    json={
-        "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": "Hello from APIPool"}],
-    },
-)
+## Error reference
 
-print(response.json())
-```
+| Status | Meaning | What to do |
+| ------ | ------- | ---------- |
+| `401`  | Key missing, invalid, disabled, or deleted | Check the header and key status in the console |
+| `403`  | Key has no access to the requested model | Review the key's model restrictions |
+| `429`  | Rate limited | Retry with backoff |
+| `402` / quota error | Balance is exhausted | Add credit in the console |
+| `404` model_not_found | Model ID not available | Pick a model from the [model list](/models) |
 
-## Common States
+## Billing
 
-- `401`: the key is missing, invalid, disabled, or deleted.
-- `403`: the key does not have access to the requested model.
-- `429`: the account or upstream route is rate limited.
-- `402` or quota errors: the account needs an operator-applied quota adjustment.
-
-## MVP Billing Note
-
-Self-service payment is not enabled in the MVP. New users start with zero quota.
-An operator applies quota manually, and the portal records that adjustment in the
-APIPool ledger v0.
+Top up in dollars on the [balance page](/dashboard/billing); usage is deducted
+per token at the prices listed on the [models page](/models). Requests, tokens,
+and per-model spend appear on the [usage page](/dashboard/usage).
