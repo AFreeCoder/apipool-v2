@@ -30,6 +30,16 @@
 
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
 
+## 1.5 New API 实例初始化（每个新实例一次性，✅已实测）
+
+1. 启动容器：`docker run -d --name apipool-newapi -p <port>:3000 -v <数据目录>:/data calciumion/new-api:latest`
+2. 初始化 root：`POST /api/setup` body `{username:"root", password, confirmPassword}`（未初始化前所有登录失败，日志报 `no root user exists`）。
+3. root 登录拿 cookie 会话后，确认支付合规（兑换码功能的前置开关）：`POST /api/option/payment_compliance` body `{confirmed:true}`——必须用 dashboard 会话，API token 会被拒。
+4. 生成管理员 access token：cookie 会话 + `New-Api-User: 1` 调 `GET /api/user/token`，存入 `NEWAPI_ADMIN_TOKEN`。注意该接口是重新生成语义，调用后旧 token 失效。
+5. 配置至少一个上游渠道（sub2api/APIPool 或直连上游），否则 `/v1/chat/completions` 报 `model_not_found: No available channel`。
+
+本地开发实例：宿主机端口 3001（`NEWAPI_BASE_URL=http://127.0.0.1:3001`），数据落 `data/new-api/`（已 gitignore）。
+
 ## 2. New API 运营面安全
 
 `newapi.apipool.dev` 仅运营访问：

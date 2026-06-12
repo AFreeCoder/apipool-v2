@@ -1,6 +1,8 @@
 # 04 New API 对接契约（修正版）
 
-> 本文档替换旧版 04-newapi-bridge-contract.md。旧版端点矩阵（`/api/admin/users`、`/api/admin/keys` 等）是虚构接口，开源 New API（Calcium-Ion/new-api）并不存在；本版按真实接口重写。标注 ⚠️Spike 的条目必须在 M1 首日对所部署版本实测确认后回填。
+> 本文档替换旧版 04-newapi-bridge-contract.md。旧版端点矩阵（`/api/admin/users`、`/api/admin/keys` 等）是虚构接口，开源 New API（QuantumNous/new-api）并不存在；本版按真实接口重写。
+>
+> **Spike 已完成（2026-06-12）**：以下内容已在本地 Docker 实例 `calciumion/new-api:latest`（`v1.0.0-rc.10`）逐项实测验证，✅ 标注实测结论。换版本部署时按第 10 节清单复测。
 
 ## 1. 边界规则（沿用，不变）
 
@@ -16,7 +18,7 @@
 | `NEWAPI_BASE_URL` | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器 |
 | `NEWAPI_ADMIN_TOKEN` | 管理员系统访问令牌（server-only） |
 | `NEWAPI_ADMIN_USER_ID` | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要） |
-| `NEWAPI_QUOTA_PER_UNIT` | quota 整数与 1 美元的换算系数，默认 `500000` ⚠️Spike：与部署实例 `QUOTA_PER_UNIT` 核对 |
+| `NEWAPI_QUOTA_PER_UNIT` | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000` |
 | `NEXT_PUBLIC_APIPOOL_API_BASE_URL` | 客户 API 端点，`https://api.apipool.dev/v1` |
 
 ## 3. 认证模型
@@ -28,19 +30,27 @@ Authorization: Bearer <访问令牌>
 New-Api-User: <该令牌所属用户的 ID>
 ```
 
+✅实测：本版本**所有** `/api/*` 调用都要求 `New-Api-User` header，包括 session cookie 会话——缺失时返回 `Unauthorized, New-Api-User header not provided`。
+
 桥接需要维护两种凭据上下文：
 
 1. **管理员上下文**：`NEWAPI_ADMIN_TOKEN` + `NEWAPI_ADMIN_USER_ID`，用于建用户、查全量日志、生成兑换码、调额。
 2. **用户上下文**：每个门户用户绑定的 New API 用户自己的 access token + 用户 ID，用于建/管理 token（New API 的 token 归属用户，管理员不能直接替用户建 token）、查自身用量。
 
-### 用户供给链路（⚠️Spike 首日实测后回填精确字段）
+### 用户供给链路（✅已实测）
 
 ```
-1. 管理员 POST /api/user/          → 创建用户（随机用户名 + 强随机密码）
-2. POST /api/user/login            → 以该用户登录获取 session
-3. GET  /api/user/token            → 生成/获取该用户的 access token
-4. 门户加密保存 access token + newapiUserId 至 newApiUserBinding
+1. 管理员 POST /api/user/  body {username, password, display_name}
+   → 仅返回 {success:true}，不返回用户 ID
+2. 管理员 GET /api/user/search?keyword=<username>
+   → 反查取得 newapiUserId（创建接口不返回 ID，必须反查）
+3. POST /api/user/login  body {username, password}（cookie 会话）
+4. GET  /api/user/token  + New-Api-User: <id>（cookie 会话）
+   → 返回 32 字符 access token（每次调用重新生成，旧 token 失效）
+5. 门户加密保存 access token + newapiUserId 至 newApiUserBinding
 ```
+
+注意：步骤 4 的 token 是"重新生成"语义——门户保存后不得再次调用该接口，否则已存 token 失效。
 
 凭据存储规则：access token 与密码使用应用级加密（AES-256-GCM，密钥来自 env）落库，永不明文存储、永不出现在日志与审计明细中。
 
@@ -48,22 +58,28 @@ New-Api-User: <该令牌所属用户的 ID>
 
 ## 4. 端点矩阵（门户操作 → 真实 New API 接口）
 
-| 门户操作 | 凭据上下文 | 方法与路径 | 说明 |
+| 门户操作 | 凭据上下文 | 方法与路径 | 实测说明 |
 |---|---|---|---|
-| 健康检查 | 无 | `GET /api/status` | 公开接口，返回版本与配置 |
-| 创建用户 | 管理员 | `POST /api/user/` | 注册时绑定 |
-| 读取用户额度 | 用户 | `GET /api/user/self` | 响应内 `quota` 为整数 |
-| 创建 Key | 用户 | `POST /api/token/` | 字段：`name`、`remain_quota`/`unlimited_quota`、`expired_time`、`model_limits_enabled`+`model_limits`、`allow_ips` ⚠️Spike 核对字段名 |
-| 列出 Key | 用户 | `GET /api/token/?p=1` | 分页 |
-| 禁用/启用 Key | 用户 | `PUT /api/token/?status_only=true`（status 字段）⚠️Spike | |
+| 健康检查 | 无 | `GET /api/status` | ✅公开接口，返回 `version`、`quota_per_unit` |
+| 创建用户 | 管理员 | `POST /api/user/` | ✅body `{username, password, display_name}`；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查 |
+| 读取用户额度 | 用户 | `GET /api/user/self` | ✅`data.quota` 为整数 |
+| 创建 Key | 用户 | `POST /api/token/` | ✅字段：`name`、`remain_quota`、`unlimited_quota`、`expired_time`(-1 永久)、`model_limits_enabled`+`model_limits`、`allow_ips`、`group`；**响应不含 key**；自带 `key` 字段会被忽略 |
+| 读取完整 Key | 用户 | `POST /api/token/:id/key` | ✅返回 48 字符明文（限流保护）；**用户实际调用需加 `sk-` 前缀**；列表/单查接口的 key 一律掩码 |
+| 列出 Key | 用户 | `GET /api/token/?p=1&size=N` | ✅分页 `{items, total, page}`；key 掩码 |
+| 禁用/启用 Key | 用户 | `PUT /api/token/?status_only=true` | ✅body `{id, status}`；1=启用 2=禁用 |
 | 删除 Key | 用户 | `DELETE /api/token/:id` | |
-| 用量汇总 | 用户 | `GET /api/data/self` | 模型分布、请求数、token 数 ⚠️Spike 核对时间范围参数 |
-| 消费日志 | 用户 | `GET /api/log/self?p=1` | 最近调用日志 |
-| 生成兑换码 | 管理员 | `POST /api/redemption/` | 支付加额用（见 06-payments-ledger.md） |
-| 兑换加额 | 用户 | `POST /api/user/topup` | body `{ key: <兑换码> }` |
+| 用量汇总 | 用户 | `GET /api/data/self` | ✅参数 `start_timestamp`/`end_timestamp`/`default_time=hour\|day` |
+| 消费日志 | 用户 | `GET /api/log/self?p=1&page_size=N&type=0` | ✅分页；type=1 为充值记录、type=2 为消费记录 |
+| 生成兑换码 | 管理员 | `POST /api/redemption/` | ✅body `{name, quota, count}`（quota 为整数额度单位）；**响应 `data` 直接返回码值数组**；name 写 order_no 便于对账 |
+| 兑换加额 | 用户 | `POST /api/user/topup` | ✅body `{key}`；返回 `data:<加额数>`；**一码一兑实测成立**，重复兑换报错 |
 | 手动调额（兜底） | 管理员 | `PUT /api/user/` 全量更新 quota | 读改写有竞态，只作降级方案且需串行化 |
 
 响应包络统一为 `{ success: boolean, message: string, data: ... }`；`success=false` 一律按错误处理，不看 HTTP 200。
+
+**一次性实例初始化（✅实测，写入 07-runbook.md）**：
+
+1. 全新实例需先 `POST /api/setup`（body 含 root `username/password/confirmPassword`），未初始化前所有登录失败。
+2. 兑换码/支付功能默认被合规开关禁用：需 root 以 **dashboard 会话**（cookie，API token 不可）调 `POST /api/option/payment_compliance` body `{confirmed:true}` 确认一次，之后 `POST /api/redemption/` 才可用。
 
 ## 5. 金额换算
 
@@ -103,15 +119,14 @@ New-Api-User: <该令牌所属用户的 ID>
 
 每次桥接写操作记录 `new_api_bridge_audit_log`：操作者、门户用户、目标类型/ID、状态、幂等键、脱敏请求/响应体、错误信息。凭据字段一律脱敏。
 
-## 10. M1 Spike 验证清单
+## 10. Spike 验证清单（✅2026-06-12 已对 v1.0.0-rc.10 完成；换版本部署时复测）
 
-在测试环境对所部署 New API 版本逐项实测，回填本文档后才能动 client.ts：
-
-- [ ] `POST /api/user/` 创建用户的必填字段与响应（确认返回 user id）
-- [ ] 用户 access token 获取方式（`GET /api/user/token` 的行为：生成 or 读取；是否会使旧 token 失效）
-- [ ] `POST /api/token/` 创建 token 的字段名与响应（确认返回完整 key 明文的时机）
-- [ ] token 禁用的精确调用方式（`PUT /api/token/?status_only=true` 或其他）
-- [ ] `GET /api/data/self` 的时间范围参数与聚合粒度
-- [ ] `POST /api/redemption/` 生成兑换码的字段（金额单位是 quota 还是美元）
-- [ ] `QUOTA_PER_UNIT` 实际值
-- [ ] `success=false` 时的 message 是否含敏感信息（决定能否透传给审计日志）
+- [x] `POST /api/user/` 创建用户的必填字段与响应——**不返回 user id**，需 `GET /api/user/search?keyword=` 反查
+- [x] 用户 access token 获取方式——`GET /api/user/token` 为**重新生成**语义，旧 token 失效；返回 32 字符
+- [x] `POST /api/token/` 创建 token 的字段名与响应——响应不含 key；完整 key 走 `POST /api/token/:id/key`，调用时加 `sk-` 前缀
+- [x] token 禁用的精确调用方式——`PUT /api/token/?status_only=true` body `{id, status:2}`
+- [x] `GET /api/data/self` 的时间范围参数——`start_timestamp`/`end_timestamp`/`default_time=hour|day`
+- [x] `POST /api/redemption/` 生成兑换码的字段——`{name, quota, count}`，quota 为整数额度单位；响应直接返回码值；需先做一次合规确认（见第 4 节）
+- [x] `QUOTA_PER_UNIT` 实际值——500000
+- [x] `success=false` 的 message——未见敏感信息（如 "Redemption failed, please try again later"），可透传审计
+- [x] 额外发现：所有 `/api/*` 调用（含 cookie 会话）都要求 `New-Api-User` header；`/v1/chat/completions` 鉴权链路验证通过（无渠道时报 `model_not_found`，属渠道配置问题而非鉴权问题）
