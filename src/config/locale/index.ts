@@ -17,6 +17,7 @@ export const localeMessagesRootPath = '@/config/locale/messages';
 
 export const localeMessagesPaths = [
   'common',
+  'pages/pricing',
   'settings/sidebar',
   'settings/profile',
   'settings/security',

@@ -554,6 +554,7 @@ export const apipoolLedgerEntry = table(
       .references(() => user.id, { onDelete: 'cascade' }),
     newapiUserId: text('newapi_user_id').notNull(),
     newapiChangeId: text('newapi_change_id'),
+    orderNo: text('order_no'),
     amountUsd: integer('amount_usd').notNull(),
     source: text('source').notNull(),
     status: text('status').notNull(),
@@ -575,6 +576,7 @@ export const apipoolLedgerEntry = table(
     ),
     index('idx_apipool_ledger_status').on(table.status),
     uniqueIndex('idx_apipool_ledger_newapi_change').on(table.newapiChangeId),
+    uniqueIndex('idx_apipool_ledger_order_no').on(table.orderNo),
   ]
 );
 

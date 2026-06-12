@@ -117,7 +117,7 @@ function serialize(value: unknown) {
   }
 }
 
-async function recordAudit(input: AuditInput) {
+export async function recordAudit(input: AuditInput) {
   await db()
     .insert(newApiBridgeAuditLog)
     .values({
@@ -276,7 +276,7 @@ function generateNewapiPassword() {
   return randomBytes(15).toString('base64url');
 }
 
-function bindingToUserCredentials(binding: {
+export function bindingToUserCredentials(binding: {
   newapiUserId: string;
   newapiAccessTokenEnc?: string | null;
 }): NewApiUserCredentials {

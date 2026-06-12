@@ -1,0 +1,57 @@
+{
+  "page": {
+    "sections": {
+      "pricing": {
+        "title": "Add credit",
+        "description": "Top up your balance. Usage is billed per token, balance never expires.",
+        "items": [
+          {
+            "title": "Starter",
+            "description": "Try the APIPool API",
+            "interval": "one-time",
+            "amount": 500,
+            "currency": "USD",
+            "price": "$5",
+            "unit": "",
+            "is_featured": false,
+            "product_id": "topup_5",
+            "product_name": "APIPool Credit $5",
+            "credits": 500,
+            "valid_days": 0,
+            "group": "one-time"
+          },
+          {
+            "title": "Builder",
+            "description": "For steady development use",
+            "interval": "one-time",
+            "amount": 1000,
+            "currency": "USD",
+            "price": "$10",
+            "unit": "",
+            "is_featured": true,
+            "product_id": "topup_10",
+            "product_name": "APIPool Credit $10",
+            "credits": 1000,
+            "valid_days": 0,
+            "group": "one-time"
+          },
+          {
+            "title": "Pro",
+            "description": "For production workloads",
+            "interval": "one-time",
+            "amount": 5000,
+            "currency": "USD",
+            "price": "$50",
+            "unit": "",
+            "is_featured": false,
+            "product_id": "topup_50",
+            "product_name": "APIPool Credit $50",
+            "credits": 5000,
+            "valid_days": 0,
+            "group": "one-time"
+          }
+        ]
+      }
+    }
+  }
+}

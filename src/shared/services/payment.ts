@@ -9,6 +9,7 @@ import {
   PaymentStatus,
   PaymentType,
 } from '@/extensions/payment/types';
+import { applyRechargeForOrder } from '@/features/newapi-bridge/server/recharge';
 import { getSnowId, getUuid } from '@/shared/lib/hash';
 import { Configs, getAllConfigs } from '@/shared/models/config';
 
@@ -120,6 +121,30 @@ export async function getPaymentService(
 }
 
 /**
+ * APIPool：订单入账后把同额 quota 加到 New API（兑换码模式，见 docs/06）。
+ * 不抛出——webhook 必须成功返回；失败留在 ledger pending/failed 由 admin 重试。
+ * 仅处理一次性 credits 订单（订阅不在 MVP 范围）。
+ */
+async function applyApipoolRecharge(order: Order) {
+  if (order.paymentType !== PaymentType.ONE_TIME) return;
+  if (!order.creditsAmount || order.creditsAmount <= 0) return;
+  if (!order.orderNo) return;
+
+  const result = await applyRechargeForOrder({
+    orderNo: order.orderNo,
+    userId: order.userId,
+    userEmail: order.userEmail,
+    amount: order.amount,
+    currency: order.currency,
+  });
+  if (result.outcome !== 'applied' && result.outcome !== 'already_applied') {
+    console.error(
+      `apipool recharge not applied for order ${order.orderNo}: ${result.outcome} ${result.detail || ''}`
+    );
+  }
+}
+
+/**
  * handle checkout success
  */
 export async function handleCheckoutSuccess({
@@ -137,6 +162,8 @@ export async function handleCheckoutSuccess({
   // Idempotency check: if order is already paid, skip processing
   if (order.status === OrderStatus.PAID) {
     console.log(`Order ${orderNo} is already paid, skipping`);
+    // webhook 重放时自愈：若此前加额未完成，借重放补执行（幂等）
+    await applyApipoolRecharge(order);
     return;
   }
 
@@ -252,6 +279,8 @@ export async function handleCheckoutSuccess({
       newSubscription,
       newCredit,
     });
+
+    await applyApipoolRecharge(order);
   } else if (
     session.paymentStatus === PaymentStatus.FAILED ||
     session.paymentStatus === PaymentStatus.CANCELED
@@ -389,6 +418,8 @@ export async function handlePaymentSuccess({
       newSubscription,
       newCredit,
     });
+
+    await applyApipoolRecharge(order);
   } else {
     throw new Error('unknown payment status');
   }
