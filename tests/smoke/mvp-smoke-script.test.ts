@@ -113,9 +113,9 @@ test('MVP smoke checks New API health before creating keys', async () => {
 
 test('New API bridge contract documents the health endpoint', async () => {
   const contract = await readFile(
-    join(process.cwd(), 'docs/04-newapi-bridge-contract.md'),
+    join(process.cwd(), 'docs/04-newapi-contract.md'),
     'utf8'
   );
 
-  assert.match(contract, /Health check[\s\S]*`GET`[\s\S]*`\/api\/admin\/health`/);
+  assert.match(contract, /健康检查[\s\S]*`GET \/api\/status`/);
 });

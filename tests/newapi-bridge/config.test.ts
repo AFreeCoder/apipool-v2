@@ -27,7 +27,7 @@ test('New API bridge base URL has no public production fallback', async () => {
     'utf8'
   );
   const contract = await readFile(
-    join(process.cwd(), 'docs/04-newapi-bridge-contract.md'),
+    join(process.cwd(), 'docs/04-newapi-contract.md'),
     'utf8'
   );
   const readme = await readFile(join(process.cwd(), 'README.md'), 'utf8');
@@ -50,15 +50,15 @@ test('New API bridge base URL has no public production fallback', async () => {
   );
   assert.match(
     contract,
-    /`NEWAPI_BASE_URL`:[^\n]*`http:\/\/newapi-internal:3000`/
+    /`NEWAPI_BASE_URL`[^\n]*`http:\/\/newapi-internal:3000`/
   );
   assert.doesNotMatch(
     contract,
-    /`NEWAPI_BASE_URL`:[^\n]*https:\/\/newapi\.apipool\.dev/
+    /`NEWAPI_BASE_URL`[^\n]*https:\/\/newapi\.apipool\.dev/
   );
   assert.match(readme, /NEWAPI_BASE_URL=http:\/\/newapi-internal:3000/);
   assert.doesNotMatch(readme, /NEWAPI_BASE_URL=https:\/\/newapi\.apipool\.dev/);
-  assert.match(contract, /Bind portal user[\s\S]*`initialQuotaUsd: 0`/);
+  assert.match(contract, /新建 New API 用户初始额度为 0/);
 });
 
 test('client modules import only public APIPool config', async () => {
