@@ -6,6 +6,7 @@ import {
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
+import { formatUsdAmount } from '@/features/api-console/lib/money';
 import {
   TopUpPackages,
   type TopUpPackage,
@@ -27,11 +28,6 @@ const LEDGER_SOURCE_LABELS: Record<string, string> = {
   recharge: 'Top-up',
   manual_adjustment: 'Adjustment',
 };
-
-function formatUsd(value: number | undefined) {
-  if (value === undefined) return '—';
-  return `$${value.toFixed(2)}`;
-}
 
 export default async function BillingPage({
   params,
@@ -84,9 +80,7 @@ export default async function BillingPage({
             Current balance
           </div>
           <div className="mt-1 font-mono text-3xl font-semibold">
-            {usage.summary.balanceUsd === undefined
-              ? '—'
-              : `$${usage.summary.balanceUsd.toFixed(2)}`}
+            {formatUsdAmount(usage.summary.balanceUsd)}
           </div>
         </div>
       </div>
@@ -127,7 +121,7 @@ export default async function BillingPage({
                       {LEDGER_SOURCE_LABELS[entry.source] || entry.source}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {formatUsd(entry.amountUsd)}
+                      {formatUsdAmount(entry.amountUsd)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <span
@@ -188,7 +182,7 @@ export default async function BillingPage({
                       {charge.tokenCount.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      ${charge.spendUsd}
+                      {formatUsdAmount(charge.spendUsd)}
                     </td>
                   </tr>
                 ))}

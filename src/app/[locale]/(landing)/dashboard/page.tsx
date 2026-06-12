@@ -8,6 +8,7 @@ import {
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 import { StatCard } from '@/features/api-console/components/stat-card';
+import { formatUsdAmount } from '@/features/api-console/lib/money';
 import { Link } from '@/core/i18n/navigation';
 import { getUserInfo } from '@/shared/models/user';
 import { Button } from '@/shared/components/ui/button';
@@ -78,11 +79,7 @@ export default async function DashboardPage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Balance"
-          value={
-            usage.summary.balanceUsd === undefined
-              ? '—'
-              : `$${usage.summary.balanceUsd.toFixed(2)}`
-          }
+          value={formatUsdAmount(usage.summary.balanceUsd)}
           help="Billed per token"
           icon={<Wallet className="text-muted-foreground size-4" />}
         />
@@ -148,14 +145,7 @@ export default async function DashboardPage({
                       {(log.inputTokens + log.outputTokens).toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {log.spendUsd === undefined || log.spendUsd === null
-                        ? '—'
-                        : `$${Number(log.spendUsd).toFixed(
-                            Number(log.spendUsd) > 0 &&
-                              Number(log.spendUsd) < 0.01
-                              ? 4
-                              : 2
-                          )}`}
+                      {formatUsdAmount(log.spendUsd)}
                     </td>
                   </tr>
                 ))}

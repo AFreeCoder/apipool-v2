@@ -2,13 +2,8 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
 import { StatCard } from '@/features/api-console/components/stat-card';
+import { formatUsdAmount } from '@/features/api-console/lib/money';
 import { getUserInfo } from '@/shared/models/user';
-
-// 常规金额 2 位小数；仅 1 美分以下的微额展示 4 位
-function formatSpend(value: number | undefined | null) {
-  if (value === undefined || value === null) return '—';
-  return `$${value.toFixed(value > 0 && value < 0.01 ? 4 : 2)}`;
-}
 
 export default async function UsagePage({
   params,
@@ -59,7 +54,10 @@ export default async function UsagePage({
           label="Output tokens"
           value={usage.summary.outputTokens.toLocaleString()}
         />
-        <StatCard label="Spend" value={formatSpend(usage.summary.spendUsd)} />
+        <StatCard
+          label="Spend"
+          value={formatUsdAmount(usage.summary.spendUsd)}
+        />
       </div>
 
       <div className="bg-background overflow-hidden rounded-xl border">
@@ -98,7 +96,7 @@ export default async function UsagePage({
                       {model.tokens.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {formatSpend(model.spendUsd)}
+                      {formatUsdAmount(model.spendUsd)}
                     </td>
                   </tr>
                 ))}
