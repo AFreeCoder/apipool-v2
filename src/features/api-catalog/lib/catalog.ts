@@ -4,6 +4,9 @@ export type ApiModelProvider = 'OpenAI' | 'Anthropic';
 export type ApiModelCapability = 'text' | 'vision' | 'reasoning' | 'coding';
 export type ApiModelStatus = 'available' | 'coming_soon';
 
+// official = 官方正价渠道；deal = 短期特价渠道，与正价渠道分区展示、可能随时下架
+export type ApiModelChannelTier = 'official' | 'deal';
+
 export type ApiModel = {
   slug: string;
   modelId: string;
@@ -18,6 +21,8 @@ export type ApiModel = {
   smokeTested: boolean;
   status: ApiModelStatus;
   sortOrder: number;
+  channelTier?: ApiModelChannelTier; // 缺省视为 official
+  dealNote?: string; // 特价渠道说明（如有效期/限速）
   pricing: {
     inputPerMillionUsd: number;
     outputPerMillionUsd: number;
@@ -27,6 +32,10 @@ export type ApiModel = {
     note?: string;
   };
 };
+
+export function isDealModel(model: ApiModel) {
+  return model.channelTier === 'deal';
+}
 
 export type ModelFilters = {
   provider?: ApiModelProvider | 'All';
@@ -122,6 +131,33 @@ export const publicModels: ApiModel[] = [
       officialOutputPerMillionUsd: 0.6,
       source: 'manual',
       note: 'Launch smoke model. Recheck billing multiplier before public traffic.',
+    },
+  },
+  {
+    // 特价区示例：同一模型的短期特价渠道，独立条目、不与正价混排
+    slug: 'gpt-4o-mini-deal',
+    modelId: 'gpt-4o-mini',
+    displayName: 'GPT-4o mini',
+    provider: 'OpenAI',
+    category: 'llm',
+    capabilities: ['text', 'vision', 'coding'],
+    shortDescription: 'Limited-time discounted route for GPT-4o mini.',
+    longDescription:
+      'Short-term discounted channel for GPT-4o mini. Same model and API, separate route that may rotate without notice.',
+    contextWindow: 128000,
+    featured: false,
+    smokeTested: false,
+    status: 'coming_soon',
+    sortOrder: 11,
+    channelTier: 'deal',
+    dealNote: 'Limited-time route · may rotate without notice',
+    pricing: {
+      inputPerMillionUsd: 0.08,
+      outputPerMillionUsd: 0.3,
+      officialInputPerMillionUsd: 0.15,
+      officialOutputPerMillionUsd: 0.6,
+      source: 'manual',
+      note: 'Demo deal entry. Replace with a real short-term channel before launch.',
     },
   },
   {

@@ -27,7 +27,7 @@ test('landing hero stays single-column on mobile and shrinks gracefully', async 
   );
 });
 
-test('landing CTAs and tables fit narrow screens without horizontal overflow', async () => {
+test('landing CTAs and scenario grid fit narrow screens without horizontal overflow', async () => {
   const source = await readFile('src/app/[locale]/(landing)/page.tsx', 'utf8');
 
   assert.match(
@@ -37,7 +37,7 @@ test('landing CTAs and tables fit narrow screens without horizontal overflow', a
   );
   assert.match(
     source,
-    /overflow-x-auto rounded-xl border/,
-    'pricing table should be wrapped in a horizontal scroll container'
+    /grid gap-6 sm:grid-cols-2 lg:grid-cols-4/,
+    'scenario cards should collapse to a single column on mobile'
   );
 });

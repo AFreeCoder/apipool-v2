@@ -1,6 +1,7 @@
 import {
   buildModelFilterHref,
   filterModels,
+  isDealModel,
   MODEL_CAPABILITY_FILTERS,
   MODEL_PROVIDER_FILTERS,
   MODEL_STATUS_FILTERS,
@@ -11,7 +12,6 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
 import {
-  APIPOOL_CONFIG,
   PRICE_DISCLAIMER_EN,
   PRICE_DISCLAIMER_ZH,
 } from '@/config/apipool';
@@ -47,6 +47,8 @@ export default async function ModelsPage({
   setRequestLocale(locale);
   const filters = parseModelFilters(await searchParams);
   const models = filterModels(publicModels, filters);
+  const standardModels = models.filter((model) => !isDealModel(model));
+  const dealModels = models.filter(isDealModel);
   const filterGroups = [
     { label: 'Provider', key: 'provider', options: MODEL_PROVIDER_FILTERS },
     {
@@ -69,11 +71,8 @@ export default async function ModelsPage({
             Models & pricing
           </h1>
           <p className="text-muted-foreground mt-3 max-w-2xl leading-7">
-            All prices are per 1M tokens, billed by actual usage through{' '}
-            <code className="bg-muted rounded border px-1.5 py-0.5 font-mono text-xs">
-              {APIPOOL_CONFIG.apiBaseUrl}
-            </code>
-            .
+            All prices are per 1M tokens, billed by actual usage. One key
+            works for every model below.
           </p>
 
           <div className="mt-8 space-y-2">
@@ -106,9 +105,9 @@ export default async function ModelsPage({
         </div>
       </section>
 
-      <section className="py-10 sm:py-12">
+      <section className="space-y-10 py-10 sm:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {models.length === 0 ? (
+          {standardModels.length === 0 && dealModels.length === 0 ? (
             <div className="rounded-xl border p-10 text-center">
               <div className="font-medium">No models match these filters.</div>
               <Button asChild variant="outline" className="mt-4 rounded-md">
@@ -116,115 +115,135 @@ export default async function ModelsPage({
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
-                  <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                    <th className="px-4 py-3 text-left font-medium">Model</th>
-                    <th className="px-4 py-3 text-left font-medium">
-                      Provider
-                    </th>
-                    <th className="px-4 py-3 text-left font-medium">
-                      Capabilities
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      Context
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      Input / 1M
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      Output / 1M
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {models.map((model) => {
-                    const official = model.pricing.officialInputPerMillionUsd;
-                    return (
-                      <tr
-                        key={model.slug}
-                        className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="font-medium">
-                            {model.displayName}
-                          </div>
-                          <div className="text-muted-foreground font-mono text-xs">
-                            {model.modelId}
-                          </div>
-                        </td>
-                        <td className="text-muted-foreground px-4 py-3">
-                          {model.provider}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {model.capabilities.map((capability) => (
-                              <span
-                                key={capability}
-                                className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
-                              >
-                                {capability}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="text-muted-foreground px-4 py-3 text-right font-mono">
-                          {formatContextWindow(model.contextWindow)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          ${model.pricing.inputPerMillionUsd.toFixed(2)}
-                          {official !== undefined && (
-                            <div className="text-muted-foreground text-xs line-through">
-                              ${official.toFixed(2)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          ${model.pricing.outputPerMillionUsd.toFixed(2)}
-                          {model.pricing.officialOutputPerMillionUsd !==
-                            undefined && (
-                            <div className="text-muted-foreground text-xs line-through">
-                              $
-                              {model.pricing.officialOutputPerMillionUsd.toFixed(
-                                2
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Badge
-                            variant={
-                              model.status === 'available'
-                                ? 'default'
-                                : 'secondary'
-                            }
-                            className={
-                              model.status === 'available'
-                                ? 'bg-primary/10 text-primary border-transparent'
-                                : ''
-                            }
-                          >
-                            {model.status === 'available'
-                              ? 'Available'
-                              : 'Coming soon'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ModelsTable models={standardModels} />
           )}
           <p className="text-muted-foreground mt-3 text-xs">
             {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
           </p>
         </div>
+
+        {dealModels.length > 0 && (
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h2 className="text-xl font-semibold tracking-tight">Deals</h2>
+              <p className="text-muted-foreground text-sm">
+                Short-term discounted routes. Same models and API, separate
+                channels that may rotate without notice.
+              </p>
+            </div>
+            <ModelsTable models={dealModels} deal />
+          </div>
+        )}
       </section>
+    </div>
+  );
+}
+
+function ModelsTable({
+  models,
+  deal = false,
+}: {
+  models: ReturnType<typeof filterModels>;
+  deal?: boolean;
+}) {
+  if (models.length === 0) return null;
+
+  return (
+    <div className="overflow-x-auto rounded-xl border">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead>
+          <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+            <th className="px-4 py-3 text-left font-medium">Model</th>
+            <th className="px-4 py-3 text-left font-medium">Provider</th>
+            <th className="px-4 py-3 text-left font-medium">Capabilities</th>
+            <th className="px-4 py-3 text-right font-medium">Context</th>
+            <th className="px-4 py-3 text-right font-medium">Input / 1M</th>
+            <th className="px-4 py-3 text-right font-medium">Output / 1M</th>
+            <th className="px-4 py-3 text-right font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map((model) => {
+            const officialInput = model.pricing.officialInputPerMillionUsd;
+            const officialOutput = model.pricing.officialOutputPerMillionUsd;
+            return (
+              <tr
+                key={model.slug}
+                className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
+              >
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2 font-medium">
+                    {model.displayName}
+                    {deal && (
+                      <span className="bg-chart-3/15 text-chart-3 rounded-md px-1.5 py-0.5 text-xs font-medium">
+                        Deal
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-muted-foreground font-mono text-xs">
+                    {model.modelId}
+                  </div>
+                  {deal && model.dealNote && (
+                    <div className="text-muted-foreground mt-1 text-xs">
+                      {model.dealNote}
+                    </div>
+                  )}
+                </td>
+                <td className="text-muted-foreground px-4 py-3">
+                  {model.provider}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {model.capabilities.map((capability) => (
+                      <span
+                        key={capability}
+                        className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
+                      >
+                        {capability}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="text-muted-foreground px-4 py-3 text-right font-mono">
+                  {formatContextWindow(model.contextWindow)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono">
+                  ${model.pricing.inputPerMillionUsd.toFixed(2)}
+                  {officialInput !== undefined &&
+                    officialInput > model.pricing.inputPerMillionUsd && (
+                      <div className="text-muted-foreground text-xs line-through">
+                        ${officialInput.toFixed(2)}
+                      </div>
+                    )}
+                </td>
+                <td className="px-4 py-3 text-right font-mono">
+                  ${model.pricing.outputPerMillionUsd.toFixed(2)}
+                  {officialOutput !== undefined &&
+                    officialOutput > model.pricing.outputPerMillionUsd && (
+                      <div className="text-muted-foreground text-xs line-through">
+                        ${officialOutput.toFixed(2)}
+                      </div>
+                    )}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Badge
+                    variant={
+                      model.status === 'available' ? 'default' : 'secondary'
+                    }
+                    className={
+                      model.status === 'available'
+                        ? 'bg-primary/10 text-primary border-transparent'
+                        : ''
+                    }
+                  >
+                    {model.status === 'available' ? 'Available' : 'Coming soon'}
+                  </Badge>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

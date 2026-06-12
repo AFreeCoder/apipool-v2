@@ -94,9 +94,6 @@ export function SiteShell({ children }: { children: ReactNode }) {
               One API endpoint for frontier models. Transparent pricing, real
               usage data, no subscriptions.
             </p>
-            <code className="bg-muted text-muted-foreground block w-fit rounded-md border px-3 py-2 font-mono text-xs">
-              {APIPOOL_CONFIG.apiBaseUrl}
-            </code>
             <div className="text-muted-foreground flex items-center gap-3">
               <a
                 href={`mailto:${APIPOOL_CONFIG.supportEmail}`}
@@ -142,7 +139,9 @@ export function SiteShell({ children }: { children: ReactNode }) {
         </div>
         <div className="border-border text-muted-foreground mx-auto flex max-w-7xl flex-col gap-2 border-t px-4 py-6 text-xs sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© 2026 {APIPOOL_CONFIG.brandName}. All rights reserved.</span>
-          <span className="font-mono">{APIPOOL_CONFIG.apiBaseUrl}</span>
+          <span className="font-mono text-xs tracking-widest uppercase">
+            built for developers
+          </span>
         </div>
       </footer>
     </div>
