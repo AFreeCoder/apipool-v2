@@ -46,7 +46,7 @@ host
 │   └── new-api          calciumion/new-api:latest
 │                        内部 :3000；本地发布 127.0.0.1:3001 供 curl /v1
 │                        bind-mount ./data/new-api:/data（内置 SQLite）
-│                        渠道指向用户的真实 LLM 上游（在后台配置）
+│                        渠道 → https://apipool.dev（用户自有站，gpt-5.4-mini，已实测 200）
 │
 └── （后验）stripe listen --forward-to
         http://localhost:3000/api/payment/notify/stripe
@@ -55,7 +55,7 @@ host
 - 门户↔New API:门户经 compose 服务名 `new-api` 走内部地址访问管理接口(bridge)。
 - New API 是用户 `curl` 的 `/v1` 网关本身,故**本地发布到 `127.0.0.1:3001`** 供调用验证;门户发布 `127.0.0.1:3000` 供浏览器访问 + 未来 Stripe 转发。
 - "不暴露公网"安全模型针对**未来服务器**:反代只放行 `/v1`,管理面(`/api/user` 等)加 Basic Auth/IP 白名单。本地全在 127.0.0.1,无对外暴露。
-- 真实上游:引导阶段在 New API 后台加一个渠道,填**用户自己的 LLM 提供方 key**(如 OpenAI),`curl` 的实际请求经 New API 转发到该上游(产生少量真实费用)。
+- 真实上游:引导阶段在 New API 后台加一个渠道,BaseURL `https://apipool.dev`(用户自有站),模型 `gpt-5.4-mini`,填用户测试 key(只进 New API DB / `.env.deploy`,不入库);`curl` 的实际请求经 New API 转发到该上游(已实测 200,产生少量真实费用)。
 
 ## 4. 产出物(均入库,密钥与 data/ 除外)
 
@@ -89,8 +89,8 @@ NEWAPI_QUOTA_PER_UNIT=500000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 # 控制台展示给用户的网关地址（本地发布的 New API /v1）
 NEXT_PUBLIC_APIPOOL_API_BASE_URL=http://localhost:3001/v1
-# 首发模型，设为你真实渠道支持的模型（如 OpenAI key 则 gpt-4o-mini）
-NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-4o-mini
+# 首发模型，与真实渠道一致（用户自有上游已实测可用）
+NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini
 ```
 
 **admin settings(DB,后台 UI,后验阶段填)——Stripe 测试密钥:**
@@ -101,7 +101,7 @@ NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-4o-mini
 1. 复制 `.env.deploy.example` → `.env.deploy`,生成两个 `*_SECRET`。
 2. `docker compose up -d new-api` → 浏览器登录 New API(首登设置 root 密码)。
 3. `deploy/newapi-token.sh` 生成 admin access token → 写回 `.env.deploy` 的 `NEWAPI_ADMIN_TOKEN`。
-4. New API 后台:加一个渠道,填**你的真实 LLM key**(如 OpenAI),绑定 `NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL` 指定的模型。
+4. New API 后台:加一个渠道,BaseURL `https://apipool.dev`、模型 `gpt-5.4-mini`、填测试 key(已实测可用)。
 5. `docker compose up -d`(先跑 `portal-migrate` 建表,再起 `portal`)→ 门户起、内部连通 New API。
 6. 建运营管理员账号(用于人工调额):复用迁移容器镜像跑 RBAC 初始化与赋权,如 `docker compose run --rm portal-migrate pnpm rbac:init`。
 7.(后验,需 Stripe 账户)后台启用 Stripe 填测试密钥 → `stripe listen --forward-to http://localhost:3000/api/payment/notify/stripe` → 把 `whsec_...` 填进 `stripe_signing_secret`。
@@ -130,6 +130,8 @@ Stripe 验收**本次跳过**,记为后验项(接线已就位,无需改代码)�
 - 迁移机制不变(`portal-migrate` 容器照旧)。
 - Stripe 改真实公网 webhook(撤掉 `stripe listen`);此时补 Creem 端到端。
 - env 与 admin settings 结构不变。
+
+> ⚠️ 域名冲突待决:本次上游用的是用户现有站 `https://apipool.dev`,而 v2 品牌域名也规划为 `apipool.dev` / `api.apipool.dev`。v2 正式上线前需定夺:v2 换域名,或把现有站迁走,二者不能同占 `apipool.dev`。
 
 ## 9. 风险与回滚
 
