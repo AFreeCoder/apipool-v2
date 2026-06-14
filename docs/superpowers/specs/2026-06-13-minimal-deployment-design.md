@@ -144,6 +144,8 @@ NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini
 
 Stripe 验收**本次跳过**,记为后验项(接线已就位,无需改代码)。
 
+> **本地验证状态(2026-06-14)**:6 步闭环全过。因本机 Docker 内存不足(1.94GB)无法容器内构建门户,门户改在宿主机 dev 模式跑(New API 仍 Docker),验证同一套 bridge 代码。详见实现计划「验证记录」,含给真实服务器部署的待办(容器内构建、`NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL` 修复、standalone HOSTNAME/绝对 DATABASE_URL)。
+
 ## 8. 迁移到未来服务器(零返工)
 
 同一份 `docker-compose.yml` 搬上 VPS:

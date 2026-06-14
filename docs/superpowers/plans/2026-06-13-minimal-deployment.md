@@ -634,3 +634,24 @@ git commit -m "docs(deploy): mark minimal deployment acceptance verified locally
 - §7 验收 6 步 → Task 9
 - §9 风险(启动迁移失败即中止、真实渠道费用、服务隔离)→ Task 4(set -e)、Task 9 Step 5(max_tokens)
 - Stripe 后验 → bootstrap.md 末尾「后验」段(本次不执行)
+
+---
+
+## 验证记录(2026-06-14,本地执行)
+
+**结果:闭环 6 步全绿** ✅ —— 注册→绑定(New API user id=3)→调额(门户余额 `$9.999598` 与 New API quota 一致)→建 Key(一次性明文 `sk-Asqo…KnOe` + 列表掩码)→`curl` HTTP 200 返回 `loop-ok`(上游 `gpt-5.4-mini`,扣费 201 quota,用量入库)→禁用 Key 后 `curl` HTTP 401。
+
+**与计划的偏离(环境约束导致):**
+
+1. **门户未在容器内运行,改为宿主机 dev 模式跑。** 本机 Docker Desktop 仅分配 1.94GB 内存,容器内 `next build`(Turbopack 原生内存)持续 OOM;宿主机有 64GB。New API 仍按 compose 在 Docker 跑。门户验证的是同一套 bridge 代码。
+2. **端口用 3000/3001(spec 原值),非备选端口。** 停掉了占用端口的旧 spike(`apipool-newapi`)与遗留 `next dev`,spike 库备份至 `data/new-api.spike-bak`。
+3. **模型映射兜底。** 门户签发的 Key 限定模型为 `gpt-4o-mini`(见下「待办 2」),故在 New API 渠道加 `model_mapping {"gpt-4o-mini":"gpt-5.4-mini"}` 让调用映射到真实上游模型。
+4. **额度用直接改 New API SQLite 充值。** New API rc.10 的 `PUT /api/user/` 不改 quota;最小验证用 host 直接 `update users set quota` 充值。
+
+**给真实服务器部署的待办(本地未能验证或需修正):**
+
+1. **容器内构建需足够内存**(≥4-6GB)。VPS 上内存充足,Dockerfile 的容器内 build + migrate-on-startup 路径预期可用,但**尚未在 Linux 容器实跑验证**。
+2. **`NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL` 未生效**:门户始终用 fallback `gpt-4o-mini` 签发 Key(即便 env/`.env.deploy` 设了 `gpt-5.4-mini`,且移除 `.env.development` 仍如此)。怀疑 Turbopack 对 `NEXT_PUBLIC_` 服务端内联的处理。**需修复**,否则门户签发的 Key 模型与上游不符(只能靠渠道映射兜底)。
+3. **New API 充值的「正路」**:门户 `adjustPortalQuota` 走兑换码模式(需先 `POST /api/option/payment_compliance` 确认 + 运营 RBAC)。本次未启用门户运营面,故未验证该路径(M2 已单测过)。
+4. **Next 16 standalone + `proxy.ts` 自转发**:宿主机 standalone 跑需 `HOSTNAME=::`(IPv6,localhost 解析)+ **绝对** `DATABASE_URL`(standalone CWD 为 `.next/standalone`,相对路径 CANTOPEN)。Linux 容器内 `HOSTNAME=0.0.0.0` + 绝对 `/data/portal.db` 预期 OK,但**需在服务器实跑验证**。
+5. **New API rc.10 接口要点**(已固化进操作):建渠道用 `{"mode":"single","channel":{…}}` 包装;模型需配价或开「自用模式」(`SelfUseModeEnabled=true`),否则 `model_price_error`。
