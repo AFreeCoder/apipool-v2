@@ -53,6 +53,9 @@ Expected: 打印 `0.25.9`(或相近版本)。若缺失,先 `pnpm install`。
 # 用法：cp .env.deploy.example .env.deploy 后填写，再 docker compose --env-file .env.deploy ...
 # 本文件入库（无密钥）；.env.deploy 已 gitignore。
 
+# ---- compose 项目名（容器前缀；旧版 compose 不支持顶层 name:）----
+COMPOSE_PROJECT_NAME=apipool-v2
+
 # ---- 数据库（门户，SQLite 落盘在挂载卷 /data）----
 DATABASE_PROVIDER=sqlite
 DATABASE_URL=file:/data/portal.db
@@ -290,8 +293,10 @@ git commit -m "feat(deploy): migrate-on-startup entrypoint and build-time NEXT_P
 
 - [ ] **Step 1: 创建 `docker-compose.yml`**
 
+> 注:本机 Docker Compose v2.2.3 不支持顶层 `name:` 字段,改用 `.env.deploy` 的 `COMPOSE_PROJECT_NAME=apipool-v2` 设项目名。
+
 ```yaml
-name: apipool-v2
+# 项目名由 .env.deploy 的 COMPOSE_PROJECT_NAME=apipool-v2 设定
 
 services:
   apipool-v2:

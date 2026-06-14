@@ -1,0 +1,31 @@
+# 项目名由 .env.deploy 的 COMPOSE_PROJECT_NAME=apipool-v2 设定
+# （本机 Docker Compose v2.2.3 不支持顶层 name: 字段）
+
+services:
+  apipool-v2:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_APIPOOL_API_BASE_URL: ${NEXT_PUBLIC_APIPOOL_API_BASE_URL}
+        NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: ${NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL}
+    # 未来服务器：改用 CI 镜像替代本地 build
+    # image: ghcr.io/afreecoder/apipool-v2:latest
+    env_file:
+      - .env.deploy
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data/portal:/data
+    depends_on:
+      - new-api
+    restart: unless-stopped
+
+  new-api:
+    image: calciumion/new-api:latest
+    # 本地发布到 127.0.0.1:3001：既是 /v1 网关（供 curl），也是管理后台（加渠道）
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./data/new-api:/data
+    restart: unless-stopped
