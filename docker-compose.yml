@@ -9,6 +9,8 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
         NEXT_PUBLIC_APIPOOL_API_BASE_URL: ${NEXT_PUBLIC_APIPOOL_API_BASE_URL}
         NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: ${NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL}
+        # 本地 Docker 内存受限：压低 build 堆上限避免 OOM（CI 用 Dockerfile 默认 4096）
+        NODE_BUILD_MEMORY: ${NODE_BUILD_MEMORY:-1536}
     # 未来服务器：改用 CI 镜像替代本地 build
     # image: ghcr.io/afreecoder/apipool-v2:latest
     env_file:

@@ -23,8 +23,12 @@ ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NEXT_PUBLIC_APIPOOL_API_BASE_URL=$NEXT_PUBLIC_APIPOOL_API_BASE_URL \
     NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=$NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL
 
+# Cap V8 heap during build so memory-constrained Docker hosts GC instead of OOM-killing.
+# Default 4096 matches CI/Vercel; local compose passes a lower value via build arg.
+ARG NODE_BUILD_MEMORY=4096
+
 COPY . .
-RUN pnpm build
+RUN NODE_OPTIONS=--max-old-space-size=$NODE_BUILD_MEMORY pnpm build
 
 # Bundle a self-contained SQLite migrator (drizzle-orm bundled in; @libsql/client
 # kept external — it is already part of the standalone runtime the portal uses).
