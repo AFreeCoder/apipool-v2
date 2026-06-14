@@ -6,7 +6,6 @@ RUN apk add --no-cache libc6-compat && yarn global add pnpm@10
 
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
 COPY package.json pnpm-lock.yaml* source.config.ts next.config.mjs ./
 RUN pnpm i --frozen-lockfile
 
@@ -15,9 +14,24 @@ FROM deps AS builder
 
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
+# NEXT_PUBLIC_* are inlined into the client bundle at build time. Defaults match
+# code defaults so CI builds are unaffected; local compose overrides via build.args.
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1
+ARG NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-4o-mini
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_APIPOOL_API_BASE_URL=$NEXT_PUBLIC_APIPOOL_API_BASE_URL \
+    NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=$NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL
+
 COPY . .
 RUN pnpm build
+
+# Bundle a self-contained SQLite migrator (drizzle-orm bundled in; @libsql/client
+# kept external — it is already part of the standalone runtime the portal uses).
+RUN node_modules/.bin/esbuild deploy/migrate.src.mjs \
+      --bundle --platform=node --format=cjs \
+      --external:@libsql/client \
+      --outfile=deploy/migrate.cjs
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -32,14 +46,20 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Migration assets (entrypoint runs them only for sqlite/turso providers)
+COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/src/config/db/migrations_sqlite ./migrations_sqlite
+COPY --from=builder --chown=nextjs:nodejs /app/deploy/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
 USER nextjs
 
 EXPOSE 3000
 
-# set environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV MIGRATIONS_DIR=./migrations_sqlite
 
-# server.js is created by next build from the standalone output
-CMD ["node", "server.js"]
+# entrypoint runs migrations (sqlite/turso) then starts the standalone server
+CMD ["./entrypoint.sh"]
