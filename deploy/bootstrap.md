@@ -47,12 +47,20 @@ sed -i '' "s|^NEWAPI_ADMIN_TOKEN=.*|NEWAPI_ADMIN_TOKEN=$TOKEN|" .env.deploy
 - 模型:`gpt-5.4-mini`
 - 密钥:你的测试 key
 
-或用 API(`$TOKEN` 为上一步 token):
+或用 API(`$TOKEN` 为上一步 token)。**注意 New API rc.10 建渠道要 `{"mode":"single","channel":{…}}` 包装**(裸 channel 对象会触发服务端 panic):
 ```bash
+# 1) 建渠道（rc.10 格式）
 curl -s -X POST http://localhost:3001/api/channel/ \
   -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
-  -d '{"name":"apipool-upstream","type":1,"base_url":"https://apipool.dev","models":"gpt-5.4-mini","key":"<你的测试 key>","groups":["default"]}'
+  -d '{"mode":"single","channel":{"name":"apipool-upstream","type":1,"base_url":"https://apipool.dev","models":"gpt-5.4-mini","key":"<你的测试 key>","group":"default"}}'
+
+# 2) 开自用模式：否则模型未配价时调用会被拒（model_price_error）
+curl -s -X PUT http://localhost:3001/api/option/ \
+  -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
+  -d '{"key":"SelfUseModeEnabled","value":"true"}'
 ```
+
+> 验证渠道:`curl -s -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' "http://localhost:3001/api/channel/test/<渠道id>?model=gpt-5.4-mini"` 返回 `success:true` 即上游可用。
 
 ## 4. 构建并起门户
 
