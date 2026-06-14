@@ -2,13 +2,15 @@
 
 > 本手册是 MVP 上线的发布门禁，覆盖完整闭环：注册 → 充值 → 建 Key → 真实调用 → 用量可见 → 禁用 Key 被拒。
 
+> **容器化部署件（2026-06）**：仓库已提供本地/服务器两用的 `docker-compose.yml`（门户 `apipool-v2` + `new-api` 两服务）、门户 `Dockerfile`（构建期注入 `NEXT_PUBLIC_*`、esbuild 打包迁移、entrypoint 启动时自动建表并 fail-fast 校验密钥）、`.env.deploy.example` 与一次性引导手册 [`deploy/bootstrap.md`](../deploy/bootstrap.md)。具体起服务步骤以 `deploy/bootstrap.md` 为准；本手册聚焦发布门禁、安全与回滚。已本地实跑闭环验证（详见 `docs/superpowers/plans/2026-06-13-minimal-deployment.md` 的「验证记录」与「待 Linux 容器复验」清单）。
+
 ## 1. 必需环境变量
 
 ### 基础
 
 - `DATABASE_PROVIDER` / `DATABASE_URL`
-- `AUTH_SECRET` / `AUTH_URL`
-- `NEXT_PUBLIC_APP_URL=https://apipool.dev`
+- `AUTH_SECRET` / `AUTH_URL` —— **容器 entrypoint fail-fast：`AUTH_SECRET` 必须非空且 ≥16 字符**（空值会让 Better Auth 回退已知默认签名密钥），否则拒绝启动。用 `openssl rand -base64 32` 生成。
+- `NEXT_PUBLIC_APP_URL=https://apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效）
 
 ### New API 桥接（见 04-newapi-contract.md）
 
@@ -18,7 +20,9 @@
 - `NEWAPI_QUOTA_PER_UNIT`（与实例核对）
 - `APIPOOL_KEY_CREATION_ENABLED=true`
 - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1`
-- 凭据加密密钥（M1 定名，AES-256-GCM）
+- `APIPOOL_CREDENTIALS_SECRET`（AES-256-GCM 凭据加密密钥；与 `AUTH_SECRET` 同样被 entrypoint fail-fast 校验非空 ≥16 字符）
+- 集成开启时（默认开），`NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID` 必填，否则 entrypoint 拒绝启动（避免绑定/建 Key 拖到用户操作时才失败）
+- **凭据隔离**：仅引导脚本用的 `NEWAPI_ROOT_USER` / `NEWAPI_ROOT_PASS` 不进门户容器（compose 用 `environment:` allowlist 而非 `env_file:`）
 
 ### 支付（见 06-payments-ledger.md）
 
@@ -32,11 +36,16 @@
 
 ## 1.5 New API 实例初始化（每个新实例一次性，✅已实测）
 
-1. 启动容器：`docker run -d --name apipool-newapi -p <port>:3000 -v <数据目录>:/data calciumion/new-api:latest`
-2. 初始化 root：`POST /api/setup` body `{username:"root", password, confirmPassword}`（未初始化前所有登录失败，日志报 `no root user exists`）。
-3. root 登录拿 cookie 会话后，确认支付合规（兑换码功能的前置开关）：`POST /api/option/payment_compliance` body `{confirmed:true}`——必须用 dashboard 会话，API token 会被拒。
+1. 启动容器：用 `docker-compose.yml` 的 `new-api` 服务（推荐），或独立 `docker run -d --name apipool-newapi -p <port>:3000 -v <数据目录>:/data calciumion/new-api:latest`。
+2. 初始化 root：`POST /api/setup` body `{username:"root", password, confirmPassword}`（未初始化前所有登录失败，日志报 `no root user exists`）。密码限 8-20 字符。
+3. root 登录拿 cookie 会话后，确认支付合规（**兑换码功能**的前置开关，充值/加额走兑换码模式时必做）：`POST /api/option/payment_compliance` body `{confirmed:true}`——必须用 dashboard 会话，API token 会被拒。
 4. 生成管理员 access token：cookie 会话 + `New-Api-User: 1` 调 `GET /api/user/token`，存入 `NEWAPI_ADMIN_TOKEN`。注意该接口是重新生成语义，调用后旧 token 失效。
-5. 配置至少一个上游渠道（sub2api/APIPool 或直连上游），否则 `/v1/chat/completions` 报 `model_not_found: No available channel`。
+   > 步骤 2+4 已由 [`deploy/newapi-token.sh`](../deploy/newapi-token.sh) 自动化（setup root → login → 取 token）。
+5. 配置至少一个上游渠道，否则 `/v1/chat/completions` 报 `model_not_found: No available channel`。**实测要点（calciumion/new-api rc.10）**：
+   - 建渠道 API 必须用 `{"mode":"single","channel":{…}}` 包装（裸 channel 对象触发服务端 panic）。
+   - 模型需配价，否则调用报 `model_price_error`；最小化可开**自用模式** `PUT /api/option/` body `{"key":"SelfUseModeEnabled","value":"true"}` 绕过逐模型配价。
+   - **给用户充值额度**：`PUT /api/user/` 不改 `quota`；正路是**兑换码模式**（需步骤 3 的 payment_compliance + 门户运营 RBAC，门户 `adjustPortalQuota` 走这条），本地最小验证可直接改 New API SQLite。
+   - 具体 curl 见 `deploy/bootstrap.md` §3。
 
 本地开发实例：宿主机端口 3001（`NEWAPI_BASE_URL=http://127.0.0.1:3001`），数据落 `data/new-api/`（已 gitignore）。
 

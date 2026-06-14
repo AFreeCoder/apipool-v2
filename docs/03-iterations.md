@@ -44,6 +44,8 @@
 - 生产部署（New API 实例 + 支付 live key），冒烟手册（07-runbook.md）逐步执行。
 - webhook 失败与 bridge 审计最低告警。
 
+> **进度（2026-06）**：部署工具已就绪并本地实跑闭环通过——`docker-compose.yml`（门户 + New API）、门户 `Dockerfile`（迁移并进启动 + 密钥 fail-fast）、`deploy/bootstrap.md`、env allowlist。非支付闭环（注册→绑定→调额→建 Key→调用→禁用 401）本地验证全过。**待用户备好 VPS 后**：在真实 Linux 容器复验（libsql 原生绑定、bind-mount 权限、构建内存、fail-fast/allowlist 端到端），并接 Stripe live。详见 `docs/superpowers/{specs,plans}/2026-06-13-minimal-deployment*`。
+
 验收：生产环境全新账号完整跑通"注册 → 最小金额真实充值 → 建 Key → 真实调用 → 用量可见"，无人工介入；回滚演练一次。
 
 ## MVP 后迭代方向（粗粒度，每个迭代仍按闭环交付）

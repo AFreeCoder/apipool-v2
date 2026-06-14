@@ -36,6 +36,24 @@ If `newapi.apipool.dev` is deployed for operators, protect it separately with
 operator login plus Basic Auth or an IP allowlist, and keep portal bridge traffic
 on the internal service URL.
 
+## Deployment
+
+A two-service `docker-compose.yml` runs the portal (`apipool-v2`) plus the New
+API upstream (`calciumion/new-api`). The portal image builds from the local
+`Dockerfile` (build-time `NEXT_PUBLIC_*` injection, esbuild-bundled SQLite
+migrator, migrate-on-startup with fail-fast secret checks). Copy
+`.env.deploy.example` to `.env.deploy`, fill the secrets, then follow the
+step-by-step runbook in [`deploy/bootstrap.md`](deploy/bootstrap.md):
+
+```bash
+docker compose --env-file .env.deploy up -d --build
+```
+
+`AUTH_SECRET` and `APIPOOL_CREDENTIALS_SECRET` must be non-empty (>=16 chars) or
+the container refuses to start. New API root credentials (`NEWAPI_ROOT_*`) are
+host-bootstrap-only and are not injected into the portal container. Release
+gating, security, and rollback are in [`docs/07-runbook.md`](docs/07-runbook.md).
+
 ## Verification
 
 ```bash
