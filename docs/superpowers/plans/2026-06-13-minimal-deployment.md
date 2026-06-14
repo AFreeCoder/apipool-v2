@@ -102,46 +102,52 @@ git commit -m "chore(deploy): add .env.deploy template and gitignore entry"
 ```javascript
 // 运行时数据库迁移：对 SQLite 文件建表/补结构。
 // 由 Docker 构建期 esbuild 打包为 deploy/migrate.cjs，容器 entrypoint 在起服务前执行。
+// 注意：用 async IIFE 包裹，避免顶层 await（esbuild cjs 输出不支持顶层 await）。
 import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 
-const url = process.env.DATABASE_URL;
-if (!url) {
-  console.error('[migrate] DATABASE_URL is not set');
-  process.exit(1);
-}
+async function main() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error('[migrate] DATABASE_URL is not set');
+    process.exit(1);
+  }
 
-const migrationsFolder = process.env.MIGRATIONS_DIR || './migrations_sqlite';
-const client = createClient({ url });
-const db = drizzle({ client });
+  const migrationsFolder = process.env.MIGRATIONS_DIR || './migrations_sqlite';
+  const client = createClient({ url });
+  const db = drizzle({ client });
 
-try {
   await migrate(db, { migrationsFolder });
   console.log('[migrate] migrations applied');
-  process.exit(0);
-} catch (err) {
-  console.error('[migrate] migration failed:', err);
-  process.exit(1);
 }
+
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('[migrate] migration failed:', err);
+    process.exit(1);
+  });
 ```
 
 - [ ] **Step 2: 本机冒烟验证脚本逻辑正确(用临时 sqlite 文件)**
 
+注意：bundle 用 `--external:@libsql/client`,运行时靠所在目录的 node_modules 解析它,故 bundle 必须输出到仓库目录(`.tmp/`)而非 `/tmp`。
+
 Run:
 ```bash
-DATABASE_URL=file:/tmp/apipool-migrate-test.db MIGRATIONS_DIR=./src/config/db/migrations_sqlite \
-  node_modules/.bin/esbuild deploy/migrate.src.mjs --bundle --platform=node --format=cjs --external:@libsql/client --outfile=/tmp/migrate.test.cjs \
-  && DATABASE_URL=file:/tmp/apipool-migrate-test.db MIGRATIONS_DIR=./src/config/db/migrations_sqlite node /tmp/migrate.test.cjs \
-  && node -e "const{createClient}=require('@libsql/client');(async()=>{const c=createClient({url:'file:/tmp/apipool-migrate-test.db'});const r=await c.execute(\"select name from sqlite_master where type='table' limit 5\");console.log('tables:',r.rows.map(x=>x.name))})()"
+mkdir -p .tmp; rm -f /tmp/apipool-migrate-test.db .tmp/migrate.test.cjs
+node_modules/.bin/esbuild deploy/migrate.src.mjs --bundle --platform=node --format=cjs --external:@libsql/client --outfile=.tmp/migrate.test.cjs \
+  && DATABASE_URL=file:/tmp/apipool-migrate-test.db MIGRATIONS_DIR=./src/config/db/migrations_sqlite node .tmp/migrate.test.cjs \
+  && node -e "const{createClient}=require('@libsql/client');(async()=>{const c=createClient({url:'file:/tmp/apipool-migrate-test.db'});const r=await c.execute(\"select name from sqlite_master where type='table'\");console.log('table count:',r.rows.length)})()"
 ```
-Expected: 打印 `[migrate] migrations applied`,随后列出若干表名(如 `user`、`__drizzle_migrations` 等)。
+Expected: 打印 `[migrate] migrations applied`,随后 `table count: 25`(或与当前迁移一致的表数)。
 
 - [ ] **Step 3: 清理临时文件**
 
 Run:
 ```bash
-rm -f /tmp/apipool-migrate-test.db /tmp/migrate.test.cjs
+rm -f /tmp/apipool-migrate-test.db .tmp/migrate.test.cjs
 ```
 
 - [ ] **Step 4: Commit**
