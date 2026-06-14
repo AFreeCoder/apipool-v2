@@ -57,6 +57,30 @@ host
 - "不暴露公网"安全模型针对**未来服务器**:反代只放行 `/v1`,管理面(`/api/user` 等)加 Basic Auth/IP 白名单。本地全在 127.0.0.1,无对外暴露。
 - 真实上游:引导阶段在 New API 后台加一个渠道,BaseURL `https://apipool.dev`(用户自有站),模型 `gpt-5.4-mini`,填用户测试 key(只进 New API DB / `.env.deploy`,不入库);`curl` 的实际请求经 New API 转发到该上游(已实测 200,产生少量真实费用)。
 
+### 3.1 控制面 vs 数据面(两个独立平面)
+
+系统流量分两条互不重叠的路径,理解这点是整套部署拓扑的关键:
+
+```
+控制面（管理，低频）              数据面（推理，高频/流式）
+─────────────────                ──────────────────────
+浏览器                            用户的 curl / OpenAI SDK
+  │ 登录会话                        │ Authorization: Bearer sk-xxx
+  ▼                                ▼
+门户  apipool.dev (:3000)        api.apipool.dev (:3001 本地)
+  │ 服务端 bridge                   │ 反代只放行 /v1/*
+  │ 带 admin token                  ▼
+  ▼ 内部地址 NEWAPI_BASE_URL       New API /v1 网关
+New API 管理接口                  （校验 sk-key、扣额度、转发上游、记日志）
+（建 Key / 查用量 / 查消耗）
+```
+
+- **控制面(建 Key、查请求记录、查 token 消耗)**:浏览器只与门户通信;门户用服务端 bridge 经内部地址 `NEWAPI_BASE_URL` 带 admin token 访问 New API 管理接口。**用户浏览器永不直连 New API**。
+- **数据面(实际 LLM 调用)**:用户持 `sk-xxx`(它本身就是一个 New API token)直接打 `api.apipool.dev/v1`,反代转发给 New API;**门户不在此路径上**。New API 自己校验 key、扣额度、记用量。
+- **为何推理流量不走门户域名**:Next.js 不适合做高吞吐流式代理,绕行徒增延迟并占用 Node 进程;New API 本就是为此而生的网关。两面分离 = 控制面与数据面可独立扩容。
+- 控制台展示给用户、填进 SDK `base_url` 的 `NEXT_PUBLIC_APIPOOL_API_BASE_URL` = 数据面入口(本地 `http://localhost:3001/v1`,服务器 `https://api.apipool.dev/v1`)。
+- 子域 `api.apipool.dev`(数据面)与第 8 节的 apex 域名冲突无关——冲突只在 `apipool.dev` 本身。
+
 ## 4. 产出物(均入库,密钥与 data/ 除外)
 
 | 路径 | 作用 |
@@ -130,6 +154,7 @@ Stripe 验收**本次跳过**,记为后验项(接线已就位,无需改代码)�
 - 迁移机制不变(`portal-migrate` 容器照旧)。
 - Stripe 改真实公网 webhook(撤掉 `stripe listen`);此时补 Creem 端到端。
 - env 与 admin settings 结构不变。
+- 给 `portal` / `new-api` 加资源限制(`mem_limit` / `cpus` 或 `deploy.resources.limits`),避免高负载下争抢宿主机资源(见第 9 节服务隔离)。
 
 > ⚠️ 域名冲突待决:本次上游用的是用户现有站 `https://apipool.dev`,而 v2 品牌域名也规划为 `apipool.dev` / `api.apipool.dev`。v2 正式上线前需定夺:v2 换域名,或把现有站迁走,二者不能同占 `apipool.dev`。
 
@@ -138,4 +163,5 @@ Stripe 验收**本次跳过**,记为后验项(接线已就位,无需改代码)�
 - **New API admin token 重生成语义**:`/api/user/token` 调用后旧 token 失效;引导脚本只在初始化时调一次,记录到 `.env.deploy`。
 - **迁移与门户卷一致**:`portal-migrate` 与 `portal` 必须挂同一份 `./data/portal` 卷且 `DATABASE_URL` 相同,否则门户连到未建表的空库;门户 `depends_on` 迁移 `service_completed_successfully` 保证次序。
 - **真实渠道产生费用**:`curl` 验证会经真实上游产生少量 LLM 调用费;用最小 `max_tokens` 控制。
+- **服务隔离**:`portal` 与 `new-api` 是独立容器,各挂各的卷(独立 SQLite,无锁竞争)、各发布不同 host 端口、生命周期独立(一方崩溃不影响另一方,各 `restart: unless-stopped`)。**唯一共享的是宿主机 CPU/内存**(容器非虚拟机);本地无所谓,服务器加资源限制即可隔开。
 - **回滚**:本地部署,`docker compose down` 即停;`data/` 为 bind-mount,删除前先备份。不删 ledger / 订单 / 已建 Key。
