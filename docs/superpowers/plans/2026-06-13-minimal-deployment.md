@@ -650,8 +650,12 @@ git commit -m "docs(deploy): mark minimal deployment acceptance verified locally
 
 **给真实服务器部署的待办(本地未能验证或需修正):**
 
-1. **容器内构建需足够内存**(≥4-6GB)。VPS 上内存充足,Dockerfile 的容器内 build + migrate-on-startup 路径预期可用,但**尚未在 Linux 容器实跑验证**。
-2. **`NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL` 未生效**:门户始终用 fallback `gpt-4o-mini` 签发 Key(即便 env/`.env.deploy` 设了 `gpt-5.4-mini`,且移除 `.env.development` 仍如此)。怀疑 Turbopack 对 `NEXT_PUBLIC_` 服务端内联的处理。**需修复**,否则门户签发的 Key 模型与上游不符(只能靠渠道映射兜底)。
-3. **New API 充值的「正路」**:门户 `adjustPortalQuota` 走兑换码模式(需先 `POST /api/option/payment_compliance` 确认 + 运营 RBAC)。本次未启用门户运营面,故未验证该路径(M2 已单测过)。
-4. **Next 16 standalone + `proxy.ts` 自转发**:宿主机 standalone 跑需 `HOSTNAME=::`(IPv6,localhost 解析)+ **绝对** `DATABASE_URL`(standalone CWD 为 `.next/standalone`,相对路径 CANTOPEN)。Linux 容器内 `HOSTNAME=0.0.0.0` + 绝对 `/data/portal.db` 预期 OK,但**需在服务器实跑验证**。
-5. **New API rc.10 接口要点**(已固化进操作):建渠道用 `{"mode":"single","channel":{…}}` 包装;模型需配价或开「自用模式」(`SelfUseModeEnabled=true`),否则 `model_price_error`。
+> code review(2026-06-14)补充:以下 #1/#2 是被 macOS 本地测试结构性掩盖的**真实部署阻塞项**,已采取修复但需在首个 Linux 容器构建/启动验证;原 #3(默认模型)经复核降级为 dev 模式产物。
+
+1. **【阻塞·已修待验】libsql 原生绑定可能没被 trace 进 standalone**:`@libsql/client` 经计算式 `require` 加载平台 `.node`(如 `@libsql/linux-arm64-musl`),nft 静态分析跟不上,可能导致容器首启时门户 DB 层与迁移都 `Cannot find module`。**已修**:`next.config.mjs` 加 `serverExternalPackages: ['@libsql/client','libsql']` + `outputFileTracingIncludes` 强制纳入 `.node`。**验证**:Linux 构建后 `ls .next/standalone/node_modules/@libsql/linux-*-musl/*.node`。
+2. **【阻塞·已修待验】bind-mount 权限**:门户容器以 uid 1001 运行,host 上以 root 建的 `./data/portal` 会让 uid 1001 无法建 `portal.db`(`SQLITE_CANTOPEN`);macOS Docker Desktop 自动映射 uid 故本地未暴露。**已修**:bootstrap.md §0 加 `chown -R 1001:1001 ./data/portal`。
+3. **容器内构建需足够内存**(≥4-6GB)。VPS 上内存充足,容器内 build + migrate-on-startup 路径预期可用,但**尚未在 Linux 容器实跑验证**。
+4. **【降级·非阻塞】`NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL` 默认模型**:本次门户用 fallback `gpt-4o-mini` 签发 Key,经 review 复核**根因是 dev 模式加载了 `.env.development`(其硬编码 `gpt-4o-mini`)覆盖**;**生产容器构建 NODE_ENV=production 不加载 `.env.development`,build arg 会正常生效**,故大概率自愈——首个容器构建后确认门户签发的 Key 模型为 `gpt-5.4-mini` 即可(否则再查)。本次靠 New API 渠道 `model_mapping` 兜底。
+5. **New API 充值的「正路」**:门户 `adjustPortalQuota` 走兑换码模式(需先 `POST /api/option/payment_compliance` 确认 + 运营 RBAC)。本次未启用门户运营面,故未验证该路径(M2 已单测过)。
+6. **Next 16 standalone + `proxy.ts` 自转发**:宿主机 standalone 跑需 `HOSTNAME=::`(IPv6,localhost 解析)+ **绝对** `DATABASE_URL`(standalone CWD 为 `.next/standalone`,相对路径 CANTOPEN)。Linux 容器内 `HOSTNAME=0.0.0.0` + 绝对 `/data/portal.db` 预期 OK,但**需在服务器实跑验证**。
+7. **New API rc.10 接口要点**(已固化进操作):建渠道用 `{"mode":"single","channel":{…}}` 包装;模型需配价或开「自用模式」(`SelfUseModeEnabled=true`),否则 `model_price_error`。

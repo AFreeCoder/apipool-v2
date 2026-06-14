@@ -7,12 +7,17 @@
 
 ```bash
 mkdir -p data/portal data/new-api
+# 门户容器以 uid 1001(nextjs)运行，需能写 bind-mount 的 portal 库（Linux 上必做，
+# 否则建库报 SQLITE_CANTOPEN；macOS Docker Desktop 会自动映射 uid，可跳过）
+sudo chown -R 1001:1001 ./data/portal
 cp -n .env.deploy.example .env.deploy
 # 生成两个密钥并填入 .env.deploy 的 AUTH_SECRET / APIPOOL_CREDENTIALS_SECRET
 openssl rand -base64 32   # -> AUTH_SECRET
 openssl rand -base64 32   # -> APIPOOL_CREDENTIALS_SECRET
 # 设置 NEWAPI_ROOT_PASS（8-20 字符）
 ```
+
+> 注:门户 `restart: unless-stopped` + 启动迁移失败即退出 = 若迁移持续失败会无限重启。排障时先看 `docker compose --env-file .env.deploy logs apipool-v2`,定位 `[migrate] migration failed` 后再修,必要时临时改 `restart: "no"`。
 
 ## 1. 起 New API
 

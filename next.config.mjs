@@ -15,6 +15,20 @@ const withNextIntl = createNextIntlPlugin({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: process.env.VERCEL ? undefined : 'standalone',
+  // @libsql/client loads its native binding via a computed require that nft can't
+  // statically trace. Mark it external and force the platform .node files into the
+  // standalone output so the SQLite driver works in the container image.
+  serverExternalPackages: ['@libsql/client', 'libsql'],
+  ...(process.env.VERCEL
+    ? {}
+    : {
+        outputFileTracingIncludes: {
+          '*': [
+            './node_modules/@libsql/**/*.node',
+            './node_modules/libsql/**/*.node',
+          ],
+        },
+      }),
   reactStrictMode: false,
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
   images: {

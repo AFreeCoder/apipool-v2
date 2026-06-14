@@ -5,6 +5,7 @@
 data
 debug
 node_modules
+.env*
 .cursorrules
 .git
 vercel.json
