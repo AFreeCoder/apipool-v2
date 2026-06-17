@@ -10,6 +10,10 @@ test('docker image workflow builds production-configured immutable images', asyn
   assert.match(workflow, /NEXT_PUBLIC_APP_URL:\s*https:\/\/apipool\.dev/);
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/api\.apipool\.dev\/v1/);
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL:\s*gpt-5\.4-mini/);
+  assert.match(workflow, /deploy-production:/);
+  assert.match(workflow, /IMAGE_TAG:\s*sha-\$\{\{\s*github\.sha\s*\}\}/);
+  assert.match(workflow, /docker login ghcr\.io/);
+  assert.match(workflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
 });
 
 test('production compose pulls a selected GHCR image tag', async () => {
