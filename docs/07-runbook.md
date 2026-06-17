@@ -132,7 +132,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 - `new.apipool.dev` → 门户 `127.0.0.1:3000`
 - `newapi.apipool.dev` → New API `127.0.0.1:3001`
 
-New API 管理面会加 Basic Auth 与 `X-Robots-Tag: noindex, nofollow`。Basic Auth 凭据保存在服务器 `/root/apipool-newapi-basic-auth.txt`，文件权限 `600`。
+New API 管理面直接对公网开放登录页，并加 `X-Robots-Tag: noindex, nofollow`。上线后需确保 New API root 密码和后台账号权限已设置妥当。
 
 复制 `deploy/env.production.example` 为服务器 `/opt/apipool-v2/.env.deploy` 后填写密钥。若需要先把容器跑起来但 New API 管理 token 尚未初始化，可临时设置：
 
