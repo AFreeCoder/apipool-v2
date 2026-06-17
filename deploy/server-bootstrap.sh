@@ -46,6 +46,7 @@ chown -R 1001:1001 "$APP_DIR/data/portal"
 chmod 700 "$APP_DIR/backups"
 
 chmod 0755 "$APP_DIR/deploy/backup.sh" "$APP_DIR/deploy/deploy.sh"
+[ -f "$APP_DIR/deploy/configure-caddy.sh" ] && chmod 0755 "$APP_DIR/deploy/configure-caddy.sh" && "$APP_DIR/deploy/configure-caddy.sh"
 install -m 0644 "$APP_DIR/deploy/systemd/apipool-v2-backup.service" /etc/systemd/system/apipool-v2-backup.service
 install -m 0644 "$APP_DIR/deploy/systemd/apipool-v2-backup.timer" /etc/systemd/system/apipool-v2-backup.timer
 systemctl daemon-reload
@@ -53,4 +54,5 @@ systemctl enable --now apipool-v2-backup.timer
 
 docker --version
 docker compose version
+[ -x /usr/bin/caddy ] && caddy version
 systemctl list-timers apipool-v2-backup.timer --no-pager

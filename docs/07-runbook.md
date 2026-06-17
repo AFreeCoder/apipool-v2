@@ -112,6 +112,7 @@ GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密�
 ├── backups/                 # 备份归档，chmod 700
 └── deploy/
     ├── backup.sh
+    ├── configure-caddy.sh
     ├── deploy.sh
     ├── server-bootstrap.sh
     └── systemd/
@@ -125,6 +126,13 @@ GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密�
 rsync -az docker-compose.prod.yml deploy/ apipool_vps:/opt/apipool-v2/
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 ```
+
+`server-bootstrap.sh` 同时安装 Caddy 并生成反代配置：
+
+- `new.apipool.dev` → 门户 `127.0.0.1:3000`
+- `newapi.apipool.dev` → New API `127.0.0.1:3001`
+
+New API 管理面会加 Basic Auth 与 `X-Robots-Tag: noindex, nofollow`。Basic Auth 凭据保存在服务器 `/root/apipool-newapi-basic-auth.txt`，文件权限 `600`。
 
 复制 `deploy/env.production.example` 为服务器 `/opt/apipool-v2/.env.deploy` 后填写密钥。若需要先把容器跑起来但 New API 管理 token 尚未初始化，可临时设置：
 

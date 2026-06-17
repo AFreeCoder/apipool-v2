@@ -58,3 +58,16 @@ test('systemd timer runs daily backup at 04:00 Asia/Shanghai', async () => {
   assert.match(timer, /Persistent=true/);
   assert.match(service, /ExecStart=\/opt\/apipool-v2\/deploy\/backup\.sh daily/);
 });
+
+test('Caddy setup routes public subdomains to local containers with New API auth', async () => {
+  const script = await readFile('deploy/configure-caddy.sh', 'utf8');
+  const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
+
+  assert.match(script, /new\.apipool\.dev/);
+  assert.match(script, /newapi\.apipool\.dev/);
+  assert.match(script, /reverse_proxy \$PORTAL_UPSTREAM/);
+  assert.match(script, /reverse_proxy \$NEWAPI_UPSTREAM/);
+  assert.match(script, /basicauth/);
+  assert.match(script, /X-Robots-Tag "noindex, nofollow"/);
+  assert.match(bootstrap, /configure-caddy\.sh/);
+});
