@@ -1,0 +1,7 @@
+[Unit]
+Description=APIPool v2 daily backup
+
+[Service]
+Type=oneshot
+Environment=APIPOOL_DEPLOY_DIR=/opt/apipool-v2
+ExecStart=/opt/apipool-v2/deploy/backup.sh daily

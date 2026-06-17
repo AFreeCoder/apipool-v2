@@ -10,7 +10,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  SVR_NAME: ${{ github.event.repository.name }}
+  NEXT_PUBLIC_APP_URL: https://apipool.dev
+  NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://api.apipool.dev/v1
+  NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: gpt-5.4-mini
 
 jobs:
   build-and-push:
@@ -45,6 +47,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_APIPOOL_API_BASE_URL=${{ env.NEXT_PUBLIC_APIPOOL_API_BASE_URL }}
+            NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=${{ env.NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL }}

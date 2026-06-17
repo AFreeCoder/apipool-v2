@@ -51,8 +51,17 @@ docker compose --env-file .env.deploy up -d --build
 
 `AUTH_SECRET` and `APIPOOL_CREDENTIALS_SECRET` must be non-empty (>=16 chars) or
 the container refuses to start. New API root credentials (`NEWAPI_ROOT_*`) are
-host-bootstrap-only and are not injected into the portal container. Release
-gating, security, and rollback are in [`docs/07-runbook.md`](docs/07-runbook.md).
+host-bootstrap-only and are not injected into the portal container.
+
+For production, GitHub Actions builds immutable GHCR images and the VPS deploy
+script pulls the selected tag after a pre-deploy backup:
+
+```bash
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
+```
+
+Release gating, security, backup retention, rollback, and the current VPS
+access record are in [`docs/07-runbook.md`](docs/07-runbook.md).
 
 ## Verification
 

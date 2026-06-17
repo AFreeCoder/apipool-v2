@@ -1,0 +1,37 @@
+# Production compose file. The portal image is built by GitHub Actions and
+# selected by IMAGE_TAG in release.env.
+
+services:
+  apipool-v2:
+    image: ${APIPOOL_PORTAL_IMAGE:-ghcr.io/afreecoder/apipool-v2}:${IMAGE_TAG:?IMAGE_TAG is required}
+    environment:
+      DATABASE_PROVIDER: ${DATABASE_PROVIDER}
+      DATABASE_URL: ${DATABASE_URL}
+      DB_SINGLETON_ENABLED: ${DB_SINGLETON_ENABLED}
+      DB_MAX_CONNECTIONS: ${DB_MAX_CONNECTIONS}
+      AUTH_SECRET: ${AUTH_SECRET}
+      APIPOOL_CREDENTIALS_SECRET: ${APIPOOL_CREDENTIALS_SECRET}
+      NEWAPI_INTEGRATION_ENABLED: ${NEWAPI_INTEGRATION_ENABLED}
+      APIPOOL_KEY_CREATION_ENABLED: ${APIPOOL_KEY_CREATION_ENABLED}
+      NEWAPI_BASE_URL: ${NEWAPI_BASE_URL}
+      NEWAPI_ADMIN_TOKEN: ${NEWAPI_ADMIN_TOKEN}
+      NEWAPI_ADMIN_USER_ID: ${NEWAPI_ADMIN_USER_ID}
+      NEWAPI_QUOTA_PER_UNIT: ${NEWAPI_QUOTA_PER_UNIT}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_APIPOOL_API_BASE_URL: ${NEXT_PUBLIC_APIPOOL_API_BASE_URL}
+      NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: ${NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data/portal:/data
+    depends_on:
+      - new-api
+    restart: unless-stopped
+
+  new-api:
+    image: ${NEWAPI_IMAGE:-calciumion/new-api:latest}
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./data/new-api:/data
+    restart: unless-stopped

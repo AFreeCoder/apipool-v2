@@ -1,0 +1,10 @@
+[Unit]
+Description=Run APIPool v2 backup every day at 04:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Shanghai
+Persistent=true
+Unit=apipool-v2-backup.service
+
+[Install]
+WantedBy=timers.target

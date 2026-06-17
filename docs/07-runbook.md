@@ -4,6 +4,15 @@
 
 > **容器化部署件（2026-06）**：仓库已提供本地/服务器两用的 `docker-compose.yml`（门户 `apipool-v2` + `new-api` 两服务）、门户 `Dockerfile`（构建期注入 `NEXT_PUBLIC_*`、esbuild 打包迁移、entrypoint 启动时自动建表并 fail-fast 校验密钥）、`.env.deploy.example` 与一次性引导手册 [`deploy/bootstrap.md`](../deploy/bootstrap.md)。具体起服务步骤以 `deploy/bootstrap.md` 为准；本手册聚焦发布门禁、安全与回滚。已本地实跑闭环验证（详见 `docs/superpowers/plans/2026-06-13-minimal-deployment.md` 的「验证记录」与「待 Linux 容器复验」清单）。
 
+## 0. 当前 VPS
+
+- 云服务器：腾讯云轻量服务器，实例 `ins-ep486xqw`，区域 `na-siliconvalley`，公网 IP `43.135.146.49`。
+- SSH：本机 `~/.ssh/config` 使用别名 `apipool_vps`，端口 `22222`，用户 `root`，私钥文件 `~/.ssh/silicon_2.pem`（权限应为 `400`）。
+- 连接命令：`ssh apipool_vps`。
+- SSHD：服务器已同时监听 `22` 和 `22222`；日常运维走 `22222`。云防火墙/安全组需保持 TCP `22222` 入站放行。
+- 系统：Debian GNU/Linux 13 (`trixie`)。
+- Docker：已切到 Docker 官方 apt 源并启用开机自启。当前版本：Docker `29.5.3`，Docker Compose plugin `v5.1.4`，Buildx `v0.34.1`，sqlite3 `3.46.1-7+deb13u1`。若现场版本与本节不一致，以 `deploy/server-bootstrap.sh` 重新对齐后更新此记录。
+
 ## 1. 必需环境变量
 
 ### 基础
@@ -70,6 +79,100 @@
 8. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
 GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密钥配置后用 `workflow_dispatch` 跑真实冒烟门禁。
+
+## 3.5 自动化部署流程
+
+生产部署由 GitHub Actions 构建镜像、VPS 拉取指定镜像、部署脚本先备份后切换容器三段组成。
+
+### GitHub CI 镜像
+
+- 工作流：`.github/workflows/docker-build.yaml`
+- 镜像仓库：`ghcr.io/afreecoder/apipool-v2`
+- 触发：push 到 `main` / `dev`、PR、手动 `workflow_dispatch`
+- tag：`sha-<完整 commit>`、分支名、tag 名；默认分支额外推 `latest`
+- 构建期生产参数：
+  - `NEXT_PUBLIC_APP_URL=https://apipool.dev`
+  - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1`
+  - `NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini`
+
+生产部署必须使用 `sha-<commit>` 这类不可变 tag。`latest` 只用于人工排查，不作为正式发布输入。
+
+### VPS 目录结构
+
+服务器部署根目录固定为 `/opt/apipool-v2`：
+
+```text
+/opt/apipool-v2/
+├── .env.deploy              # 生产密钥与运行时配置，root-only，不入库
+├── release.env              # 当前 IMAGE_TAG，由 deploy.sh 写入
+├── docker-compose.prod.yml  # 生产 compose，拉 GHCR 镜像
+├── data/
+│   ├── portal/              # 门户 SQLite
+│   └── new-api/             # New API SQLite
+├── backups/                 # 备份归档，chmod 700
+└── deploy/
+    ├── backup.sh
+    ├── deploy.sh
+    ├── server-bootstrap.sh
+    └── systemd/
+```
+
+### 首次引导
+
+从本机同步部署件到服务器（不包含 `.env.deploy` 密钥文件）：
+
+```bash
+rsync -az docker-compose.prod.yml deploy/ apipool_vps:/opt/apipool-v2/
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
+```
+
+复制 `deploy/env.production.example` 为服务器 `/opt/apipool-v2/.env.deploy` 后填写密钥。若需要先把容器跑起来但 New API 管理 token 尚未初始化，可临时设置：
+
+```env
+NEWAPI_INTEGRATION_ENABLED=false
+APIPOOL_KEY_CREATION_ENABLED=false
+```
+
+完成 New API root 初始化并写入 `NEWAPI_ADMIN_TOKEN` 后，再改回 `true` 并重新执行部署。
+
+私有 GHCR 镜像需要服务器先登录：
+
+```bash
+gh auth token | ssh apipool_vps 'docker login ghcr.io -u AFreeCoder --password-stdin'
+```
+
+### 部署命令
+
+CI 成功后取完整 commit 对应的镜像 tag：
+
+```bash
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
+```
+
+`deploy/deploy.sh` 会执行：
+
+1. `deploy/backup.sh pre-deploy`，备份数据库目录和配置文件，只保留最近 2 次 pre-deploy 备份。
+2. 写入 `release.env` 的 `IMAGE_TAG`。
+3. `docker compose pull` 拉取门户镜像与 New API 镜像。
+4. `docker compose up -d --remove-orphans` 切换容器。
+5. 验证 `http://127.0.0.1:3001/api/status` 与 `http://127.0.0.1:3000/`。
+6. 健康检查失败时尝试回滚到上一次 `IMAGE_TAG`；数据库不自动回滚，需根据备份人工恢复。
+
+### 定时备份
+
+`deploy/server-bootstrap.sh` 会安装并启用 `apipool-v2-backup.timer`：
+
+```bash
+systemctl list-timers apipool-v2-backup.timer --no-pager
+```
+
+timer 每天 `Asia/Shanghai` 04:00 执行：
+
+```bash
+/opt/apipool-v2/deploy/backup.sh daily
+```
+
+daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 deploy 脚本，只保留最近 7 天的 daily 备份。备份归档权限为 `600`，备份目录为 `700`，避免泄漏 `.env.deploy` 中的密钥。
 
 ## 4. 告警最低配置
 
