@@ -2,6 +2,7 @@
   "name": "apipool-v2",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.29.2",
   "author": "APIPool",
   "homepage": "https://apipool.dev",
   "keywords": [
