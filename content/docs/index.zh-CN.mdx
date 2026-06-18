@@ -1,0 +1,138 @@
+---
+title: APIPool 快速接入
+description: 几分钟内创建 Key、充值并发出第一个 API 调用。
+---
+
+## Base URL
+
+```text
+https://api.apipool.dev/v1
+```
+
+一个 Base URL、一个 Key 调用所有模型，支持两种调用方式：
+
+- **OpenAI 兼容协议（默认）**——所有模型（无论厂商）都可以通过
+  `/v1/chat/completions` 调用，大多数 SDK 和工具只需把 base URL 指向 APIPool。
+- **各家原生协议**——同一入口与 Key 也直接支持厂商原生格式，例如 Anthropic 的
+  Messages API（`/v1/messages`）。当你的工具链依赖厂商原生协议时使用。
+
+## 鉴权
+
+在 `Authorization` header 中携带你的 Key：
+
+```text
+Authorization: Bearer $APIPOOL_API_KEY
+```
+
+在[控制台](/dashboard/api-keys)创建 Key。完整 Key 只在创建后展示一次，列表中
+此后只显示掩码。
+
+## 开始使用
+
+1. [注册](/sign-up)并进入控制台。
+2. 在[余额页](/dashboard/billing)充值。按 token 用量计费，余额永不过期。
+3. [创建 API Key](/dashboard/api-keys) 并立即保存。
+4. 从[模型列表](/models)选择模型，参考下方示例调用。
+
+## curl
+
+```bash
+curl https://api.apipool.dev/v1/chat/completions \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
+```
+
+## OpenAI SDK（JavaScript）
+
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'https://api.apipool.dev/v1',
+  apiKey: process.env.APIPOOL_API_KEY,
+});
+
+const completion = await client.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: 'Hello from APIPool' }],
+});
+
+console.log(completion.choices[0].message.content);
+```
+
+## OpenAI SDK（Python）
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.apipool.dev/v1",
+    api_key=os.environ["APIPOOL_API_KEY"],
+)
+
+completion = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello from APIPool"}],
+)
+
+print(completion.choices[0].message.content)
+```
+
+## 原生 HTTP（fetch）
+
+```ts
+const response = await fetch("https://api.apipool.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.APIPOOL_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Hello from APIPool" }],
+  }),
+});
+
+console.log(await response.json());
+```
+
+## 原生协议（Anthropic Messages）
+
+Claude 系列模型也可以用 Anthropic 原生 Messages API 调用——同一 Base URL、同一 Key：
+
+```bash
+curl https://api.apipool.dev/v1/messages \
+  -H "x-api-key: $APIPOOL_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4",
+    "max_tokens": 1024,
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'
+```
+
+Anthropic 官方 SDK 将 `baseURL` 设为 `https://api.apipool.dev`、`apiKey` 设为你的
+APIPool Key 即可使用。
+
+## 流式输出
+
+在请求体中设置 `"stream": true` 即可获得与 OpenAI API 一致的 SSE 流式响应，
+官方 SDK 的流式辅助方法可直接使用。
+
+## 错误码参考
+
+| 状态码 | 含义 | 处理方式 |
+| ------ | ---- | -------- |
+| `401`  | Key 缺失、无效、被禁用或已删除 | 检查 header 与控制台中的 Key 状态 |
+| `403`  | Key 无权访问所请求的模型 | 检查 Key 的模型限制设置 |
+| `429`  | 触发限流 | 退避后重试 |
+| `402` / 额度错误 | 余额耗尽 | 在控制台充值 |
+| `404` model_not_found | 模型 ID 不可用 | 从[模型列表](/models)选择可用模型 |
+
+## 计费说明
+
+在[余额页](/dashboard/billing)以美元充值，按[模型页](/models)所列单价按 token
+扣减。请求数、token 数和分模型消费在[用量页](/dashboard/usage)实时可见。

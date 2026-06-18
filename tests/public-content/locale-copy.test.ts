@@ -6,8 +6,12 @@ import test from 'node:test';
 const PUBLIC_LOCALE_ROOTS = [
   join(process.cwd(), 'src/config/locale/messages/en/landing.json'),
   join(process.cwd(), 'src/config/locale/messages/zh/landing.json'),
+  join(process.cwd(), 'src/config/locale/messages/zh-CN/landing.json'),
+  join(process.cwd(), 'src/config/locale/messages/zh-TW/landing.json'),
   join(process.cwd(), 'src/config/locale/messages/en/pages'),
   join(process.cwd(), 'src/config/locale/messages/zh/pages'),
+  join(process.cwd(), 'src/config/locale/messages/zh-CN/pages'),
+  join(process.cwd(), 'src/config/locale/messages/zh-TW/pages'),
   join(process.cwd(), 'content/docs'),
   join(process.cwd(), 'content/pages'),
 ];

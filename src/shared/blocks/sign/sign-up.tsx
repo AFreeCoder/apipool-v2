@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 
 import { authClient, signUp } from '@/core/auth/client';
 import { Link } from '@/core/i18n/navigation';
-import { defaultLocale } from '@/config/locale';
+import { localizePath } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card,
@@ -49,18 +49,16 @@ export function SignUp({
 
   if (callbackUrl) {
     if (
-      locale !== defaultLocale &&
       callbackUrl.startsWith('/') &&
       !callbackUrl.startsWith(`/${locale}`)
     ) {
-      callbackUrl = `/${locale}${callbackUrl}`;
+      callbackUrl = localizePath(callbackUrl, locale);
     }
   }
 
-  const base = locale !== defaultLocale ? `/${locale}` : '';
+  const base = `/${locale}`;
   const stripLocalePrefix = (path: string) => {
     if (!path?.startsWith('/')) return '/';
-    if (locale === defaultLocale) return path;
     if (path === `/${locale}`) return '/';
     if (path.startsWith(`/${locale}/`))
       return path.slice(locale.length + 1) || '/';

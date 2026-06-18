@@ -23,6 +23,7 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool';
+import { AppLocale, normalizeLocale } from '@/config/locale';
 import { Copy } from '@/shared/blocks/table/copy';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -34,7 +35,7 @@ import {
 
 export const revalidate = 3600;
 
-type LocaleKey = 'en' | 'zh';
+type LocaleKey = AppLocale;
 
 const providers = [
   { name: 'OpenAI', status: 'available' },
@@ -54,6 +55,108 @@ const providerRoutes = [
 ];
 
 const homeCopy = {
+  'zh-CN': {
+    eyebrow: '// 统一模型网关',
+    heroTitle: '一个接口，接入所有主流大模型。',
+    heroLead:
+      '兼容 OpenAI API，统一管理模型路由、API Key、用量日志、余额账单与失败兜底，让应用不再分别维护多套供应商接入。',
+    primaryCta: '获取 API Key',
+    secondaryCta: '查看接入文档',
+    heroBullets: ['OpenAI API 兼容', '按量计费', '日志与余额集中可见'],
+    topologyTitle: '实时路由拓扑',
+    topologySubtitle:
+      'APIPool 按模型选择路由请求，并把调用、计费和监控数据集中在控制台。',
+    appNode: '你的应用',
+    gatewayNode: 'APIPool 网关',
+    providerNode: '模型供应商',
+    operationsNode: '日志 · 计费 · 兜底 · 监控',
+    quickstartTitle: '开发者快速接入',
+    quickstartLead:
+      '替换 Base URL，保留熟悉的 SDK 工作流，用一个 Key 调用首发模型。',
+    baseUrlLabel: 'Base URL',
+    copyLabel: '复制',
+    copiedMessage: '已复制接入示例',
+    featuresTitle: '核心网关能力',
+    featuresLead: '首页信息层级收敛到真实产品闭环：接入、路由、消费、观测。',
+    providersTitle: '供应商覆盖',
+    providersLead: '供应商标识只作为信任补充，主视觉聚焦请求如何经过统一网关。',
+    dashboardTitle: '控制台预览',
+    dashboardLead:
+      '用更高信息密度展示请求量、成本、延迟和最近日志，而不是把 logo 墙当成主视觉。',
+    useCasesTitle: '面向真实 API 工作负载',
+    useCasesLead: '从个人项目到企业内部平台，同一个端点覆盖不同开发工作流。',
+    stepsTitle: '从注册到首次调用',
+    ctaTitle: '今天就用一个 API 发货',
+    ctaLead: '创建密钥、充值余额，并在几分钟内完成首次模型调用。',
+    ctaSecondary: '浏览模型',
+    quickstartPill: '5 分钟接入',
+    subscriptionPill: '无需订阅',
+    providerAvailable: '可调用',
+    providerCandidate: '候选',
+    liveStatus: '实时',
+    providersEyebrow: '供应商',
+    quickstartEyebrow: '快速接入',
+    capabilitiesEyebrow: '核心能力',
+    dashboardEyebrow: '控制台',
+    useCasesEyebrow: '使用场景',
+    modelsPricingLink: '模型与价格',
+    modelLabel: '模型',
+    consoleTitle: 'APIPool 控制台',
+    last24h: '过去 24 小时',
+    modelDistributionTitle: '模型调用分布',
+    recentRequestsTitle: '最近请求',
+  },
+  'zh-TW': {
+    eyebrow: '// 統一模型閘道',
+    heroTitle: '一個介面，接入所有主流大模型。',
+    heroLead:
+      '相容 OpenAI API，統一管理模型路由、API Key、用量日誌、餘額帳單與失敗兜底，讓應用不再分別維護多套供應商接入。',
+    primaryCta: '取得 API Key',
+    secondaryCta: '查看接入文件',
+    heroBullets: ['OpenAI API 相容', '按量計費', '日誌與餘額集中可見'],
+    topologyTitle: '即時路由拓撲',
+    topologySubtitle:
+      'APIPool 按模型選擇路由請求，並把調用、計費和監控資料集中在控制台。',
+    appNode: '你的應用',
+    gatewayNode: 'APIPool 閘道',
+    providerNode: '模型供應商',
+    operationsNode: '日誌 · 計費 · 兜底 · 監控',
+    quickstartTitle: '開發者快速接入',
+    quickstartLead:
+      '替換 Base URL，保留熟悉的 SDK 工作流，用一個 Key 調用首發模型。',
+    baseUrlLabel: 'Base URL',
+    copyLabel: '複製',
+    copiedMessage: '已複製接入範例',
+    featuresTitle: '核心閘道能力',
+    featuresLead: '首頁資訊層級收斂到真實產品閉環：接入、路由、消費、觀測。',
+    providersTitle: '供應商覆蓋',
+    providersLead: '供應商標識只作為信任補充，主視覺聚焦請求如何經過統一閘道。',
+    dashboardTitle: '控制台預覽',
+    dashboardLead:
+      '用更高資訊密度展示請求量、成本、延遲和最近日誌，而不是把 logo 牆當成主視覺。',
+    useCasesTitle: '面向真實 API 工作負載',
+    useCasesLead: '從個人專案到企業內部平台，同一個端點覆蓋不同開發工作流。',
+    stepsTitle: '從註冊到首次調用',
+    ctaTitle: '今天就用一個 API 發佈',
+    ctaLead: '建立金鑰、儲值餘額，並在幾分鐘內完成首次模型調用。',
+    ctaSecondary: '瀏覽模型',
+    quickstartPill: '5 分鐘接入',
+    subscriptionPill: '無需訂閱',
+    providerAvailable: '可調用',
+    providerCandidate: '候選',
+    liveStatus: '即時',
+    providersEyebrow: '供應商',
+    quickstartEyebrow: '快速接入',
+    capabilitiesEyebrow: '核心能力',
+    dashboardEyebrow: '控制台',
+    useCasesEyebrow: '使用場景',
+    modelsPricingLink: '模型與價格',
+    modelLabel: '模型',
+    consoleTitle: 'APIPool 控制台',
+    last24h: '過去 24 小時',
+    modelDistributionTitle: '模型調用分佈',
+    recentRequestsTitle: '最近請求',
+  },
   en: {
     eyebrow: '// unified model gateway',
     heroTitle: 'One endpoint for every model your app calls.',
@@ -100,49 +203,90 @@ const homeCopy = {
     subscriptionPill: 'No subscription',
     providerAvailable: 'available',
     providerCandidate: 'candidate',
-  },
-  zh: {
-    eyebrow: '// unified model gateway',
-    heroTitle: '一个接口，接入所有主流大模型。',
-    heroLead:
-      '兼容 OpenAI API，统一管理模型路由、API Key、用量日志、余额账单与失败兜底，让应用不再分别维护多套供应商接入。',
-    primaryCta: '获取 API Key',
-    secondaryCta: '查看接入文档',
-    heroBullets: ['OpenAI API 兼容', '按量计费', '日志与余额集中可见'],
-    topologyTitle: '实时路由拓扑',
-    topologySubtitle:
-      'APIPool 按模型选择路由请求，并把调用、计费和监控数据集中在控制台。',
-    appNode: '你的应用',
-    gatewayNode: 'APIPool 网关',
-    providerNode: '模型供应商',
-    operationsNode: '日志 · 计费 · 兜底 · 监控',
-    quickstartTitle: '开发者快速接入',
-    quickstartLead:
-      '替换 Base URL，保留熟悉的 SDK 工作流，用一个 Key 调用首发模型。',
-    baseUrlLabel: 'Base URL',
-    copyLabel: '复制',
-    copiedMessage: '已复制接入示例',
-    featuresTitle: '核心网关能力',
-    featuresLead: '首页信息层级收敛到真实产品闭环：接入、路由、消费、观测。',
-    providersTitle: '供应商覆盖',
-    providersLead: '供应商标识只作为信任补充，主视觉聚焦请求如何经过统一网关。',
-    dashboardTitle: '控制台预览',
-    dashboardLead:
-      '用更高信息密度展示请求量、成本、延迟和最近日志，而不是把 logo 墙当成主视觉。',
-    useCasesTitle: '面向真实 API 工作负载',
-    useCasesLead: '从个人项目到企业内部平台，同一个端点覆盖不同开发工作流。',
-    stepsTitle: '从注册到首次调用',
-    ctaTitle: '今天就用一个 API 发货',
-    ctaLead: '创建密钥、充值余额，并在几分钟内完成首次模型调用。',
-    ctaSecondary: '浏览模型',
-    quickstartPill: '5 分钟接入',
-    subscriptionPill: '无需订阅',
-    providerAvailable: '可调用',
-    providerCandidate: '候选',
+    liveStatus: 'live',
+    providersEyebrow: 'Providers',
+    quickstartEyebrow: 'Quickstart',
+    capabilitiesEyebrow: 'Capabilities',
+    dashboardEyebrow: 'Dashboard',
+    useCasesEyebrow: 'Use cases',
+    modelsPricingLink: 'Models & pricing',
+    modelLabel: 'Model',
+    consoleTitle: 'APIPool Console',
+    last24h: 'last 24h',
+    modelDistributionTitle: 'Model distribution',
+    recentRequestsTitle: 'Recent requests',
   },
 };
 
 const featureCopy = {
+  'zh-CN': [
+    {
+      icon: PlugZap,
+      title: 'OpenAI API 兼容',
+      description:
+        '只需替换 Base URL 和模型名，就能沿用熟悉的 Chat Completions 客户端。',
+    },
+    {
+      icon: Route,
+      title: '多模型路由',
+      description:
+        '把供应商选择收敛到一个端点，而不是在业务里分别维护多套 SDK。',
+    },
+    {
+      icon: ShieldCheck,
+      title: '失败兜底预留',
+      description: '围绕可见重试、状态和供应商健康度设计生产调用流程。',
+    },
+    {
+      icon: CircleDollarSign,
+      title: '统一计费',
+      description: '充值美元余额，并按请求、Token 和模型维度追踪实际消费。',
+    },
+    {
+      icon: KeyRound,
+      title: 'API Key 管理',
+      description: '在控制台完成创建、复制、禁用和轮换，减少密钥散落风险。',
+    },
+    {
+      icon: BarChart3,
+      title: '请求日志与监控',
+      description: '集中查看请求、延迟、Token 用量和模型分布。',
+    },
+  ],
+  'zh-TW': [
+    {
+      icon: PlugZap,
+      title: 'OpenAI API 相容',
+      description:
+        '只需替換 Base URL 和模型名，就能沿用熟悉的 Chat Completions 用戶端。',
+    },
+    {
+      icon: Route,
+      title: '多模型路由',
+      description:
+        '把供應商選擇收斂到一個端點，而不是在業務裡分別維護多套 SDK。',
+    },
+    {
+      icon: ShieldCheck,
+      title: '失敗兜底預留',
+      description: '圍繞可見重試、狀態和供應商健康度設計生產調用流程。',
+    },
+    {
+      icon: CircleDollarSign,
+      title: '統一計費',
+      description: '儲值美元餘額，並按請求、Token 和模型維度追蹤實際消費。',
+    },
+    {
+      icon: KeyRound,
+      title: 'API Key 管理',
+      description: '在控制台完成建立、複製、停用和輪換，降低金鑰散落風險。',
+    },
+    {
+      icon: BarChart3,
+      title: '請求日誌與監控',
+      description: '集中查看請求、延遲、Token 用量和模型分佈。',
+    },
+  ],
   en: [
     {
       icon: PlugZap,
@@ -181,43 +325,53 @@ const featureCopy = {
         'Inspect requests, latency, token usage, and model distribution in one place.',
     },
   ],
-  zh: [
-    {
-      icon: PlugZap,
-      title: 'OpenAI API 兼容',
-      description:
-        '只需替换 Base URL 和模型名，就能沿用熟悉的 Chat Completions 客户端。',
-    },
-    {
-      icon: Route,
-      title: '多模型路由',
-      description:
-        '把供应商选择收敛到一个端点，而不是在业务里分别维护多套 SDK。',
-    },
-    {
-      icon: ShieldCheck,
-      title: '失败兜底预留',
-      description: '围绕可见重试、状态和供应商健康度设计生产调用流程。',
-    },
-    {
-      icon: CircleDollarSign,
-      title: '统一计费',
-      description: '充值美元余额，并按请求、Token 和模型维度追踪实际消费。',
-    },
-    {
-      icon: KeyRound,
-      title: 'API Key 管理',
-      description: '在控制台完成创建、复制、禁用和轮换，减少密钥散落风险。',
-    },
-    {
-      icon: BarChart3,
-      title: '请求日志与监控',
-      description: '集中查看请求、延迟、Token 用量和模型分布。',
-    },
-  ],
 };
 
 const useCasesCopy = {
+  'zh-CN': [
+    {
+      title: '个人开发者',
+      description: '在决定主供应商前，快速试用多个模型家族。',
+      metric: '1 key',
+    },
+    {
+      title: 'AI 应用团队',
+      description: '让 Agent、Copilot、批处理任务共享统一成本可见性。',
+      metric: '4 flows',
+    },
+    {
+      title: '企业内部模型网关',
+      description: '在团队把凭据散落到各服务前，先集中接入规范。',
+      metric: '12 teams',
+    },
+    {
+      title: 'Agent / RAG / Bot 平台',
+      description: '承载高频调用，同时保留可审计的日志与账单。',
+      metric: '99.9%',
+    },
+  ],
+  'zh-TW': [
+    {
+      title: '個人開發者',
+      description: '在決定主供應商前，快速試用多個模型家族。',
+      metric: '1 key',
+    },
+    {
+      title: 'AI 應用團隊',
+      description: '讓 Agent、Copilot、批次任務共享統一成本可見性。',
+      metric: '4 flows',
+    },
+    {
+      title: '企業內部模型閘道',
+      description: '在團隊把憑證散落到各服務前，先集中接入規範。',
+      metric: '12 teams',
+    },
+    {
+      title: 'Agent / RAG / Bot 平台',
+      description: '承載高頻調用，同時保留可稽核的日誌與帳單。',
+      metric: '99.9%',
+    },
+  ],
   en: [
     {
       title: 'Individual developers',
@@ -244,31 +398,43 @@ const useCasesCopy = {
       metric: '99.9%',
     },
   ],
-  zh: [
-    {
-      title: '个人开发者',
-      description: '在决定主供应商前，快速试用多个模型家族。',
-      metric: '1 key',
-    },
-    {
-      title: 'AI 应用团队',
-      description: '让 Agent、Copilot、批处理任务共享统一成本可见性。',
-      metric: '4 flows',
-    },
-    {
-      title: '企业内部模型网关',
-      description: '在团队把凭据散落到各服务前，先集中接入规范。',
-      metric: '12 teams',
-    },
-    {
-      title: 'Agent / RAG / Bot 平台',
-      description: '承载高频调用，同时保留可审计的日志与账单。',
-      metric: '99.9%',
-    },
-  ],
 };
 
 const stepsCopy = {
+  'zh-CN': [
+    {
+      index: '01',
+      title: '注册账户',
+      description: '创建账户并充值少量余额，后续按真实 API 用量扣费。',
+    },
+    {
+      index: '02',
+      title: '创建 API Key',
+      description: '在控制台生成密钥，并安全保存只展示一次的明文 Key。',
+    },
+    {
+      index: '03',
+      title: '调用模型',
+      description: '使用兼容 OpenAI 的端点，通过模型名切换不同供应商。',
+    },
+  ],
+  'zh-TW': [
+    {
+      index: '01',
+      title: '註冊帳戶',
+      description: '建立帳戶並儲值少量餘額，後續按真實 API 用量扣費。',
+    },
+    {
+      index: '02',
+      title: '建立 API Key',
+      description: '在控制台產生金鑰，並安全保存只展示一次的明文 Key。',
+    },
+    {
+      index: '03',
+      title: '調用模型',
+      description: '使用相容 OpenAI 的端點，透過模型名切換不同供應商。',
+    },
+  ],
   en: [
     {
       index: '01',
@@ -289,26 +455,37 @@ const stepsCopy = {
         'Use the OpenAI-compatible endpoint and switch models by name.',
     },
   ],
-  zh: [
-    {
-      index: '01',
-      title: '注册账户',
-      description: '创建账户并充值少量余额，后续按真实 API 用量扣费。',
-    },
-    {
-      index: '02',
-      title: '创建 API Key',
-      description: '在控制台生成密钥，并安全保存只展示一次的明文 Key。',
-    },
-    {
-      index: '03',
-      title: '调用模型',
-      description: '使用兼容 OpenAI 的端点，通过模型名切换不同供应商。',
-    },
-  ],
 };
 
 const dashboardCopy = {
+  'zh-CN': {
+    metrics: [
+      { label: '今日请求', value: '128,420', trend: '+18.4%' },
+      { label: '成功率', value: '99.92%', trend: '+0.3%' },
+      { label: '今日消费', value: '$42.18', trend: '-7.6%' },
+      { label: 'P95 延迟', value: '812ms', trend: '-41ms' },
+    ],
+    tableHead: ['模型', '状态', 'Token', '费用'],
+    rows: [
+      ['gpt-4o-mini', '200 OK', '1,284', '$0.018'],
+      ['claude-3-5-haiku', '200 OK', '904', '$0.021'],
+      ['deepseek-chat', 'fallback', '2,166', '$0.014'],
+    ],
+  },
+  'zh-TW': {
+    metrics: [
+      { label: '今日請求', value: '128,420', trend: '+18.4%' },
+      { label: '成功率', value: '99.92%', trend: '+0.3%' },
+      { label: '今日消費', value: '$42.18', trend: '-7.6%' },
+      { label: 'P95 延遲', value: '812ms', trend: '-41ms' },
+    ],
+    tableHead: ['模型', '狀態', 'Token', '費用'],
+    rows: [
+      ['gpt-4o-mini', '200 OK', '1,284', '$0.018'],
+      ['claude-3-5-haiku', '200 OK', '904', '$0.021'],
+      ['deepseek-chat', 'fallback', '2,166', '$0.014'],
+    ],
+  },
   en: {
     metrics: [
       { label: 'Requests today', value: '128,420', trend: '+18.4%' },
@@ -317,20 +494,6 @@ const dashboardCopy = {
       { label: 'P95 latency', value: '812ms', trend: '-41ms' },
     ],
     tableHead: ['Model', 'Status', 'Tokens', 'Cost'],
-    rows: [
-      ['gpt-4o-mini', '200 OK', '1,284', '$0.018'],
-      ['claude-3-5-haiku', '200 OK', '904', '$0.021'],
-      ['deepseek-chat', 'fallback', '2,166', '$0.014'],
-    ],
-  },
-  zh: {
-    metrics: [
-      { label: '今日请求', value: '128,420', trend: '+18.4%' },
-      { label: '成功率', value: '99.92%', trend: '+0.3%' },
-      { label: '今日消费', value: '$42.18', trend: '-7.6%' },
-      { label: 'P95 延迟', value: '812ms', trend: '-41ms' },
-    ],
-    tableHead: ['模型', '状态', 'Token', '费用'],
     rows: [
       ['gpt-4o-mini', '200 OK', '1,284', '$0.018'],
       ['claude-3-5-haiku', '200 OK', '904', '$0.021'],
@@ -435,7 +598,7 @@ function GatewayTopology({
             </p>
           </div>
           <span className="bg-primary/10 text-primary shrink-0 rounded-md px-2 py-1 font-mono text-xs">
-            live
+            {copy.liveStatus}
           </span>
         </div>
       </div>
@@ -547,7 +710,13 @@ function QuickstartTabs({
   );
 }
 
-function DashboardPreview({ localeKey }: { localeKey: LocaleKey }) {
+function DashboardPreview({
+  copy: home,
+  localeKey,
+}: {
+  copy: (typeof homeCopy)[LocaleKey];
+  localeKey: LocaleKey;
+}) {
   const copy = dashboardCopy[localeKey];
 
   return (
@@ -555,9 +724,11 @@ function DashboardPreview({ localeKey }: { localeKey: LocaleKey }) {
       <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <LineChart className="text-primary size-4" />
-          <span className="text-sm font-semibold">APIPool Console</span>
+          <span className="text-sm font-semibold">{home.consoleTitle}</span>
         </div>
-        <div className="text-muted-foreground font-mono text-xs">last 24h</div>
+        <div className="text-muted-foreground font-mono text-xs">
+          {home.last24h}
+        </div>
       </div>
       <div className="bg-border grid gap-px sm:grid-cols-2 lg:grid-cols-4">
         {copy.metrics.map((metric) => (
@@ -575,7 +746,9 @@ function DashboardPreview({ localeKey }: { localeKey: LocaleKey }) {
       <div className="grid gap-0 border-t lg:grid-cols-[0.9fr_1.1fr]">
         <div className="border-b p-4 lg:border-r lg:border-b-0">
           <div className="mb-4 flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Model distribution</div>
+            <div className="text-sm font-semibold">
+              {home.modelDistributionTitle}
+            </div>
             <Activity className="text-primary size-4" />
           </div>
           <div className="space-y-3">
@@ -599,7 +772,9 @@ function DashboardPreview({ localeKey }: { localeKey: LocaleKey }) {
         </div>
         <div className="min-w-0 p-4">
           <div className="mb-4 flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Recent requests</div>
+            <div className="text-sm font-semibold">
+              {home.recentRequestsTitle}
+            </div>
             <ReceiptText className="text-primary size-4" />
           </div>
           <div className="overflow-x-auto">
@@ -645,7 +820,7 @@ export default async function HomePage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const localeKey: LocaleKey = locale === 'zh' ? 'zh' : 'en';
+  const localeKey: LocaleKey = normalizeLocale(locale);
   const copy = homeCopy[localeKey];
   const snippets = createQuickstartSnippets(
     APIPOOL_PUBLIC_CONFIG.apiBaseUrl,
@@ -698,7 +873,7 @@ export default async function HomePage({
       <section className="border-border border-b">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-6 sm:px-6 lg:px-8">
           <span className="text-muted-foreground text-xs tracking-widest uppercase">
-            Providers
+            {copy.providersEyebrow}
           </span>
           {providers.map((provider) => (
             <span
@@ -715,7 +890,7 @@ export default async function HomePage({
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:px-8">
           <div>
             <div className="text-primary mb-3 font-mono text-xs tracking-widest uppercase">
-              Quickstart
+              {copy.quickstartEyebrow}
             </div>
             <h2 className="text-3xl font-semibold tracking-tight">
               {copy.quickstartTitle}
@@ -726,7 +901,7 @@ export default async function HomePage({
             <div className="mt-6 grid gap-3 text-sm">
               {[
                 ['Base URL', APIPOOL_PUBLIC_CONFIG.apiBaseUrl],
-                ['Model', APIPOOL_PUBLIC_CONFIG.defaultLaunchModel],
+                [copy.modelLabel, APIPOOL_PUBLIC_CONFIG.defaultLaunchModel],
               ].map(([label, value]) => (
                 <div key={label} className="bg-card rounded-xl border p-4">
                   <div className="text-muted-foreground text-xs">{label}</div>
@@ -745,7 +920,7 @@ export default async function HomePage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 max-w-2xl">
             <div className="text-primary mb-3 font-mono text-xs tracking-widest uppercase">
-              Capabilities
+              {copy.capabilitiesEyebrow}
             </div>
             <h2 className="text-3xl font-semibold tracking-tight">
               {copy.featuresTitle}
@@ -775,7 +950,7 @@ export default async function HomePage({
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.68fr_1.32fr] lg:px-8">
           <div>
             <div className="text-primary mb-3 font-mono text-xs tracking-widest uppercase">
-              Providers
+              {copy.providersEyebrow}
             </div>
             <h2 className="text-3xl font-semibold tracking-tight">
               {copy.providersTitle}
@@ -787,7 +962,7 @@ export default async function HomePage({
               href="/models"
               className="text-primary mt-6 inline-flex items-center gap-1 text-sm font-medium"
             >
-              Models & pricing
+              {copy.modelsPricingLink}
               <ArrowRight className="size-4" />
             </Link>
           </div>
@@ -819,7 +994,7 @@ export default async function HomePage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 max-w-2xl">
             <div className="text-primary mb-3 font-mono text-xs tracking-widest uppercase">
-              Dashboard
+              {copy.dashboardEyebrow}
             </div>
             <h2 className="text-3xl font-semibold tracking-tight">
               {copy.dashboardTitle}
@@ -828,7 +1003,7 @@ export default async function HomePage({
               {copy.dashboardLead}
             </p>
           </div>
-          <DashboardPreview localeKey={localeKey} />
+          <DashboardPreview copy={copy} localeKey={localeKey} />
         </div>
       </section>
 
@@ -837,7 +1012,7 @@ export default async function HomePage({
           <div className="mb-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="text-primary mb-3 font-mono text-xs tracking-widest uppercase">
-                Use cases
+                {copy.useCasesEyebrow}
               </div>
               <h2 className="text-3xl font-semibold tracking-tight">
                 {copy.useCasesTitle}

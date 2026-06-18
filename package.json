@@ -16,7 +16,7 @@
     "build": "next build",
     "build:fast": "tsx scripts/run-with-env.ts NODE_OPTIONS=--max-old-space-size=4096 -- next build",
     "start": "next start",
-    "test": "tsx scripts/run-with-env.ts \"NODE_OPTIONS=--conditions react-server\" -- tsx --test tests/**/*.test.ts",
+    "test": "tsx scripts/run-with-env.ts \"NODE_OPTIONS=--conditions react-server\" -- tsx --test --test-concurrency=1 tests/**/*.test.ts",
     "smoke:mvp": "tsx scripts/run-with-env.ts \"NODE_OPTIONS=--conditions react-server\" -- tsx scripts/with-env.ts tsx scripts/smoke-mvp.ts",
     "lint": "eslint .",
     "format": "prettier --write .",

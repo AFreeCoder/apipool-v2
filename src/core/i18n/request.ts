@@ -1,9 +1,11 @@
 import { getRequestConfig } from 'next-intl/server';
 
 import {
+  AppLocale,
   defaultLocale,
   localeMessagesPaths,
   localeMessagesRootPath,
+  normalizeLocale,
 } from '@/config/locale';
 
 import { routing } from './config';
@@ -12,10 +14,12 @@ export async function loadMessages(
   path: string,
   locale: string = defaultLocale
 ) {
+  const normalizedLocale = normalizeLocale(locale);
+
   try {
     // try to load locale messages
     const messages = await import(
-      `@/config/locale/messages/${locale}/${path}.json`
+      `@/config/locale/messages/${normalizedLocale}/${path}.json`
     );
     return messages.default;
   } catch (e) {
@@ -33,13 +37,10 @@ export async function loadMessages(
 }
 
 export default getRequestConfig(async ({ requestLocale }) => {
-  let locale = await requestLocale;
-  if (!locale || !routing.locales.includes(locale as string)) {
+  const requestedLocale = await requestLocale;
+  let locale: AppLocale = normalizeLocale(requestedLocale);
+  if (!routing.locales.includes(locale)) {
     locale = routing.defaultLocale;
-  }
-
-  if (['zh-CN'].includes(locale)) {
-    locale = 'zh';
   }
 
   try {

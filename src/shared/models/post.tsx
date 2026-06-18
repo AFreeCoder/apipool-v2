@@ -535,7 +535,7 @@ export function getPostSlug({
   locale,
   prefix = '/blog/',
 }: {
-  url: string; // post url, like: /zh/blog/what-is-xxx
+  url: string; // post url, like: /zh-CN/blog/what-is-xxx
   locale: string; // locale
   prefix?: string; // post slug prefix
 }): string {
@@ -557,7 +557,7 @@ export function getPostDate({
 }) {
   return moment(created_at)
     .locale(locale || 'en')
-    .format(locale === 'zh' ? 'YYYY/MM/DD' : 'MMM D, YYYY');
+    .format(locale?.startsWith('zh') ? 'YYYY/MM/DD' : 'MMM D, YYYY');
 }
 
 // Helper function to remove frontmatter from markdown content

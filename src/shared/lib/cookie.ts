@@ -101,8 +101,21 @@ export function guessLocaleFromAcceptLanguage(
   acceptLanguage: string | undefined
 ) {
   if (!acceptLanguage) return '';
-  // e.g. "zh-CN,zh;q=0.9,en;q=0.8" -> "zh"
+  // e.g. "zh-CN,zh;q=0.9,en;q=0.8" -> "zh-CN"
   const first = acceptLanguage.split(',')[0]?.trim() ?? '';
-  const lang = first.split('-')[0]?.trim() ?? '';
-  return lang.replace(/[^\w-]/g, '').slice(0, 10);
+  const normalized = first.replace(/[^\w-]/g, '').toLowerCase();
+
+  if (['zh-tw', 'zh-hk', 'zh-mo'].includes(normalized)) {
+    return 'zh-TW';
+  }
+
+  if (normalized === 'zh' || normalized.startsWith('zh-')) {
+    return 'zh-CN';
+  }
+
+  if (normalized === 'en' || normalized.startsWith('en-')) {
+    return 'en';
+  }
+
+  return normalized.split('-')[0]?.slice(0, 10) ?? '';
 }

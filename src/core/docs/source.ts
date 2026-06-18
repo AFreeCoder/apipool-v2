@@ -6,8 +6,8 @@ import { loader } from 'fumadocs-core/source';
 import { icons } from 'lucide-react';
 
 export const i18n: I18nConfig = {
-  defaultLanguage: 'en',
-  languages: ['en', 'zh'],
+  defaultLanguage: 'zh-CN',
+  languages: ['zh-CN', 'zh-TW', 'en'],
 };
 
 const iconHelper = (icon: string | undefined) => {

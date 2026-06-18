@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 
 import { authClient, useSession } from '@/core/auth/client';
 import { useRouter } from '@/core/i18n/navigation';
-import { defaultLocale } from '@/config/locale';
+import { localizePath } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card,
@@ -34,7 +34,6 @@ function safeDecodeCallbackUrl(raw?: string) {
 
 function stripLocalePrefix(path: string, locale: string) {
   if (!path?.startsWith('/')) return '/';
-  if (locale === defaultLocale) return path;
   if (path === `/${locale}`) return '/';
   if (path.startsWith(`/${locale}/`))
     return path.slice(locale.length + 1) || '/';
@@ -87,7 +86,7 @@ export function VerifyEmailPage({
     // i18n router will prefix locale automatically; store locale-less paths
     return stripLocalePrefix(decoded, locale);
   }, [callbackUrl, locale]);
-  const base = locale !== defaultLocale ? `/${locale}` : '';
+  const base = `/${locale}`;
   const signInPath = useMemo(() => {
     const query = new URLSearchParams();
     query.set('callbackUrl', nextUrl || '/');
@@ -101,7 +100,7 @@ export function VerifyEmailPage({
     const query = new URLSearchParams();
     if (prefillEmail) query.set('email', prefillEmail);
     query.set('callbackUrl', nextUrl || '/');
-    window.location.assign(`${base}/sign-in?${query.toString()}`);
+    window.location.assign(`${localizePath('/sign-in', locale)}?${query.toString()}`);
   };
 
   // Initialize & tick cooldown

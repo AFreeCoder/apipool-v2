@@ -7,7 +7,7 @@ import { useSearchParams } from 'next/navigation';
 
 import { usePathname, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
-import { localeNames, locales } from '@/config/locale';
+import { localeNames, locales, matchSupportedLocale } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import { cacheGet, cacheSet } from '@/shared/lib/cache';
 import { getTimestamp } from '@/shared/lib/time';
@@ -35,10 +35,10 @@ export function LocaleDetector() {
     if (typeof window === 'undefined') return null;
 
     const browserLang = navigator.language || (navigator as any).userLanguage;
-    const langCode = browserLang.split('-')[0].toLowerCase();
+    const langCode = matchSupportedLocale(browserLang);
 
     // Check if the detected language is in our supported locales
-    if (locales.includes(langCode)) {
+    if (langCode && locales.includes(langCode)) {
       return langCode;
     }
 
@@ -88,7 +88,7 @@ export function LocaleDetector() {
     if (
       preferredLocale &&
       preferredLocale !== currentLocale &&
-      locales.includes(preferredLocale)
+      locales.includes(preferredLocale as any)
     ) {
       switchToLocale(preferredLocale);
       return;
@@ -243,7 +243,7 @@ export function LocaleDetector() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-1 items-center gap-3">
               <span className="text-sm">
-                {browserLocale === 'zh'
+                {browserLocale.startsWith('zh')
                   ? `检测到浏览器语言是: ${targetLocaleName}，是否切换？`
                   : `We detected your browser language is ${targetLocaleName}. Switch to it?`}
               </span>
@@ -255,7 +255,7 @@ export function LocaleDetector() {
                 size="sm"
                 className="bg-background text-xs"
               >
-                {browserLocale === 'zh' ? '切换到中文' : 'Switch'}
+                {browserLocale.startsWith('zh') ? '切换到中文' : 'Switch'}
               </Button>
               <button
                 onClick={handleDismiss}

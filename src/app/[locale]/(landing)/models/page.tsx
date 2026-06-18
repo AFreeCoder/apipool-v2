@@ -15,6 +15,7 @@ import {
   PRICE_DISCLAIMER_EN,
   PRICE_DISCLAIMER_ZH,
 } from '@/config/apipool';
+import { normalizeLocale } from '@/config/locale';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 
@@ -45,6 +46,7 @@ export default async function ModelsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const localeKey = normalizeLocale(locale);
   const filters = parseModelFilters(await searchParams);
   const models = filterModels(publicModels, filters);
   const standardModels = models.filter((model) => !isDealModel(model));
@@ -118,7 +120,9 @@ export default async function ModelsPage({
             <ModelsTable models={standardModels} />
           )}
           <p className="text-muted-foreground mt-3 text-xs">
-            {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
+            {localeKey.startsWith('zh')
+              ? PRICE_DISCLAIMER_ZH
+              : PRICE_DISCLAIMER_EN}
           </p>
         </div>
 

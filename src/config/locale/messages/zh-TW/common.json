@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "title": "APIPool",
+    "description": "APIPool 是開發者 API 入口，用於建立 API Key、管理額度，並透過統一 Base URL 調用已驗證模型。",
+    "keywords": "apipool, api gateway, model api, api keys, usage dashboard"
+  },
+  "sign": {
+    "sign_in_title": "登入",
+    "sign_in_description": "登入您的帳戶",
+    "sign_up_title": "註冊",
+    "sign_up_description": "建立新帳戶",
+    "email_title": "電子郵件",
+    "email_placeholder": "請輸入您的電子郵件",
+    "password_title": "密碼",
+    "password_placeholder": "請輸入您的密碼",
+    "forgot_password": "忘記密碼？",
+    "or": "或",
+    "continue": "繼續",
+    "no_account": "還沒有帳戶？",
+    "already_have_account": "已經有帳戶？",
+    "email_sign_in": "使用電子郵件登入",
+    "google_sign_in_title": "使用 Google 登入",
+    "github_sign_in_title": "使用 GitHub 登入",
+    "close_title": "關閉",
+    "cancel_title": "取消",
+    "sign_out_title": "登出",
+    "billing_title": "帳單",
+    "name_title": "姓名",
+    "name_placeholder": "請輸入您的姓名",
+    "email_verification_hint": "請輸入可正常接收郵件的信箱。註冊後需完成信箱驗證才能正常使用。",
+    "admin_title": "管理後台",
+    "credits_title": "額度",
+    "verify_email_sent": "驗證郵件已寄出，請前往信箱完成驗證。",
+    "verify_email_required": "請先完成信箱驗證後再登入。",
+    "resend_verification": "重新寄送驗證郵件",
+    "resend_verification_sent": "驗證郵件已重新寄出，請查收。",
+    "verify_email_page_title": "請查收郵件",
+    "verify_email_page_description": "繼續操作前，請點擊寄送到以下信箱的驗證連結：",
+    "verify_email_continue": "繼續",
+    "verify_email_tip": "完成驗證後，請點擊「繼續」按鈕。",
+    "verify_email_not_verified_yet": "尚未完成驗證，請先前往信箱點擊驗證連結。",
+    "verify_email_account_mismatch": "目前已登入 {current}，本頁面等待 {expected} 的驗證結果。",
+    "resend_verification_countdown": "重新寄送驗證郵件（{seconds} 秒）",
+    "resend_verification_wait": "請等待 {seconds} 秒後再重新寄送。",
+    "back_to_sign_in": "返回登入",
+    "agree_terms": "繼續即表示您已閱讀並同意我們的<terms>使用者協議</terms>與<privacy>隱私政策</privacy>。",
+    "region_notice_title": "重要提示",
+    "region_notice": "{brand} 不向中國大陸地區使用者提供服務。繼續操作即表示您確認目前不在中國大陸境內，且在您所在地區使用本服務符合當地法律。如您誤從不受支援的地區儲值，請聯絡 {email} 申請退款。"
+  },
+  "payment": {
+    "choose_payment_method": "選擇付款方式",
+    "choose_payment_method_description": "",
+    "cancel_title": "取消"
+  },
+  "locale_detector": {
+    "title": "偵測到瀏覽器語言是：{locale}，是否切換？",
+    "switch_to": "切換到{locale}"
+  }
+}

@@ -21,8 +21,10 @@ export function Time({
   }
 
   let locale = useLocale();
-  if (locale === 'zh') {
+  if (locale === 'zh-CN' || locale === 'zh') {
     locale = 'zh-cn';
+  } else if (locale === 'zh-TW') {
+    locale = 'zh-tw';
   }
 
   return (
