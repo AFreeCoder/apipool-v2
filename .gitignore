@@ -73,3 +73,6 @@ src/config/db/migrations_mysql/
 .chats
 .superpowers/
 .worktrees/
+
+# local personal assistant guidance
+docs/proffitteoy/

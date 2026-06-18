@@ -9,11 +9,13 @@ import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
 
 const nav = [
+  { href: '/', label: 'Home' },
   { href: '/models', label: 'Models & Pricing' },
   { href: '/docs', label: 'Docs' },
+  { href: '/dashboard', label: 'Console' },
 ];
 
-const mobileNav = [...nav, { href: '/dashboard', label: 'Console' }];
+const mobileNav = nav;
 
 export function SiteShell({ children }: { children: ReactNode }) {
   return (
@@ -108,13 +110,22 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <div className="space-y-3">
             <div className="font-medium">Product</div>
             <div className="text-muted-foreground grid gap-2">
-              <Link href="/models" className="hover:text-foreground transition-colors">
+              <Link
+                href="/models"
+                className="hover:text-foreground transition-colors"
+              >
                 Models & Pricing
               </Link>
-              <Link href="/docs" className="hover:text-foreground transition-colors">
+              <Link
+                href="/docs"
+                className="hover:text-foreground transition-colors"
+              >
                 API Docs
               </Link>
-              <Link href="/dashboard" className="hover:text-foreground transition-colors">
+              <Link
+                href="/dashboard"
+                className="hover:text-foreground transition-colors"
+              >
                 Console
               </Link>
             </div>
