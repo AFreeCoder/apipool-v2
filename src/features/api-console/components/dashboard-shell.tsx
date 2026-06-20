@@ -1,15 +1,23 @@
 import { ReactNode } from 'react';
 
 import { Link } from '@/core/i18n/navigation';
+import { getApipoolCopy } from '@/features/apipool-ui/copy';
 
-const items = [
-  { href: '/dashboard', label: 'Overview' },
-  { href: '/dashboard/api-keys', label: 'API Keys' },
-  { href: '/dashboard/billing', label: 'Balance' },
-  { href: '/dashboard/usage', label: 'Usage' },
-];
+export function DashboardShell({
+  children,
+  locale,
+}: {
+  children: ReactNode;
+  locale: string;
+}) {
+  const copy = getApipoolCopy(locale).consoleNav;
+  const items = [
+    { href: '/dashboard', label: copy.overview },
+    { href: '/dashboard/api-keys', label: copy.apiKeys },
+    { href: '/dashboard/billing', label: copy.balance },
+    { href: '/dashboard/usage', label: copy.usage },
+  ];
 
-export function DashboardShell({ children }: { children: ReactNode }) {
   return (
     <div className="bg-muted/30 border-t">
       <div className="bg-background border-b">

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
+import type { TopUpPackagesCopy } from '@/features/apipool-ui/copy';
 import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
 
@@ -17,9 +18,11 @@ export type TopUpPackage = {
 export function TopUpPackages({
   packages,
   locale,
+  copy,
 }: {
   packages: TopUpPackage[];
   locale: string;
+  copy: TopUpPackagesCopy;
 }) {
   const [loadingId, setLoadingId] = useState('');
   const [error, setError] = useState('');
@@ -39,11 +42,11 @@ export function TopUpPackages({
       });
       const payload = await response.json();
       if (payload.code !== 0 || !payload.data?.checkoutUrl) {
-        throw new Error(payload.message || 'Checkout could not start');
+        throw new Error(payload.message || copy.checkoutError);
       }
       window.location.href = payload.data.checkoutUrl;
     } catch (err: any) {
-      setError(err?.message || 'Checkout could not start');
+      setError(err?.message || copy.checkoutError);
       setLoadingId('');
     }
   }
@@ -65,7 +68,7 @@ export function TopUpPackages({
               </div>
               {pkg.isFeatured && (
                 <span className="bg-primary/10 text-primary rounded-md px-1.5 py-0.5 text-xs font-medium">
-                  Popular
+                  {copy.popular}
                 </span>
               )}
             </div>
@@ -84,7 +87,7 @@ export function TopUpPackages({
               {loadingId === pkg.productId && (
                 <Loader2 className="size-4 animate-spin" />
               )}
-              Add {pkg.price}
+              {copy.addButton.replace('{price}', pkg.price)}
             </Button>
           </div>
         ))}

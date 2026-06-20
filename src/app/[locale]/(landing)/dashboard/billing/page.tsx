@@ -11,6 +11,7 @@ import {
   TopUpPackages,
   type TopUpPackage,
 } from '@/features/api-console/components/top-up-packages';
+import { getApipoolCopy } from '@/features/apipool-ui/copy';
 import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
@@ -24,11 +25,6 @@ const EMPTY_USAGE: PortalUsageView = {
   logs: [],
 };
 
-const LEDGER_SOURCE_LABELS: Record<string, string> = {
-  recharge: 'Top-up',
-  manual_adjustment: 'Adjustment',
-};
-
 export default async function BillingPage({
   params,
 }: {
@@ -36,6 +32,7 @@ export default async function BillingPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const copy = getApipoolCopy(locale);
   const user = await getUserInfo();
   const [usage, ledger]: [
     PortalUsageView,
@@ -70,14 +67,16 @@ export default async function BillingPage({
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Balance</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {copy.billingPage.title}
+          </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Usage is billed per token. Balance never expires.
+            {copy.billingPage.description}
           </p>
         </div>
         <div className="bg-background rounded-xl border px-5 py-4">
           <div className="text-muted-foreground text-xs tracking-wide uppercase">
-            Current balance
+            {copy.billingPage.currentBalance}
           </div>
           <div className="mt-1 font-mono text-3xl font-semibold">
             {formatUsdAmount(usage.summary.balanceUsd)}
@@ -86,28 +85,38 @@ export default async function BillingPage({
       </div>
 
       <div>
-        <h2 className="mb-4 font-medium">Add credit</h2>
-        <TopUpPackages packages={packages} locale={locale} />
+        <h2 className="mb-4 font-medium">{copy.billingPage.addCredit}</h2>
+        <TopUpPackages
+          packages={packages}
+          locale={locale}
+          copy={copy.topUpPackages}
+        />
       </div>
 
       <div className="bg-background overflow-hidden rounded-xl border">
-        <div className="border-b px-5 py-4 font-medium">Credit history</div>
+        <div className="border-b px-5 py-4 font-medium">
+          {copy.billingPage.creditHistory}
+        </div>
         {ledger.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
-            No credit activity yet. Add credit above to get started.
+            {copy.billingPage.noCreditActivity}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Type</th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Amount
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.billingPage.table.date}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.billingPage.table.type}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
-                    Status
+                    {copy.billingPage.table.amount}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {copy.billingPage.table.status}
                   </th>
                 </tr>
               </thead>
@@ -115,10 +124,12 @@ export default async function BillingPage({
                 {ledger.map((entry: any) => (
                   <tr key={entry.id} className="border-b last:border-b-0">
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {new Date(entry.createdAt).toLocaleString()}
+                      {new Date(entry.createdAt).toLocaleString(locale)}
                     </td>
                     <td className="px-4 py-2.5">
-                      {LEDGER_SOURCE_LABELS[entry.source] || entry.source}
+                      {(copy.billingPage.sourceLabels as Record<string, string>)[
+                        entry.source
+                      ] || entry.source}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(entry.amountUsd)}
@@ -131,11 +142,10 @@ export default async function BillingPage({
                             : 'bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs'
                         }
                       >
-                        {entry.status === 'applied'
-                          ? 'Completed'
-                          : entry.status === 'pending'
-                            ? 'Processing'
-                            : entry.status}
+                        {(copy.billingPage.statusLabels as Record<
+                          string,
+                          string
+                        >)[entry.status] || entry.status}
                       </span>
                     </td>
                   </tr>
@@ -147,30 +157,40 @@ export default async function BillingPage({
       </div>
 
       <div className="bg-background overflow-hidden rounded-xl border">
-        <div className="border-b px-5 py-4 font-medium">Usage charges</div>
+        <div className="border-b px-5 py-4 font-medium">
+          {copy.billingPage.usageCharges}
+        </div>
         {charges.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
-            No usage charges with synced spend yet.
+            {copy.billingPage.noUsageCharges}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Key</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Tokens
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.billingPage.table.date}
                   </th>
-                  <th className="px-4 py-2.5 text-right font-medium">Spend</th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.billingPage.table.key}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.billingPage.table.model}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {copy.billingPage.table.tokens}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {copy.billingPage.table.spend}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {charges.map((charge) => (
                   <tr key={charge.id} className="border-b last:border-b-0">
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {new Date(charge.createdAt).toLocaleString()}
+                      {new Date(charge.createdAt).toLocaleString(locale)}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {charge.keyMasked}
@@ -179,7 +199,7 @@ export default async function BillingPage({
                       {charge.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {charge.tokenCount.toLocaleString()}
+                      {charge.tokenCount.toLocaleString(locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(charge.spendUsd)}

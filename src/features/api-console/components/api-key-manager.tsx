@@ -9,6 +9,7 @@ import {
   canDisableKeyStatus,
   type KeyLifecycleStatus,
 } from '@/features/api-console/lib/status';
+import type { ApiKeyManagerCopy } from '@/features/apipool-ui/copy';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -29,19 +30,13 @@ type ApiKeyRow = {
   createdAt: string | Date;
 };
 
-const KEY_CREATION_PAUSED_MESSAGE =
-  'API key creation is temporarily paused. Existing keys remain manageable.';
-
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  disabled: 'Disabled',
-  deleted: 'Deleted',
-  creating_remote: 'Creating…',
-  disable_pending: 'Disabling…',
-  delete_pending: 'Deleting…',
-};
-
-function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
+function StatusBadge({
+  status,
+  copy,
+}: {
+  status: KeyLifecycleStatus;
+  copy: ApiKeyManagerCopy;
+}) {
   const className =
     status === 'active'
       ? 'bg-primary/10 text-primary'
@@ -52,7 +47,8 @@ function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
     <span
       className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${className}`}
     >
-      {STATUS_LABELS[status] || status.replaceAll('_', ' ')}
+      {(copy.statusLabels as Record<string, string>)[status] ||
+        status.replaceAll('_', ' ')}
     </span>
   );
 }
@@ -60,12 +56,14 @@ function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
 export function ApiKeyManager({
   initialKeys,
   creationEnabled = true,
+  copy,
 }: {
   initialKeys: ApiKeyRow[];
   creationEnabled?: boolean;
+  copy: ApiKeyManagerCopy;
 }) {
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
-  const [name, setName] = useState('Default APIPool key');
+  const [name, setName] = useState(copy.defaultName);
   const [plainKey, setPlainKey] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -81,7 +79,7 @@ export function ApiKeyManager({
   async function createKey() {
     if (!creationEnabled) {
       setPlainKey('');
-      setMessage(KEY_CREATION_PAUSED_MESSAGE);
+      setMessage(copy.keyCreationPaused);
       return;
     }
 
@@ -101,9 +99,9 @@ export function ApiKeyManager({
       if (payload.code !== 0) throw new Error(payload.message);
       setPlainKey(payload.data.plainKey || '');
       setKeys((prev) => [payload.data.key, ...prev]);
-      setMessage('Key created. The full key is shown once below.');
+      setMessage(copy.keyCreated);
     } catch (error: any) {
-      setMessage(error?.message || 'Create key failed');
+      setMessage(error?.message || copy.createFailed);
       await refreshKeys();
     } finally {
       setLoading(false);
@@ -114,7 +112,7 @@ export function ApiKeyManager({
     setMessage('');
     const target = keys.find((key) => key.id === id);
     if (!target || !canDisableKeyStatus(target.status)) {
-      setMessage('This key cannot be disabled in its current state.');
+      setMessage(copy.disableNotAllowed);
       return;
     }
 
@@ -136,7 +134,7 @@ export function ApiKeyManager({
     setMessage('');
     const target = keys.find((key) => key.id === id);
     if (!target || !canDeleteKeyStatus(target.status)) {
-      setMessage('This key cannot be deleted in its current state.');
+      setMessage(copy.deleteNotAllowed);
       return;
     }
 
@@ -159,33 +157,32 @@ export function ApiKeyManager({
       <div className="rounded-lg border bg-background p-5">
         <div className="mb-4 flex items-center gap-2 font-medium">
           <KeyRound className="size-4" />
-          Create API Key
+          {copy.createTitle}
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Key name"
+            placeholder={copy.keyNamePlaceholder}
           />
           <Button onClick={createKey} disabled={loading || !creationEnabled}>
             <Plus className="size-4" />
-            {loading ? 'Creating...' : 'Create key'}
+            {loading ? copy.creating : copy.createKey}
           </Button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Add credit on the Balance tab before making paid calls. The full key
-          is shown once after creation.
+          {copy.creationTip}
         </p>
         {!creationEnabled && (
           <p className="mt-2 text-xs text-muted-foreground">
-            {KEY_CREATION_PAUSED_MESSAGE}
+            {copy.keyCreationPaused}
           </p>
         )}
         {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
         {plainKey && (
           <div className="mt-4 rounded-md border bg-muted p-4">
             <div className="mb-2 text-sm font-medium">
-              Full key. This is shown once.
+              {copy.fullKeyTitle}
             </div>
             <div className="flex items-center gap-2">
               <code className="min-w-0 flex-1 overflow-x-auto text-sm">
@@ -196,7 +193,8 @@ export function ApiKeyManager({
                 variant="outline"
                 size="icon"
                 onClick={() => navigator.clipboard.writeText(plainKey)}
-                title="Copy full key"
+                title={copy.copyFullKey}
+                aria-label={copy.copyFullKey}
               >
                 <Copy className="size-4" />
               </Button>
@@ -208,24 +206,25 @@ export function ApiKeyManager({
       <div className="rounded-lg border bg-background">
         <div className="border-b p-5">
           <h2 className="font-medium">
-            Keys for {APIPOOL_PUBLIC_CONFIG.apiBaseUrl}
+            {copy.keysTitlePrefix}
+            {APIPOOL_PUBLIC_CONFIG.apiBaseUrl}
           </h2>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Masked key</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Models</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{copy.table.name}</TableHead>
+              <TableHead>{copy.table.maskedKey}</TableHead>
+              <TableHead>{copy.table.status}</TableHead>
+              <TableHead>{copy.table.models}</TableHead>
+              <TableHead className="text-right">{copy.table.actions}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {keys.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center">
-                  No API keys yet.
+                  {copy.noKeys}
                 </TableCell>
               </TableRow>
             ) : (
@@ -242,7 +241,7 @@ export function ApiKeyManager({
                       {key.keyMasked}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={key.status} />
+                      <StatusBadge status={key.status} copy={copy} />
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {(key.allowedModels || []).join(', ')}
@@ -254,8 +253,8 @@ export function ApiKeyManager({
                         onClick={() =>
                           navigator.clipboard.writeText(key.keyMasked)
                         }
-                        title="Copy masked key"
-                        aria-label="Copy masked key"
+                        title={copy.copyMaskedKey}
+                        aria-label={copy.copyMaskedKey}
                       >
                         <Copy className="size-4" />
                       </Button>
@@ -266,10 +265,10 @@ export function ApiKeyManager({
                         disabled={!canDisable}
                         title={
                           canDisable
-                            ? 'Disable key'
-                            : 'Key cannot be disabled in this state'
+                            ? copy.disableKey
+                            : copy.disableUnavailable
                         }
-                        aria-label="Disable key"
+                        aria-label={copy.disableKey}
                       >
                         <Ban className="size-4" />
                       </Button>
@@ -280,10 +279,10 @@ export function ApiKeyManager({
                         disabled={!canDelete}
                         title={
                           canDelete
-                            ? 'Delete key'
-                            : 'Key cannot be deleted in this state'
+                            ? copy.deleteKey
+                            : copy.deleteUnavailable
                         }
-                        aria-label="Delete key"
+                        aria-label={copy.deleteKey}
                       >
                         <Trash2 className="size-4" />
                       </Button>

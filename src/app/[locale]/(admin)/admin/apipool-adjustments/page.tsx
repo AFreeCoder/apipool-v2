@@ -2,6 +2,7 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { QuotaAdjustmentForm } from '@/features/api-console/components/admin/quota-adjustment-form';
+import { getApipoolCopy } from '@/features/apipool-ui/copy';
 
 export default async function ApipoolAdjustmentsPage({
   params,
@@ -13,6 +14,7 @@ export default async function ApipoolAdjustmentsPage({
   const { locale } = await params;
   const { portalUserId = '' } = await searchParams;
   setRequestLocale(locale);
+  const copy = getApipoolCopy(locale).adminQuota;
   await requirePermission({
     code: PERMISSIONS.APIPOOL_QUOTA_ADJUST,
     redirectUrl: '/admin/no-permission',
@@ -22,13 +24,15 @@ export default async function ApipoolAdjustmentsPage({
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-semibold">APIPool quota adjustments</h1>
+        <h1 className="text-2xl font-semibold">{copy.title}</h1>
         <p className="mt-2 text-muted-foreground">
-          MVP-only operator flow. Every adjustment writes APIPool ledger v0 and
-          then calls the internal quota executor.
+          {copy.description}
         </p>
       </div>
-      <QuotaAdjustmentForm initialPortalUserId={portalUserId} />
+      <QuotaAdjustmentForm
+        initialPortalUserId={portalUserId}
+        copy={copy.form}
+      />
     </div>
   );
 }

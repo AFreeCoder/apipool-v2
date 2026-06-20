@@ -4,6 +4,7 @@ import { DocsLayout } from 'fumadocs-ui/layouts/notebook';
 import { RootProvider } from 'fumadocs-ui/provider';
 
 import { source } from '@/core/docs/source';
+import { localeNames } from '@/config/locale';
 
 import { baseOptions } from './layout.config';
 
@@ -19,15 +20,15 @@ const zhTW: Partial<Translations> = {
 // make sure `locale` is consistent with your i18n config
 const locales = [
   {
-    name: '简体中文',
+    name: localeNames['zh-CN'],
     locale: 'zh-CN',
   },
   {
-    name: '繁體中文',
+    name: localeNames['zh-TW'],
     locale: 'zh-TW',
   },
   {
-    name: 'English',
+    name: localeNames.en,
     locale: 'en',
   },
 ];
