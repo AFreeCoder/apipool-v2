@@ -17,7 +17,7 @@ export function QuotaAdjustmentForm({
 }) {
   const [portalUserId, setPortalUserId] = useState(initialPortalUserId);
   const [amountUsd, setAmountUsd] = useState('10');
-  const [reason, setReason] = useState(copy.defaultReason);
+  const [reason, setReason] = useState<string>(copy.defaultReason);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 

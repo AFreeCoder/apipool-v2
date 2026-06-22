@@ -120,7 +120,7 @@ export function ApiKeyManager({
   copy: ApiKeyManagerCopy;
 }) {
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
-  const [name, setName] = useState(copy.defaultName);
+  const [name, setName] = useState<string>(copy.defaultName);
   const [plainKey, setPlainKey] = useState('');
   const [plainKeysById, setPlainKeysById] = useState<Record<string, string>>(
     {}
