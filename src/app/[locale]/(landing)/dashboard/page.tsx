@@ -1,10 +1,15 @@
-import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  DollarSign,
+  KeyRound,
+  Wallet,
+} from 'lucide-react';
 import { setRequestLocale } from 'next-intl/server';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import {
   getPortalUsage,
-  listPortalApiKeys,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 import { StatCard } from '@/features/api-console/components/stat-card';
@@ -25,6 +30,10 @@ const EMPTY_USAGE: PortalUsageView = {
   logs: [],
 };
 
+function formatOptionalNumber(value?: number) {
+  return typeof value === 'number' ? value.toLocaleString() : '—';
+}
+
 export default async function DashboardPage({
   params,
 }: {
@@ -34,15 +43,7 @@ export default async function DashboardPage({
   setRequestLocale(locale);
   const copy = getApipoolCopy(locale).dashboardPage;
   const user = await getUserInfo();
-  const [usage, keys]: [
-    PortalUsageView,
-    Awaited<ReturnType<typeof listPortalApiKeys>>,
-  ] = user
-    ? await Promise.all([
-        getPortalUsage(user as any, '7d'),
-        listPortalApiKeys(user.id),
-      ])
-    : [EMPTY_USAGE, []];
+  const usage = user ? await getPortalUsage(user as any, '7d') : EMPTY_USAGE;
 
   return (
     <div className="space-y-6">
@@ -75,17 +76,29 @@ export default async function DashboardPage({
         <code className="bg-muted overflow-x-auto rounded-md border px-2.5 py-1 font-mono text-xs">
           {APIPOOL_CONFIG.apiBaseUrl}
         </code>
+        <span className="text-muted-foreground text-xs tracking-wide uppercase">
+          {copy.gatewayGroup}
+        </span>
+        <code className="bg-muted rounded-md border px-2.5 py-1 font-mono text-xs">
+          {usage.summary.group || APIPOOL_CONFIG.newApiDefaultTokenGroup}
+        </code>
         <Link href="/docs" className="text-primary ml-auto text-sm font-medium">
           {copy.quickstart}
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           label={copy.balance}
           value={formatUsdAmount(usage.summary.balanceUsd)}
-          help={copy.billedPerToken}
+          help={copy.sourceGateway}
           icon={<Wallet className="text-muted-foreground size-4" />}
+        />
+        <StatCard
+          label={copy.spend7d}
+          value={formatUsdAmount(usage.summary.spendUsd)}
+          help={copy.last7Days}
+          icon={<DollarSign className="text-muted-foreground size-4" />}
         />
         <StatCard
           label={copy.requests7d}
@@ -102,10 +115,16 @@ export default async function DashboardPage({
           icon={<BarChart3 className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label={copy.apiKeys}
-          value={keys.length}
-          help={copy.createdFromConsole}
-          icon={<KeyRound className="text-muted-foreground size-4" />}
+          label={copy.allTimeRequests}
+          value={formatOptionalNumber(usage.summary.allTimeRequestCount)}
+          help={copy.sourceGateway}
+          icon={<Activity className="text-muted-foreground size-4" />}
+        />
+        <StatCard
+          label={copy.totalSpend}
+          value={formatUsdAmount(usage.summary.usedUsd)}
+          help={copy.sourceGateway}
+          icon={<DollarSign className="text-muted-foreground size-4" />}
         />
       </div>
 
@@ -125,7 +144,7 @@ export default async function DashboardPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
                   <th className="px-4 py-2.5 text-left font-medium">
@@ -133,6 +152,9 @@ export default async function DashboardPage({
                   </th>
                   <th className="px-4 py-2.5 text-left font-medium">
                     {copy.table.model}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.table.group}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     {copy.table.tokens}
@@ -150,6 +172,9 @@ export default async function DashboardPage({
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {log.modelId}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {log.group || usage.summary.group || '-'}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {(log.inputTokens + log.outputTokens).toLocaleString()}

@@ -172,44 +172,35 @@ export default async function HomePage({
   const snippet = createCurlSnippet(APIPOOL_PUBLIC_CONFIG.defaultLaunchModel);
 
   return (
-    <div className="bg-slate-50 text-slate-950">
-      <section className="border-b border-slate-200 bg-white">
+    <div className="bg-background text-foreground">
+      <section className="border-border border-b">
         <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_0.86fr] lg:px-8 lg:py-24">
           <div>
-            <div className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-3 py-1 font-mono text-xs tracking-widest text-blue-700 uppercase">
+            <div className="bg-primary/10 text-primary inline-flex rounded-md px-2 py-0.5 font-mono text-xs tracking-widest uppercase">
               {copy.eyebrow}
             </div>
-            <h1 className="mt-5 max-w-3xl text-4xl leading-tight font-semibold tracking-tight text-slate-950 sm:text-5xl">
+            <h1 className="mt-5 max-w-3xl text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">
               {copy.title}
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
+            <p className="text-muted-foreground mt-5 max-w-2xl text-lg leading-8">
               {copy.lead}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button
-                asChild
-                size="lg"
-                className="bg-orange-500 text-white hover:bg-orange-600"
-              >
+              <Button asChild size="lg">
                 <Link href="/models">
                   {copy.primaryCta}
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-              >
+              <Button asChild size="lg" variant="outline">
                 <Link href="/docs">{copy.secondaryCta}</Link>
               </Button>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60">
+          <div className="bg-card rounded-xl border p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <Code2 className="size-4 text-blue-600" />
+              <Code2 className="text-primary size-4" />
               {copy.codeTitle}
             </div>
             <pre className="overflow-x-auto rounded-xl bg-[#0a0a0a] p-4 font-mono text-xs leading-6 text-white/90">
@@ -219,15 +210,15 @@ export default async function HomePage({
         </div>
       </section>
 
-      <section className="border-b border-slate-200 bg-slate-50">
+      <section className="border-border border-b bg-muted">
         <div className="mx-auto grid max-w-7xl gap-3 px-4 py-5 sm:px-6 md:grid-cols-3 lg:px-8">
           {copy.facts.map((fact) => (
             <div
               key={fact.label}
-              className="rounded-xl border border-slate-200 bg-white p-5"
+              className="bg-card rounded-xl border p-5"
             >
-              <div className="text-xs text-slate-500">{fact.label}</div>
-              <div className="mt-1 break-all font-mono text-sm font-medium text-slate-950">
+              <div className="text-muted-foreground text-xs">{fact.label}</div>
+              <div className="mt-1 break-all font-mono text-sm font-medium">
                 {fact.value}
               </div>
             </div>
@@ -235,13 +226,13 @@ export default async function HomePage({
         </div>
       </section>
 
-      <section className="border-b border-slate-200 bg-white py-14 sm:py-16">
+      <section className="border-border border-b py-14 sm:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
-            <h2 className="text-3xl font-semibold tracking-tight text-slate-950">
+            <h2 className="text-3xl font-semibold tracking-tight">
               {copy.introTitle}
             </h2>
-            <p className="mt-3 leading-7 text-slate-600">
+            <p className="text-muted-foreground mt-3 leading-7">
               {copy.introLead}
             </p>
           </div>
@@ -249,15 +240,15 @@ export default async function HomePage({
             {copy.features.map((feature) => (
               <div
                 key={feature.title}
-                className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                className="bg-card rounded-xl border p-5"
               >
-                <div className="flex size-10 items-center justify-center rounded-xl bg-teal-50">
-                  <feature.icon className="size-5 text-teal-700" />
+                <div className="bg-primary/10 flex size-10 items-center justify-center rounded-md">
+                  <feature.icon className="text-primary size-5" />
                 </div>
-                <h3 className="mt-4 font-semibold text-slate-950">
+                <h3 className="mt-4 font-semibold">
                   {feature.title}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+                <p className="text-muted-foreground mt-2 text-sm leading-6">
                   {feature.description}
                 </p>
               </div>
@@ -269,10 +260,10 @@ export default async function HomePage({
       <section className="py-14 sm:py-16">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
           <div>
-            <h2 className="text-3xl font-semibold tracking-tight text-slate-950">
+            <h2 className="text-3xl font-semibold tracking-tight">
               {copy.quickstartTitle}
             </h2>
-            <p className="mt-3 leading-7 text-slate-600">
+            <p className="text-muted-foreground mt-3 leading-7">
               {copy.quickstartLead}
             </p>
           </div>
@@ -280,13 +271,13 @@ export default async function HomePage({
             {copy.steps.map((step, index) => (
               <div
                 key={step}
-                className="flex gap-3 rounded-xl border border-slate-200 bg-white p-4"
+                className="bg-card flex gap-3 rounded-xl border p-4"
               >
-                <div className="font-mono text-sm text-blue-600">
+                <div className="text-primary font-mono text-sm">
                   {String(index + 1).padStart(2, '0')}
                 </div>
-                <div className="flex items-center gap-2 font-medium text-slate-950">
-                  <Check className="size-4 text-teal-700" />
+                <div className="flex items-center gap-2 font-medium">
+                  <Check className="text-primary size-4" />
                   {step}
                 </div>
               </div>

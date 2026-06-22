@@ -30,6 +30,63 @@ type ApiKeyRow = {
   createdAt: string | Date;
 };
 
+type KeyMutationAction = 'disable' | 'delete';
+
+function occupiesCustomerKeySlot(key: ApiKeyRow) {
+  return !['deleted', 'failed_retriable', 'failed_terminal'].includes(
+    key.status
+  );
+}
+
+async function readPortalPayload(response: Response) {
+  const payload = await response.json().catch(() => null);
+
+  if (!payload) {
+    throw new Error(
+      response.ok
+        ? 'Invalid API response'
+        : `API request failed (${response.status})`
+    );
+  }
+
+  return payload;
+}
+
+async function copyToClipboard(text: string) {
+  if (!text) return false;
+
+  let copiedWithClipboard = false;
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedWithClipboard = true;
+    } catch {
+      copiedWithClipboard = false;
+    }
+  }
+  if (copiedWithClipboard) return true;
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  let copiedWithFallback = false;
+  try {
+    copiedWithFallback = document.execCommand('copy');
+  } catch {
+    copiedWithFallback = false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+  return copiedWithFallback;
+}
+
 function StatusBadge({
   status,
   copy,
@@ -65,14 +122,27 @@ export function ApiKeyManager({
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
   const [name, setName] = useState(copy.defaultName);
   const [plainKey, setPlainKey] = useState('');
+  const [plainKeysById, setPlainKeysById] = useState<Record<string, string>>(
+    {}
+  );
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingKeyAction, setPendingKeyAction] = useState<{
+    id: string;
+    action: KeyMutationAction;
+  } | null>(null);
+  const isMutatingKey = pendingKeyAction !== null;
+  const hasExistingCustomerKey = keys.some(occupiesCustomerKeySlot);
 
   async function refreshKeys() {
-    const response = await fetch('/api/apipool/keys');
-    const payload = await response.json();
-    if (payload.code === 0) {
-      setKeys(payload.data.keys || []);
+    try {
+      const response = await fetch('/api/apipool/keys');
+      const payload = await readPortalPayload(response);
+      if (payload.code === 0) {
+        setKeys(payload.data.keys || []);
+      }
+    } catch {
+      return;
     }
   }
 
@@ -80,6 +150,11 @@ export function ApiKeyManager({
     if (!creationEnabled) {
       setPlainKey('');
       setMessage(copy.keyCreationPaused);
+      return;
+    }
+    if (hasExistingCustomerKey) {
+      setPlainKey('');
+      setMessage(copy.oneKeyLimit);
       return;
     }
 
@@ -92,13 +167,20 @@ export function ApiKeyManager({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name,
-          allowedModels: [APIPOOL_PUBLIC_CONFIG.defaultLaunchModel],
         }),
       });
-      const payload = await response.json();
+      const payload = await readPortalPayload(response);
       if (payload.code !== 0) throw new Error(payload.message);
-      setPlainKey(payload.data.plainKey || '');
-      setKeys((prev) => [payload.data.key, ...prev]);
+      const createdKey = payload.data.key;
+      const createdPlainKey = payload.data.plainKey || '';
+      setPlainKey(createdPlainKey);
+      if (createdKey?.id && createdPlainKey) {
+        setPlainKeysById((prev) => ({
+          ...prev,
+          [createdKey.id]: createdPlainKey,
+        }));
+      }
+      setKeys((prev) => [createdKey, ...prev]);
       setMessage(copy.keyCreated);
     } catch (error: any) {
       setMessage(error?.message || copy.createFailed);
@@ -110,46 +192,76 @@ export function ApiKeyManager({
 
   async function disableKey(id: string) {
     setMessage('');
+    setPlainKey('');
     const target = keys.find((key) => key.id === id);
     if (!target || !canDisableKeyStatus(target.status)) {
       setMessage(copy.disableNotAllowed);
       return;
     }
 
-    const response = await fetch(`/api/apipool/keys/${id}/disable`, {
-      method: 'POST',
-    });
-    const payload = await response.json();
-    if (payload.code !== 0) {
-      setMessage(payload.message);
-      await refreshKeys();
-      return;
-    }
+    setPendingKeyAction({ id, action: 'disable' });
     setKeys((prev) =>
-      prev.map((key) => (key.id === id ? payload.data.key : key))
+      prev.map((key) =>
+        key.id === id ? { ...key, status: 'disable_pending' } : key
+      )
     );
+
+    try {
+      const response = await fetch(`/api/apipool/keys/${id}/disable`, {
+        method: 'POST',
+      });
+      const payload = await readPortalPayload(response);
+      if (payload.code !== 0) throw new Error(payload.message);
+      setKeys((prev) =>
+        prev.map((key) => (key.id === id ? payload.data.key : key))
+      );
+    } catch (error: any) {
+      setMessage(error?.message || 'Disable API key failed');
+      await refreshKeys();
+    } finally {
+      setPendingKeyAction(null);
+    }
   }
 
   async function deleteKey(id: string) {
     setMessage('');
+    setPlainKey('');
     const target = keys.find((key) => key.id === id);
     if (!target || !canDeleteKeyStatus(target.status)) {
       setMessage(copy.deleteNotAllowed);
       return;
     }
 
-    const response = await fetch(`/api/apipool/keys/${id}`, {
-      method: 'DELETE',
-    });
-    const payload = await response.json();
-    if (payload.code !== 0) {
-      setMessage(payload.message);
-      await refreshKeys();
-      return;
-    }
+    setPendingKeyAction({ id, action: 'delete' });
     setKeys((prev) =>
-      prev.map((key) => (key.id === id ? payload.data.key : key))
+      prev.map((key) =>
+        key.id === id ? { ...key, status: 'delete_pending' } : key
+      )
     );
+
+    try {
+      const response = await fetch(`/api/apipool/keys/${id}`, {
+        method: 'DELETE',
+      });
+      const payload = await readPortalPayload(response);
+      if (payload.code !== 0) throw new Error(payload.message);
+      setKeys((prev) => prev.filter((key) => key.id !== id));
+      setPlainKeysById((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (error: any) {
+      setMessage(error?.message || 'Delete API key failed');
+      await refreshKeys();
+    } finally {
+      setPendingKeyAction(null);
+    }
+  }
+
+  async function copyText(text: string) {
+    const copied = await copyToClipboard(text);
+    if (!copied) setMessage(copy.copyFailed);
   }
 
   return (
@@ -165,13 +277,22 @@ export function ApiKeyManager({
             onChange={(event) => setName(event.target.value)}
             placeholder={copy.keyNamePlaceholder}
           />
-          <Button onClick={createKey} disabled={loading || !creationEnabled}>
+          <Button
+            type="button"
+            onClick={createKey}
+            disabled={
+              loading ||
+              isMutatingKey ||
+              !creationEnabled ||
+              hasExistingCustomerKey
+            }
+          >
             <Plus className="size-4" />
             {loading ? copy.creating : copy.createKey}
           </Button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          {copy.creationTip}
+          {hasExistingCustomerKey ? copy.oneKeyLimitTip : copy.creationTip}
         </p>
         {!creationEnabled && (
           <p className="mt-2 text-xs text-muted-foreground">
@@ -192,7 +313,7 @@ export function ApiKeyManager({
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={() => navigator.clipboard.writeText(plainKey)}
+                onClick={() => copyText(plainKey)}
                 title={copy.copyFullKey}
                 aria-label={copy.copyFullKey}
               >
@@ -229,8 +350,15 @@ export function ApiKeyManager({
               </TableRow>
             ) : (
               keys.map((key) => {
-                const canDisable = canDisableKeyStatus(key.status);
-                const canDelete = canDeleteKeyStatus(key.status);
+                const plainKeyForRow = plainKeysById[key.id];
+                const rowPendingAction =
+                  pendingKeyAction?.id === key.id
+                    ? pendingKeyAction.action
+                    : null;
+                const canDisable =
+                  canDisableKeyStatus(key.status) && !isMutatingKey;
+                const canDelete =
+                  canDeleteKeyStatus(key.status) && !isMutatingKey;
 
                 return (
                   <TableRow key={key.id}>
@@ -248,41 +376,64 @@ export function ApiKeyManager({
                     </TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
+                        type="button"
                         variant="outline"
                         size="icon"
                         onClick={() =>
-                          navigator.clipboard.writeText(key.keyMasked)
+                          copyText(plainKeyForRow || key.keyMasked)
                         }
-                        title={copy.copyMaskedKey}
-                        aria-label={copy.copyMaskedKey}
+                        title={
+                          plainKeyForRow
+                            ? copy.copyFullKey
+                            : copy.copyMaskedKey
+                        }
+                        aria-label={
+                          plainKeyForRow
+                            ? copy.copyFullKey
+                            : copy.copyMaskedKey
+                        }
                       >
                         <Copy className="size-4" />
                       </Button>
                       <Button
+                        type="button"
                         variant="outline"
                         size="icon"
                         onClick={() => disableKey(key.id)}
                         disabled={!canDisable}
                         title={
-                          canDisable
-                            ? copy.disableKey
-                            : copy.disableUnavailable
+                          rowPendingAction === 'disable'
+                            ? (copy.statusLabels.disable_pending as string)
+                            : canDisable
+                              ? copy.disableKey
+                              : copy.disableUnavailable
                         }
-                        aria-label={copy.disableKey}
+                        aria-label={
+                          rowPendingAction === 'disable'
+                            ? (copy.statusLabels.disable_pending as string)
+                            : copy.disableKey
+                        }
                       >
                         <Ban className="size-4" />
                       </Button>
                       <Button
+                        type="button"
                         variant="outline"
                         size="icon"
                         onClick={() => deleteKey(key.id)}
                         disabled={!canDelete}
                         title={
-                          canDelete
-                            ? copy.deleteKey
-                            : copy.deleteUnavailable
+                          rowPendingAction === 'delete'
+                            ? (copy.statusLabels.delete_pending as string)
+                            : canDelete
+                              ? copy.deleteKey
+                              : copy.deleteUnavailable
                         }
-                        aria-label={copy.deleteKey}
+                        aria-label={
+                          rowPendingAction === 'delete'
+                            ? (copy.statusLabels.delete_pending as string)
+                            : copy.deleteKey
+                        }
                       >
                         <Trash2 className="size-4" />
                       </Button>

@@ -5,6 +5,9 @@ export { APIPOOL_PUBLIC_CONFIG };
 export const APIPOOL_CONFIG = {
   ...APIPOOL_PUBLIC_CONFIG,
   newApiBaseUrl: process.env.NEWAPI_BASE_URL ?? '',
+  newApiDefaultTokenGroup: process.env.NEWAPI_DEFAULT_TOKEN_GROUP ?? 'auto',
+  newApiTokenCrossGroupRetry:
+    process.env.NEWAPI_TOKEN_CROSS_GROUP_RETRY !== 'false',
   isNewApiIntegrationEnabled:
     process.env.NEWAPI_INTEGRATION_ENABLED !== 'false',
   isPortalKeyCreationEnabled:

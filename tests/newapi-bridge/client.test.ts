@@ -153,7 +153,7 @@ test('provisionUser reuses an existing remote user without re-creating it', asyn
   );
 });
 
-test('createKey creates a remote token and fetches the full key with sk- prefix', async () => {
+test('createKey creates an auto-group token without model limits', async () => {
   let createdToken: any;
   const { client, requests } = createMockedClient({
     'GET /api/token/': () => ok({ items: createdToken ? [createdToken] : [] }),
@@ -173,7 +173,6 @@ test('createKey creates a remote token and fetches the full key with sk- prefix'
   const result = await client.createKey({
     user: USER,
     remoteName: 'pk_abc123',
-    allowedModels: ['gpt-4o-mini'],
   });
 
   assert.equal(result.id, '31');
@@ -187,11 +186,45 @@ test('createKey creates a remote token and fetches the full key with sk- prefix'
   );
   const body = await createReq!.json();
   assert.equal(body.name, 'pk_abc123');
-  assert.equal(body.model_limits_enabled, true);
-  assert.equal(body.model_limits, 'gpt-4o-mini');
+  assert.equal(body.model_limits_enabled, false);
+  assert.equal(body.model_limits, '');
   assert.equal(body.unlimited_quota, true);
+  assert.equal(body.group, 'auto');
+  assert.equal(body.cross_group_retry, true);
   assert.equal(createReq!.headers.get('authorization'), 'Bearer user-token');
   assert.equal(createReq!.headers.get('new-api-user'), '2');
+});
+
+test('createKey can target an explicit New API group', async () => {
+  let createdToken: any;
+  const { client, requests } = createMockedClient({
+    'GET /api/token/': () => ok({ items: createdToken ? [createdToken] : [] }),
+    'POST /api/token/': async (req) => {
+      const body = await req.clone().json();
+      createdToken = {
+        id: 32,
+        name: body.name,
+        key: 'x7UW****group',
+        status: 1,
+      };
+      return ok(null);
+    },
+    'POST /api/token/32/key': () => ok({ key: 'groupkey1234' }),
+  });
+
+  await client.createKey({
+    user: USER,
+    remoteName: 'pk_group',
+    group: 'discount',
+  });
+
+  const createReq = requests.find(
+    (req) =>
+      req.method === 'POST' && new URL(req.url).pathname === '/api/token/'
+  );
+  const body = await createReq!.json();
+  assert.equal(body.group, 'discount');
+  assert.equal(body.cross_group_retry, true);
 });
 
 test('createKey reuses an existing remote token with the same name (portal-side idempotency)', async () => {
@@ -251,13 +284,24 @@ test('disableKey uses status_only update with numeric id', async () => {
 
 test('getQuota converts integer quota into USD balance', async () => {
   const { client } = createMockedClient({
-    'GET /api/user/self': () => ok({ id: 2, quota: 1_250_000 }),
+    'GET /api/user/self': () =>
+      ok({
+        id: 2,
+        quota: 1_250_000,
+        used_quota: 500_000,
+        request_count: 42,
+        group: 'discount',
+      }),
   });
 
   const quota = await client.getQuota(USER);
 
   assert.equal(quota.quotaRemaining, 1_250_000);
   assert.equal(quota.balanceUsd, 2.5);
+  assert.equal(quota.usedQuota, 500_000);
+  assert.equal(quota.usedUsd, 1);
+  assert.equal(quota.allTimeRequestCount, 42);
+  assert.equal(quota.group, 'discount');
 });
 
 test('getUsageSummary aggregates dashboard rows and splits tokens from logs', async () => {
@@ -287,6 +331,7 @@ test('getUsageSummary aggregates dashboard rows and splits tokens from logs', as
             prompt_tokens: 700,
             completion_tokens: 300,
             quota: 750_000,
+            use_time: 1200,
             created_at: 1_781_252_611,
           },
         ],
@@ -299,6 +344,7 @@ test('getUsageSummary aggregates dashboard rows and splits tokens from logs', as
   assert.equal(summary.spendUsd, 1.5);
   assert.equal(summary.inputTokens, 700);
   assert.equal(summary.outputTokens, 300);
+  assert.equal(summary.averageLatencyMs, 1200);
   assert.deepEqual(summary.byModel, [
     { modelId: 'gpt-4o-mini', requests: 4, tokens: 1000, spendUsd: 1.5 },
   ]);
@@ -344,6 +390,10 @@ test('listUsageLogs maps consumption logs with USD spend', async () => {
             prompt_tokens: 12,
             completion_tokens: 34,
             quota: 250_000,
+            group: 'discount',
+            channel_name: 'promo-channel',
+            use_time: 890,
+            request_id: 'req_abc',
             created_at: 1_781_252_611,
           },
         ],
@@ -358,6 +408,10 @@ test('listUsageLogs maps consumption logs with USD spend', async () => {
   assert.equal(logs[0].inputTokens, 12);
   assert.equal(logs[0].outputTokens, 34);
   assert.equal(logs[0].spendUsd, 0.5);
+  assert.equal(logs[0].group, 'discount');
+  assert.equal(logs[0].channelName, 'promo-channel');
+  assert.equal(logs[0].latencyMs, 890);
+  assert.equal(logs[0].requestId, 'req_abc');
   const url = new URL(requests[0].url);
   assert.equal(url.searchParams.get('type'), '2');
 });

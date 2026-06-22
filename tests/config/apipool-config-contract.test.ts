@@ -27,6 +27,10 @@ test('server APIPool config owns rollback switches and New API internals', async
 
   assert.match(source, /NEWAPI_BASE_URL/);
   assert.match(source, /NEWAPI_INTEGRATION_ENABLED/);
+  assert.match(source, /NEWAPI_DEFAULT_TOKEN_GROUP/);
+  assert.match(source, /newApiDefaultTokenGroup/);
+  assert.match(source, /NEWAPI_TOKEN_CROSS_GROUP_RETRY/);
+  assert.match(source, /newApiTokenCrossGroupRetry/);
   assert.match(source, /APIPOOL_KEY_CREATION_ENABLED/);
   assert.match(source, /isPortalKeyCreationEnabled/);
 });

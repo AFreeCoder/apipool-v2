@@ -3,9 +3,9 @@
 APIPool v2 is the MVP portal for a real API key lifecycle:
 
 - login and portal account binding
-- server-side New API bridge for key creation, disable/delete, quota, usage, and recent logs
-- model catalog with one launch `available` model and other candidates marked `coming_soon`
-- customer dashboard for balance, requests, tokens, recent logs, API keys, and billing ledger
+- server-side New API bridge for one New API-backed customer key per portal user, disable/delete, quota, usage, and recent logs
+- model catalog with New API group-aligned route groups for standard and discounted channels
+- customer dashboard for live New API balance, requests, tokens, spend, recent logs, API keys, and billing ledger
 - operator-only manual quota adjustment with ledger v0 and bridge audit logs
 
 ## Local Development
@@ -26,6 +26,8 @@ NEWAPI_INTEGRATION_ENABLED=true
 APIPOOL_KEY_CREATION_ENABLED=true
 NEWAPI_BASE_URL=http://newapi-internal:3000
 NEWAPI_ADMIN_TOKEN=...
+NEWAPI_DEFAULT_TOKEN_GROUP=auto
+NEWAPI_TOKEN_CROSS_GROUP_RETRY=true
 ```
 
 The browser must never receive New API admin credentials or internal New API user identifiers.

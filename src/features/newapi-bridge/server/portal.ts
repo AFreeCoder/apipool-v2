@@ -43,6 +43,7 @@ export type PortalKeyCreateInput = {
   allowedModels?: string[];
   quotaLimit?: number;
   ipAllowlist?: string[];
+  group?: string;
 };
 
 export type PortalUsageRange = '7d' | '30d' | 'month';
@@ -51,10 +52,17 @@ export type PortalUsageView = {
   summary: {
     balanceUsd?: number;
     quotaRemaining?: number;
+    usedQuota?: number;
+    usedUsd?: number;
+    allTimeRequestCount?: number;
+    group?: string;
     requestCount: number;
     inputTokens: number;
     outputTokens: number;
     spendUsd?: number;
+    averageLatencyMs?: number;
+    topModelId?: string;
+    recentRequestAt?: Date | null;
     byModel: Array<{
       modelId: string;
       requests: number;
@@ -73,6 +81,10 @@ export type PortalUsageView = {
     inputTokens: number;
     outputTokens: number;
     spendUsd?: number | null;
+    group?: string;
+    channelName?: string;
+    latencyMs?: number;
+    requestId?: string;
     createdAt: Date;
   }>;
 };
@@ -96,6 +108,15 @@ const TERMINAL_KEY_MUTATION_ERROR_CODES = new Set<NewApiBridgeErrorCode>([
   'malformed_response',
 ]);
 const USAGE_SYNC_LOCK_TTL_MS = 60_000;
+
+const CUSTOMER_KEY_SLOT_STATUSES = new Set<KeyLifecycleStatus>([
+  'creating_remote',
+  'active',
+  'remote_created_binding_failed',
+  'disable_pending',
+  'delete_pending',
+  'disabled',
+]);
 
 function getFailedKeyMutationStatus(error: unknown): KeyLifecycleStatus {
   if (
@@ -186,6 +207,34 @@ function toPublicUsageLog(row: any) {
   };
 }
 
+function isPendingRemoteKeyId(remoteKeyId: string | null | undefined) {
+  return typeof remoteKeyId === 'string' && remoteKeyId.startsWith('pending:');
+}
+
+function occupiesCustomerKeySlot(row: any) {
+  const status = row.status as KeyLifecycleStatus;
+  if (status === 'deleted' || row.deletedAt) return false;
+  if (CUSTOMER_KEY_SLOT_STATUSES.has(status)) return true;
+
+  return status === 'failed_retriable' && !isPendingRemoteKeyId(row.newapiKeyId);
+}
+
+function getTopModelId(
+  byModel: Array<{ modelId: string; requests: number; tokens: number }>
+) {
+  return [...byModel].sort(
+    (a, b) => b.requests - a.requests || b.tokens - a.tokens
+  )[0]?.modelId;
+}
+
+function getRecentRequestAt(
+  logs: Array<{ createdAt: Date | string }>
+): Date | null {
+  const latest = logs[0]?.createdAt;
+  if (!latest) return null;
+  return latest instanceof Date ? latest : new Date(latest);
+}
+
 async function listCachedUsageLogs(portalUserId: string) {
   return db()
     .select()
@@ -212,6 +261,13 @@ function toPortalUsageViewFromSnapshot(
   status = snapshot.status,
   errorMessage?: string
 ): PortalUsageView {
+  const byModel = parseJsonArray<{
+    modelId: string;
+    requests: number;
+    tokens: number;
+    spendUsd?: number;
+  }>(snapshot.byModel);
+
   return {
     summary: {
       balanceUsd: snapshot.balanceUsd,
@@ -220,7 +276,9 @@ function toPortalUsageViewFromSnapshot(
       inputTokens: snapshot.inputTokens,
       outputTokens: snapshot.outputTokens,
       spendUsd: snapshot.spendUsd,
-      byModel: parseJsonArray(snapshot.byModel),
+      byModel,
+      topModelId: getTopModelId(byModel),
+      recentRequestAt: getRecentRequestAt(logs),
       status,
       syncedAt: snapshot.syncedAt,
       errorMessage,
@@ -389,13 +447,26 @@ export async function createPortalApiKey(
 ) {
   const binding = await ensurePortalUserBinding(user, client);
   const credentials = bindingToUserCredentials(binding);
+  const existingRows = await db()
+    .select()
+    .from(newApiKeyBinding)
+    .where(eq(newApiKeyBinding.portalUserId, user.id));
+  const syncedExistingRows = await syncPortalApiKeyStatuses(
+    user.id,
+    existingRows,
+    client
+  );
+  const existingKey = syncedExistingRows.find(occupiesCustomerKeySlot);
+  if (existingKey) {
+    throw new Error(
+      'Each account can create only one API key. Delete the existing key before creating another.'
+    );
+  }
+
   const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
   const localKeyId = getUuid();
   const remoteName = deriveRemoteKeyName(localKeyId);
-  const allowedModels =
-    input.allowedModels && input.allowedModels.length > 0
-      ? input.allowedModels
-      : [APIPOOL_CONFIG.defaultLaunchModel];
+  const allowedModels = input.allowedModels || [];
   const pendingRemoteKeyId = `pending:${idempotencyKey}`;
 
   const [pending] = await db()
@@ -423,6 +494,8 @@ export async function createPortalApiKey(
       allowedModels,
       quotaLimitUsd: input.quotaLimit,
       ipAllowlist: input.ipAllowlist || [],
+      group: input.group || APIPOOL_CONFIG.newApiDefaultTokenGroup,
+      crossGroupRetry: APIPOOL_CONFIG.newApiTokenCrossGroupRetry,
     });
   } catch (error: any) {
     const status = getFailedKeyMutationStatus(error);
@@ -541,15 +614,26 @@ async function syncPortalApiKeyStatuses(
   rows: any[],
   client: NewApiClient
 ) {
+  const rowsToSync = [];
+  for (const row of rows) {
+    if (row.status === 'deleted' || row.deletedAt) {
+      await db()
+        .delete(newApiKeyBinding)
+        .where(eq(newApiKeyBinding.id, row.id));
+      continue;
+    }
+    rowsToSync.push(row);
+  }
+
   const binding = await getPortalUserBinding(portalUserId);
-  if (!binding || binding.status !== 'active') return rows;
+  if (!binding || binding.status !== 'active') return rowsToSync;
 
   try {
     const remoteKeys = await client.listKeys(bindingToUserCredentials(binding));
     const remoteById = new Map(remoteKeys.map((key) => [key.id, key]));
     const syncedRows = [];
 
-    for (const row of rows) {
+    for (const row of rowsToSync) {
       const remote = remoteById.get(row.newapiKeyId);
       const syncedStatus = remote
         ? mapRemoteKeyStatus(row.status as KeyLifecycleStatus, remote.status)
@@ -560,15 +644,18 @@ async function syncPortalApiKeyStatuses(
         continue;
       }
 
+      if (syncedStatus === 'deleted') {
+        await db()
+          .delete(newApiKeyBinding)
+          .where(eq(newApiKeyBinding.id, row.id));
+        continue;
+      }
+
       const [updated] = await db()
         .update(newApiKeyBinding)
         .set({
           keyMasked: remote.maskedKey,
           status: syncedStatus,
-          deletedAt:
-            syncedStatus === 'deleted' && !row.deletedAt
-              ? new Date()
-              : row.deletedAt,
           lastRemoteError: null,
         })
         .where(eq(newApiKeyBinding.id, row.id))
@@ -722,11 +809,9 @@ export async function deletePortalApiKey(
       });
     }
 
-    const [updated] = await db()
-      .update(newApiKeyBinding)
-      .set({ status: 'deleted', deletedAt: new Date() })
-      .where(eq(newApiKeyBinding.id, keyId))
-      .returning();
+    const deletedAt = new Date();
+    await db().delete(newApiKeyBinding).where(eq(newApiKeyBinding.id, keyId));
+
     await recordAudit({
       portalUserId,
       action: 'newapi.key.delete',
@@ -736,7 +821,7 @@ export async function deletePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey(updated);
+    return toPublicApiKey({ ...row, status: 'deleted', deletedAt });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)
@@ -887,13 +972,20 @@ export async function getPortalUsage(
 
     return {
       summary: {
-        balanceUsd: snapshot.balanceUsd,
-        quotaRemaining: snapshot.quotaRemaining,
+        balanceUsd: quota.balanceUsd,
+        quotaRemaining: quota.quotaRemaining,
+        usedQuota: quota.usedQuota,
+        usedUsd: quota.usedUsd,
+        allTimeRequestCount: quota.allTimeRequestCount,
+        group: quota.group,
         requestCount: snapshot.requestCount,
         inputTokens: snapshot.inputTokens,
         outputTokens: snapshot.outputTokens,
         spendUsd: snapshot.spendUsd,
+        averageLatencyMs: summary.averageLatencyMs,
         byModel: parseJsonArray(snapshot.byModel),
+        topModelId: getTopModelId(summary.byModel),
+        recentRequestAt: getRecentRequestAt(logs),
         status: snapshot.status,
         syncedAt: snapshot.syncedAt,
       },
@@ -905,6 +997,10 @@ export async function getPortalUsage(
         inputTokens: log.inputTokens,
         outputTokens: log.outputTokens,
         spendUsd: log.spendUsd,
+        group: log.group,
+        channelName: log.channelName,
+        latencyMs: log.latencyMs,
+        requestId: log.requestId,
         createdAt: new Date(log.createdAt),
       })),
     };

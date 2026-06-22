@@ -118,7 +118,11 @@ test('dashboard pages use bridge DTOs and keep unauthenticated fallbacks empty',
   assert.match(layout, /DashboardShell/);
 
   assert.match(overview, /getPortalUsage\(user as any, ['"]7d['"]\)/);
-  assert.match(overview, /listPortalApiKeys\(user\.id\)/);
+  assert.doesNotMatch(overview, /listPortalApiKeys\(user\.id\)/);
+  assert.match(overview, /usage\.summary\.allTimeRequestCount/);
+  assert.match(overview, /usage\.summary\.usedUsd/);
+  assert.match(overview, /usage\.summary\.group/);
+  assert.match(overview, /newApiDefaultTokenGroup/);
   assert.match(overview, /EMPTY_USAGE/);
 
   assert.match(apiKeys, /listPortalApiKeys\(user\.id\)/);
@@ -154,7 +158,13 @@ test('console client components call only portal APIs and guard invalid key acti
   assert.match(keyManager, /fetch\(['"]\/api\/apipool\/keys['"]/);
   assert.match(keyManager, /canDisableKeyStatus/);
   assert.match(keyManager, /canDeleteKeyStatus/);
-  assert.match(keyManager, /APIPOOL_PUBLIC_CONFIG\.defaultLaunchModel/);
+  assert.match(keyManager, /hasExistingCustomerKey/);
+  assert.match(keyManager, /copy\.oneKeyLimit/);
+  assert.match(keyManager, /copyToClipboard/);
+  assert.match(keyManager, /plainKeysById/);
+  assert.match(keyManager, /plainKeyForRow \|\| key\.keyMasked/);
+  assert.match(keyManager, /APIPOOL_PUBLIC_CONFIG\.apiBaseUrl/);
+  assert.doesNotMatch(keyManager, /APIPOOL_PUBLIC_CONFIG\.defaultLaunchModel/);
   assert.doesNotMatch(keyManager, /newapi|NEWAPI_ADMIN_TOKEN/i);
 
   assert.match(topUps, /fetch\(['"]\/api\/payment\/checkout['"]/);

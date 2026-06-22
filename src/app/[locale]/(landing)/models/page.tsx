@@ -199,11 +199,11 @@ function ModelsTable({
                   </div>
                   {deal && model.dealNote && (
                     <div className="text-muted-foreground mt-1 text-xs">
-                      {copy.dealsDescription}
+                      {model.dealNote}
                     </div>
                   )}
                 </td>
-                <td className="text-muted-foreground px-4 py-3">
+                <td className="text-muted-foreground px-4 py-3 font-mono text-xs">
                   {model.provider}
                 </td>
                 <td className="px-4 py-3">

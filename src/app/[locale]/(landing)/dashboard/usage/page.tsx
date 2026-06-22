@@ -6,6 +6,12 @@ import { formatUsdAmount } from '@/features/api-console/lib/money';
 import { getApipoolCopy } from '@/features/apipool-ui/copy';
 import { getUserInfo } from '@/shared/models/user';
 
+function formatLatencyMs(value?: number) {
+  if (typeof value !== 'number') return '—';
+  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+  return `${value}ms`;
+}
+
 export default async function UsagePage({
   params,
 }: {
@@ -45,7 +51,7 @@ export default async function UsagePage({
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           label={copy.requests}
           value={usage.summary.requestCount.toLocaleString(locale)}
@@ -61,6 +67,14 @@ export default async function UsagePage({
         <StatCard
           label={copy.spend}
           value={formatUsdAmount(usage.summary.spendUsd)}
+        />
+        <StatCard
+          label={copy.averageLatency}
+          value={formatLatencyMs(usage.summary.averageLatencyMs)}
+        />
+        <StatCard
+          label={copy.topModel}
+          value={usage.summary.topModelId || copy.noTopModel}
         />
       </div>
 
@@ -124,7 +138,7 @@ export default async function UsagePage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
                   <th className="px-4 py-2.5 text-left font-medium">
@@ -136,11 +150,23 @@ export default async function UsagePage({
                   <th className="px-4 py-2.5 text-left font-medium">
                     {copy.table.model}
                   </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.table.group}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {copy.table.channel}
+                  </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     {copy.table.in}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     {copy.table.out}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {copy.table.latency}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {copy.table.spend}
                   </th>
                 </tr>
               </thead>
@@ -156,11 +182,23 @@ export default async function UsagePage({
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {log.modelId}
                     </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {log.group || usage.summary.group || '-'}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {log.channelName || '-'}
+                    </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {log.inputTokens.toLocaleString(locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {log.outputTokens.toLocaleString(locale)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {formatLatencyMs(log.latencyMs)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {formatUsdAmount(log.spendUsd)}
                     </td>
                   </tr>
                 ))}
