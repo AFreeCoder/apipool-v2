@@ -54,4 +54,4 @@ APIPool v2 定位为多模型 API 门户和商业控制台，而不是统一运�
 - 通用 Gateway Adapter 或多网关抽象层。
 - Playground。
 - 复杂 Admin CMS。
-- 大规模 SEO 内容矩阵（博客在增长迭代中恢复）。
+- 大规模 SEO 内容矩阵（博客按需恢复）。
