@@ -10,7 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  NEXT_PUBLIC_APP_URL: https://apipool.dev
+  NEXT_PUBLIC_APP_URL: https://new.apipool.dev
   NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://api.apipool.dev/v1
   NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: gpt-5.4-mini
 

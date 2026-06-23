@@ -19,7 +19,7 @@
 
 - `DATABASE_PROVIDER` / `DATABASE_URL`
 - `AUTH_SECRET` / `AUTH_URL` —— **容器 entrypoint fail-fast：`AUTH_SECRET` 必须非空且 ≥16 字符**（空值会让 Better Auth 回退已知默认签名密钥），否则拒绝启动。用 `openssl rand -base64 32` 生成。
-- `NEXT_PUBLIC_APP_URL=https://apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效）
+- `NEXT_PUBLIC_APP_URL=https://new.apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效；正式切换主域名前与 Caddy 门户域名保持一致）
 
 ### New API 桥接（见 04-newapi-contract.md）
 
@@ -91,7 +91,7 @@ GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密�
 - 触发：push 到 `main` / `dev`、PR、手动 `workflow_dispatch`
 - tag：`sha-<完整 commit>`、分支名、tag 名；默认分支额外推 `latest`
 - 构建期生产参数：
-  - `NEXT_PUBLIC_APP_URL=https://apipool.dev`
+  - `NEXT_PUBLIC_APP_URL=https://new.apipool.dev`
   - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1`
   - `NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini`
 
