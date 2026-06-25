@@ -25,6 +25,7 @@ import {
   order as orderTable,
   usageLogSnapshot,
   usageSnapshot,
+  user as userTable,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import { User } from '@/shared/models/user';
@@ -646,6 +647,28 @@ export async function listPortalApiKeys(
   return syncedRows.map(toPublicApiKey);
 }
 
+export async function listKeysByPortalUser(portalUserId: string) {
+  const rows = await db()
+    .select({
+      id: newApiKeyBinding.id,
+      keyMasked: newApiKeyBinding.keyMasked,
+      displayName: newApiKeyBinding.displayName,
+      status: newApiKeyBinding.status,
+      allowedModels: newApiKeyBinding.allowedModels,
+      createdAt: newApiKeyBinding.createdAt,
+      updatedAt: newApiKeyBinding.updatedAt,
+      lastUsedAt: newApiKeyBinding.lastUsedAt,
+      deletedAt: newApiKeyBinding.deletedAt,
+      groupName: catalogGroup.name,
+    })
+    .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
+    .where(eq(newApiKeyBinding.portalUserId, portalUserId))
+    .orderBy(desc(newApiKeyBinding.createdAt));
+
+  return rows.map(toPublicApiKey);
+}
+
 export async function disablePortalApiKey(
   portalUserId: string,
   keyId: string,
@@ -1038,6 +1061,50 @@ export async function listLedgerEntries(portalUserId: string) {
   return rows.map(toPublicLedgerEntry);
 }
 
+export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
+  const rows = await db()
+    .select({
+      id: apipoolLedgerEntry.id,
+      amountUsd: apipoolLedgerEntry.amountUsd,
+      source: apipoolLedgerEntry.source,
+      status: apipoolLedgerEntry.status,
+      reason: apipoolLedgerEntry.reason,
+      rollbackStatus: apipoolLedgerEntry.rollbackStatus,
+      createdAt: apipoolLedgerEntry.createdAt,
+      updatedAt: apipoolLedgerEntry.updatedAt,
+      operatorId: userTable.id,
+      operatorName: userTable.name,
+      operatorEmail: userTable.email,
+    })
+    .from(apipoolLedgerEntry)
+    .leftJoin(userTable, eq(apipoolLedgerEntry.operatorUserId, userTable.id))
+    .where(
+      and(
+        eq(apipoolLedgerEntry.portalUserId, portalUserId),
+        eq(apipoolLedgerEntry.source, 'manual_adjustment')
+      )
+    )
+    .orderBy(desc(apipoolLedgerEntry.createdAt));
+
+  return rows.map((row: any) => ({
+    id: row.id,
+    amountUsd: row.amountUsd,
+    source: row.source,
+    status: row.status,
+    reason: row.reason,
+    rollbackStatus: row.rollbackStatus,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    operator: row.operatorId
+      ? {
+          id: row.operatorId,
+          name: row.operatorName,
+          email: row.operatorEmail,
+        }
+      : null,
+  }));
+}
+
 export async function listBillingLedgerEntries(
   portalUserId: string
 ): Promise<BillingLedgerEntry[]> {
@@ -1056,7 +1123,7 @@ export async function listBillingLedgerEntries(
     .where(eq(apipoolLedgerEntry.portalUserId, portalUserId))
     .orderBy(desc(apipoolLedgerEntry.createdAt));
 
-  return rows.map((row) => ({
+  return rows.map((row: any) => ({
     orderNo: row.orderNo,
     amountUsd: row.amountUsd,
     ledgerStatus: row.ledgerStatus,
