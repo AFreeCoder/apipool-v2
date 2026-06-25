@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, KeyRound, Plus, Trash2, Ban } from 'lucide-react';
-
-import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import {
   canDeleteKeyStatus,
   canDisableKeyStatus,
   type KeyLifecycleStatus,
 } from '@/features/api-console/lib/status';
+import { Ban, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
+
+import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -25,8 +25,21 @@ type ApiKeyRow = {
   displayName: string;
   keyMasked: string;
   status: KeyLifecycleStatus;
-  allowedModels: string[];
+  allowedModels?: string[];
+  groupName?: string | null;
   createdAt: string | Date;
+};
+
+type ApiKeyGroup = {
+  slug: string;
+  name: string;
+  userDescription?: string;
+};
+
+type GroupSelectOption = {
+  value: string;
+  label: string;
+  description?: string;
 };
 
 const KEY_CREATION_PAUSED_MESSAGE =
@@ -41,11 +54,29 @@ const STATUS_LABELS: Record<string, string> = {
   delete_pending: 'Deleting…',
 };
 
+export function buildCreateKeyRequest(name: string, groupSlug: string) {
+  return {
+    name: name.trim() || 'Default APIPool key',
+    groupSlug: groupSlug.trim(),
+  };
+}
+
+export function buildGroupSelectOptions(
+  groups: ApiKeyGroup[]
+): GroupSelectOption[] {
+  return groups.map((group) => ({
+    value: group.slug,
+    label: group.name,
+    ...(group.userDescription ? { description: group.userDescription } : {}),
+  }));
+}
+
 function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
   const className =
     status === 'active'
       ? 'bg-primary/10 text-primary'
-      : status.startsWith('failed') || status === 'remote_created_binding_failed'
+      : status.startsWith('failed') ||
+          status === 'remote_created_binding_failed'
         ? 'bg-destructive/10 text-destructive'
         : 'bg-muted text-muted-foreground';
   return (
@@ -59,16 +90,27 @@ function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
 
 export function ApiKeyManager({
   initialKeys,
+  groups,
+  callableByGroup,
   creationEnabled = true,
 }: {
   initialKeys: ApiKeyRow[];
+  groups: ApiKeyGroup[];
+  callableByGroup: Record<string, string[]>;
   creationEnabled?: boolean;
 }) {
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
   const [name, setName] = useState('Default APIPool key');
+  const [selectedGroupSlug, setSelectedGroupSlug] = useState(
+    groups[0]?.slug ?? ''
+  );
   const [plainKey, setPlainKey] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const groupOptions = buildGroupSelectOptions(groups);
+  const selectedGroupModels = selectedGroupSlug
+    ? (callableByGroup[selectedGroupSlug] ?? [])
+    : [];
 
   async function refreshKeys() {
     const response = await fetch('/api/apipool/keys');
@@ -84,6 +126,11 @@ export function ApiKeyManager({
       setMessage(KEY_CREATION_PAUSED_MESSAGE);
       return;
     }
+    if (!selectedGroupSlug) {
+      setPlainKey('');
+      setMessage('请选择分组');
+      return;
+    }
 
     setLoading(true);
     setMessage('');
@@ -92,10 +139,7 @@ export function ApiKeyManager({
       const response = await fetch('/api/apipool/keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          allowedModels: [APIPOOL_PUBLIC_CONFIG.defaultLaunchModel],
-        }),
+        body: JSON.stringify(buildCreateKeyRequest(name, selectedGroupSlug)),
       });
       const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
@@ -156,34 +200,70 @@ export function ApiKeyManager({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border bg-background p-5">
+      <div className="bg-background rounded-lg border p-5">
         <div className="mb-4 flex items-center gap-2 font-medium">
           <KeyRound className="size-4" />
           Create API Key
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]">
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Key name"
           />
-          <Button onClick={createKey} disabled={loading || !creationEnabled}>
+          <select
+            value={selectedGroupSlug}
+            onChange={(event) => setSelectedGroupSlug(event.target.value)}
+            aria-label="分组"
+            className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={loading || groupOptions.length === 0}
+          >
+            <option value="">选择分组</option>
+            {groupOptions.map((group) => (
+              <option key={group.value} value={group.value}>
+                {group.label}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={createKey}
+            disabled={loading || !creationEnabled || !selectedGroupSlug}
+          >
             <Plus className="size-4" />
             {loading ? 'Creating...' : 'Create key'}
           </Button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
+        <div className="bg-muted/40 mt-4 rounded-md border p-3">
+          <div className="text-sm font-medium">可调模型范围</div>
+          {selectedGroupModels.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {selectedGroupModels.map((modelName) => (
+                <span
+                  key={modelName}
+                  className="bg-background text-muted-foreground rounded-md px-2 py-1 text-xs"
+                >
+                  {modelName}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground mt-2 text-xs">暂无可调模型</p>
+          )}
+        </div>
+        <p className="text-muted-foreground mt-3 text-xs">
           Add credit on the Balance tab before making paid calls. The full key
           is shown once after creation.
         </p>
         {!creationEnabled && (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-2 text-xs">
             {KEY_CREATION_PAUSED_MESSAGE}
           </p>
         )}
-        {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
+        {message && (
+          <p className="text-muted-foreground mt-3 text-sm">{message}</p>
+        )}
         {plainKey && (
-          <div className="mt-4 rounded-md border bg-muted p-4">
+          <div className="bg-muted mt-4 rounded-md border p-4">
             <div className="mb-2 text-sm font-medium">
               Full key. This is shown once.
             </div>
@@ -205,7 +285,7 @@ export function ApiKeyManager({
         )}
       </div>
 
-      <div className="rounded-lg border bg-background">
+      <div className="bg-background rounded-lg border">
         <div className="border-b p-5">
           <h2 className="font-medium">
             Keys for {APIPOOL_PUBLIC_CONFIG.apiBaseUrl}
@@ -217,7 +297,7 @@ export function ApiKeyManager({
               <TableHead>Name</TableHead>
               <TableHead>Masked key</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Models</TableHead>
+              <TableHead>分组</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -244,9 +324,7 @@ export function ApiKeyManager({
                     <TableCell>
                       <StatusBadge status={key.status} />
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {(key.allowedModels || []).join(', ')}
-                    </TableCell>
+                    <TableCell>{key.groupName ?? '—'}</TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
                         variant="outline"

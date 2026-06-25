@@ -22,13 +22,22 @@ async function setupPortalDb() {
 
   const client = createClient({ url: `file:${dbPath}` });
   const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
-  for (const file of (await readdir(migrationsDir)).filter((name) => name.endsWith('.sql')).sort()) {
-    await client.executeMultiple(await readFile(join(migrationsDir, file), 'utf8'));
+  for (const file of (await readdir(migrationsDir))
+    .filter((name) => name.endsWith('.sql'))
+    .sort()) {
+    await client.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
   }
 
   const { user } = await import('@/config/db/schema');
-  const { catalogGroup, newApiBridgeAuditLog, newApiKeyBinding, usageLogSnapshot, usageSnapshot } =
-    await import('@/config/db/schema');
+  const {
+    catalogGroup,
+    newApiBridgeAuditLog,
+    newApiKeyBinding,
+    usageLogSnapshot,
+    usageSnapshot,
+  } = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
   const { NewApiBridgeError } = await import(
     '@/features/newapi-bridge/server/client'
@@ -118,7 +127,10 @@ test('createPortalApiKey keeps a retriable local key row when remote creation fa
   );
 
   const fakeRemote = {
-    provisionUser: async () => ({ newapiUserId: 'remote_user_1', accessToken: 'test-access-token' }),
+    provisionUser: async () => ({
+      newapiUserId: 'remote_user_1',
+      accessToken: 'test-access-token',
+    }),
     createKey: async () => {
       throw new modules.NewApiBridgeError({
         code: 'timeout',
@@ -158,7 +170,10 @@ test('createPortalApiKey rejects remote-created keys that are not active', async
   );
 
   const fakeRemote = {
-    provisionUser: async () => ({ newapiUserId: 'remote_user_disabled_key', accessToken: 'test-access-token' }),
+    provisionUser: async () => ({
+      newapiUserId: 'remote_user_disabled_key',
+      accessToken: 'test-access-token',
+    }),
     createKey: async () => ({
       id: 'remote_key_disabled_on_create',
       key: 'sk-disabled-on-create',
@@ -347,6 +362,32 @@ test('portal key DTOs expose only MVP customer key fields', async () => {
   assertNoFields(deleted, forbiddenFields);
 });
 
+test('listPortalApiKeys returns the portal group name without leaking internal group fields', async () => {
+  const portalUser = await insertUser(
+    'portal_user_key_group_name',
+    'key-group-name@example.com'
+  );
+  const remote = createSuccessfulRemoteClient();
+  const created = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Grouped list key'),
+    remote as any
+  );
+
+  const listed = await modules.portal.listPortalApiKeys(portalUser.id);
+  const listedKey = listed.find((key: any) => key.id === created.binding.id);
+
+  assert.ok(listedKey);
+  assert.equal(listedKey.groupName, 'Portal Test');
+  assertNoFields(listedKey, ['groupId', 'newapiGroup']);
+
+  const serialized = JSON.stringify(listedKey);
+  assert.equal(serialized.includes('catalog_group_portal_test'), false);
+  assert.equal(serialized.includes('ng-portal-test'), false);
+  assert.equal(serialized.includes('newapiGroup'), false);
+  assert.equal(serialized.includes('groupId'), false);
+});
+
 test('listPortalApiKeys syncs remote key status without exposing remote ids', async () => {
   const portalUser = await insertUser(
     'portal_user_key_list_sync',
@@ -371,11 +412,7 @@ test('listPortalApiKeys syncs remote key status without exposing remote ids', as
   assert.equal(listed[0].id, created.binding.id);
   assert.equal(listed[0].status, 'disabled');
   assert.equal(listed[0].keyMasked, 'sk-...remote-disabled');
-  assertNoFields(listed[0], [
-    'newapiUserId',
-    'newapiKeyId',
-    'idempotencyKey',
-  ]);
+  assertNoFields(listed[0], ['newapiUserId', 'newapiKeyId', 'idempotencyKey']);
 
   const rows = await modules
     .db()
@@ -658,7 +695,9 @@ test('key lifecycle terminal remote errors persist failed_terminal', async () =>
     .select()
     .from(modules.newApiKeyBinding)
     .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-  const disableRow = rows.find((row: any) => row.id === disableResult.binding.id);
+  const disableRow = rows.find(
+    (row: any) => row.id === disableResult.binding.id
+  );
   const deleteRow = rows.find((row: any) => row.id === deleteResult.binding.id);
 
   assert.equal(disableRow.status, 'failed_terminal');
@@ -954,23 +993,26 @@ test('getPortalUsage returns syncing snapshot without duplicate remote reads', a
   } as any;
 
   await modules.portal.ensurePortalUserBinding(portalUser, healthyRemote);
-  await modules.db().insert(modules.usageSnapshot).values({
-    id: 'usage_snapshot_syncing',
-    portalUserId: portalUser.id,
-    newapiUserId: `remote_${portalUser.id}`,
-    range: '7d',
-    balanceUsd: 18,
-    quotaRemaining: 18,
-    requestCount: 2,
-    inputTokens: 40,
-    outputTokens: 20,
-    spendUsd: 3,
-    byModel: JSON.stringify([
-      { modelId: 'gpt-4o-mini', requests: 2, tokens: 60, spendUsd: 3 },
-    ]),
-    status: 'syncing',
-    syncedAt: new Date('2026-05-24T10:00:00.000Z'),
-  });
+  await modules
+    .db()
+    .insert(modules.usageSnapshot)
+    .values({
+      id: 'usage_snapshot_syncing',
+      portalUserId: portalUser.id,
+      newapiUserId: `remote_${portalUser.id}`,
+      range: '7d',
+      balanceUsd: 18,
+      quotaRemaining: 18,
+      requestCount: 2,
+      inputTokens: 40,
+      outputTokens: 20,
+      spendUsd: 3,
+      byModel: JSON.stringify([
+        { modelId: 'gpt-4o-mini', requests: 2, tokens: 60, spendUsd: 3 },
+      ]),
+      status: 'syncing',
+      syncedAt: new Date('2026-05-24T10:00:00.000Z'),
+    });
 
   let remoteCalls = 0;
   const duplicateRemote = {

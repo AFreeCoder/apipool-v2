@@ -1,7 +1,8 @@
 import 'server-only';
 
-import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
+import { createHash, randomBytes } from 'node:crypto';
 import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
+import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
   canDeleteKeyStatus,
   canDisableKeyStatus,
@@ -17,6 +18,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/core/db';
 import {
   apipoolLedgerEntry,
+  catalogGroup,
   newApiBridgeAuditLog,
   newApiKeyBinding,
   newApiUserBinding,
@@ -25,8 +27,6 @@ import {
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import { User } from '@/shared/models/user';
-
-import { createHash, randomBytes } from 'node:crypto';
 
 import {
   createNewApiClient,
@@ -156,6 +156,7 @@ function toPublicApiKey(row: any) {
     updatedAt: row.updatedAt,
     lastUsedAt: row.lastUsedAt,
     deletedAt: row.deletedAt,
+    groupName: row.groupName ?? null,
   };
 }
 
@@ -507,7 +508,7 @@ export async function createPortalApiKey(
     });
 
     return {
-      binding: toPublicApiKey(created),
+      binding: toPublicApiKey({ ...created, groupName: group.name }),
       plainKey: remote.key,
     };
   } catch (error: any) {
@@ -576,7 +577,7 @@ async function syncPortalApiKeyStatuses(
         })
         .where(eq(newApiKeyBinding.id, row.id))
         .returning();
-      syncedRows.push(updated || row);
+      syncedRows.push(updated ? { ...updated, groupName: row.groupName } : row);
     }
 
     return syncedRows;
@@ -590,8 +591,29 @@ export async function listPortalApiKeys(
   client: NewApiClient = createNewApiClient()
 ) {
   const rows = await db()
-    .select()
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      newapiUserId: newApiKeyBinding.newapiUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      keyMasked: newApiKeyBinding.keyMasked,
+      displayName: newApiKeyBinding.displayName,
+      status: newApiKeyBinding.status,
+      allowedModels: newApiKeyBinding.allowedModels,
+      groupId: newApiKeyBinding.groupId,
+      newapiGroup: newApiKeyBinding.newapiGroup,
+      quotaLimit: newApiKeyBinding.quotaLimit,
+      ipAllowlist: newApiKeyBinding.ipAllowlist,
+      idempotencyKey: newApiKeyBinding.idempotencyKey,
+      lastRemoteError: newApiKeyBinding.lastRemoteError,
+      createdAt: newApiKeyBinding.createdAt,
+      updatedAt: newApiKeyBinding.updatedAt,
+      lastUsedAt: newApiKeyBinding.lastUsedAt,
+      deletedAt: newApiKeyBinding.deletedAt,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(eq(newApiKeyBinding.portalUserId, portalUserId))
     .orderBy(desc(newApiKeyBinding.createdAt));
 
@@ -606,8 +628,15 @@ export async function disablePortalApiKey(
   client: NewApiClient = createNewApiClient()
 ) {
   const [row] = await db()
-    .select()
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      status: newApiKeyBinding.status,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(
       and(
         eq(newApiKeyBinding.id, keyId),
@@ -660,7 +689,7 @@ export async function disablePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey(updated);
+    return toPublicApiKey({ ...updated, groupName: row.groupName });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)
@@ -688,8 +717,15 @@ export async function deletePortalApiKey(
   client: NewApiClient = createNewApiClient()
 ) {
   const [row] = await db()
-    .select()
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      status: newApiKeyBinding.status,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(
       and(
         eq(newApiKeyBinding.id, keyId),
@@ -739,7 +775,7 @@ export async function deletePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey(updated);
+    return toPublicApiKey({ ...updated, groupName: row.groupName });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)
