@@ -50,6 +50,10 @@ export const PERMISSIONS = {
   SETTINGS_READ: 'admin.settings.read',
   SETTINGS_WRITE: 'admin.settings.write',
 
+  // Catalog
+  CATALOG_READ: 'admin.catalog.read',
+  CATALOG_WRITE: 'admin.catalog.write',
+
   // Roles & Permissions
   ROLES_READ: 'admin.roles.read',
   ROLES_WRITE: 'admin.roles.write',
