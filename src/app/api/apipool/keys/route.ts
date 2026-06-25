@@ -44,9 +44,12 @@ export async function POST(req: Request) {
       sanitizePortalApiKeyCreateInput(body)
     );
 
+    const { groupId: _groupId, newapiGroup: _newapiGroup, ...key } =
+      result.binding as any;
+
     return withNoStore(
       respData({
-        key: result.binding,
+        key,
         plainKey: result.plainKey,
       })
     );

@@ -27,7 +27,7 @@ async function setupPortalDb() {
   }
 
   const { user } = await import('@/config/db/schema');
-  const { newApiBridgeAuditLog, newApiKeyBinding, usageLogSnapshot, usageSnapshot } =
+  const { catalogGroup, newApiBridgeAuditLog, newApiKeyBinding, usageLogSnapshot, usageSnapshot } =
     await import('@/config/db/schema');
   const { db } = await import('@/core/db');
   const { NewApiBridgeError } = await import(
@@ -41,10 +41,22 @@ async function setupPortalDb() {
     newApiKeyBinding,
     NewApiBridgeError,
     portal,
+    catalogGroup,
     usageLogSnapshot,
     usageSnapshot,
     user,
   };
+
+  await modules.db().insert(modules.catalogGroup).values({
+    id: 'catalog_group_portal_test',
+    slug: 'portal-test',
+    name: 'Portal Test',
+    userDescription: 'Portal test route',
+    newapiGroup: 'ng-portal-test',
+    allowCreateKey: true,
+    sortOrder: 1,
+    status: 'active',
+  });
 }
 
 async function insertUser(id: string, email: string) {
@@ -83,6 +95,10 @@ function createSuccessfulRemoteClient() {
   };
 }
 
+function portalKeyInput(name: string) {
+  return { name, groupSlug: 'portal-test' };
+}
+
 function assertNoFields(record: Record<string, unknown>, fields: string[]) {
   for (const field of fields) {
     assert.equal(
@@ -115,7 +131,7 @@ test('createPortalApiKey keeps a retriable local key row when remote creation fa
     () =>
       modules.portal.createPortalApiKey(
         portalUser,
-        { name: 'Default key', allowedModels: ['gpt-4o-mini'] },
+        portalKeyInput('Default key'),
         fakeRemote
       ),
     /remote create timed out/
@@ -155,7 +171,7 @@ test('createPortalApiKey rejects remote-created keys that are not active', async
     () =>
       modules.portal.createPortalApiKey(
         portalUser,
-        { name: 'Disabled remote key', allowedModels: ['gpt-4o-mini'] },
+        portalKeyInput('Disabled remote key'),
         fakeRemote
       ),
     /did not return active/
@@ -181,7 +197,7 @@ test('createPortalApiKey preserves remote-created evidence when local binding fa
   const remote = createSuccessfulRemoteClient() as any;
   const existing = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Existing remote key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Existing remote key'),
     remote
   );
   const [existingRow] = await modules
@@ -208,7 +224,7 @@ test('createPortalApiKey preserves remote-created evidence when local binding fa
     () =>
       modules.portal.createPortalApiKey(
         portalUser,
-        { name: 'Binding failure key', allowedModels: ['gpt-4o-mini'] },
+        portalKeyInput('Binding failure key'),
         failingRemote
       ),
     /Failed query|UNIQUE|unique|constraint/i
@@ -251,7 +267,7 @@ test('portal users cannot disable or delete another user key', async () => {
   );
   const result = await modules.portal.createPortalApiKey(
     owner,
-    { name: 'Owner key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Owner key'),
     createSuccessfulRemoteClient() as any
   );
   let remoteCalls = 0;
@@ -298,7 +314,7 @@ test('portal key DTOs expose only MVP customer key fields', async () => {
   const remote = createSuccessfulRemoteClient();
   const created = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Safe key DTO', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Safe key DTO'),
     remote as any
   );
 
@@ -306,6 +322,8 @@ test('portal key DTOs expose only MVP customer key fields', async () => {
     'newapiUserId',
     'newapiKeyId',
     'idempotencyKey',
+    'groupId',
+    'newapiGroup',
     'quotaLimit',
     'ipAllowlist',
   ];
@@ -337,7 +355,7 @@ test('listPortalApiKeys syncs remote key status without exposing remote ids', as
   const remote = createSuccessfulRemoteClient() as any;
   const created = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'List sync key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('List sync key'),
     remote
   );
   remote.listKeys = async () => [
@@ -376,7 +394,7 @@ test('listPortalApiKeys keeps delete pending until remote revocation is visible'
   const remote = createSuccessfulRemoteClient() as any;
   const created = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Delete pending key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Delete pending key'),
     remote
   );
 
@@ -424,7 +442,7 @@ test('disablePortalApiKey and deletePortalApiKey complete only after remote conf
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Lifecycle key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Lifecycle key'),
     remote as any
   );
 
@@ -452,7 +470,7 @@ test('disablePortalApiKey keeps retriable failure when remote does not confirm d
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Unconfirmed disable key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Unconfirmed disable key'),
     remote as any
   );
 
@@ -492,7 +510,7 @@ test('deletePortalApiKey keeps retriable failure when remote confirms a differen
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Wrong remote delete confirmation', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Wrong remote delete confirmation'),
     remote as any
   );
 
@@ -532,7 +550,7 @@ test('key lifecycle mutations reject non-actionable statuses before remote calls
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Guarded key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Guarded key'),
     remote as any
   );
 
@@ -593,12 +611,12 @@ test('key lifecycle terminal remote errors persist failed_terminal', async () =>
   const remote = createSuccessfulRemoteClient();
   const disableResult = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Terminal disable key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Terminal disable key'),
     remote as any
   );
   const deleteResult = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Terminal delete key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Terminal delete key'),
     remote as any
   );
   const terminalRemote = {
@@ -655,7 +673,7 @@ test('key disable and delete audits include operation idempotency keys', async (
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
     portalUser,
-    { name: 'Audited key', allowedModels: ['gpt-4o-mini'] },
+    portalKeyInput('Audited key'),
     remote as any
   );
 

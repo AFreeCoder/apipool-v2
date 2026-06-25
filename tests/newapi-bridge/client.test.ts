@@ -173,6 +173,7 @@ test('createKey creates a remote token and fetches the full key with sk- prefix'
   const result = await client.createKey({
     user: USER,
     remoteName: 'pk_abc123',
+    group: 'ng-official',
     allowedModels: ['gpt-4o-mini'],
   });
 
@@ -190,6 +191,7 @@ test('createKey creates a remote token and fetches the full key with sk- prefix'
   assert.equal(body.model_limits_enabled, true);
   assert.equal(body.model_limits, 'gpt-4o-mini');
   assert.equal(body.unlimited_quota, true);
+  assert.equal(body.group, 'ng-official');
   assert.equal(createReq!.headers.get('authorization'), 'Bearer user-token');
   assert.equal(createReq!.headers.get('new-api-user'), '2');
 });

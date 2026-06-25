@@ -179,6 +179,16 @@ export async function getGroupById(
   return result;
 }
 
+export async function getGroupBySlug(
+  slug: string
+): Promise<CatalogGroup | undefined> {
+  const [result] = await db()
+    .select()
+    .from(catalogGroup)
+    .where(eq(catalogGroup.slug, slug));
+  return result;
+}
+
 export async function createGroup(
   data: NewCatalogGroup
 ): Promise<CatalogGroup> {

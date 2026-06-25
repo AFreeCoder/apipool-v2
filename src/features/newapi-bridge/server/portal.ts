@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
+import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
 import {
   canDeleteKeyStatus,
   canDisableKeyStatus,
@@ -14,7 +15,6 @@ import {
 import { and, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
-import { APIPOOL_CONFIG } from '@/config/apipool';
 import {
   apipoolLedgerEntry,
   newApiBridgeAuditLog,
@@ -40,7 +40,7 @@ import { decryptCredential, encryptCredential } from './crypto';
 
 export type PortalKeyCreateInput = {
   name: string;
-  allowedModels?: string[];
+  groupSlug: string;
   quotaLimit?: number;
   ipAllowlist?: string[];
 };
@@ -387,15 +387,16 @@ export async function createPortalApiKey(
   input: PortalKeyCreateInput,
   client: NewApiClient = createNewApiClient()
 ) {
+  const group = await getGroupBySlug(input.groupSlug);
+  if (!group || group.status !== 'active' || group.allowCreateKey !== true) {
+    throw new Error('group not available');
+  }
+
   const binding = await ensurePortalUserBinding(user, client);
   const credentials = bindingToUserCredentials(binding);
   const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
   const localKeyId = getUuid();
   const remoteName = deriveRemoteKeyName(localKeyId);
-  const allowedModels =
-    input.allowedModels && input.allowedModels.length > 0
-      ? input.allowedModels
-      : [APIPOOL_CONFIG.defaultLaunchModel];
   const pendingRemoteKeyId = `pending:${idempotencyKey}`;
 
   const [pending] = await db()
@@ -408,7 +409,9 @@ export async function createPortalApiKey(
       keyMasked: 'pending',
       displayName: input.name,
       status: 'creating_remote',
-      allowedModels: JSON.stringify(allowedModels),
+      allowedModels: '[]',
+      groupId: group.id,
+      newapiGroup: group.newapiGroup,
       quotaLimit: input.quotaLimit,
       ipAllowlist: JSON.stringify(input.ipAllowlist || []),
       idempotencyKey,
@@ -420,7 +423,7 @@ export async function createPortalApiKey(
     remote = await client.createKey({
       user: credentials,
       remoteName,
-      allowedModels,
+      group: group.newapiGroup,
       quotaLimitUsd: input.quotaLimit,
       ipAllowlist: input.ipAllowlist || [],
     });
