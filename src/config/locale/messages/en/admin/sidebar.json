@@ -35,6 +35,23 @@
               "icon": "ShieldCheck"
             }
           ]
+        },
+        {
+          "title": "Settings",
+          "icon": "Settings",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "Auth",
+              "url": "/admin/settings/auth",
+              "icon": "KeyRound"
+            },
+            {
+              "title": "Email",
+              "url": "/admin/settings/email",
+              "icon": "Mail"
+            }
+          ]
         }
       ]
     },

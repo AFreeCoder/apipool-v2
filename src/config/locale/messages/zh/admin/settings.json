@@ -48,6 +48,9 @@
     },
     "buttons": {
       "submit": "保存"
+    },
+    "placeholders": {
+      "configured_password": "已配置，留空则保持不变。"
     }
   }
 }

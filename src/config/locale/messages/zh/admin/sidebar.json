@@ -35,6 +35,23 @@
               "icon": "ShieldCheck"
             }
           ]
+        },
+        {
+          "title": "设置",
+          "icon": "Settings",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "认证",
+              "url": "/admin/settings/auth",
+              "icon": "KeyRound"
+            },
+            {
+              "title": "邮箱",
+              "url": "/admin/settings/email",
+              "icon": "Mail"
+            }
+          ]
         }
       ]
     },

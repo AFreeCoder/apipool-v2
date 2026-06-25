@@ -48,7 +48,6 @@ test('legacy admin content and credit routes redirect into APIPool operator flow
     'src/app/[locale]/(admin)/admin/posts/[id]/edit/page.tsx',
     'src/app/[locale]/(admin)/admin/categories/add/page.tsx',
     'src/app/[locale]/(admin)/admin/categories/[id]/edit/page.tsx',
-    'src/app/[locale]/(admin)/admin/settings/[tab]/page.tsx',
     'src/app/[locale]/(admin)/admin/users/[id]/grant-credits/page.tsx',
   ];
 
