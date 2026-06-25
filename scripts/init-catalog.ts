@@ -9,19 +9,34 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inArray } from 'drizzle-orm';
 
+import type {
+  catalogCapability as catalogCapabilityTable,
+  catalogGroup as catalogGroupTable,
+  catalogModel as catalogModelTable,
+  catalogModelCapability as catalogModelCapabilityTable,
+  catalogModelListing as catalogModelListingTable,
+  catalogStatus as catalogStatusTable,
+  catalogVendor as catalogVendorTable,
+} from '@/config/db/schema';
 import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import { getUuid } from '@/shared/lib/hash';
 
 type CatalogSchemaTables = {
-  catalogVendor: any;
-  catalogCapability: any;
-  catalogStatus: any;
-  catalogGroup: any;
-  catalogModel: any;
-  catalogModelCapability: any;
-  catalogModelListing: any;
+  catalogVendor: typeof catalogVendorTable;
+  catalogCapability: typeof catalogCapabilityTable;
+  catalogStatus: typeof catalogStatusTable;
+  catalogGroup: typeof catalogGroupTable;
+  catalogModel: typeof catalogModelTable;
+  catalogModelCapability: typeof catalogModelCapabilityTable;
+  catalogModelListing: typeof catalogModelListingTable;
 };
+
+type CatalogVendorRow = typeof catalogVendorTable.$inferSelect;
+type CatalogCapabilityRow = typeof catalogCapabilityTable.$inferSelect;
+type CatalogStatusRow = typeof catalogStatusTable.$inferSelect;
+type CatalogGroupRow = typeof catalogGroupTable.$inferSelect;
+type CatalogModelRow = typeof catalogModelTable.$inferSelect;
 
 const vendors = [
   { slug: 'openai', name: 'OpenAI', sortOrder: 10 },
@@ -106,10 +121,12 @@ async function loadSchemaTables(): Promise<CatalogSchemaTables> {
     );
   }
 
-  return (await import('@/config/db/schema.sqlite')) as any;
+  return (await import(
+    '@/config/db/schema.sqlite'
+  )) as unknown as CatalogSchemaTables;
 }
 
-function indexBy<T extends Record<string, any>>(rows: T[], key: keyof T) {
+function indexBy<T, K extends keyof T & string>(rows: T[], key: K) {
   return Object.fromEntries(rows.map((row) => [row[key], row])) as Record<
     string,
     T
@@ -153,7 +170,7 @@ export async function initCatalog() {
       )
       .onConflictDoNothing({ target: catalogVendor.slug });
 
-    const vendorBySlug = indexBy(
+    const vendorBySlug = indexBy<CatalogVendorRow, 'slug'>(
       await tx
         .select()
         .from(catalogVendor)
@@ -179,7 +196,7 @@ export async function initCatalog() {
       )
       .onConflictDoNothing({ target: catalogCapability.slug });
 
-    const capabilityBySlug = indexBy(
+    const capabilityBySlug = indexBy<CatalogCapabilityRow, 'slug'>(
       await tx
         .select()
         .from(catalogCapability)
@@ -207,7 +224,7 @@ export async function initCatalog() {
       )
       .onConflictDoNothing({ target: catalogStatus.slug });
 
-    const statusBySlug = indexBy(
+    const statusBySlug = indexBy<CatalogStatusRow, 'slug'>(
       await tx
         .select()
         .from(catalogStatus)
@@ -236,7 +253,7 @@ export async function initCatalog() {
       )
       .onConflictDoNothing({ target: catalogGroup.slug });
 
-    const groupBySlug = indexBy(
+    const groupBySlug = indexBy<CatalogGroupRow, 'slug'>(
       await tx
         .select()
         .from(catalogGroup)
@@ -263,7 +280,7 @@ export async function initCatalog() {
       )
       .onConflictDoNothing({ target: catalogModel.modelId });
 
-    const modelByModelId = indexBy(
+    const modelByModelId = indexBy<CatalogModelRow, 'modelId'>(
       await tx
         .select()
         .from(catalogModel)
