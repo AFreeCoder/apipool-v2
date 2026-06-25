@@ -22,6 +22,7 @@ import {
   newApiBridgeAuditLog,
   newApiKeyBinding,
   newApiUserBinding,
+  order as orderTable,
   usageLogSnapshot,
   usageSnapshot,
 } from '@/config/db/schema';
@@ -75,6 +76,16 @@ export type PortalUsageView = {
     spendUsd?: number | null;
     createdAt: Date;
   }>;
+};
+
+export type BillingLedgerEntry = {
+  orderNo: string | null;
+  amountUsd: number;
+  ledgerStatus: string;
+  orderStatus: string | null;
+  paymentProvider: string | null;
+  paidAt: number | null;
+  createdAt: number;
 };
 
 type AuditInput = {
@@ -171,6 +182,19 @@ function toPublicLedgerEntry(row: any) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function toTimestampMs(value: Date | number | string): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  return new Date(value).getTime();
+}
+
+function toNullableTimestampMs(
+  value: Date | number | string | null | undefined
+) {
+  if (value === null || value === undefined) return null;
+  return toTimestampMs(value);
 }
 
 function toPublicUsageLog(row: any) {
@@ -1012,6 +1036,35 @@ export async function listLedgerEntries(portalUserId: string) {
     .orderBy(desc(apipoolLedgerEntry.createdAt));
 
   return rows.map(toPublicLedgerEntry);
+}
+
+export async function listBillingLedgerEntries(
+  portalUserId: string
+): Promise<BillingLedgerEntry[]> {
+  const rows = await db()
+    .select({
+      orderNo: apipoolLedgerEntry.orderNo,
+      amountUsd: apipoolLedgerEntry.amountUsd,
+      ledgerStatus: apipoolLedgerEntry.status,
+      orderStatus: orderTable.status,
+      paymentProvider: orderTable.paymentProvider,
+      paidAt: orderTable.paidAt,
+      createdAt: apipoolLedgerEntry.createdAt,
+    })
+    .from(apipoolLedgerEntry)
+    .leftJoin(orderTable, eq(apipoolLedgerEntry.orderNo, orderTable.orderNo))
+    .where(eq(apipoolLedgerEntry.portalUserId, portalUserId))
+    .orderBy(desc(apipoolLedgerEntry.createdAt));
+
+  return rows.map((row) => ({
+    orderNo: row.orderNo,
+    amountUsd: row.amountUsd,
+    ledgerStatus: row.ledgerStatus,
+    orderStatus: row.orderStatus,
+    paymentProvider: row.paymentProvider,
+    paidAt: toNullableTimestampMs(row.paidAt),
+    createdAt: toTimestampMs(row.createdAt),
+  }));
 }
 
 export async function adjustPortalQuota(input: {
