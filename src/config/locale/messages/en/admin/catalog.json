@@ -13,11 +13,27 @@
     "userDescription": "User Description",
     "newapiGroup": "New API Group",
     "allowCreateKey": "Allow Key Creation",
+    "modelId": "Model ID",
+    "displayName": "Display Name",
+    "vendor": "Vendor",
+    "group": "Group",
+    "category": "Category",
+    "contextWindow": "Context Window",
+    "capabilities": "Capabilities",
+    "inputMicroUsd": "Input Price (USD / 1M)",
+    "outputMicroUsd": "Output Price (USD / 1M)",
+    "listInputMicroUsd": "List Input Price (USD / 1M)",
+    "listOutputMicroUsd": "List Output Price (USD / 1M)",
+    "discountNote": "Discount Note",
+    "description": "Description",
+    "smokeTested": "Smoke Tested",
     "createdAt": "Created At",
     "actions": "Actions"
   },
   "actions": {
-    "edit": "Edit"
+    "edit": "Edit",
+    "capabilities": "Capabilities",
+    "listings": "Listings"
   },
   "statusOptions": {
     "active": "Active",
@@ -30,7 +46,8 @@
   "errors": {
     "createFailed": "Create failed",
     "updateFailed": "Update failed",
-    "missingRecord": "Record is missing"
+    "missingRecord": "Record is missing",
+    "invalidPrice": "Price must be a non-negative finite number"
   },
   "vendors": {
     "list": {
@@ -131,6 +148,70 @@
       "crumb": "Edit Group",
       "notFound": "Group not found",
       "success": "Group updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "models": {
+    "list": {
+      "title": "Models",
+      "crumb": "Models",
+      "buttons": {
+        "new": "New Model"
+      }
+    },
+    "new": {
+      "title": "New Model",
+      "crumb": "New Model",
+      "success": "Model created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Model",
+      "crumb": "Edit Model",
+      "notFound": "Model not found",
+      "success": "Model updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    },
+    "capabilities": {
+      "title": "Model Capabilities",
+      "crumb": "Model Capabilities",
+      "notFound": "Model not found",
+      "invalidSelection": "Invalid capability selection",
+      "success": "Model capabilities updated",
+      "buttons": {
+        "submit": "Update Capabilities"
+      }
+    }
+  },
+  "listings": {
+    "list": {
+      "title": "Model Listings",
+      "crumb": "Listings",
+      "notFound": "Model not found",
+      "buttons": {
+        "new": "New Listing"
+      }
+    },
+    "new": {
+      "title": "New Listing",
+      "crumb": "New Listing",
+      "notFound": "Model not found",
+      "success": "Listing created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Listing",
+      "crumb": "Edit Listing",
+      "notFound": "Listing not found",
+      "success": "Listing updated",
       "buttons": {
         "submit": "Update"
       }

@@ -13,11 +13,27 @@
     "userDescription": "用户可见说明",
     "newapiGroup": "New API 分组",
     "allowCreateKey": "允许创建 Key",
+    "modelId": "模型 ID",
+    "displayName": "展示名称",
+    "vendor": "供应商",
+    "group": "分组",
+    "category": "分类",
+    "contextWindow": "上下文窗口",
+    "capabilities": "能力",
+    "inputMicroUsd": "输入价格（美元 / 1M）",
+    "outputMicroUsd": "输出价格（美元 / 1M）",
+    "listInputMicroUsd": "划线输入价（美元 / 1M）",
+    "listOutputMicroUsd": "划线输出价（美元 / 1M）",
+    "discountNote": "折扣说明",
+    "description": "说明",
+    "smokeTested": "已冒烟",
     "createdAt": "创建时间",
     "actions": "操作"
   },
   "actions": {
-    "edit": "编辑"
+    "edit": "编辑",
+    "capabilities": "能力",
+    "listings": "售卖项"
   },
   "statusOptions": {
     "active": "启用",
@@ -30,7 +46,8 @@
   "errors": {
     "createFailed": "创建失败",
     "updateFailed": "更新失败",
-    "missingRecord": "记录不存在"
+    "missingRecord": "记录不存在",
+    "invalidPrice": "价格必须是非负有限数字"
   },
   "vendors": {
     "list": {
@@ -131,6 +148,70 @@
       "crumb": "编辑分组",
       "notFound": "分组不存在",
       "success": "分组已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "models": {
+    "list": {
+      "title": "模型",
+      "crumb": "模型",
+      "buttons": {
+        "new": "新增模型"
+      }
+    },
+    "new": {
+      "title": "新增模型",
+      "crumb": "新增模型",
+      "success": "模型已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑模型",
+      "crumb": "编辑模型",
+      "notFound": "模型不存在",
+      "success": "模型已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    },
+    "capabilities": {
+      "title": "模型能力",
+      "crumb": "模型能力",
+      "notFound": "模型不存在",
+      "invalidSelection": "能力选择无效",
+      "success": "模型能力已更新",
+      "buttons": {
+        "submit": "更新能力"
+      }
+    }
+  },
+  "listings": {
+    "list": {
+      "title": "模型售卖项",
+      "crumb": "售卖项",
+      "notFound": "模型不存在",
+      "buttons": {
+        "new": "新增售卖项"
+      }
+    },
+    "new": {
+      "title": "新增售卖项",
+      "crumb": "新增售卖项",
+      "notFound": "模型不存在",
+      "success": "售卖项已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑售卖项",
+      "crumb": "编辑售卖项",
+      "notFound": "售卖项不存在",
+      "success": "售卖项已更新",
       "buttons": {
         "submit": "更新"
       }

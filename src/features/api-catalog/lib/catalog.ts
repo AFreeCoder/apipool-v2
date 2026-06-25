@@ -111,6 +111,7 @@ export function formatMicroUsdPerMillion(micro: number): string {
 }
 
 export const publicModels: ApiModel[] = [
+  // test fixture only; runtime catalog reads DB-backed queries.ts.
   {
     slug: 'gpt-4o-mini',
     modelId: 'gpt-4o-mini',

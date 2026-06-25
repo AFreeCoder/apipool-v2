@@ -47,6 +47,43 @@
           "icon": "Gauge"
         }
       ]
+    },
+    {
+      "title": "Model Catalog",
+      "items": [
+        {
+          "title": "Model Catalog",
+          "icon": "Boxes",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "Vendors",
+              "url": "/admin/catalog/vendors",
+              "icon": "Store"
+            },
+            {
+              "title": "Groups",
+              "url": "/admin/catalog/groups",
+              "icon": "Layers"
+            },
+            {
+              "title": "Capabilities",
+              "url": "/admin/catalog/capabilities",
+              "icon": "Tags"
+            },
+            {
+              "title": "Statuses",
+              "url": "/admin/catalog/statuses",
+              "icon": "BadgeCheck"
+            },
+            {
+              "title": "Models",
+              "url": "/admin/catalog/models",
+              "icon": "Bot"
+            }
+          ]
+        }
+      ]
     }
   ],
   "bottom_nav": {

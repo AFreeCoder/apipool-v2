@@ -6,5 +6,5 @@ export default async function CategoriesRedirect({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  redirect({ href: '/admin/apipool-adjustments', locale });
+  redirect({ href: '/admin/catalog/models', locale });
 }

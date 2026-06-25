@@ -230,6 +230,28 @@ export async function getModelById(id: string): Promise<Model | undefined> {
   return result;
 }
 
+export async function getModelCapabilities(
+  modelId: string
+): Promise<Capability[]> {
+  return await db()
+    .select({
+      id: catalogCapability.id,
+      slug: catalogCapability.slug,
+      name: catalogCapability.name,
+      sortOrder: catalogCapability.sortOrder,
+      status: catalogCapability.status,
+      createdAt: catalogCapability.createdAt,
+      updatedAt: catalogCapability.updatedAt,
+    })
+    .from(catalogModelCapability)
+    .innerJoin(
+      catalogCapability,
+      eq(catalogModelCapability.capabilityId, catalogCapability.id)
+    )
+    .where(eq(catalogModelCapability.modelId, modelId))
+    .orderBy(asc(catalogCapability.sortOrder));
+}
+
 export async function createModel(data: NewModel): Promise<Model> {
   const [result] = await db()
     .insert(catalogModel)
@@ -260,6 +282,14 @@ export async function getListingsByModel(modelId: string): Promise<Listing[]> {
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, modelId))
     .orderBy(asc(catalogModelListing.sortOrder));
+}
+
+export async function getListingById(id: string): Promise<Listing | undefined> {
+  const [result] = await db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.id, id));
+  return result;
 }
 
 export async function createListing(data: NewListing): Promise<Listing> {
