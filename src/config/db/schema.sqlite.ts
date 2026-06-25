@@ -411,6 +411,166 @@ export const apikey = table(
   ]
 );
 
+export const catalogVendor = table(
+  'catalog_vendor',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').unique().notNull(),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    status: text('status').default('active').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index('idx_catalog_vendor_status').on(table.status)]
+);
+
+export const catalogCapability = table('catalog_capability', {
+  id: text('id').primaryKey(),
+  slug: text('slug').unique().notNull(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  status: text('status').default('active').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .default(sqliteNowMs)
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(sqliteNowMs)
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+export const catalogStatus = table('catalog_status', {
+  id: text('id').primaryKey(),
+  slug: text('slug').unique().notNull(),
+  name: text('name').notNull(),
+  isCallable: integer('is_callable', { mode: 'boolean' })
+    .default(false)
+    .notNull(),
+  isPublicVisible: integer('is_public_visible', { mode: 'boolean' })
+    .default(true)
+    .notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  status: text('status').default('active').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .default(sqliteNowMs)
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(sqliteNowMs)
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+export const catalogGroup = table(
+  'catalog_group',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').unique().notNull(),
+    name: text('name').notNull(),
+    userDescription: text('user_description'),
+    newapiGroup: text('newapi_group').default('').notNull(),
+    allowCreateKey: integer('allow_create_key', { mode: 'boolean' })
+      .default(true)
+      .notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    status: text('status').default('active').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index('idx_catalog_group_status').on(table.status)]
+);
+
+export const catalogModel = table(
+  'catalog_model',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id').unique().notNull(),
+    displayName: text('display_name').notNull(),
+    vendorId: text('vendor_id')
+      .notNull()
+      .references(() => catalogVendor.id),
+    category: text('category').default('llm').notNull(),
+    contextWindow: integer('context_window'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index('idx_catalog_model_vendor').on(table.vendorId)]
+);
+
+export const catalogModelCapability = table(
+  'catalog_model_capability',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id')
+      .notNull()
+      .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    capabilityId: text('capability_id')
+      .notNull()
+      .references(() => catalogCapability.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('uniq_catalog_model_capability').on(
+      table.modelId,
+      table.capabilityId
+    ),
+    index('idx_cmc_capability').on(table.capabilityId),
+  ]
+);
+
+export const catalogModelListing = table(
+  'catalog_model_listing',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id')
+      .notNull()
+      .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => catalogGroup.id, { onDelete: 'cascade' }),
+    statusId: text('status_id')
+      .notNull()
+      .references(() => catalogStatus.id),
+    inputMicroUsd: integer('input_micro_usd').notNull(),
+    outputMicroUsd: integer('output_micro_usd').notNull(),
+    listInputMicroUsd: integer('list_input_micro_usd'),
+    listOutputMicroUsd: integer('list_output_micro_usd'),
+    discountNote: text('discount_note'),
+    description: text('description'),
+    smokeTested: integer('smoke_tested', { mode: 'boolean' })
+      .default(false)
+      .notNull(),
+    featured: integer('featured', { mode: 'boolean' }).default(false).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_listing_model_group').on(table.modelId, table.groupId),
+    index('idx_listing_group').on(table.groupId),
+    index('idx_listing_status').on(table.statusId),
+  ]
+);
+
 export const newApiUserBinding = table(
   'newapi_user_binding',
   {
@@ -451,6 +611,10 @@ export const newApiKeyBinding = table(
     displayName: text('display_name').notNull(),
     status: text('status').notNull(),
     allowedModels: text('allowed_models').notNull().default('[]'),
+    groupId: text('group_id').references(() => catalogGroup.id, {
+      onDelete: 'set null',
+    }),
+    newapiGroup: text('newapi_group').default('').notNull(),
     quotaLimit: integer('quota_limit'),
     ipAllowlist: text('ip_allowlist').notNull().default('[]'),
     idempotencyKey: text('idempotency_key').notNull(),
@@ -472,6 +636,7 @@ export const newApiKeyBinding = table(
     ),
     uniqueIndex('idx_newapi_key_binding_remote_key').on(table.newapiKeyId),
     uniqueIndex('idx_newapi_key_binding_idempotency').on(table.idempotencyKey),
+    index('idx_newapi_key_binding_group').on(table.groupId),
   ]
 );
 
