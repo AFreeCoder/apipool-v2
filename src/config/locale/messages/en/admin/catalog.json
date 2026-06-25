@@ -1,0 +1,110 @@
+{
+  "crumbs": {
+    "admin": "Admin",
+    "catalog": "Catalog"
+  },
+  "fields": {
+    "slug": "Slug",
+    "name": "Name",
+    "sortOrder": "Sort Order",
+    "status": "Status",
+    "isCallable": "Callable",
+    "isPublicVisible": "Publicly Visible",
+    "createdAt": "Created At",
+    "actions": "Actions"
+  },
+  "actions": {
+    "edit": "Edit"
+  },
+  "statusOptions": {
+    "active": "Active",
+    "disabled": "Disabled"
+  },
+  "boolean": {
+    "yes": "Yes",
+    "no": "No"
+  },
+  "errors": {
+    "createFailed": "Create failed",
+    "updateFailed": "Update failed",
+    "missingRecord": "Record is missing"
+  },
+  "vendors": {
+    "list": {
+      "title": "Vendors",
+      "crumb": "Vendors",
+      "buttons": {
+        "new": "New Vendor"
+      }
+    },
+    "new": {
+      "title": "New Vendor",
+      "crumb": "New Vendor",
+      "success": "Vendor created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Vendor",
+      "crumb": "Edit Vendor",
+      "notFound": "Vendor not found",
+      "success": "Vendor updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "capabilities": {
+    "list": {
+      "title": "Capabilities",
+      "crumb": "Capabilities",
+      "buttons": {
+        "new": "New Capability"
+      }
+    },
+    "new": {
+      "title": "New Capability",
+      "crumb": "New Capability",
+      "success": "Capability created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Capability",
+      "crumb": "Edit Capability",
+      "notFound": "Capability not found",
+      "success": "Capability updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "statuses": {
+    "list": {
+      "title": "Statuses",
+      "crumb": "Statuses",
+      "buttons": {
+        "new": "New Status"
+      }
+    },
+    "new": {
+      "title": "New Status",
+      "crumb": "New Status",
+      "success": "Status created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Status",
+      "crumb": "Edit Status",
+      "notFound": "Status not found",
+      "success": "Status updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  }
+}

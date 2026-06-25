@@ -1,0 +1,110 @@
+{
+  "crumbs": {
+    "admin": "管理后台",
+    "catalog": "模型目录"
+  },
+  "fields": {
+    "slug": "标识",
+    "name": "名称",
+    "sortOrder": "排序",
+    "status": "状态",
+    "isCallable": "可调用",
+    "isPublicVisible": "前台可见",
+    "createdAt": "创建时间",
+    "actions": "操作"
+  },
+  "actions": {
+    "edit": "编辑"
+  },
+  "statusOptions": {
+    "active": "启用",
+    "disabled": "禁用"
+  },
+  "boolean": {
+    "yes": "是",
+    "no": "否"
+  },
+  "errors": {
+    "createFailed": "创建失败",
+    "updateFailed": "更新失败",
+    "missingRecord": "记录不存在"
+  },
+  "vendors": {
+    "list": {
+      "title": "供应商",
+      "crumb": "供应商",
+      "buttons": {
+        "new": "新增供应商"
+      }
+    },
+    "new": {
+      "title": "新增供应商",
+      "crumb": "新增供应商",
+      "success": "供应商已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑供应商",
+      "crumb": "编辑供应商",
+      "notFound": "供应商不存在",
+      "success": "供应商已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "capabilities": {
+    "list": {
+      "title": "能力",
+      "crumb": "能力",
+      "buttons": {
+        "new": "新增能力"
+      }
+    },
+    "new": {
+      "title": "新增能力",
+      "crumb": "新增能力",
+      "success": "能力已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑能力",
+      "crumb": "编辑能力",
+      "notFound": "能力不存在",
+      "success": "能力已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "statuses": {
+    "list": {
+      "title": "状态",
+      "crumb": "状态",
+      "buttons": {
+        "new": "新增状态"
+      }
+    },
+    "new": {
+      "title": "新增状态",
+      "crumb": "新增状态",
+      "success": "状态已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑状态",
+      "crumb": "编辑状态",
+      "notFound": "状态不存在",
+      "success": "状态已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  }
+}
