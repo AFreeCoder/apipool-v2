@@ -10,6 +10,9 @@
     "status": "Status",
     "isCallable": "Callable",
     "isPublicVisible": "Publicly Visible",
+    "userDescription": "User Description",
+    "newapiGroup": "New API Group",
+    "allowCreateKey": "Allow Key Creation",
     "createdAt": "Created At",
     "actions": "Actions"
   },
@@ -102,6 +105,32 @@
       "crumb": "Edit Status",
       "notFound": "Status not found",
       "success": "Status updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "groups": {
+    "list": {
+      "title": "Groups",
+      "crumb": "Groups",
+      "buttons": {
+        "new": "New Group"
+      }
+    },
+    "new": {
+      "title": "New Group",
+      "crumb": "New Group",
+      "success": "Group created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Group",
+      "crumb": "Edit Group",
+      "notFound": "Group not found",
+      "success": "Group updated",
       "buttons": {
         "submit": "Update"
       }

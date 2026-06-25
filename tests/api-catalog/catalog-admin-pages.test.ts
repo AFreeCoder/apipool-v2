@@ -31,6 +31,14 @@ const entities = [
     update: 'updateStatus',
     delete: 'deleteStatus',
   },
+  {
+    route: 'groups',
+    list: 'getGroups',
+    getById: 'getGroupById',
+    create: 'createGroup',
+    update: 'updateGroup',
+    delete: 'deleteGroup',
+  },
 ] as const;
 
 function pagePath(route: string, page: 'list' | 'new' | 'edit') {
@@ -47,6 +55,10 @@ function switchFieldPattern(name: string) {
   return new RegExp(
     `name:\\s*['"]${name}['"][\\s\\S]*?type:\\s*['"]switch['"]`
   );
+}
+
+function fieldPattern(name: string) {
+  return new RegExp(`name:\\s*['"]${name}['"]`);
 }
 
 test('catalog dictionary admin pages exist with read/write permissions and i18n', async () => {
@@ -107,6 +119,21 @@ test('catalog status forms expose callable and public visibility switches', asyn
     assert.match(source, switchFieldPattern('isCallable'));
     assert.match(source, switchFieldPattern('isPublicVisible'));
   }
+});
+
+test('catalog group forms expose mapping, key creation, and immutable edit slug', async () => {
+  const newPage = await readFile(pagePath('groups', 'new'), 'utf8');
+  const editPage = await readFile(pagePath('groups', 'edit'), 'utf8');
+
+  for (const source of [newPage, editPage]) {
+    assert.match(source, fieldPattern('newapiGroup'));
+    assert.match(source, switchFieldPattern('allowCreateKey'));
+  }
+
+  assert.match(
+    editPage,
+    /name:\s*['"]slug['"][\s\S]*?attributes:\s*\{\s*disabled:\s*true\s*\}/
+  );
 });
 
 test('catalog admin locale files exist, parse, and share top-level keys', async () => {

@@ -10,6 +10,9 @@
     "status": "状态",
     "isCallable": "可调用",
     "isPublicVisible": "前台可见",
+    "userDescription": "用户可见说明",
+    "newapiGroup": "New API 分组",
+    "allowCreateKey": "允许创建 Key",
     "createdAt": "创建时间",
     "actions": "操作"
   },
@@ -102,6 +105,32 @@
       "crumb": "编辑状态",
       "notFound": "状态不存在",
       "success": "状态已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "groups": {
+    "list": {
+      "title": "分组",
+      "crumb": "分组",
+      "buttons": {
+        "new": "新增分组"
+      }
+    },
+    "new": {
+      "title": "新增分组",
+      "crumb": "新增分组",
+      "success": "分组已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑分组",
+      "crumb": "编辑分组",
+      "notFound": "分组不存在",
+      "success": "分组已更新",
       "buttons": {
         "submit": "更新"
       }
