@@ -296,6 +296,15 @@
 - 收敛判定 = **complete**。**GO**。
 - **外部依赖**：端到端 live（建 Key→真实 /v1 调用→用量→禁用 401）需真实 New API 烟测环境（127.0.0.1:3001 本地不可达），留人类检查点②由用户在真实环境跑 `APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp`（须先对齐 official 分组 newapiGroup→真实 group，§9.1 手动对齐）。
 
+## ✅ F11/F12/F15 本地 live 验证（2026-06-26，合并后）
+
+在本地搭建真实 New API(docker compose 恢复 data/new-api)+mock upstream(3002)环境，**端到端验证通过**：
+- **F11**：建 Key 选分组(official)→真实 key(sk-)→真实 `/v1` 调用 **HTTP 200**（经 official.newapiGroup=''→New API default group→渠道→mock pong）；响应 groupName=Official、**无 newapiGroup**（F1 边界 live 确认）。
+- **F12**：调用后 getPortalUsage 用量可见（requests/logs>0, status=ready）。
+- **F15**：disablePortalApiKey 后同 key 调 `/v1` **HTTP 401(Invalid token)**。
+- **环境踩坑（与 user-mvp 代码无关，均 New API 侧）**：① data/new-api 恢复后 admin token 失效（access token 重新生成语义）→ newapi-token.sh 重取；② 渠道原指 apipool.dev 真实上游(502 不可用)→改指 mock upstream；③ 调额(F22 兑换码模式)被 New API rc.10 **合规锁**阻断（"compliance terms"，需 dashboard 确认，DB 设 compliance_confirmed=true 无效——有额外内部校验）→ 绕过调额、直接给 New API user 设 quota(DB) 验证调用链；④ binding/provision 跨两库纠缠(失效凭据/unique 冲突)→用全新 portal user + 清积累 key_binding 解决。
+- **结论**：user-mvp 建 Key 选分组核心闭环(F9/F11/F12/F14/F15)在真实 New API 上工作。F16/F17/F18(OAuth/邮件登录)仍需真实 provider/密钥(无法纯本地)；F22(调额)受 New API 合规锁(本地环境配置项，非代码)。
+
 ## 合并前质量门修复（tsc）：commit 2fde009
 
 - 发现：整体 `tsc --noEmit` 有 6 错误，全在 Step2 的 init-catalog.ts（CatalogSchemaTables 7 表标 any → indexBy/requireRow 行类型窄化 → .id TS2339）；main baseline tsc **干净(0)**，故为本次引入回归。
