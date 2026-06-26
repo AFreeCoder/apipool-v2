@@ -38,9 +38,10 @@ export function isDealModel(model: ApiModel) {
 }
 
 export type ModelFilters = {
-  provider?: ApiModelProvider | 'All';
-  capability?: ApiModelCapability | 'All';
-  status?: ApiModelStatus | 'All';
+  vendor?: string;
+  group?: string;
+  capability?: string;
+  status?: string;
 };
 
 export type ModelFilterSearchParams = Record<
@@ -66,49 +67,51 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function pickAllowed<T extends string>(
-  value: string | string[] | undefined,
-  allowed: readonly T[],
-  fallback: T
-) {
-  const normalized = firstParam(value);
-  return normalized && allowed.includes(normalized as T)
-    ? (normalized as T)
-    : fallback;
-}
-
 export function parseModelFilters(
   params: ModelFilterSearchParams | ModelFilters = {}
-): Required<ModelFilters> {
-  return {
-    provider: pickAllowed(params.provider, MODEL_PROVIDER_FILTERS, 'All'),
-    capability: pickAllowed(
-      params.capability,
-      MODEL_CAPABILITY_FILTERS,
-      'All'
-    ),
-    status: pickAllowed(params.status, MODEL_STATUS_FILTERS, 'All'),
-  };
+): ModelFilters {
+  const filters: ModelFilters = {};
+
+  for (const key of ['vendor', 'group', 'capability', 'status'] as const) {
+    const value = firstParam(params[key]);
+    if (value) filters[key] = value;
+  }
+
+  return filters;
 }
 
 export function buildModelFilterHref(
   current: ModelFilters,
   patch: ModelFilters
 ) {
-  const filters = parseModelFilters({ ...current, ...patch });
+  const filters: ModelFilters = { ...current };
+  for (const key of ['vendor', 'group', 'capability', 'status'] as const) {
+    if (!(key in patch)) continue;
+
+    const value = patch[key];
+    if (value === undefined || value === '') {
+      delete filters[key];
+    } else {
+      filters[key] = value;
+    }
+  }
+
   const params = new URLSearchParams();
 
-  if (filters.provider !== 'All') params.set('provider', filters.provider);
-  if (filters.capability !== 'All') {
-    params.set('capability', filters.capability);
+  for (const key of ['vendor', 'group', 'capability', 'status'] as const) {
+    if (filters[key]) params.set(key, filters[key]);
   }
-  if (filters.status !== 'All') params.set('status', filters.status);
 
   const query = params.toString();
   return query ? `/models?${query}` : '/models';
 }
 
+export function formatMicroUsdPerMillion(micro: number): string {
+  return `$${(micro / 1_000_000).toFixed(2)}`;
+}
+
 export const publicModels: ApiModel[] = [
+  // test fixture only; runtime catalog reads DB-backed queries.ts.
   {
     slug: 'gpt-4o-mini',
     modelId: 'gpt-4o-mini',
@@ -267,9 +270,19 @@ export const publicModels: ApiModel[] = [
   },
 ];
 
-export function filterModels(models: ApiModel[], filters: ModelFilters = {}) {
+type LegacyModelFilters = ModelFilters & {
+  provider?: ApiModelProvider | 'All';
+};
+
+export function filterModels(
+  models: ApiModel[],
+  filters: LegacyModelFilters = {}
+) {
   return models
     .filter((model) => {
+      if (filters.vendor) {
+        return model.provider.toLowerCase() === filters.vendor.toLowerCase();
+      }
       if (filters.provider && filters.provider !== 'All') {
         return model.provider === filters.provider;
       }
@@ -277,7 +290,9 @@ export function filterModels(models: ApiModel[], filters: ModelFilters = {}) {
     })
     .filter((model) => {
       if (filters.capability && filters.capability !== 'All') {
-        return model.capabilities.includes(filters.capability);
+        return model.capabilities.includes(
+          filters.capability as ApiModelCapability
+        );
       }
       return true;
     })

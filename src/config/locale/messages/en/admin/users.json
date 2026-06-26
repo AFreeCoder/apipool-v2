@@ -23,9 +23,11 @@
       "add": "Add User",
       "edit": "Edit User",
       "view": "View User",
+      "view_detail": "View Detail",
       "delete": "Delete User",
       "edit_roles": "Edit Roles",
-      "grant_credits": "Grant Credits"
+      "grant_credits": "Grant Credits",
+      "adjust_quota": "Adjust APIPool Quota"
     },
     "search": {
       "email": {
@@ -43,6 +45,113 @@
     },
     "buttons": {
       "submit": "Update"
+    }
+  },
+  "detail": {
+    "title": "User Detail",
+    "crumbs": {
+      "admin": "Admin",
+      "users": "Users",
+      "detail": "Detail"
+    },
+    "buttons": {
+      "adjust_quota": "Adjust Quota"
+    },
+    "empty": {
+      "value": "-",
+      "not_initialized": "Not initialized",
+      "never_synced": "Never synced",
+      "usage_logs": "No usage logs",
+      "keys": "No API keys",
+      "ledger": "No quota adjustments"
+    },
+    "errors": {
+      "usage": "Usage data is temporarily unavailable.",
+      "keys": "API key data is temporarily unavailable.",
+      "ledger": "Quota adjustment history is temporarily unavailable."
+    },
+    "balance": {
+      "title": "Balance and Quota",
+      "description": "Read-only APIPool balance snapshot for this user.",
+      "fields": {
+        "balance": "Balance",
+        "quota_remaining": "Quota Remaining",
+        "status": "Sync Status"
+      }
+    },
+    "usage": {
+      "title": "Recent Usage",
+      "description": "Cached recent request summary and logs.",
+      "fields": {
+        "requests": "Requests",
+        "input_tokens": "Input Tokens",
+        "output_tokens": "Output Tokens",
+        "spend": "Spend"
+      },
+      "logs": {
+        "columns": {
+          "created_at": "Time",
+          "key": "Key",
+          "model": "Model",
+          "status": "Status",
+          "input_tokens": "Input Tokens",
+          "output_tokens": "Output Tokens",
+          "spend": "Spend"
+        }
+      }
+    },
+    "keys": {
+      "title": "API Keys",
+      "description": "Local key bindings for this portal user.",
+      "columns": {
+        "name": "Name",
+        "key": "Masked Key",
+        "group": "Group",
+        "status": "Status",
+        "created_at": "Created At",
+        "last_used_at": "Last Used"
+      }
+    },
+    "ledger": {
+      "title": "Quota Adjustment History",
+      "description": "Manual admin adjustments only.",
+      "columns": {
+        "created_at": "Time",
+        "amount": "Amount",
+        "status": "Status",
+        "reason": "Reason",
+        "operator": "Operator"
+      }
+    },
+    "status": {
+      "usage": {
+        "ready": "Ready",
+        "empty": "Not initialized",
+        "syncing": "Syncing",
+        "stale": "Stale",
+        "failed": "Failed"
+      },
+      "key": {
+        "creating_remote": "Creating",
+        "active": "Active",
+        "remote_created_binding_failed": "Binding Failed",
+        "disable_pending": "Disable Pending",
+        "delete_pending": "Delete Pending",
+        "failed_retriable": "Retry Needed",
+        "failed_terminal": "Failed",
+        "disabled": "Disabled",
+        "deleted": "Deleted"
+      },
+      "ledger": {
+        "pending": "Pending",
+        "applied": "Applied",
+        "failed": "Failed"
+      },
+      "request": {
+        "success": "Success",
+        "failed": "Failed",
+        "error": "Error"
+      }
     }
   },
   "edit_roles": {

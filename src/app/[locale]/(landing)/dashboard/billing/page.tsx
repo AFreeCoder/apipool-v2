@@ -1,6 +1,6 @@
 import {
   getPortalUsage,
-  listLedgerEntries,
+  listBillingLedgerEntries,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
@@ -24,10 +24,19 @@ const EMPTY_USAGE: PortalUsageView = {
   logs: [],
 };
 
-const LEDGER_SOURCE_LABELS: Record<string, string> = {
-  recharge: 'Top-up',
-  manual_adjustment: 'Adjustment',
-};
+export function mapPayStatus(orderStatus: string | null) {
+  if (orderStatus === 'paid') return 'Paid';
+  if (orderStatus === 'created') return 'Pending';
+  if (orderStatus === 'failed') return 'Failed';
+  return '—';
+}
+
+export function mapApplyStatus(ledgerStatus: string) {
+  if (ledgerStatus === 'applied') return 'Credited';
+  if (ledgerStatus === 'pending') return 'Processing';
+  if (ledgerStatus === 'failed') return 'Failed';
+  return ledgerStatus;
+}
 
 export default async function BillingPage({
   params,
@@ -39,11 +48,11 @@ export default async function BillingPage({
   const user = await getUserInfo();
   const [usage, ledger]: [
     PortalUsageView,
-    Awaited<ReturnType<typeof listLedgerEntries>>,
+    Awaited<ReturnType<typeof listBillingLedgerEntries>>,
   ] = user
     ? await Promise.all([
         getPortalUsage(user as any, '7d'),
-        listLedgerEntries(user.id),
+        listBillingLedgerEntries(user.id),
       ])
     : [EMPTY_USAGE, []];
   const charges = buildBillingUsageCharges(usage);
@@ -98,27 +107,31 @@ export default async function BillingPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Type</th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    Order time
+                  </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     Amount
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
-                    Status
+                    Payment status
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    Credit status
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {ledger.map((entry: any) => (
-                  <tr key={entry.id} className="border-b last:border-b-0">
+                {ledger.map((entry, index) => (
+                  <tr
+                    key={`${entry.orderNo || 'manual'}-${entry.createdAt}-${index}`}
+                    className="border-b last:border-b-0"
+                  >
                     <td className="text-muted-foreground px-4 py-2.5">
                       {new Date(entry.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {LEDGER_SOURCE_LABELS[entry.source] || entry.source}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(entry.amountUsd)}
@@ -126,16 +139,23 @@ export default async function BillingPage({
                     <td className="px-4 py-2.5 text-right">
                       <span
                         className={
-                          entry.status === 'applied'
+                          entry.orderStatus === 'paid'
                             ? 'bg-primary/10 text-primary rounded-md px-1.5 py-0.5 text-xs font-medium'
                             : 'bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs'
                         }
                       >
-                        {entry.status === 'applied'
-                          ? 'Completed'
-                          : entry.status === 'pending'
-                            ? 'Processing'
-                            : entry.status}
+                        {mapPayStatus(entry.orderStatus)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span
+                        className={
+                          entry.ledgerStatus === 'applied'
+                            ? 'bg-primary/10 text-primary rounded-md px-1.5 py-0.5 text-xs font-medium'
+                            : 'bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs'
+                        }
+                      >
+                        {mapApplyStatus(entry.ledgerStatus)}
                       </span>
                     </td>
                   </tr>

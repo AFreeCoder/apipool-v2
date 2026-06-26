@@ -1,39 +1,25 @@
 import {
   buildModelFilterHref,
-  filterModels,
-  isDealModel,
-  MODEL_CAPABILITY_FILTERS,
-  MODEL_PROVIDER_FILTERS,
-  MODEL_STATUS_FILTERS,
+  formatMicroUsdPerMillion,
   parseModelFilters,
-  publicModels,
 } from '@/features/api-catalog/lib/catalog';
+import type { ListingRow } from '@/features/api-catalog/lib/types';
+import {
+  getFilterDimensions,
+  getPublicListings,
+} from '@/features/api-catalog/server/queries';
 import { setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
-import {
-  PRICE_DISCLAIMER_EN,
-  PRICE_DISCLAIMER_ZH,
-} from '@/config/apipool';
+import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 
-function formatContextWindow(tokens: number) {
+function formatContextWindow(tokens: number | null) {
+  if (!tokens) return '—';
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
   if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
   return String(tokens);
-}
-
-const FILTER_OPTION_LABELS: Record<string, string> = {
-  available: 'Available',
-  coming_soon: 'Coming soon',
-};
-
-function formatFilterOption(option: string) {
-  return (
-    FILTER_OPTION_LABELS[option] ||
-    option.charAt(0).toUpperCase() + option.slice(1)
-  );
 }
 
 export default async function ModelsPage({
@@ -46,17 +32,19 @@ export default async function ModelsPage({
   const { locale } = await params;
   setRequestLocale(locale);
   const filters = parseModelFilters(await searchParams);
-  const models = filterModels(publicModels, filters);
-  const standardModels = models.filter((model) => !isDealModel(model));
-  const dealModels = models.filter(isDealModel);
+  const [listings, dimensions] = await Promise.all([
+    getPublicListings(filters),
+    getFilterDimensions(),
+  ]);
   const filterGroups = [
-    { label: 'Provider', key: 'provider', options: MODEL_PROVIDER_FILTERS },
+    { label: 'Provider', key: 'vendor', options: dimensions.vendors },
+    { label: 'Group', key: 'group', options: dimensions.groups },
     {
       label: 'Capability',
       key: 'capability',
-      options: MODEL_CAPABILITY_FILTERS,
+      options: dimensions.capabilities,
     },
-    { label: 'Status', key: 'status', options: MODEL_STATUS_FILTERS },
+    { label: 'Status', key: 'status', options: dimensions.statuses },
   ] as const;
 
   return (
@@ -71,32 +59,39 @@ export default async function ModelsPage({
             Models & pricing
           </h1>
           <p className="text-muted-foreground mt-3 max-w-2xl leading-7">
-            All prices are per 1M tokens, billed by actual usage. One key
-            works for every model below.
+            All prices are per 1M tokens, billed by actual usage. One key works
+            for every model below.
           </p>
 
           <div className="mt-8 space-y-2">
             {filterGroups.map((group) => (
-              <div key={group.key} className="flex flex-wrap items-center gap-1.5">
+              <div
+                key={group.key}
+                className="flex flex-wrap items-center gap-1.5"
+              >
                 <span className="text-muted-foreground w-20 shrink-0 text-xs tracking-wide uppercase">
                   {group.label}
                 </span>
+                <FilterLink
+                  active={!filters[group.key]}
+                  href={buildModelFilterHref(filters, {
+                    [group.key]: undefined,
+                  })}
+                >
+                  All
+                </FilterLink>
                 {group.options.map((option) => {
-                  const active = filters[group.key] === option;
+                  const active = filters[group.key] === option.slug;
                   return (
-                    <Link
-                      key={option}
+                    <FilterLink
+                      key={option.slug}
+                      active={active}
                       href={buildModelFilterHref(filters, {
-                        [group.key]: option,
+                        [group.key]: option.slug,
                       })}
-                      className={
-                        active
-                          ? 'bg-primary text-primary-foreground focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
-                      }
                     >
-                      {formatFilterOption(option)}
-                    </Link>
+                      {option.name}
+                    </FilterLink>
                   );
                 })}
               </div>
@@ -107,7 +102,7 @@ export default async function ModelsPage({
 
       <section className="space-y-10 py-10 sm:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {standardModels.length === 0 && dealModels.length === 0 ? (
+          {listings.length === 0 ? (
             <div className="rounded-xl border p-10 text-center">
               <div className="font-medium">No models match these filters.</div>
               <Button asChild variant="outline" className="mt-4 rounded-md">
@@ -115,86 +110,85 @@ export default async function ModelsPage({
               </Button>
             </div>
           ) : (
-            <ModelsTable models={standardModels} />
+            <ModelsTable listings={listings} />
           )}
           <p className="text-muted-foreground mt-3 text-xs">
             {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
           </p>
         </div>
-
-        {dealModels.length > 0 && (
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="text-xl font-semibold tracking-tight">Deals</h2>
-              <p className="text-muted-foreground text-sm">
-                Short-term discounted routes. Same models and API, separate
-                channels that may rotate without notice.
-              </p>
-            </div>
-            <ModelsTable models={dealModels} deal />
-          </div>
-        )}
       </section>
     </div>
   );
 }
 
-function ModelsTable({
-  models,
-  deal = false,
+function FilterLink({
+  active,
+  href,
+  children,
 }: {
-  models: ReturnType<typeof filterModels>;
-  deal?: boolean;
+  active: boolean;
+  href: string;
+  children: React.ReactNode;
 }) {
-  if (models.length === 0) return null;
+  return (
+    <Link
+      href={href}
+      className={
+        active
+          ? 'bg-primary text-primary-foreground focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
+      }
+    >
+      {children}
+    </Link>
+  );
+}
+
+function ModelsTable({ listings }: { listings: ListingRow[] }) {
+  if (listings.length === 0) return null;
 
   return (
     <div className="overflow-x-auto rounded-xl border">
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[920px] text-sm">
         <thead>
           <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
             <th className="px-4 py-3 text-left font-medium">Model</th>
             <th className="px-4 py-3 text-left font-medium">Provider</th>
+            <th className="px-4 py-3 text-left font-medium">Group</th>
             <th className="px-4 py-3 text-left font-medium">Capabilities</th>
             <th className="px-4 py-3 text-right font-medium">Context</th>
-            <th className="px-4 py-3 text-right font-medium">Input / 1M</th>
-            <th className="px-4 py-3 text-right font-medium">Output / 1M</th>
+            <th className="px-4 py-3 text-right font-medium">Input·1M</th>
+            <th className="px-4 py-3 text-right font-medium">Output·1M</th>
             <th className="px-4 py-3 text-right font-medium">Status</th>
           </tr>
         </thead>
         <tbody>
-          {models.map((model) => {
-            const officialInput = model.pricing.officialInputPerMillionUsd;
-            const officialOutput = model.pricing.officialOutputPerMillionUsd;
+          {listings.map((listing) => {
             return (
               <tr
-                key={model.slug}
+                key={`${listing.modelId}:${listing.groupSlug}`}
                 className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
               >
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 font-medium">
-                    {model.displayName}
-                    {deal && (
-                      <span className="bg-chart-3/15 text-chart-3 rounded-md px-1.5 py-0.5 text-xs font-medium">
-                        Deal
-                      </span>
-                    )}
-                  </div>
+                  <div className="font-medium">{listing.displayName}</div>
                   <div className="text-muted-foreground font-mono text-xs">
-                    {model.modelId}
+                    {listing.modelId}
                   </div>
-                  {deal && model.dealNote && (
+                  {listing.description && (
                     <div className="text-muted-foreground mt-1 text-xs">
-                      {model.dealNote}
+                      {listing.description}
                     </div>
                   )}
                 </td>
                 <td className="text-muted-foreground px-4 py-3">
-                  {model.provider}
+                  {listing.vendorName}
+                </td>
+                <td className="text-muted-foreground px-4 py-3">
+                  {listing.groupName}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {model.capabilities.map((capability) => (
+                    {listing.capabilities.map((capability) => (
                       <span
                         key={capability}
                         className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
@@ -205,39 +199,40 @@ function ModelsTable({
                   </div>
                 </td>
                 <td className="text-muted-foreground px-4 py-3 text-right font-mono">
-                  {formatContextWindow(model.contextWindow)}
+                  {formatContextWindow(listing.contextWindow)}
                 </td>
                 <td className="px-4 py-3 text-right font-mono">
-                  ${model.pricing.inputPerMillionUsd.toFixed(2)}
-                  {officialInput !== undefined &&
-                    officialInput > model.pricing.inputPerMillionUsd && (
-                      <div className="text-muted-foreground text-xs line-through">
-                        ${officialInput.toFixed(2)}
-                      </div>
-                    )}
+                  {formatMicroUsdPerMillion(listing.inputMicroUsd)}
+                  {listing.listInputMicroUsd !== undefined && (
+                    <div className="text-muted-foreground text-xs line-through">
+                      {formatMicroUsdPerMillion(listing.listInputMicroUsd)}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right font-mono">
-                  ${model.pricing.outputPerMillionUsd.toFixed(2)}
-                  {officialOutput !== undefined &&
-                    officialOutput > model.pricing.outputPerMillionUsd && (
-                      <div className="text-muted-foreground text-xs line-through">
-                        ${officialOutput.toFixed(2)}
-                      </div>
-                    )}
+                  {formatMicroUsdPerMillion(listing.outputMicroUsd)}
+                  {listing.listOutputMicroUsd !== undefined && (
+                    <div className="text-muted-foreground text-xs line-through">
+                      {formatMicroUsdPerMillion(listing.listOutputMicroUsd)}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Badge
-                    variant={
-                      model.status === 'available' ? 'default' : 'secondary'
-                    }
+                    variant={listing.isCallable ? 'default' : 'secondary'}
                     className={
-                      model.status === 'available'
+                      listing.isCallable
                         ? 'bg-primary/10 text-primary border-transparent'
                         : ''
                     }
                   >
-                    {model.status === 'available' ? 'Available' : 'Coming soon'}
+                    {listing.statusName}
                   </Badge>
+                  {listing.discountNote && (
+                    <div className="text-muted-foreground mt-1 text-xs">
+                      {listing.discountNote}
+                    </div>
+                  )}
                 </td>
               </tr>
             );

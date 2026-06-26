@@ -46,10 +46,8 @@ test('legacy admin content and credit routes redirect into APIPool operator flow
     'src/app/[locale]/(admin)/admin/posts/page.tsx',
     'src/app/[locale]/(admin)/admin/posts/add/page.tsx',
     'src/app/[locale]/(admin)/admin/posts/[id]/edit/page.tsx',
-    'src/app/[locale]/(admin)/admin/categories/page.tsx',
     'src/app/[locale]/(admin)/admin/categories/add/page.tsx',
     'src/app/[locale]/(admin)/admin/categories/[id]/edit/page.tsx',
-    'src/app/[locale]/(admin)/admin/settings/[tab]/page.tsx',
     'src/app/[locale]/(admin)/admin/users/[id]/grant-credits/page.tsx',
   ];
 
@@ -58,6 +56,19 @@ test('legacy admin content and credit routes redirect into APIPool operator flow
 
     assert.match(source, /redirect/, file);
     assert.match(source, /\/admin\/apipool-adjustments/, file);
-    assert.doesNotMatch(source, /TableCard|FormCard|CREDITS_|POSTS_|CATEGORIES_|SETTINGS_/, file);
+    assert.doesNotMatch(
+      source,
+      /TableCard|FormCard|CREDITS_|POSTS_|CATEGORIES_|SETTINGS_/,
+      file
+    );
   }
+
+  const categoriesSource = await readFile(
+    'src/app/[locale]/(admin)/admin/categories/page.tsx',
+    'utf8'
+  );
+
+  assert.match(categoriesSource, /redirect/);
+  assert.match(categoriesSource, /\/admin\/catalog\/models/);
+  assert.doesNotMatch(categoriesSource, /TableCard|FormCard|CATEGORIES_/);
 });

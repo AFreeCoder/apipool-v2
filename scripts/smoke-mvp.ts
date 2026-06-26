@@ -254,9 +254,11 @@ async function main() {
   let plainKey: string | undefined;
 
   try {
+    // groupSlug='official' maps to the seed group; live New API smoke must align
+    // that group's newapiGroup with the external New API group per DESIGN §9.1.
     const created = await createPortalApiKey(user, {
       name: `MVP smoke ${new Date().toISOString()}`,
-      allowedModels: [model],
+      groupSlug: 'official',
     });
     keyId = created.binding.id;
     plainKey = created.plainKey;

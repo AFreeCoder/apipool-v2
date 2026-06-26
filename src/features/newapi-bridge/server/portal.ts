@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { createHash, randomBytes } from 'node:crypto';
+import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
 import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
   canDeleteKeyStatus,
@@ -14,19 +16,19 @@ import {
 import { and, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
-import { APIPOOL_CONFIG } from '@/config/apipool';
 import {
   apipoolLedgerEntry,
+  catalogGroup,
   newApiBridgeAuditLog,
   newApiKeyBinding,
   newApiUserBinding,
+  order as orderTable,
   usageLogSnapshot,
   usageSnapshot,
+  user as userTable,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import { User } from '@/shared/models/user';
-
-import { createHash, randomBytes } from 'node:crypto';
 
 import {
   createNewApiClient,
@@ -40,7 +42,7 @@ import { decryptCredential, encryptCredential } from './crypto';
 
 export type PortalKeyCreateInput = {
   name: string;
-  allowedModels?: string[];
+  groupSlug: string;
   quotaLimit?: number;
   ipAllowlist?: string[];
 };
@@ -75,6 +77,16 @@ export type PortalUsageView = {
     spendUsd?: number | null;
     createdAt: Date;
   }>;
+};
+
+export type BillingLedgerEntry = {
+  orderNo: string | null;
+  amountUsd: number;
+  ledgerStatus: string;
+  orderStatus: string | null;
+  paymentProvider: string | null;
+  paidAt: number | null;
+  createdAt: number;
 };
 
 type AuditInput = {
@@ -156,6 +168,7 @@ function toPublicApiKey(row: any) {
     updatedAt: row.updatedAt,
     lastUsedAt: row.lastUsedAt,
     deletedAt: row.deletedAt,
+    groupName: row.groupName ?? null,
   };
 }
 
@@ -170,6 +183,19 @@ function toPublicLedgerEntry(row: any) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function toTimestampMs(value: Date | number | string): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  return new Date(value).getTime();
+}
+
+function toNullableTimestampMs(
+  value: Date | number | string | null | undefined
+) {
+  if (value === null || value === undefined) return null;
+  return toTimestampMs(value);
 }
 
 function toPublicUsageLog(row: any) {
@@ -387,15 +413,16 @@ export async function createPortalApiKey(
   input: PortalKeyCreateInput,
   client: NewApiClient = createNewApiClient()
 ) {
+  const group = await getGroupBySlug(input.groupSlug);
+  if (!group || group.status !== 'active' || group.allowCreateKey !== true) {
+    throw new Error('group not available');
+  }
+
   const binding = await ensurePortalUserBinding(user, client);
   const credentials = bindingToUserCredentials(binding);
   const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
   const localKeyId = getUuid();
   const remoteName = deriveRemoteKeyName(localKeyId);
-  const allowedModels =
-    input.allowedModels && input.allowedModels.length > 0
-      ? input.allowedModels
-      : [APIPOOL_CONFIG.defaultLaunchModel];
   const pendingRemoteKeyId = `pending:${idempotencyKey}`;
 
   const [pending] = await db()
@@ -408,7 +435,9 @@ export async function createPortalApiKey(
       keyMasked: 'pending',
       displayName: input.name,
       status: 'creating_remote',
-      allowedModels: JSON.stringify(allowedModels),
+      allowedModels: '[]',
+      groupId: group.id,
+      newapiGroup: group.newapiGroup,
       quotaLimit: input.quotaLimit,
       ipAllowlist: JSON.stringify(input.ipAllowlist || []),
       idempotencyKey,
@@ -420,7 +449,7 @@ export async function createPortalApiKey(
     remote = await client.createKey({
       user: credentials,
       remoteName,
-      allowedModels,
+      group: group.newapiGroup,
       quotaLimitUsd: input.quotaLimit,
       ipAllowlist: input.ipAllowlist || [],
     });
@@ -504,7 +533,7 @@ export async function createPortalApiKey(
     });
 
     return {
-      binding: toPublicApiKey(created),
+      binding: toPublicApiKey({ ...created, groupName: group.name }),
       plainKey: remote.key,
     };
   } catch (error: any) {
@@ -573,7 +602,7 @@ async function syncPortalApiKeyStatuses(
         })
         .where(eq(newApiKeyBinding.id, row.id))
         .returning();
-      syncedRows.push(updated || row);
+      syncedRows.push(updated ? { ...updated, groupName: row.groupName } : row);
     }
 
     return syncedRows;
@@ -587,8 +616,29 @@ export async function listPortalApiKeys(
   client: NewApiClient = createNewApiClient()
 ) {
   const rows = await db()
-    .select()
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      newapiUserId: newApiKeyBinding.newapiUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      keyMasked: newApiKeyBinding.keyMasked,
+      displayName: newApiKeyBinding.displayName,
+      status: newApiKeyBinding.status,
+      allowedModels: newApiKeyBinding.allowedModels,
+      groupId: newApiKeyBinding.groupId,
+      newapiGroup: newApiKeyBinding.newapiGroup,
+      quotaLimit: newApiKeyBinding.quotaLimit,
+      ipAllowlist: newApiKeyBinding.ipAllowlist,
+      idempotencyKey: newApiKeyBinding.idempotencyKey,
+      lastRemoteError: newApiKeyBinding.lastRemoteError,
+      createdAt: newApiKeyBinding.createdAt,
+      updatedAt: newApiKeyBinding.updatedAt,
+      lastUsedAt: newApiKeyBinding.lastUsedAt,
+      deletedAt: newApiKeyBinding.deletedAt,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(eq(newApiKeyBinding.portalUserId, portalUserId))
     .orderBy(desc(newApiKeyBinding.createdAt));
 
@@ -597,14 +647,43 @@ export async function listPortalApiKeys(
   return syncedRows.map(toPublicApiKey);
 }
 
+export async function listKeysByPortalUser(portalUserId: string) {
+  const rows = await db()
+    .select({
+      id: newApiKeyBinding.id,
+      keyMasked: newApiKeyBinding.keyMasked,
+      displayName: newApiKeyBinding.displayName,
+      status: newApiKeyBinding.status,
+      allowedModels: newApiKeyBinding.allowedModels,
+      createdAt: newApiKeyBinding.createdAt,
+      updatedAt: newApiKeyBinding.updatedAt,
+      lastUsedAt: newApiKeyBinding.lastUsedAt,
+      deletedAt: newApiKeyBinding.deletedAt,
+      groupName: catalogGroup.name,
+    })
+    .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
+    .where(eq(newApiKeyBinding.portalUserId, portalUserId))
+    .orderBy(desc(newApiKeyBinding.createdAt));
+
+  return rows.map(toPublicApiKey);
+}
+
 export async function disablePortalApiKey(
   portalUserId: string,
   keyId: string,
   client: NewApiClient = createNewApiClient()
 ) {
   const [row] = await db()
-    .select()
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      status: newApiKeyBinding.status,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(
       and(
         eq(newApiKeyBinding.id, keyId),
@@ -657,7 +736,7 @@ export async function disablePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey(updated);
+    return toPublicApiKey({ ...updated, groupName: row.groupName });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)
@@ -685,8 +764,15 @@ export async function deletePortalApiKey(
   client: NewApiClient = createNewApiClient()
 ) {
   const [row] = await db()
-    .select()
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      status: newApiKeyBinding.status,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(
       and(
         eq(newApiKeyBinding.id, keyId),
@@ -736,7 +822,7 @@ export async function deletePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey(updated);
+    return toPublicApiKey({ ...updated, groupName: row.groupName });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)
@@ -973,6 +1059,79 @@ export async function listLedgerEntries(portalUserId: string) {
     .orderBy(desc(apipoolLedgerEntry.createdAt));
 
   return rows.map(toPublicLedgerEntry);
+}
+
+export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
+  const rows = await db()
+    .select({
+      id: apipoolLedgerEntry.id,
+      amountUsd: apipoolLedgerEntry.amountUsd,
+      source: apipoolLedgerEntry.source,
+      status: apipoolLedgerEntry.status,
+      reason: apipoolLedgerEntry.reason,
+      rollbackStatus: apipoolLedgerEntry.rollbackStatus,
+      createdAt: apipoolLedgerEntry.createdAt,
+      updatedAt: apipoolLedgerEntry.updatedAt,
+      operatorId: userTable.id,
+      operatorName: userTable.name,
+      operatorEmail: userTable.email,
+    })
+    .from(apipoolLedgerEntry)
+    .leftJoin(userTable, eq(apipoolLedgerEntry.operatorUserId, userTable.id))
+    .where(
+      and(
+        eq(apipoolLedgerEntry.portalUserId, portalUserId),
+        eq(apipoolLedgerEntry.source, 'manual_adjustment')
+      )
+    )
+    .orderBy(desc(apipoolLedgerEntry.createdAt));
+
+  return rows.map((row: any) => ({
+    id: row.id,
+    amountUsd: row.amountUsd,
+    source: row.source,
+    status: row.status,
+    reason: row.reason,
+    rollbackStatus: row.rollbackStatus,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    operator: row.operatorId
+      ? {
+          id: row.operatorId,
+          name: row.operatorName,
+          email: row.operatorEmail,
+        }
+      : null,
+  }));
+}
+
+export async function listBillingLedgerEntries(
+  portalUserId: string
+): Promise<BillingLedgerEntry[]> {
+  const rows = await db()
+    .select({
+      orderNo: apipoolLedgerEntry.orderNo,
+      amountUsd: apipoolLedgerEntry.amountUsd,
+      ledgerStatus: apipoolLedgerEntry.status,
+      orderStatus: orderTable.status,
+      paymentProvider: orderTable.paymentProvider,
+      paidAt: orderTable.paidAt,
+      createdAt: apipoolLedgerEntry.createdAt,
+    })
+    .from(apipoolLedgerEntry)
+    .leftJoin(orderTable, eq(apipoolLedgerEntry.orderNo, orderTable.orderNo))
+    .where(eq(apipoolLedgerEntry.portalUserId, portalUserId))
+    .orderBy(desc(apipoolLedgerEntry.createdAt));
+
+  return rows.map((row: any) => ({
+    orderNo: row.orderNo,
+    amountUsd: row.amountUsd,
+    ledgerStatus: row.ledgerStatus,
+    orderStatus: row.orderStatus,
+    paymentProvider: row.paymentProvider,
+    paidAt: toNullableTimestampMs(row.paidAt),
+    createdAt: toTimestampMs(row.createdAt),
+  }));
 }
 
 export async function adjustPortalQuota(input: {

@@ -109,6 +109,12 @@ export default async function AdminUsersPage({
         type: 'dropdown',
         callback: (item: User) => [
           {
+            name: 'view-detail',
+            title: t('list.buttons.view_detail'),
+            icon: 'Eye',
+            url: `/admin/users/${item.id}/detail`,
+          },
+          {
             name: 'edit',
             title: t('list.buttons.edit'),
             icon: 'RiEditLine',
@@ -124,7 +130,7 @@ export default async function AdminUsersPage({
             ? [
                 {
                   name: 'adjust-quota',
-                  title: 'Adjust APIPool quota',
+                  title: t('list.buttons.adjust_quota'),
                   icon: 'Gauge',
                   url: `/admin/apipool-adjustments?portalUserId=${item.id}`,
                 },

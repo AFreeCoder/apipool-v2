@@ -1,17 +1,18 @@
-import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
-import { setRequestLocale } from 'next-intl/server';
-
-import { APIPOOL_CONFIG } from '@/config/apipool';
+import { BalanceWarning } from '@/features/api-console/components/balance-warning';
+import { StatCard } from '@/features/api-console/components/stat-card';
+import { formatUsdAmount } from '@/features/api-console/lib/money';
 import {
   getPortalUsage,
   listPortalApiKeys,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
-import { StatCard } from '@/features/api-console/components/stat-card';
-import { formatUsdAmount } from '@/features/api-console/lib/money';
+import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
+import { setRequestLocale } from 'next-intl/server';
+
 import { Link } from '@/core/i18n/navigation';
-import { getUserInfo } from '@/shared/models/user';
+import { APIPOOL_CONFIG } from '@/config/apipool';
 import { Button } from '@/shared/components/ui/button';
+import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
   summary: {
@@ -105,6 +106,8 @@ export default async function DashboardPage({
         />
       </div>
 
+      <BalanceWarning balanceUsd={usage.summary.balanceUsd} />
+
       <div className="bg-background overflow-hidden rounded-xl border">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="font-medium">Recent requests</h2>
@@ -126,9 +129,7 @@ export default async function DashboardPage({
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
                   <th className="px-4 py-2.5 text-left font-medium">Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Tokens
-                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Tokens</th>
                   <th className="px-4 py-2.5 text-right font-medium">Spend</th>
                 </tr>
               </thead>

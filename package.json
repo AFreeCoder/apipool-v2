@@ -27,6 +27,7 @@
     "db:studio": "tsx scripts/with-env.ts npx drizzle-kit studio --config=src/core/db/config.ts",
     "auth:generate": "tsx scripts/with-env.ts npx @better-auth/cli generate --config=src/core/auth/index.ts",
     "rbac:init": "tsx scripts/with-env.ts npx tsx scripts/init-rbac.ts",
+    "catalog:init": "tsx scripts/with-env.ts npx tsx scripts/init-catalog.ts",
     "rbac:assign": "tsx scripts/with-env.ts npx tsx scripts/assign-role.ts",
     "postinstall": "fumadocs-mdx",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

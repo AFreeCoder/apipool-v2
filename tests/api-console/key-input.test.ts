@@ -1,16 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { APIPOOL_CONFIG } from '@/config/apipool';
 import {
   API_KEY_CREATION_PAUSED_MESSAGE,
   assertPortalApiKeyCreationEnabled,
   sanitizePortalApiKeyCreateInput,
 } from '@/features/api-console/lib/key-input';
 
-test('customer key creation input ignores quota and network controls', () => {
+test('customer key creation input requires a non-empty group slug', () => {
+  assert.throws(
+    () => sanitizePortalApiKeyCreateInput({ name: 'Missing group' }),
+    /group is required/
+  );
+  assert.throws(
+    () =>
+      sanitizePortalApiKeyCreateInput({
+        name: 'Blank group',
+        groupSlug: '   ',
+      }),
+    /group is required/
+  );
+});
+
+test('customer key creation input keeps only the public name and group slug', () => {
   const input = sanitizePortalApiKeyCreateInput({
     name: '  Smoke key  ',
+    groupSlug: ' official ',
     allowedModels: ['unverified-model'],
     quotaLimit: 999,
     ipAllowlist: ['0.0.0.0/0'],
@@ -18,26 +33,21 @@ test('customer key creation input ignores quota and network controls', () => {
 
   assert.deepEqual(input, {
     name: 'Smoke key',
-    allowedModels: [APIPOOL_CONFIG.defaultLaunchModel],
+    groupSlug: 'official',
   });
+  assert.equal(Object.hasOwn(input, 'allowedModels'), false);
   assert.equal(Object.hasOwn(input, 'quotaLimit'), false);
   assert.equal(Object.hasOwn(input, 'ipAllowlist'), false);
 });
 
 test('customer key creation input uses a stable default name', () => {
-  const input = sanitizePortalApiKeyCreateInput({ name: '   ' });
+  const input = sanitizePortalApiKeyCreateInput({
+    name: '   ',
+    groupSlug: 'official',
+  });
 
   assert.equal(input.name, 'Default APIPool key');
-  assert.deepEqual(input.allowedModels, [APIPOOL_CONFIG.defaultLaunchModel]);
-});
-
-test('customer key creation falls back from unverified default models', () => {
-  const input = sanitizePortalApiKeyCreateInput(
-    { name: 'Misconfigured default' },
-    'gpt-4o'
-  );
-
-  assert.deepEqual(input.allowedModels, ['gpt-4o-mini']);
+  assert.equal(input.groupSlug, 'official');
 });
 
 test('portal key creation guard can pause rollback entrypoint', () => {

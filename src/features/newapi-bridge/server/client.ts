@@ -548,6 +548,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     async createKey(input: {
       user: NewApiUserCredentials;
       remoteName: string;
+      group?: string;
       allowedModels?: string[];
       quotaLimitUsd?: number;
       ipAllowlist?: string[];
@@ -569,7 +570,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
             model_limits_enabled: Boolean(input.allowedModels?.length),
             model_limits: (input.allowedModels || []).join(','),
             allow_ips: (input.ipAllowlist || []).join(','),
-            group: '',
+            group: input.group ?? '',
           },
         });
         item = await findTokenByName(input.user, input.remoteName);
