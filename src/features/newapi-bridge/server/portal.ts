@@ -1016,6 +1016,12 @@ export async function getPortalUsage(
       })
       .returning();
 
+    // 替换式刷新明细缓存：先清旧日志再写最新，避免同一请求多次同步重复累积
+    // （requestCount 来自聚合 usageSnapshot 表，明细累积会导致两者行数口径不一）
+    await db()
+      .delete(usageLogSnapshot)
+      .where(eq(usageLogSnapshot.portalUserId, user.id));
+
     for (const log of logs) {
       await db()
         .insert(usageLogSnapshot)
