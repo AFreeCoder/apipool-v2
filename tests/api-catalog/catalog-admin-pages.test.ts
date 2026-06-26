@@ -263,6 +263,10 @@ test('catalog listing child pages expose per-model sales item CRUD and immutable
     listPage,
     /admin\/catalog\/models\/\$\{model\.id\}\/listings\/\$\{item\.id\}\/edit/
   );
+  assert.match(listPage, /name:\s*['"]listInputPrice['"]/);
+  assert.match(listPage, /name:\s*['"]listOutputPrice['"]/);
+  assert.match(listPage, /name:\s*['"]discountNote['"]/);
+  assert.match(listPage, /name:\s*['"]description['"]/);
 
   for (const source of [newPage, editPage]) {
     assert.match(source, /<FormCard/);
