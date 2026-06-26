@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
   type KeyLifecycleStatus,
@@ -179,7 +180,11 @@ export function ApiKeyManager({
   async function deleteKey(id: string) {
     setMessage('');
     const target = keys.find((key) => key.id === id);
-    if (!target || !canDeleteKeyStatus(target.status)) {
+    if (
+      !target ||
+      (!canDeleteKeyStatus(target.status) &&
+        !canCleanupKeyStatus(target.status))
+    ) {
       setMessage('This key cannot be deleted in its current state.');
       return;
     }
@@ -311,7 +316,8 @@ export function ApiKeyManager({
             ) : (
               keys.map((key) => {
                 const canDisable = canDisableKeyStatus(key.status);
-                const canDelete = canDeleteKeyStatus(key.status);
+                const canCleanup = canCleanupKeyStatus(key.status);
+                const canDelete = canDeleteKeyStatus(key.status) || canCleanup;
 
                 return (
                   <TableRow key={key.id}>
@@ -357,11 +363,15 @@ export function ApiKeyManager({
                         onClick={() => deleteKey(key.id)}
                         disabled={!canDelete}
                         title={
-                          canDelete
-                            ? 'Delete key'
-                            : 'Key cannot be deleted in this state'
+                          canCleanup
+                            ? 'Clean up failed key'
+                            : canDelete
+                              ? 'Delete key'
+                              : 'Key cannot be deleted in this state'
                         }
-                        aria-label="Delete key"
+                        aria-label={
+                          canCleanup ? 'Clean up failed key' : 'Delete key'
+                        }
                       >
                         <Trash2 className="size-4" />
                       </Button>

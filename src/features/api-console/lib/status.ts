@@ -67,6 +67,20 @@ export function canDeleteKeyStatus(status: KeyLifecycleStatus) {
   return status === 'active' || status === 'disabled';
 }
 
+/**
+ * 失败/卡死态（远端未建成或本地未落库成功）允许「清理删除」：
+ * 直接删本地死记录（远端若有残留则尽力删、失败不阻塞），
+ * 让用户能清空被失败 Key 淹没的列表，而非永久卡住无法操作。
+ */
+export function canCleanupKeyStatus(status: KeyLifecycleStatus) {
+  return (
+    status === 'creating_remote' ||
+    status === 'failed_retriable' ||
+    status === 'failed_terminal' ||
+    status === 'remote_created_binding_failed'
+  );
+}
+
 export function getUsageSyncState(
   syncedAt: Date | null,
   now = new Date(),
