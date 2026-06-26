@@ -134,8 +134,11 @@ export default async function DashboardPage({
                 </tr>
               </thead>
               <tbody>
-                {usage.logs.slice(0, 8).map((log) => (
-                  <tr key={log.id} className="border-b last:border-b-0">
+                {usage.logs.slice(0, 8).map((log, index) => (
+                  <tr
+                    key={`${log.id}-${index}`}
+                    className="border-b last:border-b-0"
+                  >
                     <td className="text-muted-foreground px-4 py-2.5">
                       {log.createdAt.toLocaleString()}
                     </td>
