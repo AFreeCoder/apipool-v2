@@ -302,6 +302,16 @@ test('getPublicListings applies vendor, group, capability, and status filters', 
     combined.map((listing: { modelId: string }) => listing.modelId),
     ['claude-query-test']
   );
+
+  const categoryListings = await modules.queries.getPublicListingsUncached({
+    category: 'llm',
+  });
+  assert.ok(categoryListings.length > 0);
+  assert.ok(
+    categoryListings.every(
+      (listing: { category: string }) => listing.category === 'llm'
+    )
+  );
 });
 
 test('getPublicListings aggregates capabilities for each model without exposing internal columns', async () => {
@@ -314,6 +324,7 @@ test('getPublicListings aggregates capabilities for each model without exposing 
   );
 
   assert.ok(seeded);
+  assert.equal(seeded.category, 'llm');
   assert.deepEqual(new Set(seeded.capabilities), new Set(['text', 'vision']));
   assert.equal('id' in seeded, false);
   assert.equal('newapiGroup' in seeded, false);
@@ -335,6 +346,11 @@ test('getFilterDimensions returns only active dictionary options in sort order',
   assert.ok(
     dimensions.statuses.some(
       (status: { slug: string }) => status.slug === 'retired'
+    )
+  );
+  assert.ok(
+    dimensions.categories.some(
+      (category: { slug: string }) => category.slug === 'llm'
     )
   );
   assert.equal(

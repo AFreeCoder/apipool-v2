@@ -39,6 +39,7 @@ export default async function ModelsPage({
   const filterGroups = [
     { label: 'Provider', key: 'vendor', options: dimensions.vendors },
     { label: 'Group', key: 'group', options: dimensions.groups },
+    { label: 'Category', key: 'category', options: dimensions.categories },
     {
       label: 'Capability',
       key: 'capability',
@@ -155,6 +156,7 @@ function ModelsTable({ listings }: { listings: ListingRow[] }) {
             <th className="px-4 py-3 text-left font-medium">Model</th>
             <th className="px-4 py-3 text-left font-medium">Provider</th>
             <th className="px-4 py-3 text-left font-medium">Group</th>
+            <th className="px-4 py-3 text-left font-medium">Category</th>
             <th className="px-4 py-3 text-left font-medium">Capabilities</th>
             <th className="px-4 py-3 text-right font-medium">Context</th>
             <th className="px-4 py-3 text-right font-medium">Input·1M</th>
@@ -185,6 +187,9 @@ function ModelsTable({ listings }: { listings: ListingRow[] }) {
                 </td>
                 <td className="text-muted-foreground px-4 py-3">
                   {listing.groupName}
+                </td>
+                <td className="text-muted-foreground px-4 py-3">
+                  {listing.category}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">

@@ -6,6 +6,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/core/db';
 import {
   catalogCapability,
+  catalogCategory,
   catalogGroup,
   catalogModel,
   catalogModelCapability,
@@ -21,6 +22,7 @@ const CATALOG_CACHE_TAG = 'catalog';
 export type ListingFilters = {
   vendor?: string;
   group?: string;
+  category?: string;
   capability?: string;
   status?: string;
 };
@@ -32,6 +34,7 @@ type ListingBaseRow = {
   vendorName: string;
   groupName: string;
   groupSlug: string;
+  category: string;
   contextWindow: number | null;
   inputMicroUsd: number;
   outputMicroUsd: number;
@@ -88,6 +91,9 @@ async function queryListingRows({
   if (filters.group) {
     conditions.push(eq(catalogGroup.slug, filters.group));
   }
+  if (filters.category) {
+    conditions.push(eq(catalogModel.category, filters.category));
+  }
   if (filters.status) {
     conditions.push(eq(catalogStatus.slug, filters.status));
   }
@@ -103,6 +109,7 @@ async function queryListingRows({
       vendorName: catalogVendor.name,
       groupName: catalogGroup.name,
       groupSlug: catalogGroup.slug,
+      category: catalogModel.category,
       contextWindow: catalogModel.contextWindow,
       inputMicroUsd: catalogModelListing.inputMicroUsd,
       outputMicroUsd: catalogModelListing.outputMicroUsd,
@@ -162,6 +169,7 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
     vendorName: row.vendorName,
     groupName: row.groupName,
     groupSlug: row.groupSlug,
+    category: row.category,
     capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
     contextWindow: row.contextWindow,
     inputMicroUsd: row.inputMicroUsd,
@@ -184,30 +192,36 @@ export async function getPublicListingsUncached(
 }
 
 export async function getFilterDimensionsUncached(): Promise<FilterDimensions> {
-  const [vendors, groups, capabilities, statuses] = await Promise.all([
-    db()
-      .select({ slug: catalogVendor.slug, name: catalogVendor.name })
-      .from(catalogVendor)
-      .where(eq(catalogVendor.status, 'active'))
-      .orderBy(asc(catalogVendor.sortOrder)),
-    db()
-      .select({ slug: catalogGroup.slug, name: catalogGroup.name })
-      .from(catalogGroup)
-      .where(eq(catalogGroup.status, 'active'))
-      .orderBy(asc(catalogGroup.sortOrder)),
-    db()
-      .select({ slug: catalogCapability.slug, name: catalogCapability.name })
-      .from(catalogCapability)
-      .where(eq(catalogCapability.status, 'active'))
-      .orderBy(asc(catalogCapability.sortOrder)),
-    db()
-      .select({ slug: catalogStatus.slug, name: catalogStatus.name })
-      .from(catalogStatus)
-      .where(eq(catalogStatus.status, 'active'))
-      .orderBy(asc(catalogStatus.sortOrder)),
-  ]);
+  const [vendors, groups, categories, capabilities, statuses] =
+    await Promise.all([
+      db()
+        .select({ slug: catalogVendor.slug, name: catalogVendor.name })
+        .from(catalogVendor)
+        .where(eq(catalogVendor.status, 'active'))
+        .orderBy(asc(catalogVendor.sortOrder)),
+      db()
+        .select({ slug: catalogGroup.slug, name: catalogGroup.name })
+        .from(catalogGroup)
+        .where(eq(catalogGroup.status, 'active'))
+        .orderBy(asc(catalogGroup.sortOrder)),
+      db()
+        .select({ slug: catalogCategory.slug, name: catalogCategory.name })
+        .from(catalogCategory)
+        .where(eq(catalogCategory.status, 'active'))
+        .orderBy(asc(catalogCategory.sortOrder)),
+      db()
+        .select({ slug: catalogCapability.slug, name: catalogCapability.name })
+        .from(catalogCapability)
+        .where(eq(catalogCapability.status, 'active'))
+        .orderBy(asc(catalogCapability.sortOrder)),
+      db()
+        .select({ slug: catalogStatus.slug, name: catalogStatus.name })
+        .from(catalogStatus)
+        .where(eq(catalogStatus.status, 'active'))
+        .orderBy(asc(catalogStatus.sortOrder)),
+    ]);
 
-  return { vendors, groups, capabilities, statuses };
+  return { vendors, groups, categories, capabilities, statuses };
 }
 
 export async function getCallableListingsByGroupUncached(
