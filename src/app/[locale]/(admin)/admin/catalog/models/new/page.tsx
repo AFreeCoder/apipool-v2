@@ -96,6 +96,8 @@ export default async function CatalogModelNewPage({
       handler: async (data) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const newModel = {
           modelId: (data.get('modelId') as string).trim(),
           displayName: (data.get('displayName') as string).trim(),

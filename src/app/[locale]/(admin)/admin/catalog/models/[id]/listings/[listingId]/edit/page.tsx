@@ -156,6 +156,8 @@ export default async function CatalogModelListingEditPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const { model, listing } = passby;
 
         if (!model || !listing) {

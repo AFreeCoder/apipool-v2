@@ -102,6 +102,8 @@ export default async function CatalogGroupEditPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const { group } = passby;
 
         if (!group) {

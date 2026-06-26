@@ -154,6 +154,8 @@ export default async function CatalogModelListingNewPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const { model } = passby;
 
         if (!model) {

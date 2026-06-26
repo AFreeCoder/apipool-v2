@@ -86,6 +86,8 @@ export default async function CatalogVendorEditPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const { vendor } = passby;
 
         if (!vendor) {

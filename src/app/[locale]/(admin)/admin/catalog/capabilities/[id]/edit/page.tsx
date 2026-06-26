@@ -89,6 +89,8 @@ export default async function CatalogCapabilityEditPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const { capability } = passby;
 
         if (!capability) {

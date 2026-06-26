@@ -96,6 +96,8 @@ export default async function CatalogStatusEditPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const { catalogStatus } = passby;
 
         if (!catalogStatus) {

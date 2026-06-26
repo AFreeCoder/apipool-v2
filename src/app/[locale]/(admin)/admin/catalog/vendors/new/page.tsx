@@ -78,6 +78,8 @@ export default async function CatalogVendorNewPage({
       handler: async (data) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const newVendor = {
           slug: (data.get('slug') as string).trim(),
           name: (data.get('name') as string).trim(),

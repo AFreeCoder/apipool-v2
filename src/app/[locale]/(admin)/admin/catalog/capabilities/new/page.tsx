@@ -81,6 +81,8 @@ export default async function CatalogCapabilityNewPage({
       handler: async (data) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const newCapability = {
           slug: (data.get('slug') as string).trim(),
           name: (data.get('name') as string).trim(),

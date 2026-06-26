@@ -121,6 +121,8 @@ export default async function SettingsPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.SETTINGS_WRITE });
+
         const configs = collectNonEmptyConfigs(data, passby.settings);
         if (Object.keys(configs).length > 0) {
           await saveConfigs(configs);

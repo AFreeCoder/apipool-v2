@@ -90,6 +90,8 @@ export default async function CatalogStatusNewPage({
       handler: async (data) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+
         const newStatus = {
           slug: (data.get('slug') as string).trim(),
           name: (data.get('name') as string).trim(),
