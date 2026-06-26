@@ -430,6 +430,25 @@ export const catalogVendor = table(
   (table) => [index('idx_catalog_vendor_status').on(table.status)]
 );
 
+export const catalogCategory = table(
+  'catalog_category',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').unique().notNull(),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    status: text('status').default('active').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index('idx_catalog_category_status').on(table.status)]
+);
+
 export const catalogCapability = table('catalog_capability', {
   id: text('id').primaryKey(),
   slug: text('slug').unique().notNull(),

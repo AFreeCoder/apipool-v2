@@ -1,5 +1,6 @@
 import {
   createModel,
+  getCategories,
   getVendors,
   NewModel,
 } from '@/features/api-catalog/server/catalog-service';
@@ -42,6 +43,11 @@ export default async function CatalogModelNewPage({
     title: vendor.name,
     value: vendor.id,
   }));
+  const categories = await getCategories();
+  const categoryOptions = categories.map((category) => ({
+    title: category.name,
+    value: category.slug,
+  }));
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
@@ -73,9 +79,10 @@ export default async function CatalogModelNewPage({
       },
       {
         name: 'category',
-        type: 'text',
+        type: 'select',
         title: t('fields.category'),
         validation: { required: true },
+        options: categoryOptions,
       },
       {
         name: 'contextWindow',

@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import { db } from '@/core/db';
 import {
   catalogCapability,
+  catalogCategory,
   catalogGroup,
   catalogModel,
   catalogModelCapability,
@@ -36,6 +37,10 @@ export type UpdateCatalogGroup = Partial<
 >;
 export type UpdateModel = Partial<Omit<Model, 'id' | 'createdAt'>>;
 export type UpdateListing = Partial<Omit<Listing, 'id' | 'createdAt'>>;
+
+export type Category = typeof catalogCategory.$inferSelect;
+export type NewCategory = typeof catalogCategory.$inferInsert;
+export type UpdateCategory = Partial<Omit<Category, 'id' | 'createdAt'>>;
 
 export async function getVendors(): Promise<Vendor[]> {
   return await db()
@@ -74,6 +79,47 @@ export async function updateVendor(
 
 export async function deleteVendor(id: string): Promise<void> {
   await db().delete(catalogVendor).where(eq(catalogVendor.id, id));
+}
+
+export async function getCategories(): Promise<Category[]> {
+  return await db()
+    .select()
+    .from(catalogCategory)
+    .orderBy(asc(catalogCategory.sortOrder));
+}
+
+export async function getCategoryById(
+  id: string
+): Promise<Category | undefined> {
+  const [result] = await db()
+    .select()
+    .from(catalogCategory)
+    .where(eq(catalogCategory.id, id));
+  return result;
+}
+
+export async function createCategory(data: NewCategory): Promise<Category> {
+  const [result] = await db()
+    .insert(catalogCategory)
+    .values({ ...data, id: getUuid() })
+    .returning();
+  return result;
+}
+
+export async function updateCategory(
+  id: string,
+  patch: UpdateCategory
+): Promise<Category> {
+  const [result] = await db()
+    .update(catalogCategory)
+    .set(patch)
+    .where(eq(catalogCategory.id, id))
+    .returning();
+  return result;
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  await db().delete(catalogCategory).where(eq(catalogCategory.id, id));
 }
 
 export async function getCapabilities(): Promise<Capability[]> {

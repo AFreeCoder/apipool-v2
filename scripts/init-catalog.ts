@@ -11,6 +11,7 @@ import { inArray } from 'drizzle-orm';
 
 import type {
   catalogCapability as catalogCapabilityTable,
+  catalogCategory as catalogCategoryTable,
   catalogGroup as catalogGroupTable,
   catalogModel as catalogModelTable,
   catalogModelCapability as catalogModelCapabilityTable,
@@ -25,6 +26,7 @@ import { getUuid } from '@/shared/lib/hash';
 type CatalogSchemaTables = {
   catalogVendor: typeof catalogVendorTable;
   catalogCapability: typeof catalogCapabilityTable;
+  catalogCategory: typeof catalogCategoryTable;
   catalogStatus: typeof catalogStatusTable;
   catalogGroup: typeof catalogGroupTable;
   catalogModel: typeof catalogModelTable;
@@ -42,6 +44,13 @@ const vendors = [
   { slug: 'openai', name: 'OpenAI', sortOrder: 10 },
   { slug: 'anthropic', name: 'Anthropic', sortOrder: 20 },
   { slug: 'google', name: 'Google', sortOrder: 30 },
+];
+
+const categories = [
+  { slug: 'llm', name: 'LLM', sortOrder: 10 },
+  { slug: 'embedding', name: 'Embedding', sortOrder: 20 },
+  { slug: 'image', name: 'Image', sortOrder: 30 },
+  { slug: 'audio', name: 'Audio', sortOrder: 40 },
 ];
 
 const capabilities = [
@@ -149,6 +158,7 @@ export async function initCatalog() {
   const {
     catalogVendor,
     catalogCapability,
+    catalogCategory,
     catalogStatus,
     catalogGroup,
     catalogModel,
@@ -182,6 +192,19 @@ export async function initCatalog() {
         ),
       'slug'
     );
+
+    await tx
+      .insert(catalogCategory)
+      .values(
+        categories.map((category) => ({
+          id: getUuid(),
+          slug: category.slug,
+          name: category.name,
+          sortOrder: category.sortOrder,
+          status: 'active',
+        }))
+      )
+      .onConflictDoNothing({ target: catalogCategory.slug });
 
     await tx
       .insert(catalogCapability)
