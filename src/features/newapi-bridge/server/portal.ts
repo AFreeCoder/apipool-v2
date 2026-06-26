@@ -688,7 +688,12 @@ export async function listKeysByPortalUser(portalUserId: string) {
     })
     .from(newApiKeyBinding)
     .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
-    .where(eq(newApiKeyBinding.portalUserId, portalUserId))
+    .where(
+      and(
+        eq(newApiKeyBinding.portalUserId, portalUserId),
+        ne(newApiKeyBinding.status, 'deleted')
+      )
+    )
     .orderBy(desc(newApiKeyBinding.createdAt));
 
   return rows.map(toPublicApiKey);
