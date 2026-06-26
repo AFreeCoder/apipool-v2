@@ -26,4 +26,6 @@ export const localeMessagesPaths = [
   'admin/roles',
   'admin/permissions',
   'admin/apikeys',
+  'admin/catalog',
+  'admin/settings',
 ];
