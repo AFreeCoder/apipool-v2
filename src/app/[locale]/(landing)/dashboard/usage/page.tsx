@@ -125,8 +125,11 @@ export default async function UsagePage({
                 </tr>
               </thead>
               <tbody>
-                {usage.logs.map((log) => (
-                  <tr key={log.id} className="border-b last:border-b-0">
+                {usage.logs.map((log, index) => (
+                  <tr
+                    key={`${log.id}-${index}`}
+                    className="border-b last:border-b-0"
+                  >
                     <td className="text-muted-foreground px-4 py-2.5">
                       {log.createdAt.toLocaleString()}
                     </td>
