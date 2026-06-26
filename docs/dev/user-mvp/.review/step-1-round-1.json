@@ -1,0 +1,38 @@
+{
+  "verdict": "approve",
+  "summary": "Ship：7 张 catalog 表 + newApiKeyBinding 加列与 DESIGN §6.1 逐项一致，sqlite-only 单源、迁移 SQL 与 snapshot 一致、加列迁移对旧行安全，守护测试真实有效，无越界；仅 3 条 minor 改进建议（非必须修复）。",
+  "findings": [
+    {
+      "id": "R1-F1",
+      "severity": "minor",
+      "category": "test-quality",
+      "title": "守护测试漏断言新增列与行为标志",
+      "detail": "本 step 目标显式覆盖 F24（catalog_status 行为标志 isCallable/isPublicVisible）与 §5.4 的 newapiGroup 快照列，但守护测试只断言了 7 个 catalog export 存在 + newApiKeyBinding.groupId 存在 + pg/mysql 不含 catalog_。它没有断言 catalog_status 暴露 isCallable/isPublicVisible 两个布尔列、也没断言 newApiKeyBinding.newapiGroup 列存在。这不影响本 step 正确性（schema/SQL/snapshot 已亲核三处一致、且 121 全绿证明迁移可跑），但若后续有人误删行为标志列或快照列，单源守护测试不会变红——守护范围与 step 验收点（F24）未完全对齐。非必须修复，建议在该测试补两条断言（catalogStatus.isCallable/isPublicVisible、newApiKeyBinding.newapiGroup）以闭合 F24/§5.4 的回归护栏。",
+      "anchor": "tests/db/catalog-schema-singlesource.test.ts:38-50",
+      "confidence": 0.9,
+      "recommendation": "补两条断言：assert.ok(catalogStatus.isCallable) 与 assert.ok(catalogStatus.isPublicVisible)（从 barrel 取 catalogStatus），以及 assert.ok(newApiKeyBinding.newapiGroup)，使守护测试覆盖 F24 行为标志列与快照列。"
+    },
+    {
+      "id": "R1-F2",
+      "severity": "minor",
+      "category": "test-quality",
+      "title": "barrel 导出断言用真值检查偏松",
+      "detail": "‘catalog tables are exported from the schema barrel’ 用 assert.ok(schemaExports[name]) 判断 export 存在。drizzle table 对象恒为 truthy，该断言只验证‘名字在 barrel 上有个非空值’，无法区分‘真的是该 catalog 表’还是‘恰好同名导出了别的东西’。鉴于 barrel 就是 export * from './schema.sqlite' 且无重名风险，当前不会假绿；但断言强度低于‘单源可推导’的设计意图（D6 守护方案 2②）。非必须修复，可改为校验 table 的实际表名（如 getTableName(catalogVendor)==='catalog_vendor'）以增强。",
+      "anchor": "tests/db/catalog-schema-singlesource.test.ts:43-47",
+      "confidence": 0.7,
+      "recommendation": "可选增强：用 drizzle 的 getTableName() 断言每个 export 的真实 SQL 表名等于预期 catalog_* 值，而非仅 truthy 检查。"
+    },
+    {
+      "id": "R1-F3",
+      "severity": "minor",
+      "category": "design-fidelity",
+      "title": "listing.featured 为设计草图外新增列",
+      "detail": "catalog_model_listing 新增了 featured integer{boolean} not null default 0（schema.sqlite.ts 与迁移、snapshot 三处一致）。DESIGN §6.1 catalog_model_listing 草图明确列出了 featured（见 DESIGN.md:481），故此列与设计一致、非越界。此处仅记录核对结论：§6.1 草图含 featured，schema 实现含 featured，二者吻合，无偏差。列出本条是为闭合‘逐列核对’证据链，非问题。非必须任何修复。",
+      "anchor": "src/config/db/schema.sqlite.ts:584",
+      "confidence": 0.95,
+      "recommendation": "无需处理；featured 列与 DESIGN §6.1（DESIGN.md:481）一致，记录为核对通过项。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": []
+}

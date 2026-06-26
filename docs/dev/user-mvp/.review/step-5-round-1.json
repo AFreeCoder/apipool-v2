@@ -1,0 +1,38 @@
+{
+  "verdict": "approve",
+  "summary": "Step 5（catalog 公共/建 Key 查询层 + 公共边界守护）实现与 DESIGN §6.2/§8.1 高度一致，可推进。F8 公共边界三道防线均到位：types.ts 的 ListingRow 逐字段比对 §6.2 无 newapiGroup/内部 id（仅 groupSlug/groupName）；getGroupsForKeyCreationUncached 的 select 只取 slug/name/userDescription；getPublicListings/getCallableListingsByGroup 的 mapListingRows 投影绝不放入 newapiGroup/内部 id。correctness 全部满足：getPublicListings 默认 publicVisibleOnly=true、四层 slug 过滤、按 sortOrder 排序；能力聚合用单次 inArray 批量查 + 内存 Map 真无 N+1；getCallableListingsByGroup 仅 isCallable=true；getGroupsForKeyCreation 仅 status=active∧allowCreateKey=true；getFilterDimensions 四维均 status=active。'server-only' 已在顶部。缓存用 unstable_cache（包 *Uncached）+ tag 'catalog'，revalidateCatalog 调 revalidateTag('catalog','max')，与本仓 Next 版本 revalidateTag(tag, profile) 二参签名一致。测试为真实 libSQL 库 + 真实 migrations + 真实 catalog-service（非 mock），针对 *Uncached 函数规避 unstable_cache 干扰，断言精确（in 运算符断言无 id/newapiGroup、JSON /newapi/i 断言无泄漏），seed fixtures 故意写入 newapiGroup='newapi-*-secret' 使泄漏断言真正有抓取意义。scope 严格限于 queries.ts/types.ts/test，无越界。已在项目真实 harness（NODE_OPTIONS='--conditions react-server' tsx --test）下独立复跑该文件：7 pass / 0 fail。无 blocker / major，findings 均为 minor 改进建议（非必须）。",
+  "findings": [
+    {
+      "id": "R1-F1",
+      "severity": "minor",
+      "category": "test-quality",
+      "title": "建议补 listInput/discountNote 投影断言",
+      "detail": "queries.test.ts 对 ListingRow 的字段投影只断言了 modelId/capabilities/groupSlug/statusSlug/isCallable 等核心字段，以及 'id'/'newapiGroup' 不存在；但对 listInputMicroUsd/listOutputMicroUsd/discountNote/description 这几个『DB 可空 → 映射成 undefined（?? undefined）』的字段没有正向断言。seed 中 partner listing 明确写了 listInputMicroUsd=120000、discountNote='Partner price'，可顺手断言这些值被正确透出、且当源为 NULL 时为 undefined，覆盖 mapListingRows 第 169-172 行的 `?? undefined` 分支。非必须（核心边界与过滤已充分覆盖），属覆盖率补强。",
+      "anchor": "src/features/api-catalog/server/queries.ts:169-172 / tests/api-catalog/queries.test.ts:307-320",
+      "confidence": 0.55,
+      "recommendation": "在『aggregates capabilities…』或单独用例中，对 partner listing（modelId=gpt-4o-mini, group=partner）断言 listInputMicroUsd===120000、discountNote==='Partner price'，并对无划线价的 listing 断言 listInputMicroUsd===undefined。"
+    },
+    {
+      "id": "R1-F2",
+      "severity": "minor",
+      "category": "maintainability",
+      "title": "conditions 用 any[] 丢类型",
+      "detail": "queryListingRows 内 `const conditions: any[] = []`（第 78 行）以及 getModelPksByCapability/getCapabilitiesByModelPk 中对 rows 的 `as { ... }[]` 断言（第 67/146 行）放弃了 drizzle 的静态类型保护。功能无误且与本仓既有写法（init-rbac 等处亦有 any）一致，故仅为可维护性 nit。drizzle 提供 `SQL` / `SQLWrapper` 类型可替代 any[]，能在编译期捕获误拼条件列。非必须。",
+      "anchor": "src/features/api-catalog/server/queries.ts:78",
+      "confidence": 0.5,
+      "recommendation": "可将 `any[]` 改为 `(SQL | undefined)[]`（import 自 drizzle-orm）并过滤 undefined；rows 的 `as` 断言可依赖 select 投影的推导类型。若团队统一接受 any 风格则可忽略。"
+    },
+    {
+      "id": "R1-F3",
+      "severity": "minor",
+      "category": "test-quality",
+      "title": "建议补四层过滤空结果用例",
+      "detail": "F7 测试计划失效路径含『空结果态』。当前用例覆盖了 capability 命中 0 模型时 queryListingRows 短路返回 []（getModelPksByCapability→capabilityModelPks.length===0），但测试未直接断言这一分支（如用一个无任何模型的 capability 或不存在的 group/vendor slug 过滤得到空数组）。第 76 行的短路逻辑是 correctness 关键路径，值得一条显式空结果断言。非必须（业务过滤正确性已由组合过滤用例间接覆盖）。",
+      "anchor": "src/features/api-catalog/server/queries.ts:76",
+      "confidence": 0.45,
+      "recommendation": "增加用例：getPublicListingsUncached({ group: 'nonexistent-slug' }) 与 { capability: 'hidden-capability' } 均断言返回 []，显式覆盖短路与 where 无命中分支。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": []
+}

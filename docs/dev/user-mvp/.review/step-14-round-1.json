@@ -1,0 +1,30 @@
+{
+  "verdict": "approve",
+  "summary": "Step 14（余额不足提示）实现正确且与 DESIGN §5.8/§10.1 F13 一致。核心失效路径（余额数据获取失败/缺失不误报）经端到端验证成立：isLowBalance 用 `!= null` 守卫，null/undefined 均返回 false；上游同步失败且无可用缓存快照时 getPortalUsage 返回的 summary 不含 balanceUsd（undefined），dashboard 不渲染提示。isLowBalance 边界正确（0→true、5→false、-0.01→true、阈值可配）。dashboard 接入处真渲染、假返回 null；Add credit 链接指向 /dashboard/billing（路由存在）。测试覆盖 true/false/null/undefined/边界 + 组件契约（文案+href）且无假绿；目标 4 pass/0 fail 已沙箱外复跑确认。文案英文与 dashboard 既有基线一致（该页不使用 i18n）。改动严格限于余额提示，未碰 Step13。",
+  "findings": [
+    {
+      "id": "S14-01",
+      "severity": "minor",
+      "category": "design-fidelity",
+      "title": "i18n 文案未落 billing.json",
+      "detail": "DESIGN §5.8 在表中列出向 `src/config/locale/messages/{en,zh}/settings/billing.json` 添加「余额不足」等 en/zh 文案。本实现将「Low balance — please top up」「Add credit」硬编码在组件内，未走 i18n，且 zh 文案缺失。但这与 dashboard 现状一致——dashboard/page.tsx 自身完全不使用 useTranslations/getTranslations，整页（Overview/Recent requests/Add credit 等）均为硬编码英文，故本组件硬编码英文不破坏该页基线，且评审标准明确认可「文案英文（dashboard 基线一致）」。非必须：若后续 dashboard 整体国际化，应一并把此提示接入 i18n。当前 step 不阻塞。",
+      "anchor": "src/features/api-console/components/balance-warning.tsx:24-28",
+      "confidence": 0.6,
+      "recommendation": "保持现状即可（与 dashboard 英文基线一致）；如需严格对齐 §5.8，可将两条文案与充值入口 label 抽到 billing.json 的 en/zh，并改用 getTranslations——但建议作为 dashboard 整体 i18n 的独立任务，不在本 step 处理。"
+    },
+    {
+      "id": "S14-02",
+      "severity": "minor",
+      "category": "maintainability",
+      "title": "充值入口用原生 a 非 Link",
+      "detail": "组件用 `<a href=\"/dashboard/billing\">` 而非 dashboard/page.tsx 中其它入口使用的 i18n 感知 `Link`（@/core/i18n/navigation）。原生 a 不带 locale 前缀，在多语言路由下可能丢失 locale 段（跳到非本地化路径后由中间件再重定向）。F13 链接目标 billing 正确、功能可达，故非阻塞；但与同页其它跳转风格不一致。注意：测试以 href === '/dashboard/billing' 断言，若改用 Link 需相应调整断言（Link 渲染后 href 可能含 locale 前缀）。",
+      "anchor": "src/features/api-console/components/balance-warning.tsx:29-31",
+      "confidence": 0.55,
+      "recommendation": "非必须：与同页保持一致，改用 `<Link href=\"/dashboard/billing\">` 以正确携带 locale；同时把测试断言放宽为 href 以 '/dashboard/billing' 结尾或包含该子串。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": [
+    "DESIGN §5.8 仅描述「balanceUsd <= 阈值」提示，未规定阈值的具体取值/是否可配置化到 env。实现默认阈值 0 且暴露 threshold 入参（dashboard 接入处用默认 0），符合 F13「balanceUsd≤0→true」基线；如产品后续需要小额阈值（如 $1），需在接入处显式传参，当前不阻塞。"
+  ]
+}

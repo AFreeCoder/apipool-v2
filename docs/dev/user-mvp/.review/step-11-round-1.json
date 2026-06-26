@@ -1,0 +1,31 @@
+{
+  "verdict": "approve",
+  "summary": "Step 11 实现质量高，覆盖 models 本体 CRUD、能力打标(F3)、listings 分组售卖项子表(F6)、sidebar 菜单、categories 改向、publicModels 保留为夹具。重点风险项均通过：价格转换用 Math.round 正确处理浮点(0.07/0.29 等实测无误差)且校验非负/非有限；能力打标 setModelCapabilities 先删后插且空数组守护，含真实 DB 级单测验证替换语义；listing edit 页 groupId disabled 且 handler 强制 listing.groupId，保护 (modelId,groupId) 唯一键；models/listings 各字段与 §6.1 一致，modelId/groupId 不可变；权限 READ/WRITE 齐全，i18n en/zh 键集严格一致(catalog 118/118、sidebar 同构)，无中文字面；publicModels 零运行时新增引用、注释到位且测试守护；32 个目标测试实跑全绿、非假绿。仅发现 2 处 minor：重复 listing 唯一冲突的错误提示为原始 DB 报错(非友好文案)、featured 字段无 UI(疑为有意收窄)。",
+  "findings": [
+    {
+      "id": "S11-001",
+      "severity": "minor",
+      "category": "ux",
+      "title": "重复 listing 报错不友好",
+      "detail": "createListing 调用位于 new 页 handler 的 try/catch(仅包裹价格解析)之外(listings/new/page.tsx:193)，updateListing 同理(edit:194)。当管理员对同一 (modelId,groupId) 创建第二条 listing 时，DB 唯一约束 uniq_listing_model_group 抛出原始错误(如 'UNIQUE constraint failed: catalog_model_listing.modelId, catalog_model_listing.groupId')，经 server action 透传到 Form 组件的通用 catch(src/shared/blocks/form/index.tsx:317-319) 以 toast 展示原始 DB 报错文案。i18n errors 仅有 createFailed/updateFailed/missingRecord/invalidPrice，无针对重复售卖项的友好键。F6/§D4 的唯一约束语义本身已满足(约束生效、不崩溃、被优雅 catch)，但提示信息质量差。非必须修复。",
+      "anchor": "src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx:193",
+      "confidence": 0.85,
+      "recommendation": "可选：在 createListing/updateListing 的 handler 中捕获唯一冲突(检测错误消息含 'unique'/'UNIQUE' 或特定 errno)，抛出新增 i18n 文案如 errors.duplicateListing('该分组下已存在此模型的售卖项')；en/zh 同步加键。若团队认为后台管理员可接受原始报错，可标记为已知限制不处理。"
+    },
+    {
+      "id": "S11-002",
+      "severity": "minor",
+      "category": "scope",
+      "title": "featured 字段无编辑入口",
+      "detail": "§6.1 catalog_model_listing 含 featured(boolean default 0) 列，但 listing new 页硬编码 featured:false(listings/new/page.tsx:186)，edit 页 patch 不含 featured(故 updateListing 的 .set(patch) 不更新该列，保持原值——行为安全无误)。即整个 Step 11 无任何 UI 可置位/编辑 featured。这可能是有意收窄(featured 由其他途径或后续 step 管理)，但与 §6.1 字段全集存在差异，建议确认是否预期。非必须。",
+      "anchor": "src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx:186",
+      "confidence": 0.6,
+      "recommendation": "确认 featured 是否应在 listing 表单暴露为 switch；若按设计本 step 不管理 featured，建议在 dev-log 或 plan 注明该字段的维护归属，避免后续误判为遗漏。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": [
+    "featured 字段的维护归属：是否有意不在本 step 暴露编辑入口？(见 S11-002)",
+    "重复 (modelId,groupId) 创建时是否接受原始 DB 报错文案，还是需要本 step 补友好提示？(见 S11-001)"
+  ]
+}
