@@ -6,7 +6,7 @@ import { useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 
 import { usePathname, useRouter } from '@/core/i18n/navigation';
-import { localeNames } from '@/config/locale';
+import { AppLocale, localeNames, normalizeLocale } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import {
   DropdownMenu,
@@ -21,7 +21,7 @@ export function LocaleSelector({
 }: {
   type?: 'icon' | 'button';
 }) {
-  const currentLocale = useLocale();
+  const currentLocale = normalizeLocale(useLocale());
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -59,7 +59,7 @@ export function LocaleSelector({
         ) : (
           <>
             <Globe size={16} />
-            {localeNames[currentLocale]}
+              {localeNames[currentLocale]}
           </>
         )}
       </Button>
@@ -86,7 +86,7 @@ export function LocaleSelector({
             key={locale}
             onClick={() => handleSwitchLanguage(locale)}
           >
-            <span>{localeNames[locale]}</span>
+            <span>{localeNames[locale as AppLocale]}</span>
             {locale === currentLocale && (
               <Check size={16} className="text-primary" />
             )}

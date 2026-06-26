@@ -57,6 +57,10 @@ test('New API bridge base URL has no public production fallback', async () => {
     /`NEWAPI_BASE_URL`[^\n]*https:\/\/newapi\.apipool\.dev/
   );
   assert.match(readme, /NEWAPI_BASE_URL=http:\/\/newapi-internal:3000/);
+  assert.match(envExample, /NEWAPI_DEFAULT_TOKEN_GROUP\s*=\s*"auto"/);
+  assert.match(envExample, /NEWAPI_TOKEN_CROSS_GROUP_RETRY\s*=\s*"true"/);
+  assert.match(readme, /NEWAPI_DEFAULT_TOKEN_GROUP=auto/);
+  assert.match(readme, /NEWAPI_TOKEN_CROSS_GROUP_RETRY=true/);
   assert.doesNotMatch(readme, /NEWAPI_BASE_URL=https:\/\/newapi\.apipool\.dev/);
   assert.match(contract, /新建 New API 用户初始额度为 0/);
 });

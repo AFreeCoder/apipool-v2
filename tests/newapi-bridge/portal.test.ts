@@ -19,6 +19,8 @@ async function setupPortalDb() {
   process.env.DB_MIGRATIONS_OUT = './src/config/db/migrations_sqlite';
   process.env.DB_SINGLETON_ENABLED = 'false';
   process.env.APIPOOL_CREDENTIALS_SECRET = 'portal-test-secret';
+  process.env.NEWAPI_DEFAULT_TOKEN_GROUP = 'auto';
+  process.env.NEWAPI_TOKEN_CROSS_GROUP_RETRY = 'true';
 
   const client = createClient({ url: `file:${dbPath}` });
   const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
@@ -94,6 +96,47 @@ function assertNoFields(record: Record<string, unknown>, fields: string[]) {
 }
 
 test.before(setupPortalDb);
+
+test('createPortalApiKey defaults to one auto-group key for all models', async () => {
+  const portalUser = await insertUser(
+    'portal_user_auto_all_models',
+    'auto-all-models@example.com'
+  );
+  let createInput: any;
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    createKey: async (input: any) => {
+      createInput = input;
+      return {
+        id: 'remote_auto_all_models',
+        key: 'sk-auto-all-models',
+        maskedKey: 'sk-...auto',
+        status: 'active',
+      };
+    },
+  } as any;
+
+  const created = await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'One key' },
+    fakeRemote
+  );
+
+  assert.deepEqual(createInput.allowedModels, []);
+  assert.equal(createInput.group, 'auto');
+  assert.equal(createInput.crossGroupRetry, true);
+  assert.deepEqual(created.binding.allowedModels, []);
+
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+  assert.equal(row.allowedModels, '[]');
+});
 
 test('createPortalApiKey keeps a retriable local key row when remote creation fails', async () => {
   const portalUser = await insertUser(
@@ -174,13 +217,17 @@ test('createPortalApiKey rejects remote-created keys that are not active', async
 });
 
 test('createPortalApiKey preserves remote-created evidence when local binding fails', async () => {
-  const portalUser = await insertUser(
+  const existingOwner = await insertUser(
     'portal_user_create_binding_failure',
     'create-binding-failure@example.com'
   );
+  const portalUser = await insertUser(
+    'portal_user_create_binding_failure_target',
+    'create-binding-failure-target@example.com'
+  );
   const remote = createSuccessfulRemoteClient() as any;
   const existing = await modules.portal.createPortalApiKey(
-    portalUser,
+    existingOwner,
     { name: 'Existing remote key', allowedModels: ['gpt-4o-mini'] },
     remote
   );
@@ -290,6 +337,94 @@ test('portal users cannot disable or delete another user key', async () => {
   assert.equal(remoteCalls, 0);
 });
 
+test('createPortalApiKey allows only one customer key per user', async () => {
+  const portalUser = await insertUser(
+    'portal_user_single_key',
+    'single-key@example.com'
+  );
+  const remote = createSuccessfulRemoteClient() as any;
+  await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Primary key', allowedModels: ['gpt-4o-mini'] },
+    remote
+  );
+
+  let remoteCreateCalls = 0;
+  const blockedRemote = {
+    ...remote,
+    createKey: async () => {
+      remoteCreateCalls += 1;
+      throw new Error('duplicate remote create should not be called');
+    },
+  } as any;
+
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        { name: 'Duplicate key', allowedModels: ['gpt-4o-mini'] },
+        blockedRemote
+      ),
+    /only one API key/
+  );
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
+
+  assert.equal(rows.length, 1);
+  assert.equal(remoteCreateCalls, 0);
+});
+
+test('createPortalApiKey allows retry after a pending remote failure', async () => {
+  const portalUser = await insertUser(
+    'portal_user_single_key_retry',
+    'single-key-retry@example.com'
+  );
+  let shouldFail = true;
+  const remote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    createKey: async () => {
+      if (shouldFail) {
+        shouldFail = false;
+        throw new modules.NewApiBridgeError({
+          code: 'timeout',
+          message: 'remote create timed out',
+        });
+      }
+      return {
+        id: 'remote_retry_success',
+        key: 'sk-retry-success',
+        maskedKey: 'sk-...retry',
+        status: 'active',
+      };
+    },
+  } as any;
+
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        { name: 'Retry key', allowedModels: ['gpt-4o-mini'] },
+        remote
+      ),
+    /remote create timed out/
+  );
+
+  const created = await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Retry key 2', allowedModels: ['gpt-4o-mini'] },
+    remote
+  );
+
+  assert.equal(created.binding.status, 'active');
+});
+
 test('portal key DTOs expose only MVP customer key fields', async () => {
   const portalUser = await insertUser(
     'portal_user_safe_key_dto',
@@ -368,7 +503,7 @@ test('listPortalApiKeys syncs remote key status without exposing remote ids', as
   assert.equal(rows[0].keyMasked, 'sk-...remote-disabled');
 });
 
-test('listPortalApiKeys keeps delete pending until remote revocation is visible', async () => {
+test('listPortalApiKeys removes delete-pending bindings after remote revocation is visible', async () => {
   const portalUser = await insertUser(
     'portal_user_key_delete_pending_sync',
     'key-delete-pending-sync@example.com'
@@ -412,8 +547,43 @@ test('listPortalApiKeys keeps delete pending until remote revocation is visible'
     portalUser.id,
     remote
   );
-  assert.equal(listedAfterRevocation[0].status, 'deleted');
-  assert.ok(listedAfterRevocation[0].deletedAt instanceof Date);
+  assert.equal(listedAfterRevocation.length, 0);
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+  assert.equal(rows.length, 0);
+});
+
+test('listPortalApiKeys removes legacy soft-deleted key bindings', async () => {
+  const portalUser = await insertUser(
+    'portal_user_legacy_soft_deleted_key',
+    'legacy-soft-deleted-key@example.com'
+  );
+  const remote = createSuccessfulRemoteClient() as any;
+  const created = await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Legacy deleted key', allowedModels: ['gpt-4o-mini'] },
+    remote
+  );
+
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({ status: 'deleted', deletedAt: new Date() })
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+
+  const listed = await modules.portal.listPortalApiKeys(portalUser.id, remote);
+  assert.equal(listed.length, 0);
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+  assert.equal(rows.length, 0);
 });
 
 test('disablePortalApiKey and deletePortalApiKey complete only after remote confirmation', async () => {
@@ -442,6 +612,13 @@ test('disablePortalApiKey and deletePortalApiKey complete only after remote conf
   );
   assert.equal(deleted.status, 'deleted');
   assert.ok(deleted.deletedAt instanceof Date);
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, result.binding.id));
+  assert.equal(rows.length, 0);
 });
 
 test('disablePortalApiKey keeps retriable failure when remote does not confirm disabled', async () => {
@@ -580,24 +757,28 @@ test('key lifecycle mutations reject non-actionable statuses before remote calls
         result.binding.id,
         forbiddenRemote as any
       ),
-    /not in deletable state/
+    /not found/
   );
   assert.equal(remoteCalls, 0);
 });
 
 test('key lifecycle terminal remote errors persist failed_terminal', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_terminal_failure',
-    'key-terminal-failure@example.com'
+  const disableUser = await insertUser(
+    'portal_user_key_terminal_disable',
+    'key-terminal-disable@example.com'
+  );
+  const deleteUser = await insertUser(
+    'portal_user_key_terminal_delete',
+    'key-terminal-delete@example.com'
   );
   const remote = createSuccessfulRemoteClient();
   const disableResult = await modules.portal.createPortalApiKey(
-    portalUser,
+    disableUser,
     { name: 'Terminal disable key', allowedModels: ['gpt-4o-mini'] },
     remote as any
   );
   const deleteResult = await modules.portal.createPortalApiKey(
-    portalUser,
+    deleteUser,
     { name: 'Terminal delete key', allowedModels: ['gpt-4o-mini'] },
     remote as any
   );
@@ -619,7 +800,7 @@ test('key lifecycle terminal remote errors persist failed_terminal', async () =>
   await assert.rejects(
     () =>
       modules.portal.disablePortalApiKey(
-        portalUser.id,
+        disableUser.id,
         disableResult.binding.id,
         terminalRemote as any
       ),
@@ -628,7 +809,7 @@ test('key lifecycle terminal remote errors persist failed_terminal', async () =>
   await assert.rejects(
     () =>
       modules.portal.deletePortalApiKey(
-        portalUser.id,
+        deleteUser.id,
         deleteResult.binding.id,
         terminalRemote as any
       ),
@@ -639,7 +820,7 @@ test('key lifecycle terminal remote errors persist failed_terminal', async () =>
     .db()
     .select()
     .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
+    .where(eq(modules.newApiKeyBinding.status, 'failed_terminal'));
   const disableRow = rows.find((row: any) => row.id === disableResult.binding.id);
   const deleteRow = rows.find((row: any) => row.id === deleteResult.binding.id);
 

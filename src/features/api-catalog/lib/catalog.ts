@@ -1,6 +1,8 @@
 import { APIPOOL_CONFIG, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 
-export type ApiModelProvider = 'OpenAI' | 'Anthropic';
+// Kept as `provider` for public URL compatibility, but values intentionally
+// mirror New API group slugs. Groups distinguish channel routes and discounts.
+export type ApiModelProvider = 'default' | 'discount';
 export type ApiModelCapability = 'text' | 'vision' | 'reasoning' | 'coding';
 export type ApiModelStatus = 'available' | 'coming_soon';
 
@@ -48,7 +50,7 @@ export type ModelFilterSearchParams = Record<
   string | string[] | undefined
 >;
 
-export const MODEL_PROVIDER_FILTERS = ['All', 'OpenAI', 'Anthropic'] as const;
+export const MODEL_PROVIDER_FILTERS = ['All', 'default', 'discount'] as const;
 export const MODEL_CAPABILITY_FILTERS = [
   'All',
   'text',
@@ -113,7 +115,7 @@ export const publicModels: ApiModel[] = [
     slug: 'gpt-4o-mini',
     modelId: 'gpt-4o-mini',
     displayName: 'GPT-4o mini',
-    provider: 'OpenAI',
+    provider: 'default',
     category: 'llm',
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Fast multimodal model for production API workflows.',
@@ -138,7 +140,7 @@ export const publicModels: ApiModel[] = [
     slug: 'gpt-4o-mini-deal',
     modelId: 'gpt-4o-mini',
     displayName: 'GPT-4o mini',
-    provider: 'OpenAI',
+    provider: 'discount',
     category: 'llm',
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Limited-time discounted route for GPT-4o mini.',
@@ -157,14 +159,14 @@ export const publicModels: ApiModel[] = [
       officialInputPerMillionUsd: 0.15,
       officialOutputPerMillionUsd: 0.6,
       source: 'manual',
-      note: 'Demo deal entry. Replace with a real short-term channel before launch.',
+      note: 'Discount group placeholder. Replace with the live channel price before launch.',
     },
   },
   {
     slug: 'gpt-4o',
     modelId: 'gpt-4o',
     displayName: 'GPT-4o',
-    provider: 'OpenAI',
+    provider: 'default',
     category: 'llm',
     capabilities: ['text', 'vision', 'reasoning'],
     shortDescription: 'General purpose multimodal model.',
@@ -185,7 +187,7 @@ export const publicModels: ApiModel[] = [
     slug: 'gpt-4-1-mini',
     modelId: 'gpt-4.1-mini',
     displayName: 'GPT-4.1 mini',
-    provider: 'OpenAI',
+    provider: 'default',
     category: 'llm',
     capabilities: ['text', 'coding', 'reasoning'],
     shortDescription: 'Efficient model for coding and structured tasks.',
@@ -206,7 +208,7 @@ export const publicModels: ApiModel[] = [
     slug: 'claude-sonnet-4',
     modelId: 'claude-sonnet-4',
     displayName: 'Claude Sonnet 4',
-    provider: 'Anthropic',
+    provider: 'default',
     category: 'llm',
     capabilities: ['text', 'coding', 'reasoning'],
     shortDescription: 'Strong coding and agentic workflow model.',
@@ -227,7 +229,7 @@ export const publicModels: ApiModel[] = [
     slug: 'claude-3-5-sonnet',
     modelId: 'claude-3.5-sonnet',
     displayName: 'Claude 3.5 Sonnet',
-    provider: 'Anthropic',
+    provider: 'default',
     category: 'llm',
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Balanced Anthropic model for developer workloads.',
@@ -248,7 +250,7 @@ export const publicModels: ApiModel[] = [
     slug: 'claude-haiku',
     modelId: 'claude-haiku',
     displayName: 'Claude Haiku',
-    provider: 'Anthropic',
+    provider: 'default',
     category: 'llm',
     capabilities: ['text', 'coding'],
     shortDescription: 'Low-latency Anthropic candidate model.',

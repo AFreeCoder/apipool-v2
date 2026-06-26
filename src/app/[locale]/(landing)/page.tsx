@@ -1,222 +1,163 @@
-import { CtaButton } from '@/features/apipool-ui/site-shell';
 import {
   ArrowRight,
   BarChart3,
   Check,
-  CircleDollarSign,
-  PlugZap,
+  Code2,
+  KeyRound,
   Wallet,
 } from 'lucide-react';
 import { setRequestLocale } from 'next-intl/server';
 
+import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool';
+import { AppLocale, normalizeLocale } from '@/config/locale';
 import { Link } from '@/core/i18n/navigation';
-import { APIPOOL_CONFIG } from '@/config/apipool';
 import { Button } from '@/shared/components/ui/button';
 
 export const revalidate = 3600;
 
-const providers = ['OpenAI', 'Anthropic', 'Google', 'Qwen', 'Kimi', 'MiniMax'];
+type LocaleKey = AppLocale;
 
-const heroBullets = ['OpenAI-compatible', 'No subscription', 'Balance never expires'];
+const homeCopy = {
+  'zh-CN': {
+    eyebrow: 'APIPool · 模型 API 服务',
+    title: '一个账户，统一调用主流大模型 API。',
+    lead: 'APIPool 是面向开发者和小团队的 API 门户：充值余额、创建 API Key、调用模型、查看用量和账单，都在一个地方完成。',
+    primaryCta: '查看模型与价格',
+    secondaryCta: '查看接入文档',
+    facts: [
+      { label: 'Base URL', value: APIPOOL_PUBLIC_CONFIG.apiBaseUrl },
+      { label: '首发模型', value: APIPOOL_PUBLIC_CONFIG.defaultLaunchModel },
+      { label: '计费方式', value: '按 Token 用量扣费' },
+    ],
+    introTitle: 'APIPool 做什么',
+    introLead:
+      '它不是复杂后台，也不是卡密站。它把模型调用需要的购买、密钥、余额、用量和日志整理成一个清楚的开发者入口。',
+    features: [
+      {
+        icon: Wallet,
+        title: '购买和余额',
+        description: '充值后按真实模型用量扣费，余额和消费记录在控制台查看。',
+      },
+      {
+        icon: KeyRound,
+        title: 'API Key 管理',
+        description: '创建、复制、停用和轮换密钥，减少凭据散落在不同项目里。',
+      },
+      {
+        icon: BarChart3,
+        title: '用量和日志',
+        description: '查看请求、Token、费用和最近调用状态，方便排查问题。',
+      },
+    ],
+    quickstartTitle: '怎么开始',
+    quickstartLead: '确认模型价格后，创建账户并生成 Key；代码里只需要替换 Base URL 和模型名。',
+    steps: ['查看模型与价格', '充值并创建 API Key', '替换 Base URL 后调用模型'],
+    codeTitle: 'OpenAI 兼容调用',
+  },
+  'zh-TW': {
+    eyebrow: 'APIPool · 模型 API 服務',
+    title: '一個帳戶，統一調用主流大模型 API。',
+    lead: 'APIPool 是面向開發者和小團隊的 API 門戶：儲值餘額、建立 API Key、調用模型、查看用量和帳單，都在一個地方完成。',
+    primaryCta: '查看模型與價格',
+    secondaryCta: '查看接入文件',
+    facts: [
+      { label: 'Base URL', value: APIPOOL_PUBLIC_CONFIG.apiBaseUrl },
+      { label: '首發模型', value: APIPOOL_PUBLIC_CONFIG.defaultLaunchModel },
+      { label: '計費方式', value: '按 Token 用量扣費' },
+    ],
+    introTitle: 'APIPool 做什麼',
+    introLead:
+      '它不是複雜後台，也不是卡密站。它把模型調用需要的購買、金鑰、餘額、用量和日誌整理成一個清楚的開發者入口。',
+    features: [
+      {
+        icon: Wallet,
+        title: '購買和餘額',
+        description: '儲值後按真實模型用量扣費，餘額和消費記錄在控制台查看。',
+      },
+      {
+        icon: KeyRound,
+        title: 'API Key 管理',
+        description: '建立、複製、停用和輪換金鑰，減少憑證散落在不同專案裡。',
+      },
+      {
+        icon: BarChart3,
+        title: '用量和日誌',
+        description: '查看請求、Token、費用和最近調用狀態，方便排查問題。',
+      },
+    ],
+    quickstartTitle: '怎麼開始',
+    quickstartLead: '確認模型價格後，建立帳戶並產生 Key；代碼裡只需要替換 Base URL 和模型名。',
+    steps: ['查看模型與價格', '儲值並建立 API Key', '替換 Base URL 後調用模型'],
+    codeTitle: 'OpenAI 相容調用',
+  },
+  en: {
+    eyebrow: 'APIPool · Model API service',
+    title: 'One account for calling mainstream model APIs.',
+    lead: 'APIPool is an API portal for developers and small teams: add credit, create API keys, call models, and review usage and billing in one place.',
+    primaryCta: 'View models & pricing',
+    secondaryCta: 'View docs',
+    facts: [
+      { label: 'Base URL', value: APIPOOL_PUBLIC_CONFIG.apiBaseUrl },
+      { label: 'Launch model', value: APIPOOL_PUBLIC_CONFIG.defaultLaunchModel },
+      { label: 'Billing', value: 'Token-based usage' },
+    ],
+    introTitle: 'What APIPool does',
+    introLead:
+      'It is not a complicated admin console or a voucher shop. It turns model API purchase, keys, balance, usage, and logs into a clear developer entry point.',
+    features: [
+      {
+        icon: Wallet,
+        title: 'Credit and balance',
+        description: 'Top up credit and pay by real model usage, with balance and spend visible in the console.',
+      },
+      {
+        icon: KeyRound,
+        title: 'API key management',
+        description: 'Create, copy, disable, and rotate keys so credentials do not spread across projects.',
+      },
+      {
+        icon: BarChart3,
+        title: 'Usage and logs',
+        description: 'Review requests, tokens, cost, and recent call status when debugging issues.',
+      },
+    ],
+    quickstartTitle: 'How to start',
+    quickstartLead: 'Check model prices, create an account and key, then replace the Base URL and model name in your code.',
+    steps: ['Review models and prices', 'Add credit and create a key', 'Replace Base URL and call a model'],
+    codeTitle: 'OpenAI-compatible call',
+  },
+} satisfies Record<
+  LocaleKey,
+  {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    primaryCta: string;
+    secondaryCta: string;
+    facts: Array<{ label: string; value: string }>;
+    introTitle: string;
+    introLead: string;
+    features: Array<{
+      icon: typeof Wallet;
+      title: string;
+      description: string;
+    }>;
+    quickstartTitle: string;
+    quickstartLead: string;
+    steps: string[];
+    codeTitle: string;
+  }
+>;
 
-const steps = [
-  {
-    index: '01',
-    title: 'Create an account',
-    description:
-      'Sign up and add credit to your balance. Usage is billed per token — no subscription, balance never expires.',
-  },
-  {
-    index: '02',
-    title: 'Create an API key',
-    description:
-      'Generate a key in the console. The plaintext key is shown once — keep it safe.',
-  },
-  {
-    index: '03',
-    title: 'Call any model',
-    description:
-      'Use your favorite SDK with one key. Switch models by name — that is the whole migration.',
-  },
-];
-
-const features = [
-  {
-    icon: CircleDollarSign,
-    title: 'Transparent pricing',
-    description:
-      'Per-token prices listed next to official rates. What you see is what you pay.',
-  },
-  {
-    icon: Wallet,
-    title: 'Pay as you go',
-    description:
-      'Top up in dollars, spend by the token. No plans, no lock-in, no expiry.',
-  },
-  {
-    icon: PlugZap,
-    title: 'OpenAI-compatible',
-    description:
-      'Works with the official SDKs and most tools by changing one base URL.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Real usage data',
-    description: 'Requests, tokens, and spend per model — live in your console.',
-  },
-];
-
-// 终端配色仅用于深底代码块（设计规范允许的唯一例外区）
-const t = {
-  cmd: '#7ee787',
-  str: '#a5d6ff',
-  url: '#79c0ff',
-  dim: 'rgba(255,255,255,0.45)',
-  fg: 'rgba(255,255,255,0.92)',
-  comment: '#9aa4ae',
-};
-
-function QuickstartTerminal({ model }: { model: string }) {
-  return (
-    <div className="relative">
-      <div
-        aria-hidden
-        className="bg-primary/15 absolute -inset-3 rounded-2xl blur-2xl"
-      />
-      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0a]">
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 text-xs">
-          <span className="size-2.5 rounded-full bg-[#ff5f56]/90" />
-          <span className="size-2.5 rounded-full bg-[#ffbd2e]/90" />
-          <span className="size-2.5 rounded-full bg-[#27c93f]/90" />
-          <span className="ml-2 font-mono text-white/60">quickstart.sh</span>
-          <span className="ml-auto font-mono text-white/30">zsh</span>
-        </div>
-        <pre className="overflow-x-auto px-4 py-5 font-mono text-xs leading-6 sm:text-[13px]">
-          <code>
-            <span style={{ color: t.dim }}>$ </span>
-            <span style={{ color: t.cmd }}>curl</span>{' '}
-            <span style={{ color: t.url }}>
-              https://api.apipool.dev/v1/chat/completions
-            </span>
-            <span style={{ color: t.dim }}> \</span>
-            {'\n  '}
-            <span style={{ color: t.fg }}>-H</span>{' '}
-            <span style={{ color: t.str }}>
-              {'"Authorization: Bearer $APIPOOL_API_KEY"'}
-            </span>
-            <span style={{ color: t.dim }}> \</span>
-            {'\n  '}
-            <span style={{ color: t.fg }}>-d</span>{' '}
-            <span style={{ color: t.dim }}>{"'{"}</span>
-            {'\n    '}
-            <span style={{ color: t.cmd }}>{'"model"'}</span>
-            <span style={{ color: t.dim }}>: </span>
-            <span style={{ color: t.str }}>{`"${model}"`}</span>
-            <span style={{ color: t.dim }}>,</span>
-            {'\n    '}
-            <span style={{ color: t.cmd }}>{'"messages"'}</span>
-            <span style={{ color: t.dim }}>: [</span>
-            <span style={{ color: t.dim }}>{'{ '}</span>
-            <span style={{ color: t.cmd }}>{'"role"'}</span>
-            <span style={{ color: t.dim }}>: </span>
-            <span style={{ color: t.str }}>{'"user"'}</span>
-            <span style={{ color: t.dim }}>, </span>
-            <span style={{ color: t.cmd }}>{'"content"'}</span>
-            <span style={{ color: t.dim }}>: </span>
-            <span style={{ color: t.str }}>{'"Hello!"'}</span>
-            <span style={{ color: t.dim }}>{' }'}]</span>
-            {'\n  '}
-            <span style={{ color: t.dim }}>{"}'"}</span>
-          </code>
-        </pre>
-        <div className="border-t border-white/10 px-4 py-3 font-mono text-xs leading-6">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-[#27c93f]" />
-            <span style={{ color: t.comment }}>200 OK · 412ms</span>
-          </div>
-          <span style={{ color: t.dim }}>{'{ '}</span>
-          <span style={{ color: t.cmd }}>{'"content"'}</span>
-          <span style={{ color: t.dim }}>: </span>
-          <span style={{ color: t.str }}>
-            {'"Hello! How can I help you today?"'}
-          </span>
-          <span style={{ color: t.dim }}>{' }'}</span>
-        </div>
-      </div>
-    </div>
-  );
+function createCurlSnippet(model: string) {
+  return `curl ${APIPOOL_PUBLIC_CONFIG.apiBaseUrl}/chat/completions \\
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${model}",
+    "messages": [{ "role": "user", "content": "Hello" }]
+  }'`;
 }
-
-const scenarios = [
-  {
-    title: 'Coding agents',
-    description:
-      'Long-running agents and dev tools that plan, edit, and test with frontier models.',
-    vignette: (
-      <div className="h-36 overflow-hidden rounded-lg bg-[#0a0a0a] p-4 font-mono text-xs leading-6">
-        <div style={{ color: t.dim }}>▸ agent run · fix-build</div>
-        <div style={{ color: t.fg }}>plan → edit → test</div>
-        <div style={{ color: t.cmd }}>✓ 14 files changed</div>
-        <div style={{ color: t.cmd }}>✓ tests passed in 42s</div>
-        <div style={{ color: t.dim }}>▮</div>
-      </div>
-    ),
-  },
-  {
-    title: 'Chat & copilots',
-    description:
-      'Production assistants with streaming responses and per-conversation cost control.',
-    vignette: (
-      <div className="bg-muted/50 flex h-36 flex-col justify-center gap-2 rounded-lg border p-4">
-        <div className="bg-background text-muted-foreground w-3/4 rounded-lg rounded-bl-sm border px-3 py-2 text-xs">
-          Summarize this PR for review
-        </div>
-        <div className="bg-primary/10 text-foreground ml-auto w-3/4 rounded-lg rounded-br-sm px-3 py-2 text-xs">
-          3 changes: auth middleware, retry logic, tests…
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'Image & media generation',
-    description:
-      'Multimodal pipelines for product art, thumbnails, and creative tooling.',
-    vignette: (
-      <div className="grid h-36 grid-cols-3 gap-2 rounded-lg border p-3">
-        {[
-          'from-emerald-200 to-teal-400',
-          'from-stone-200 to-emerald-300',
-          'from-teal-300 to-emerald-500',
-          'from-emerald-300 to-stone-300',
-          'from-teal-200 to-emerald-400',
-          'from-emerald-400 to-teal-600',
-        ].map((gradient, index) => (
-          <div
-            key={index}
-            className={`rounded-md bg-gradient-to-br ${gradient}`}
-          />
-        ))}
-      </div>
-    ),
-  },
-  {
-    title: 'Batch & data pipelines',
-    description:
-      'Large-scale extraction, classification, and evals with predictable spend.',
-    vignette: (
-      <div className="flex h-36 flex-col justify-center gap-2 rounded-lg border p-4 font-mono text-xs">
-        <div className="text-muted-foreground">processing 12,408 docs…</div>
-        <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
-          <div className="bg-primary h-full w-4/5 rounded-full" />
-        </div>
-        <div className="text-muted-foreground flex justify-between">
-          <span>batch-07.jsonl</span>
-          <span className="text-primary">82%</span>
-        </div>
-      </div>
-    ),
-  },
-];
 
 export default async function HomePage({
   params,
@@ -226,113 +167,89 @@ export default async function HomePage({
   const { locale } = await params;
   setRequestLocale(locale);
 
+  const localeKey = normalizeLocale(locale);
+  const copy = homeCopy[localeKey];
+  const snippet = createCurlSnippet(APIPOOL_PUBLIC_CONFIG.defaultLaunchModel);
+
   return (
-    <div>
-      {/* Hero */}
+    <div className="bg-background text-foreground">
       <section className="border-border border-b">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-24">
-          <div className="min-w-0">
-            <div className="text-primary font-mono text-xs tracking-widest uppercase">
-              {'// unified llm api'}
+        <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_0.86fr] lg:px-8 lg:py-24">
+          <div>
+            <div className="bg-primary/10 text-primary inline-flex rounded-md px-2 py-0.5 font-mono text-xs tracking-widest uppercase">
+              {copy.eyebrow}
             </div>
-            <h1 className="mt-4 text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">
-              One endpoint.
-              <br />
-              Every frontier model.
+            <h1 className="mt-5 max-w-3xl text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">
+              {copy.title}
             </h1>
-            <p className="text-muted-foreground mt-5 max-w-xl text-base leading-7">
-              Call OpenAI, Anthropic, and more through a single API. Transparent
-              per-token pricing, balance you control, usage you can see.
+            <p className="text-muted-foreground mt-5 max-w-2xl text-lg leading-8">
+              {copy.lead}
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <CtaButton href="/dashboard">Start building</CtaButton>
-              <Button asChild variant="outline" className="h-10 rounded-md px-5">
-                <Link href="/docs">Read the docs</Link>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button asChild size="lg">
+                <Link href="/models">
+                  {copy.primaryCta}
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <Link href="/docs">{copy.secondaryCta}</Link>
               </Button>
             </div>
-            <div className="text-muted-foreground mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-              {heroBullets.map((bullet) => (
-                <span key={bullet} className="inline-flex items-center gap-1.5">
-                  <Check className="text-primary size-3.5" />
-                  {bullet}
-                </span>
-              ))}
-            </div>
           </div>
 
-          <div className="min-w-0">
-            <QuickstartTerminal model={APIPOOL_CONFIG.defaultLaunchModel} />
+          <div className="bg-card rounded-xl border p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold">
+              <Code2 className="text-primary size-4" />
+              {copy.codeTitle}
+            </div>
+            <pre className="overflow-x-auto rounded-xl bg-[#0a0a0a] p-4 font-mono text-xs leading-6 text-white/90">
+              <code>{snippet}</code>
+            </pre>
           </div>
         </div>
       </section>
 
-      {/* Providers */}
-      <section className="border-border border-b">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-6 sm:px-6 lg:px-8">
-          <span className="text-muted-foreground text-xs tracking-widest uppercase">
-            Providers
-          </span>
-          {providers.map((provider) => (
-            <span
-              key={provider}
-              className="text-muted-foreground font-mono text-sm"
+      <section className="border-border border-b bg-muted">
+        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-5 sm:px-6 md:grid-cols-3 lg:px-8">
+          {copy.facts.map((fact) => (
+            <div
+              key={fact.label}
+              className="bg-card rounded-xl border p-5"
             >
-              {provider}
-            </span>
+              <div className="text-muted-foreground text-xs">{fact.label}</div>
+              <div className="mt-1 break-all font-mono text-sm font-medium">
+                {fact.value}
+              </div>
+            </div>
           ))}
         </div>
       </section>
 
-      {/* Scenarios */}
       <section className="border-border border-b py-14 sm:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-3xl font-semibold tracking-tight">
-                From agents to images
-              </h2>
-              <p className="text-muted-foreground mt-2 max-w-xl">
-                One balance and one key behind whatever you are building.
-              </p>
-            </div>
-            <Link
-              href="/models"
-              className="text-primary inline-flex items-center gap-1 text-sm font-medium"
-            >
-              Models & pricing
-              <ArrowRight className="size-4" />
-            </Link>
+          <div className="max-w-2xl">
+            <h2 className="text-3xl font-semibold tracking-tight">
+              {copy.introTitle}
+            </h2>
+            <p className="text-muted-foreground mt-3 leading-7">
+              {copy.introLead}
+            </p>
           </div>
-
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {scenarios.map((scenario) => (
-              <div key={scenario.title}>
-                {scenario.vignette}
-                <h3 className="mt-4 font-semibold">{scenario.title}</h3>
-                <p className="text-muted-foreground mt-1.5 text-sm leading-6">
-                  {scenario.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section className="border-border border-b py-14 sm:py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-semibold tracking-tight">
-            Up and running in minutes
-          </h2>
-          <div className="mt-10 grid gap-8 md:grid-cols-3">
-            {steps.map((step) => (
-              <div key={step.index}>
-                <div className="text-primary font-mono text-sm">
-                  {step.index}
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {copy.features.map((feature) => (
+              <div
+                key={feature.title}
+                className="bg-card rounded-xl border p-5"
+              >
+                <div className="bg-primary/10 flex size-10 items-center justify-center rounded-md">
+                  <feature.icon className="text-primary size-5" />
                 </div>
-                <h3 className="mt-3 text-lg font-semibold">{step.title}</h3>
+                <h3 className="mt-4 font-semibold">
+                  {feature.title}
+                </h3>
                 <p className="text-muted-foreground mt-2 text-sm leading-6">
-                  {step.description}
+                  {feature.description}
                 </p>
               </div>
             ))}
@@ -340,36 +257,31 @@ export default async function HomePage({
         </div>
       </section>
 
-      {/* Features */}
-      <section className="border-border border-b py-14 sm:py-16">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
-          {features.map((feature) => (
-            <div key={feature.title}>
-              <feature.icon className="text-primary size-5" />
-              <h3 className="mt-3 font-semibold">{feature.title}</h3>
-              <p className="text-muted-foreground mt-2 text-sm leading-6">
-                {feature.description}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-16 sm:py-20">
-        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-semibold tracking-tight">
-            Ship with one API today
-          </h2>
-          <p className="text-muted-foreground mx-auto mt-3 max-w-md">
-            Create a key, add credit, and make your first call in under five
-            minutes.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <CtaButton href="/dashboard">Open the console</CtaButton>
-            <Button asChild variant="outline" className="h-10 rounded-md px-5">
-              <Link href="/models">Browse models</Link>
-            </Button>
+      <section className="py-14 sm:py-16">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
+          <div>
+            <h2 className="text-3xl font-semibold tracking-tight">
+              {copy.quickstartTitle}
+            </h2>
+            <p className="text-muted-foreground mt-3 leading-7">
+              {copy.quickstartLead}
+            </p>
+          </div>
+          <div className="grid gap-3">
+            {copy.steps.map((step, index) => (
+              <div
+                key={step}
+                className="bg-card flex gap-3 rounded-xl border p-4"
+              >
+                <div className="text-primary font-mono text-sm">
+                  {String(index + 1).padStart(2, '0')}
+                </div>
+                <div className="flex items-center gap-2 font-medium">
+                  <Check className="text-primary size-4" />
+                  {step}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>

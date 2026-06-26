@@ -8,8 +8,10 @@ test('usage page renders model distribution from synced usage summary', async ()
     'utf8'
   );
 
-  assert.match(source, /Model distribution/);
+  assert.match(source, /copy\.modelDistribution/);
   assert.match(source, /usage\.summary\.byModel/);
   assert.match(source, /model\.requests/);
   assert.match(source, /model\.tokens/);
+  assert.match(source, /copy\.averageLatency/);
+  assert.match(source, /log\.group/);
 });

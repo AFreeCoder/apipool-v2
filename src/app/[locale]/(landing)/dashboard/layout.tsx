@@ -17,5 +17,5 @@ export default async function DashboardLayout({
     redirect({ href: '/sign-in', locale });
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  return <DashboardShell locale={locale}>{children}</DashboardShell>;
 }

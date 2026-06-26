@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { envConfigs } from '@/config';
-import { defaultLocale } from '@/config/locale';
+import { normalizeLocale } from '@/config/locale';
 
 // get metadata for page component
 export function getMetadata(
@@ -47,10 +47,7 @@ export function getMetadata(
     }
 
     // canonical url
-    const canonicalUrl = await getCanonicalUrl(
-      options.canonicalUrl || '',
-      locale || ''
-    );
+    const canonicalUrl = await getCanonicalUrl(options.canonicalUrl || '', locale || '');
 
     const title =
       passedMetadata.title || translatedMetadata.title || defaultMetadata.title;
@@ -130,6 +127,8 @@ async function getTranslatedMetadata(metadataKey: string, locale: string) {
 }
 
 async function getCanonicalUrl(canonicalUrl: string, locale: string) {
+  const normalizedLocale = normalizeLocale(locale);
+
   if (!canonicalUrl) {
     canonicalUrl = '/';
   }
@@ -143,11 +142,9 @@ async function getCanonicalUrl(canonicalUrl: string, locale: string) {
       canonicalUrl = `/${canonicalUrl}`;
     }
 
-    canonicalUrl = `${envConfigs.app_url}${
-      !locale || locale === defaultLocale ? '' : `/${locale}`
-    }${canonicalUrl}`;
+    canonicalUrl = `${envConfigs.app_url}/${normalizedLocale}${canonicalUrl}`;
 
-    if (locale !== defaultLocale && canonicalUrl.endsWith('/')) {
+    if (canonicalUrl.endsWith('/')) {
       canonicalUrl = canonicalUrl.slice(0, -1);
     }
   }

@@ -1,0 +1,137 @@
+---
+title: APIPool 快速接入
+description: 幾分鐘內建立 API Key、儲值，並完成第一次 API 呼叫。
+---
+
+## Base URL
+
+```text
+https://api.apipool.dev/v1
+```
+
+一個 Base URL、一把 API Key，就能呼叫所有模型。APIPool 支援兩種呼叫方式：
+
+- **OpenAI 相容協定（預設）**——無論模型來自哪家供應商，都可以透過
+  `/v1/chat/completions` 呼叫。多數 SDK 和工具只需把 `baseURL` 指向 APIPool。
+- **供應商原生協定**——同一個入口、同一把 API Key 也支援供應商原生格式，例如
+  Anthropic Messages API 的 `/v1/messages`。當你的工具鏈要求供應商原生協定時使用。
+
+## 驗證
+
+在 `Authorization` 請求標頭中帶入 API Key：
+
+```text
+Authorization: Bearer $APIPOOL_API_KEY
+```
+
+在[控制台](/dashboard/api-keys)建立 API Key。完整 Key 只在建立後顯示一次，之後清單僅顯示遮罩值。
+
+## 開始使用
+
+1. [註冊](/sign-up)並進入控制台。
+2. 在[餘額頁](/dashboard/billing)儲值。用量按 token 計費，餘額永不過期。
+3. [建立 API Key](/dashboard/api-keys)，並立即複製保存。
+4. 從[模型列表](/models)選擇模型，參考下方範例發起呼叫。
+
+## curl
+
+```bash
+curl https://api.apipool.dev/v1/chat/completions \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
+```
+
+## OpenAI SDK（JavaScript）
+
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'https://api.apipool.dev/v1',
+  apiKey: process.env.APIPOOL_API_KEY,
+});
+
+const completion = await client.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: 'Hello from APIPool' }],
+});
+
+console.log(completion.choices[0].message.content);
+```
+
+## OpenAI SDK（Python）
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.apipool.dev/v1",
+    api_key=os.environ["APIPOOL_API_KEY"],
+)
+
+completion = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello from APIPool"}],
+)
+
+print(completion.choices[0].message.content)
+```
+
+## 直接 HTTP（fetch）
+
+```ts
+const response = await fetch("https://api.apipool.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.APIPOOL_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Hello from APIPool" }],
+  }),
+});
+
+console.log(await response.json());
+```
+
+## 原生協定（Anthropic Messages）
+
+Claude 系列模型也可以透過 Anthropic 原生 Messages API 呼叫——Base URL 相同，API Key 也相同：
+
+```bash
+curl https://api.apipool.dev/v1/messages \
+  -H "x-api-key: $APIPOOL_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4",
+    "max_tokens": 1024,
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'
+```
+
+Anthropic 官方 SDK 只需將 `baseURL` 設為 `https://api.apipool.dev`，並將 `apiKey`
+設為你的 APIPool API Key。
+
+## 串流輸出
+
+在請求本文中設定 `"stream": true` 即可接收伺服器傳送事件（SSE），行為與 OpenAI API
+一致。官方 SDK 內建的串流輔助方法可以直接使用。
+
+## 錯誤碼參考
+
+| 狀態碼 | 含義 | 處理方式 |
+| ------ | ---- | -------- |
+| `401`  | Key 缺少、無效、已停用或已刪除 | 檢查請求標頭和控制台中的 Key 狀態 |
+| `403`  | Key 無權存取請求的模型 | 檢查 Key 的模型限制 |
+| `429`  | 觸發限流 | 退避後重試 |
+| `402` / quota error | 餘額已用完 | 在控制台儲值 |
+| `404` model_not_found | 模型 ID 不可用 | 從[模型列表](/models)選擇可用模型 |
+
+## 計費說明
+
+在[餘額頁](/dashboard/billing)以美元儲值；用量按[模型頁](/models)列出的 token 單價扣減。
+請求數、token 數和按模型拆分的消費會顯示在[用量頁](/dashboard/usage)。

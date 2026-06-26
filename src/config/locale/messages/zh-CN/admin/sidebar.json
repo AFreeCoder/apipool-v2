@@ -1,0 +1,103 @@
+{
+  "header": {
+    "brand": {
+      "title": "APIPool",
+      "logo": {
+        "src": "/logo.png",
+        "alt": "APIPool"
+      },
+      "url": "/admin"
+    },
+    "show_trigger": false
+  },
+  "main_navs": [
+    {
+      "title": "系统",
+      "items": [
+        {
+          "title": "用户与权限",
+          "icon": "User",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "用户",
+              "url": "/admin/users",
+              "icon": "User"
+            },
+            {
+              "title": "角色",
+              "url": "/admin/roles",
+              "icon": "Users"
+            },
+            {
+              "title": "权限",
+              "url": "/admin/permissions",
+              "icon": "ShieldCheck"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "业务",
+      "items": [
+        {
+          "title": "APIPool 调额",
+          "url": "/admin/apipool-adjustments",
+          "icon": "Gauge"
+        }
+      ]
+    }
+  ],
+  "bottom_nav": {
+    "items": []
+  },
+  "user": {
+    "nav": {
+      "items": [
+        {
+          "title": "控制台",
+          "url": "/dashboard",
+          "icon": "Gauge",
+          "target": "_blank"
+        }
+      ]
+    },
+    "show_email": false,
+    "show_signout": true,
+    "signout_callback": "/"
+  },
+  "footer": {
+    "nav": {
+      "items": [
+        {
+          "title": "首页",
+          "url": "/",
+          "icon": "Home",
+          "target": "_blank"
+        },
+        {
+          "title": "GitHub",
+          "url": "https://github.com/AFreeCoder/APIPool_v2",
+          "icon": "Github",
+          "target": "_blank"
+        },
+        {
+          "title": "推特",
+          "url": "https://apipool.dev",
+          "icon": "RiTwitterXFill",
+          "target": "_blank"
+        },
+        {
+          "title": "邮箱",
+          "url": "mailto:support@apipool.dev",
+          "icon": "Mail",
+          "target": "_blank"
+        }
+      ]
+    },
+    "show_theme": true,
+    "show_locale": false
+  },
+  "variant": "sidebar"
+}

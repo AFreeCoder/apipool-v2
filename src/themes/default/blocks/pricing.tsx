@@ -62,8 +62,8 @@ function getInitialCurrency(
 ): string {
   if (currencies.length === 0) return defaultCurrency;
 
-  // If locale is 'zh', prefer CNY
-  if (locale === 'zh') {
+  // If locale is Chinese, prefer CNY
+  if (locale.startsWith('zh')) {
     const cnyCurrency = currencies.find(
       (c) => c.currency.toLowerCase() === 'cny'
     );

@@ -17,7 +17,7 @@ export const envConfigs: ConfigMap = {
     process.env.NEXT_PUBLIC_APP_PREVIEW_IMAGE ?? '/preview.png',
   theme: process.env.NEXT_PUBLIC_THEME ?? 'default',
   appearance: process.env.NEXT_PUBLIC_APPEARANCE ?? 'system',
-  locale: process.env.NEXT_PUBLIC_DEFAULT_LOCALE ?? 'en',
+  locale: process.env.NEXT_PUBLIC_DEFAULT_LOCALE ?? 'zh-CN',
   database_url: process.env.DATABASE_URL ?? '',
   database_auth_token: process.env.DATABASE_AUTH_TOKEN ?? '',
   database_provider: process.env.DATABASE_PROVIDER ?? 'sqlite',
@@ -42,8 +42,7 @@ export const envConfigs: ConfigMap = {
     'https://api.apipool.dev/v1',
   newapi_base_url: process.env.NEWAPI_BASE_URL ?? '',
   newapi_admin_token: process.env.NEWAPI_ADMIN_TOKEN ?? '',
-  newapi_integration_enabled:
-    process.env.NEWAPI_INTEGRATION_ENABLED ?? 'true',
+  newapi_integration_enabled: process.env.NEWAPI_INTEGRATION_ENABLED ?? 'true',
   version: packageJson.version,
   locale_detect_enabled:
     process.env.NEXT_PUBLIC_LOCALE_DETECT_ENABLED ?? 'false',

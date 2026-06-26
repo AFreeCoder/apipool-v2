@@ -10,6 +10,17 @@ const intlMiddleware = createIntlMiddleware(routing);
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const shouldNoIndex = shouldNoIndexPath(pathname);
+  const segments = pathname.split('/').filter(Boolean);
+
+  if (segments[0] === 'zh') {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = `/${['zh-CN', ...segments.slice(1)].join('/')}`;
+    const redirectResponse = NextResponse.redirect(redirectUrl, 308);
+    if (shouldNoIndex) {
+      redirectResponse.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    }
+    return redirectResponse;
+  }
 
   // Handle internationalization first
   const intlResponse = intlMiddleware(request);

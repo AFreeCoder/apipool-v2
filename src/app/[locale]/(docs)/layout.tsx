@@ -4,6 +4,7 @@ import { DocsLayout } from 'fumadocs-ui/layouts/notebook';
 import { RootProvider } from 'fumadocs-ui/provider';
 
 import { source } from '@/core/docs/source';
+import { localeNames } from '@/config/locale';
 
 import { baseOptions } from './layout.config';
 
@@ -12,16 +13,23 @@ import '@/config/style/docs.css';
 const zh: Partial<Translations> = {
   search: '搜索内容',
 };
+const zhTW: Partial<Translations> = {
+  search: '搜尋內容',
+};
 // available languages that will be displayed on UI
 // make sure `locale` is consistent with your i18n config
 const locales = [
   {
-    name: 'English',
-    locale: 'en',
+    name: localeNames['zh-CN'],
+    locale: 'zh-CN',
   },
   {
-    name: '简体中文',
-    locale: 'zh',
+    name: localeNames['zh-TW'],
+    locale: 'zh-TW',
+  },
+  {
+    name: localeNames.en,
+    locale: 'en',
   },
 ];
 
@@ -40,7 +48,7 @@ export default async function DocsRootLayout({
       i18n={{
         locale: lang,
         locales,
-        translations: { zh }[lang],
+        translations: { 'zh-CN': zh, 'zh-TW': zhTW }[lang],
       }}
       search={{
         options: {

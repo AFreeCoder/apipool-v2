@@ -124,7 +124,7 @@ export default async function AdminUsersPage({
             ? [
                 {
                   name: 'adjust-quota',
-                  title: 'Adjust APIPool quota',
+                  title: t('list.buttons.adjust_quota'),
                   icon: 'Gauge',
                   url: `/admin/apipool-adjustments?portalUserId=${item.id}`,
                 },

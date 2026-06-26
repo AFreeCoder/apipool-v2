@@ -1,0 +1,36 @@
+{
+  "title": "设置",
+  "nav": {
+    "items": [
+      {
+        "title": "控制台",
+        "url": "/dashboard",
+        "icon": "Gauge"
+      },
+      {
+        "title": "APIPool 账单",
+        "url": "/dashboard/billing",
+        "icon": "CreditCard"
+      },
+      {
+        "title": "APIPool API 密钥",
+        "url": "/dashboard/api-keys",
+        "icon": "RiKeyLine"
+      }
+    ]
+  },
+  "top_nav": {
+    "items": [
+      {
+        "title": "控制台",
+        "url": "/dashboard",
+        "icon": "Activity"
+      },
+      {
+        "title": "控制台",
+        "url": "/dashboard",
+        "icon": "Gauge"
+      }
+    ]
+  }
+}

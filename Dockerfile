@@ -7,7 +7,9 @@ RUN apk add --no-cache libc6-compat && yarn global add pnpm@10
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* source.config.ts next.config.mjs ./
-RUN pnpm i --frozen-lockfile
+# Docker Hub and npm registry can be slow or flaky on some networks.
+# Give pnpm more time and retries so image builds are less brittle.
+RUN pnpm i --frozen-lockfile --fetch-timeout=600000 --fetch-retries=5 --network-concurrency=8
 
 # Rebuild the source code only when needed
 FROM deps AS builder
@@ -54,7 +56,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/src/config/db/migrations_sqlite ./migrations_sqlite
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+RUN sed -i 's/\r$//' ./entrypoint.sh && chmod +x ./entrypoint.sh
 
 USER nextjs
 

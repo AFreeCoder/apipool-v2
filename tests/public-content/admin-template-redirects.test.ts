@@ -28,6 +28,8 @@ test('admin sidebar does not expose the legacy template API key table', async ()
   const files = [
     'src/config/locale/messages/en/admin/sidebar.json',
     'src/config/locale/messages/zh/admin/sidebar.json',
+    'src/config/locale/messages/zh-CN/admin/sidebar.json',
+    'src/config/locale/messages/zh-TW/admin/sidebar.json',
   ];
 
   const violations: string[] = [];

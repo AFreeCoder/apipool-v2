@@ -13,23 +13,24 @@ import {
   publicModels,
 } from '@/features/api-catalog/lib/catalog';
 
-test('catalog exposes one available smoke-tested model and hides no provider data', () => {
+test('catalog exposes one available smoke-tested model and New API-aligned public groups', () => {
   const available = publicModels.filter((model) => model.status === 'available');
 
   assert.equal(available.length, 1);
   assert.equal(available[0].smokeTested, true);
-  assert.equal(available[0].provider, 'OpenAI');
+  assert.equal(available[0].provider, 'default');
+  assert.ok(publicModels.some((model) => model.provider === 'discount'));
 });
 
-test('filterModels applies provider, capability, and status filters', () => {
+test('filterModels applies group, capability, and status filters', () => {
   const results = filterModels(publicModels, {
-    provider: 'Anthropic',
+    provider: 'default',
     capability: 'coding',
     status: 'coming_soon',
   });
 
   assert.ok(results.length > 0);
-  assert.ok(results.every((model) => model.provider === 'Anthropic'));
+  assert.ok(results.every((model) => model.provider === 'default'));
   assert.ok(results.every((model) => model.capabilities.includes('coding')));
   assert.ok(results.every((model) => model.status === 'coming_soon'));
 });
@@ -37,12 +38,12 @@ test('filterModels applies provider, capability, and status filters', () => {
 test('parseModelFilters accepts only supported public filters', () => {
   assert.deepEqual(
     parseModelFilters({
-      provider: 'Anthropic',
+      provider: 'discount',
       capability: 'coding',
       status: 'coming_soon',
     }),
     {
-      provider: 'Anthropic',
+      provider: 'discount',
       capability: 'coding',
       status: 'coming_soon',
     }
@@ -65,18 +66,18 @@ test('parseModelFilters accepts only supported public filters', () => {
 test('buildModelFilterHref preserves filters and omits All values', () => {
   assert.equal(
     buildModelFilterHref(
-      { provider: 'OpenAI', capability: 'coding', status: 'available' },
-      { provider: 'Anthropic' }
+      { provider: 'default', capability: 'coding', status: 'available' },
+      { provider: 'discount' }
     ),
-    '/models?provider=Anthropic&capability=coding&status=available'
+    '/models?provider=discount&capability=coding&status=available'
   );
 
   assert.equal(
     buildModelFilterHref(
-      { provider: 'OpenAI', capability: 'coding', status: 'available' },
+      { provider: 'default', capability: 'coding', status: 'available' },
       { capability: 'All', status: 'All' }
     ),
-    '/models?provider=OpenAI'
+    '/models?provider=default'
   );
 });
 

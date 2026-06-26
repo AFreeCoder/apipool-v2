@@ -1,0 +1,57 @@
+{
+  "page": {
+    "sections": {
+      "pricing": {
+        "title": "充值",
+        "description": "充值余额，按 token 用量计费，余额永不过期。",
+        "items": [
+          {
+            "title": "入门",
+            "description": "试用 APIPool API",
+            "interval": "one-time",
+            "amount": 500,
+            "currency": "USD",
+            "price": "$5",
+            "unit": "",
+            "is_featured": false,
+            "product_id": "topup_5",
+            "product_name": "APIPool Credit $5",
+            "credits": 500,
+            "valid_days": 0,
+            "group": "one-time"
+          },
+          {
+            "title": "开发",
+            "description": "满足日常开发用量",
+            "interval": "one-time",
+            "amount": 1000,
+            "currency": "USD",
+            "price": "$10",
+            "unit": "",
+            "is_featured": true,
+            "product_id": "topup_10",
+            "product_name": "APIPool Credit $10",
+            "credits": 1000,
+            "valid_days": 0,
+            "group": "one-time"
+          },
+          {
+            "title": "生产",
+            "description": "面向生产环境负载",
+            "interval": "one-time",
+            "amount": 5000,
+            "currency": "USD",
+            "price": "$50",
+            "unit": "",
+            "is_featured": false,
+            "product_id": "topup_50",
+            "product_name": "APIPool Credit $50",
+            "credits": 5000,
+            "valid_days": 0,
+            "group": "one-time"
+          }
+        ]
+      }
+    }
+  }
+}

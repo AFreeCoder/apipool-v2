@@ -66,6 +66,10 @@ export type RemoteCreatedKey = RemoteKey & {
 export type RemoteQuota = {
   balanceUsd?: number;
   quotaRemaining?: number;
+  usedQuota?: number;
+  usedUsd?: number;
+  allTimeRequestCount?: number;
+  group?: string;
 };
 
 export type RemoteHealth = {
@@ -79,6 +83,7 @@ export type RemoteUsageSummary = {
   inputTokens: number;
   outputTokens: number;
   spendUsd?: number;
+  averageLatencyMs?: number;
   byModel: Array<{
     modelId: string;
     requests: number;
@@ -95,6 +100,10 @@ export type RemoteUsageLog = {
   inputTokens: number;
   outputTokens: number;
   spendUsd?: number;
+  group?: string;
+  channelName?: string;
+  latencyMs?: number;
+  requestId?: string;
   createdAt: string;
 };
 
@@ -146,6 +155,16 @@ function maskKey(key: string) {
 
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function mapRemoteTokenStatus(status: unknown): RemoteKey['status'] {
@@ -428,6 +447,10 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       inputTokens: asNumber(item.prompt_tokens),
       outputTokens: asNumber(item.completion_tokens),
       spendUsd: quotaToUsd(asNumber(item.quota)),
+      group: asOptionalString(item.group),
+      channelName: asOptionalString(item.channel_name),
+      latencyMs: asOptionalNumber(item.use_time),
+      requestId: asOptionalString(item.request_id),
       createdAt: new Date(asNumber(item.created_at) * 1000).toISOString(),
     };
   }
@@ -462,6 +485,13 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return {
       quotaRemaining: data.quota,
       balanceUsd: quotaToUsd(data.quota),
+      usedQuota: asOptionalNumber(data.used_quota),
+      usedUsd:
+        typeof data.used_quota === 'number'
+          ? quotaToUsd(data.used_quota)
+          : undefined,
+      allTimeRequestCount: asOptionalNumber(data.request_count),
+      group: asOptionalString(data.group),
     };
   }
 
@@ -551,6 +581,8 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       allowedModels?: string[];
       quotaLimitUsd?: number;
       ipAllowlist?: string[];
+      group?: string;
+      crossGroupRetry?: boolean;
     }): Promise<RemoteCreatedKey> {
       let item = await findTokenByName(input.user, input.remoteName);
 
@@ -569,7 +601,9 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
             model_limits_enabled: Boolean(input.allowedModels?.length),
             model_limits: (input.allowedModels || []).join(','),
             allow_ips: (input.ipAllowlist || []).join(','),
-            group: '',
+            group: input.group || APIPOOL_CONFIG.newApiDefaultTokenGroup,
+            cross_group_retry:
+              input.crossGroupRetry ?? APIPOOL_CONFIG.newApiTokenCrossGroupRetry,
           },
         });
         item = await findTokenByName(input.user, input.remoteName);
@@ -675,6 +709,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         (sum, log) => sum + log.outputTokens,
         0
       );
+      const latencySamples = logs
+        .map((log) => log.latencyMs)
+        .filter(
+          (latencyMs): latencyMs is number => typeof latencyMs === 'number'
+        );
 
       // /api/data/self 由 New API 周期性聚合，刚发生的调用尚未入仓；
       // 聚合为空而日志非空时，用同窗口的消费日志推导汇总，保证近实时
@@ -710,6 +749,13 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         inputTokens,
         outputTokens,
         spendUsd: quotaToUsd(spendQuota),
+        averageLatencyMs:
+          latencySamples.length > 0
+            ? Math.round(
+                latencySamples.reduce((sum, value) => sum + value, 0) /
+                  latencySamples.length
+              )
+            : undefined,
         byModel,
       };
     },

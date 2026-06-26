@@ -6,7 +6,7 @@ import { RiGithubFill, RiGoogleFill } from 'react-icons/ri';
 import { toast } from 'sonner';
 
 import { signIn } from '@/core/auth/client';
-import { defaultLocale } from '@/config/locale';
+import { localizePath } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import { useAppContext } from '@/shared/contexts/app';
 import { cn } from '@/shared/lib/utils';
@@ -32,11 +32,10 @@ export function SocialProviders({
 
   if (callbackUrl) {
     if (
-      locale !== defaultLocale &&
       callbackUrl.startsWith('/') &&
       !callbackUrl.startsWith(`/${locale}`)
     ) {
-      callbackUrl = `/${locale}${callbackUrl}`;
+      callbackUrl = localizePath(callbackUrl, locale);
     }
   }
 
@@ -71,10 +70,7 @@ export function SocialProviders({
     setLoading(true);
 
     // Open popup to the intermediate page that triggers signIn.social()
-    const popupPath =
-      locale !== defaultLocale
-        ? `/${locale}/auth-popup?provider=${provider}`
-        : `/auth-popup?provider=${provider}`;
+    const popupPath = `${localizePath('/auth-popup', locale)}?provider=${provider}`;
     const popupUrl = `${window.location.origin}${popupPath}`;
 
     // Open centered popup window

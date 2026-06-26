@@ -11,10 +11,7 @@ import {
 import { setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
-import {
-  PRICE_DISCLAIMER_EN,
-  PRICE_DISCLAIMER_ZH,
-} from '@/config/apipool';
+import { getApipoolCopy, type ApipoolCopy } from '@/features/apipool-ui/copy';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 
@@ -24,14 +21,12 @@ function formatContextWindow(tokens: number) {
   return String(tokens);
 }
 
-const FILTER_OPTION_LABELS: Record<string, string> = {
-  available: 'Available',
-  coming_soon: 'Coming soon',
-};
-
-function formatFilterOption(option: string) {
+function formatFilterOption(
+  option: string,
+  labels: ApipoolCopy['modelsPage']['options']
+) {
   return (
-    FILTER_OPTION_LABELS[option] ||
+    labels[option as keyof typeof labels] ||
     option.charAt(0).toUpperCase() + option.slice(1)
   );
 }
@@ -45,18 +40,23 @@ export default async function ModelsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const copy = getApipoolCopy(locale).modelsPage;
   const filters = parseModelFilters(await searchParams);
   const models = filterModels(publicModels, filters);
   const standardModels = models.filter((model) => !isDealModel(model));
   const dealModels = models.filter(isDealModel);
   const filterGroups = [
-    { label: 'Provider', key: 'provider', options: MODEL_PROVIDER_FILTERS },
     {
-      label: 'Capability',
+      label: copy.filters.provider,
+      key: 'provider',
+      options: MODEL_PROVIDER_FILTERS,
+    },
+    {
+      label: copy.filters.capability,
       key: 'capability',
       options: MODEL_CAPABILITY_FILTERS,
     },
-    { label: 'Status', key: 'status', options: MODEL_STATUS_FILTERS },
+    { label: copy.filters.status, key: 'status', options: MODEL_STATUS_FILTERS },
   ] as const;
 
   return (
@@ -65,14 +65,13 @@ export default async function ModelsPage({
       <section className="border-border border-b">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="text-primary font-mono text-xs tracking-widest uppercase">
-            {'// models & pricing'}
+            {copy.eyebrow}
           </div>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Models & pricing
+            {copy.title}
           </h1>
           <p className="text-muted-foreground mt-3 max-w-2xl leading-7">
-            All prices are per 1M tokens, billed by actual usage. One key
-            works for every model below.
+            {copy.description}
           </p>
 
           <div className="mt-8 space-y-2">
@@ -95,7 +94,7 @@ export default async function ModelsPage({
                           : 'text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
                       }
                     >
-                      {formatFilterOption(option)}
+                      {formatFilterOption(option, copy.options)}
                     </Link>
                   );
                 })}
@@ -109,29 +108,28 @@ export default async function ModelsPage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {standardModels.length === 0 && dealModels.length === 0 ? (
             <div className="rounded-xl border p-10 text-center">
-              <div className="font-medium">No models match these filters.</div>
+              <div className="font-medium">{copy.noMatch}</div>
               <Button asChild variant="outline" className="mt-4 rounded-md">
-                <Link href="/models">Clear filters</Link>
+                <Link href="/models">{copy.clearFilters}</Link>
               </Button>
             </div>
           ) : (
-            <ModelsTable models={standardModels} />
+            <ModelsTable models={standardModels} copy={copy} />
           )}
-          <p className="text-muted-foreground mt-3 text-xs">
-            {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
-          </p>
+          <p className="text-muted-foreground mt-3 text-xs">{copy.disclaimer}</p>
         </div>
 
         {dealModels.length > 0 && (
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="text-xl font-semibold tracking-tight">Deals</h2>
+              <h2 className="text-xl font-semibold tracking-tight">
+                {copy.dealsTitle}
+              </h2>
               <p className="text-muted-foreground text-sm">
-                Short-term discounted routes. Same models and API, separate
-                channels that may rotate without notice.
+                {copy.dealsDescription}
               </p>
             </div>
-            <ModelsTable models={dealModels} deal />
+            <ModelsTable models={dealModels} deal copy={copy} />
           </div>
         )}
       </section>
@@ -141,9 +139,11 @@ export default async function ModelsPage({
 
 function ModelsTable({
   models,
+  copy,
   deal = false,
 }: {
   models: ReturnType<typeof filterModels>;
+  copy: ApipoolCopy['modelsPage'];
   deal?: boolean;
 }) {
   if (models.length === 0) return null;
@@ -153,13 +153,27 @@ function ModelsTable({
       <table className="w-full min-w-[760px] text-sm">
         <thead>
           <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-            <th className="px-4 py-3 text-left font-medium">Model</th>
-            <th className="px-4 py-3 text-left font-medium">Provider</th>
-            <th className="px-4 py-3 text-left font-medium">Capabilities</th>
-            <th className="px-4 py-3 text-right font-medium">Context</th>
-            <th className="px-4 py-3 text-right font-medium">Input / 1M</th>
-            <th className="px-4 py-3 text-right font-medium">Output / 1M</th>
-            <th className="px-4 py-3 text-right font-medium">Status</th>
+            <th className="px-4 py-3 text-left font-medium">
+              {copy.table.model}
+            </th>
+            <th className="px-4 py-3 text-left font-medium">
+              {copy.table.provider}
+            </th>
+            <th className="px-4 py-3 text-left font-medium">
+              {copy.table.capabilities}
+            </th>
+            <th className="px-4 py-3 text-right font-medium">
+              {copy.table.context}
+            </th>
+            <th className="px-4 py-3 text-right font-medium">
+              {copy.table.input}
+            </th>
+            <th className="px-4 py-3 text-right font-medium">
+              {copy.table.output}
+            </th>
+            <th className="px-4 py-3 text-right font-medium">
+              {copy.table.status}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -176,7 +190,7 @@ function ModelsTable({
                     {model.displayName}
                     {deal && (
                       <span className="bg-chart-3/15 text-chart-3 rounded-md px-1.5 py-0.5 text-xs font-medium">
-                        Deal
+                        {copy.dealBadge}
                       </span>
                     )}
                   </div>
@@ -189,7 +203,7 @@ function ModelsTable({
                     </div>
                   )}
                 </td>
-                <td className="text-muted-foreground px-4 py-3">
+                <td className="text-muted-foreground px-4 py-3 font-mono text-xs">
                   {model.provider}
                 </td>
                 <td className="px-4 py-3">
@@ -199,7 +213,7 @@ function ModelsTable({
                         key={capability}
                         className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
                       >
-                        {capability}
+                        {formatFilterOption(capability, copy.options)}
                       </span>
                     ))}
                   </div>
@@ -236,7 +250,9 @@ function ModelsTable({
                         : ''
                     }
                   >
-                    {model.status === 'available' ? 'Available' : 'Coming soon'}
+                    {model.status === 'available'
+                      ? copy.options.available
+                      : copy.options.coming_soon}
                   </Badge>
                 </td>
               </tr>

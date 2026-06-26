@@ -12,12 +12,12 @@
     "multi-model-api"
   ],
   "scripts": {
-    "dev": "DATABASE_PROVIDER=sqlite DATABASE_URL=file:data/local.db DB_SCHEMA_FILE=./src/config/db/schema.sqlite.ts DB_MIGRATIONS_OUT=./src/config/db/migrations_sqlite DB_SINGLETON_ENABLED=true next dev --turbopack",
+    "dev": "tsx scripts/run-with-env.ts DATABASE_PROVIDER=sqlite DATABASE_URL=file:data/local.db DB_SCHEMA_FILE=./src/config/db/schema.sqlite.ts DB_MIGRATIONS_OUT=./src/config/db/migrations_sqlite DB_SINGLETON_ENABLED=true -- next dev --turbopack",
     "build": "next build",
-    "build:fast": "NODE_OPTIONS='--max-old-space-size=4096' next build",
+    "build:fast": "tsx scripts/run-with-env.ts NODE_OPTIONS=--max-old-space-size=4096 -- next build",
     "start": "next start",
-    "test": "NODE_OPTIONS='--conditions react-server' tsx --test tests/**/*.test.ts",
-    "smoke:mvp": "NODE_OPTIONS='--conditions react-server' tsx scripts/with-env.ts tsx scripts/smoke-mvp.ts",
+    "test": "tsx scripts/run-with-env.ts \"NODE_OPTIONS=--conditions react-server\" -- tsx --test --test-concurrency=1 tests/**/*.test.ts",
+    "smoke:mvp": "tsx scripts/run-with-env.ts \"NODE_OPTIONS=--conditions react-server\" -- tsx scripts/with-env.ts tsx scripts/smoke-mvp.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -1,4 +1,4 @@
-const LOCALE_SEGMENTS = new Set(['en', 'zh']);
+const LOCALE_SEGMENTS = new Set(['en', 'zh-CN', 'zh-TW', 'zh']);
 
 export const NOINDEX_PATH_PREFIXES = [
   '/admin',

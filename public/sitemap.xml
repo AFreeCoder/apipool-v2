@@ -1,27 +1,39 @@
 <?xml version='1.0' encoding='utf-8' standalone='yes'?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://apipool.dev/</loc>
+    <loc>https://apipool.dev/zh-CN</loc>
     <lastmod>2026-05-24T00:00:00+08:00</lastmod>
   </url>
   <url>
-    <loc>https://apipool.dev/zh</loc>
+    <loc>https://apipool.dev/zh-TW</loc>
     <lastmod>2026-05-24T00:00:00+08:00</lastmod>
   </url>
   <url>
-    <loc>https://apipool.dev/models</loc>
+    <loc>https://apipool.dev/en</loc>
     <lastmod>2026-05-24T00:00:00+08:00</lastmod>
   </url>
   <url>
-    <loc>https://apipool.dev/zh/models</loc>
+    <loc>https://apipool.dev/zh-CN/models</loc>
     <lastmod>2026-05-24T00:00:00+08:00</lastmod>
   </url>
   <url>
-    <loc>https://apipool.dev/docs</loc>
+    <loc>https://apipool.dev/zh-TW/models</loc>
     <lastmod>2026-05-24T00:00:00+08:00</lastmod>
   </url>
   <url>
-    <loc>https://apipool.dev/zh/docs</loc>
+    <loc>https://apipool.dev/en/models</loc>
+    <lastmod>2026-05-24T00:00:00+08:00</lastmod>
+  </url>
+  <url>
+    <loc>https://apipool.dev/zh-CN/docs</loc>
+    <lastmod>2026-05-24T00:00:00+08:00</lastmod>
+  </url>
+  <url>
+    <loc>https://apipool.dev/zh-TW/docs</loc>
+    <lastmod>2026-05-24T00:00:00+08:00</lastmod>
+  </url>
+  <url>
+    <loc>https://apipool.dev/en/docs</loc>
     <lastmod>2026-05-24T00:00:00+08:00</lastmod>
   </url>
 </urlset>

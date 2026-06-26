@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { envConfigs } from '@/config';
-import { defaultLocale } from '@/config/locale';
+import { localizePath } from '@/config/locale';
 import { redirect } from '@/core/i18n/navigation';
 import { SignIn } from '@/shared/blocks/sign/sign-in';
 import { getPublicConfigs } from '@/shared/models/config';
@@ -15,7 +15,6 @@ function safeInternalPath(raw?: string) {
 
 function stripLocalePrefix(path: string, locale: string) {
   if (!path?.startsWith('/')) return '/';
-  if (locale === defaultLocale) return path;
   if (path === `/${locale}`) return '/';
   if (path.startsWith(`/${locale}/`)) return path.slice(locale.length + 1) || '/';
   return path;
@@ -33,10 +32,7 @@ export async function generateMetadata({
   return {
     title: `${t('sign.sign_in_title')} - ${t('metadata.title')}`,
     alternates: {
-      canonical:
-        locale !== defaultLocale
-          ? `${envConfigs.app_url}/${locale}/sign-in`
-          : `${envConfigs.app_url}/sign-in`,
+      canonical: `${envConfigs.app_url}${localizePath('/sign-in', locale)}`,
     },
   };
 }
