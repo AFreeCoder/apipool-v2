@@ -1,0 +1,18 @@
+{
+  "verdict": "approve",
+  "summary": "OQ-3 为 roles/users 的 4 个既有 'use server' 写 handler 各补 1 行 await requirePermission(WRITE)，位置均在写操作（updateRole/assignPermissionsToRole/updateUser/assignRolesToUser）之前，权限码正确（roles=ROLES_WRITE，users=USERS_WRITE），不传 redirectUrl 故失败 throw 而非 redirect，符合 Server Action 语义。页首门控、passby null-check、原写调用全部保留，diff 仅每 handler +2 行 + 新增守护测试，零删除。守护测试用正则锚定 'use server' 之后才匹配 WRITE（不被页首假绿），覆盖 4 文件并断言鉴权调用 >=2 次。5 项审查要点全部通过，建议合入。",
+  "findings": [
+    {
+      "id": "OQ3-1",
+      "severity": "minor",
+      "category": "maintainability",
+      "title": "edit-roles 页门控与 handler 权限码不对称",
+      "detail": "users/[id]/edit-roles/page.tsx 页首门控为 requireAllPermissions([USERS_WRITE, ROLES_WRITE])（line 29-33），而新增的 handler 二次鉴权仅 requirePermission(USERS_WRITE)（line 89）。这非安全回归：分配角色本质属 USERS_WRITE 操作，页首仍要求两权限才渲染表单，二次鉴权也确实拦住无 USERS_WRITE 的 Server Action 直调；且守护测试的 require(?:All)?Permission(?:s)? 计数仍 >=2 通过。但严格深度防御下，handler 与页门控权限集存在差异（缺 ROLES_WRITE 二次校验），属可接受的轻微不对称。非必须修改；若后续要完全对齐页门控，可将该 handler 改为 requireAllPermissions([USERS_WRITE, ROLES_WRITE])。",
+      "anchor": "src/app/[locale]/(admin)/admin/users/[id]/edit-roles/page.tsx:89",
+      "confidence": 0.6,
+      "recommendation": "非必须。如需 handler 与页门控严格一致，可把第 89 行改为 await requireAllPermissions({ codes: [PERMISSIONS.USERS_WRITE, PERMISSIONS.ROLES_WRITE] });，与页首 line 29-33 对齐。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": []
+}
