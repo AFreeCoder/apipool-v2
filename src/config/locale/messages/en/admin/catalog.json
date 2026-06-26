@@ -75,6 +75,32 @@
       }
     }
   },
+  "categories": {
+    "list": {
+      "title": "Categories",
+      "crumb": "Categories",
+      "buttons": {
+        "new": "New Category"
+      }
+    },
+    "new": {
+      "title": "New Category",
+      "crumb": "New Category",
+      "success": "Category created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Category",
+      "crumb": "Edit Category",
+      "notFound": "Category not found",
+      "success": "Category updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
   "capabilities": {
     "list": {
       "title": "Capabilities",

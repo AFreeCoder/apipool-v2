@@ -40,6 +40,14 @@ const entities = [
     update: 'updateGroup',
     delete: 'deleteGroup',
   },
+  {
+    route: 'categories',
+    list: 'getCategories',
+    getById: 'getCategoryById',
+    create: 'createCategory',
+    update: 'updateCategory',
+    delete: 'deleteCategory',
+  },
 ] as const;
 
 function pagePath(route: string, page: 'list' | 'new' | 'edit') {
@@ -204,10 +212,11 @@ test('catalog model pages expose CRUD, capability tagging, immutable business id
   for (const source of [newPage, editPage]) {
     assert.match(source, /<FormCard/);
     assert.match(source, callPattern('getVendors'));
+    assert.match(source, callPattern('getCategories'));
     assert.match(source, typedFieldPattern('modelId', 'text'));
     assert.match(source, typedFieldPattern('displayName', 'text'));
     assert.match(source, typedFieldPattern('vendorId', 'select'));
-    assert.match(source, typedFieldPattern('category', 'text'));
+    assert.match(source, typedFieldPattern('category', 'select'));
     assert.match(source, typedFieldPattern('contextWindow', 'number'));
     assert.match(source, /revalidateCatalog\s*\(/);
   }
@@ -306,6 +315,7 @@ test('catalog sidebar exposes model catalog group in both locales', async () => 
 
   const expectedUrls = [
     '/admin/catalog/vendors',
+    '/admin/catalog/categories',
     '/admin/catalog/groups',
     '/admin/catalog/capabilities',
     '/admin/catalog/statuses',

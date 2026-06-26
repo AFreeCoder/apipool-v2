@@ -75,6 +75,32 @@
       }
     }
   },
+  "categories": {
+    "list": {
+      "title": "分类",
+      "crumb": "分类",
+      "buttons": {
+        "new": "新增分类"
+      }
+    },
+    "new": {
+      "title": "新增分类",
+      "crumb": "新增分类",
+      "success": "分类已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑分类",
+      "crumb": "编辑分类",
+      "notFound": "分类不存在",
+      "success": "分类已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
   "capabilities": {
     "list": {
       "title": "能力",
