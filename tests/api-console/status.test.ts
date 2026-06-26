@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
   canRetryKeyStatus,
@@ -52,6 +53,19 @@ test('key mutation actions are available only for remotely actionable statuses',
   assert.equal(canDeleteKeyStatus('deleted'), false);
   assert.equal(canDeleteKeyStatus('delete_pending'), false);
   assert.equal(canDeleteKeyStatus('remote_created_binding_failed'), false);
+});
+
+test('failed/stuck statuses are cleanable so users can clear dead keys', () => {
+  // 失败 / 卡死态可清理删除（让用户能清空被失败 Key 淹没的列表）
+  assert.equal(canCleanupKeyStatus('creating_remote'), true);
+  assert.equal(canCleanupKeyStatus('failed_retriable'), true);
+  assert.equal(canCleanupKeyStatus('failed_terminal'), true);
+  assert.equal(canCleanupKeyStatus('remote_created_binding_failed'), true);
+  // 正常态不走清理（走标准 delete，需远端确认）；已删除 / 进行中不可再清理
+  assert.equal(canCleanupKeyStatus('active'), false);
+  assert.equal(canCleanupKeyStatus('disabled'), false);
+  assert.equal(canCleanupKeyStatus('deleted'), false);
+  assert.equal(canCleanupKeyStatus('delete_pending'), false);
 });
 
 test('usage sync state marks stale and failed windows', () => {

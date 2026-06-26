@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
 import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
+  canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
   getUsageSyncState,
@@ -13,7 +14,7 @@ import {
   AdjustmentLedgerDraft,
   createAdjustmentLedgerDraft,
 } from '@/features/apipool-ledger/lib/ledger';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -418,6 +419,25 @@ export async function createPortalApiKey(
     throw new Error('group not available');
   }
 
+  // 同名校验：同一用户下不允许重复的未删除 Key 名（清理失败 / 旧 Key 后可复用同名）。
+  // 用普通 Error 且不嵌入用户输入的 name，确保提示透传给前端而非被兜底成内部错误。
+  const [duplicateName] = await db()
+    .select({ id: newApiKeyBinding.id })
+    .from(newApiKeyBinding)
+    .where(
+      and(
+        eq(newApiKeyBinding.portalUserId, user.id),
+        eq(newApiKeyBinding.displayName, input.name),
+        ne(newApiKeyBinding.status, 'deleted')
+      )
+    )
+    .limit(1);
+  if (duplicateName) {
+    throw new Error(
+      'A key with this name already exists. Delete the existing key or choose another name.'
+    );
+  }
+
   const binding = await ensurePortalUserBinding(user, client);
   const credentials = bindingToUserCredentials(binding);
   const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
@@ -639,7 +659,12 @@ export async function listPortalApiKeys(
     })
     .from(newApiKeyBinding)
     .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
-    .where(eq(newApiKeyBinding.portalUserId, portalUserId))
+    .where(
+      and(
+        eq(newApiKeyBinding.portalUserId, portalUserId),
+        ne(newApiKeyBinding.status, 'deleted')
+      )
+    )
     .orderBy(desc(newApiKeyBinding.createdAt));
 
   const syncedRows = await syncPortalApiKeyStatuses(portalUserId, rows, client);
@@ -782,8 +807,49 @@ export async function deletePortalApiKey(
     .limit(1);
 
   if (!row) throw new Error('API key not found');
-  if (!canDeleteKeyStatus(row.status as KeyLifecycleStatus)) {
+
+  const status = row.status as KeyLifecycleStatus;
+  const isCleanup = canCleanupKeyStatus(status);
+  if (!canDeleteKeyStatus(status) && !isCleanup) {
     throw new Error('API key is not in deletable state');
+  }
+
+  const idempotencyKey = `portal-key-delete:${portalUserId}:${keyId}:${getUuid()}`;
+
+  // 清理态（远端未建成 / 孤儿记录）：直接删本地死记录；远端若有残留 token 则尽力删、
+  // 失败不阻塞清理，且不要求 active binding（失败态常伴随 binding 凭据失效）。
+  if (isCleanup) {
+    const hasRemoteToken = !row.newapiKeyId.startsWith('pending:');
+    const cleanupBinding = await getPortalUserBinding(portalUserId);
+    if (
+      hasRemoteToken &&
+      cleanupBinding?.status === 'active' &&
+      cleanupBinding.newapiAccessTokenEnc
+    ) {
+      try {
+        await client.deleteKey(
+          bindingToUserCredentials(cleanupBinding),
+          row.newapiKeyId
+        );
+      } catch {
+        // 清理场景：远端删除失败（token 不存在 / 凭据失效）不阻塞本地清理
+      }
+    }
+    const [cleaned] = await db()
+      .update(newApiKeyBinding)
+      .set({ status: 'deleted', deletedAt: new Date() })
+      .where(eq(newApiKeyBinding.id, keyId))
+      .returning();
+    await recordAudit({
+      portalUserId,
+      action: 'newapi.key.delete',
+      targetType: 'newapi_key',
+      targetId: row.newapiKeyId,
+      status: 'success',
+      idempotencyKey,
+      responseBody: { cleanup: true, previousStatus: status },
+    });
+    return toPublicApiKey({ ...cleaned, groupName: row.groupName });
   }
 
   const binding = await getPortalUserBinding(portalUserId);
@@ -791,8 +857,6 @@ export async function deletePortalApiKey(
     throw new Error('New API user binding not found');
   }
   const credentials = bindingToUserCredentials(binding);
-
-  const idempotencyKey = `portal-key-delete:${portalUserId}:${keyId}:${getUuid()}`;
 
   await db()
     .update(newApiKeyBinding)

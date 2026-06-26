@@ -176,3 +176,93 @@ test('createPortalApiKey rejects unavailable groups before calling the remote cl
     assert.equal(remote.getCreateKeyInputs().length, 0);
   }
 });
+
+test('createPortalApiKey rejects duplicate key names before calling the remote client', async () => {
+  const portalUser = await insertUser(
+    'create_key_dup_user',
+    'create-key-dup@example.com'
+  );
+  // 用唯一 remote key id，避免与其它用例共享 db 时撞 newapi_key_id 的 UNIQUE 约束
+  const createKeyInputs: any[] = [];
+  const dupClient = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_dup_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    createKey: async (input: any) => {
+      createKeyInputs.push(input);
+      return {
+        id: `dup_key_${createKeyInputs.length}`,
+        key: `sk-dup-${createKeyInputs.length}`,
+        maskedKey: `sk-...dup${createKeyInputs.length}`,
+        status: 'active',
+      };
+    },
+  } as any;
+
+  await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'My duplicate key', groupSlug: 'official' },
+    dupClient
+  );
+  assert.equal(createKeyInputs.length, 1);
+
+  // 同名再建 → 拒绝，且不再触达远端
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        { name: 'My duplicate key', groupSlug: 'official' },
+        dupClient
+      ),
+    /already exists/
+  );
+  assert.equal(createKeyInputs.length, 1);
+});
+
+test('deletePortalApiKey cleans up failed/stuck keys locally without requiring remote', async () => {
+  const portalUser = await insertUser(
+    'cleanup_failed_user',
+    'cleanup-failed@example.com'
+  );
+  const failingClient = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    createKey: async () => {
+      throw new Error('remote create failed');
+    },
+    deleteKey: async () => {
+      throw new Error('deleteKey must not be called for never-created keys');
+    },
+  } as any;
+
+  // 建 Key 失败 → 抛错但留 failed_retriable 死记录（newapiKeyId 仍为 pending:）
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        { name: 'Doomed key', groupSlug: 'official' },
+        failingClient
+      ),
+    /remote create failed/
+  );
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.schema.newApiKeyBinding)
+    .where(eq(modules.schema.newApiKeyBinding.portalUserId, portalUser.id));
+  const failed = rows.find((r: any) => r.status === 'failed_retriable');
+  assert.ok(failed, 'failed key binding should remain after remote failure');
+
+  // 清理删除：远端从未建成（pending:），跳过远端删除、本地落 deleted
+  const result = await modules.portal.deletePortalApiKey(
+    portalUser.id,
+    failed.id,
+    failingClient
+  );
+  assert.equal(result.status, 'deleted');
+  const after = await getKeyBinding(failed.id);
+  assert.equal(after.status, 'deleted');
+});
