@@ -69,6 +69,8 @@ export default async function RoleEditPage({
       handler: async (data, passby) => {
         'use server';
 
+        await requirePermission({ code: PERMISSIONS.ROLES_WRITE });
+
         const { role } = passby;
 
         if (!role) {
