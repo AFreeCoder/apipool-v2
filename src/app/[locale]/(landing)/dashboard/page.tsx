@@ -95,7 +95,7 @@ export default async function DashboardPage({
           value={(
             usage.summary.inputTokens + usage.summary.outputTokens
           ).toLocaleString()}
-          help="Input + output"
+          help={`${usage.summary.inputTokens.toLocaleString()} in · ${usage.summary.outputTokens.toLocaleString()} out`}
           icon={<BarChart3 className="text-muted-foreground size-4" />}
         />
         <StatCard
@@ -124,12 +124,13 @@ export default async function DashboardPage({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
                   <th className="px-4 py-2.5 text-left font-medium">Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Tokens</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Input</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Output</th>
                   <th className="px-4 py-2.5 text-right font-medium">Spend</th>
                 </tr>
               </thead>
@@ -146,7 +147,10 @@ export default async function DashboardPage({
                       {log.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {(log.inputTokens + log.outputTokens).toLocaleString()}
+                      {log.inputTokens.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {log.outputTokens.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(log.spendUsd)}
