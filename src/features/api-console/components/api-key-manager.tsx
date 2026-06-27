@@ -7,7 +7,16 @@ import {
   canDisableKeyStatus,
   type KeyLifecycleStatus,
 } from '@/features/api-console/lib/status';
-import { Ban, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  Ban,
+  CheckCircle2,
+  Copy,
+  Info,
+  KeyRound,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 
 import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import { Button } from '@/shared/components/ui/button';
@@ -30,9 +39,9 @@ import {
 
 import {
   applyApiKeyMutationResult,
-  type ApiKeyGroup,
   buildCreateKeyRequest,
   buildGroupSelectOptions,
+  type ApiKeyGroup,
 } from '../lib/key-request';
 
 type ApiKeyRow = {
@@ -46,6 +55,12 @@ type ApiKeyRow = {
   deletedAt?: string | Date | null;
 };
 
+type NoticeTone = 'error' | 'info' | 'success';
+
+type NoticeState = {
+  tone: NoticeTone;
+  text: string;
+};
 
 const KEY_CREATION_PAUSED_MESSAGE =
   'API key creation is temporarily paused. Existing keys remain manageable.';
@@ -76,6 +91,47 @@ function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
   );
 }
 
+function ApiKeyNotice({ notice }: { notice: NoticeState }) {
+  const toneConfig = {
+    error: {
+      icon: AlertCircle,
+      className:
+        'border-destructive/30 bg-destructive/10 text-destructive shadow-xs',
+      iconClassName: 'text-destructive',
+    },
+    info: {
+      icon: Info,
+      className: 'border-border bg-muted/50 text-muted-foreground',
+      iconClassName: 'text-muted-foreground',
+    },
+    success: {
+      icon: CheckCircle2,
+      className: 'border-primary/20 bg-primary/10 text-primary',
+      iconClassName: 'text-primary',
+    },
+  } satisfies Record<
+    NoticeTone,
+    {
+      icon: typeof AlertCircle;
+      className: string;
+      iconClassName: string;
+    }
+  >;
+  const config = toneConfig[notice.tone];
+  const Icon = config.icon;
+
+  return (
+    <div
+      role={notice.tone === 'error' ? 'alert' : 'status'}
+      aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
+      className={`mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${config.className}`}
+    >
+      <Icon className={`mt-0.5 size-4 shrink-0 ${config.iconClassName}`} />
+      <p className="min-w-0 leading-5">{notice.text}</p>
+    </div>
+  );
+}
+
 export function ApiKeyManager({
   initialKeys,
   groups,
@@ -93,7 +149,7 @@ export function ApiKeyManager({
     groups[0]?.slug ?? ''
   );
   const [plainKey, setPlainKey] = useState('');
-  const [message, setMessage] = useState('');
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [loading, setLoading] = useState(false);
   const groupOptions = buildGroupSelectOptions(groups);
   const selectedGroupModels = selectedGroupSlug
@@ -111,17 +167,17 @@ export function ApiKeyManager({
   async function createKey() {
     if (!creationEnabled) {
       setPlainKey('');
-      setMessage(KEY_CREATION_PAUSED_MESSAGE);
+      setNotice({ tone: 'info', text: KEY_CREATION_PAUSED_MESSAGE });
       return;
     }
     if (!selectedGroupSlug) {
       setPlainKey('');
-      setMessage('Select a group first.');
+      setNotice({ tone: 'error', text: 'Select a group first.' });
       return;
     }
 
     setLoading(true);
-    setMessage('');
+    setNotice(null);
     setPlainKey('');
     try {
       const response = await fetch('/api/apipool/keys', {
@@ -133,9 +189,15 @@ export function ApiKeyManager({
       if (payload.code !== 0) throw new Error(payload.message);
       setPlainKey(payload.data.plainKey || '');
       setKeys((prev) => [payload.data.key, ...prev]);
-      setMessage('Key created. The full key is shown once below.');
+      setNotice({
+        tone: 'success',
+        text: 'Key created. The full key is shown once below.',
+      });
     } catch (error: any) {
-      setMessage(error?.message || 'Create key failed');
+      setNotice({
+        tone: 'error',
+        text: error?.message || 'Create key failed',
+      });
       await refreshKeys();
     } finally {
       setLoading(false);
@@ -143,10 +205,13 @@ export function ApiKeyManager({
   }
 
   async function disableKey(id: string) {
-    setMessage('');
+    setNotice(null);
     const target = keys.find((key) => key.id === id);
     if (!target || !canDisableKeyStatus(target.status)) {
-      setMessage('This key cannot be disabled in its current state.');
+      setNotice({
+        tone: 'error',
+        text: 'This key cannot be disabled in its current state.',
+      });
       return;
     }
 
@@ -155,7 +220,7 @@ export function ApiKeyManager({
     });
     const payload = await response.json();
     if (payload.code !== 0) {
-      setMessage(payload.message);
+      setNotice({ tone: 'error', text: payload.message });
       await refreshKeys();
       return;
     }
@@ -163,14 +228,17 @@ export function ApiKeyManager({
   }
 
   async function deleteKey(id: string) {
-    setMessage('');
+    setNotice(null);
     const target = keys.find((key) => key.id === id);
     if (
       !target ||
       (!canDeleteKeyStatus(target.status) &&
         !canCleanupKeyStatus(target.status))
     ) {
-      setMessage('This key cannot be deleted in its current state.');
+      setNotice({
+        tone: 'error',
+        text: 'This key cannot be deleted in its current state.',
+      });
       return;
     }
 
@@ -179,7 +247,7 @@ export function ApiKeyManager({
     });
     const payload = await response.json();
     if (payload.code !== 0) {
-      setMessage(payload.message);
+      setNotice({ tone: 'error', text: payload.message });
       await refreshKeys();
       return;
     }
@@ -237,7 +305,9 @@ export function ApiKeyManager({
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground mt-2 text-xs">No callable models</p>
+            <p className="text-muted-foreground mt-2 text-xs">
+              No callable models
+            </p>
           )}
         </div>
         <p className="text-muted-foreground mt-3 text-xs">
@@ -249,9 +319,7 @@ export function ApiKeyManager({
             {KEY_CREATION_PAUSED_MESSAGE}
           </p>
         )}
-        {message && (
-          <p className="text-muted-foreground mt-3 text-sm">{message}</p>
-        )}
+        {notice && <ApiKeyNotice notice={notice} />}
         {plainKey && (
           <div className="bg-muted mt-4 rounded-md border p-4">
             <div className="mb-2 text-sm font-medium">

@@ -97,3 +97,30 @@ test('API key manager does not ship Chinese fallback copy into the English conso
 
   assert.doesNotMatch(source, /分组|选择分组|可调模型范围|暂无可调模型/);
 });
+
+test('API key manager renders high-priority visual treatment for errors', async () => {
+  const source = await readFile(
+    join(
+      process.cwd(),
+      'src/features/api-console/components/api-key-manager.tsx'
+    ),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /role=\{notice\.tone === 'error' \? 'alert' : 'status'\}/
+  );
+  assert.match(
+    source,
+    /aria-live=\{notice\.tone === 'error' \? 'assertive' : 'polite'\}/
+  );
+  assert.match(
+    source,
+    /border-destructive\/30 bg-destructive\/10 text-destructive/
+  );
+  assert.doesNotMatch(
+    source,
+    /<p className="text-muted-foreground mt-3 text-sm">\{[^}]+message[^}]*\}<\/p>/
+  );
+});

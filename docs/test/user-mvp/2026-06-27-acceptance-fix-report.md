@@ -8,17 +8,17 @@
 
 ## 一、修复队列
 
-| 问题编号 | 严重级别 | 判断结果 | 处理状态 |
-| --- | --- | --- | --- |
-| 1. 后台调额重复提交缺服务端幂等 | High | 真实 bug | Fixed |
-| 2. `smoke:mvp` 发布门禁可能假阳性 | High | 真实 bug | Fixed |
-| 3. `/models` 可展示 disabled 维度 listing | Medium | 真实 bug | Fixed |
-| 4. API Key 页可为无 callable 模型的分组创建 Key | Medium | 真实 bug，符合验收预期 | Fixed |
-| 5. `/api/apipool/billing` 返回 ledger 宽 DTO | Medium | 真实 bug | Fixed |
-| 6. API Key 同名校验非原子 | Medium | 真实 bug | Fixed |
-| 7. 本地 binding update 失败可能透出内部错误 | Low | 真实 bug | Fixed |
-| 8. 英文 Billing 页到账状态硬编码中文 | Low | 真实 bug | Fixed |
-| 9. 偶发 hydration warning 与错误提示视觉弱化 | Low | hydration 不可复现；视觉优化可延后 | Deferred |
+| 问题编号                                        | 严重级别 | 判断结果                                   | 处理状态          |
+| ----------------------------------------------- | -------- | ------------------------------------------ | ----------------- |
+| 1. 后台调额重复提交缺服务端幂等                 | High     | 真实 bug                                   | Fixed             |
+| 2. `smoke:mvp` 发布门禁可能假阳性               | High     | 真实 bug                                   | Fixed             |
+| 3. `/models` 可展示 disabled 维度 listing       | Medium   | 真实 bug                                   | Fixed             |
+| 4. API Key 页可为无 callable 模型的分组创建 Key | Medium   | 真实 bug，符合验收预期                     | Fixed             |
+| 5. `/api/apipool/billing` 返回 ledger 宽 DTO    | Medium   | 真实 bug                                   | Fixed             |
+| 6. API Key 同名校验非原子                       | Medium   | 真实 bug                                   | Fixed             |
+| 7. 本地 binding update 失败可能透出内部错误     | Low      | 真实 bug                                   | Fixed             |
+| 8. 英文 Billing 页到账状态硬编码中文            | Low      | 真实 bug                                   | Fixed             |
+| 9. 偶发 hydration warning 与错误提示视觉弱化    | Low      | hydration 不可复现；错误提示视觉弱化已确认 | Fixed（视觉增强） |
 
 ## 二、逐项处理记录
 
@@ -105,12 +105,13 @@
 ### 9. Low：偶发 hydration warning 与错误提示视觉弱化
 
 - 原始问题描述：浏览器 QA 曾观察到一次 hydration warning；duplicate error 视觉优先级偏弱。
-- 复现结果：本轮未能稳定复现 hydration warning；浏览器 QA 多次访问相关页面无 console error。
-- 根因：hydration warning 暂无稳定证据；错误提示样式属于低优先级视觉增强。
-- 修复内容：本轮未改视觉样式，避免把低优先级优化混入验收 bug 修复。
-- 新增或更新的测试：无。
-- 验证命令和结果：gstack browse 访问 `/models`、`/dashboard/billing`、`/admin/apipool-adjustments`，均无 console error。
-- 最终状态：Deferred。
+- 复现结果：本轮仍未能稳定复现 hydration warning；API Key 创建失败提示可稳定复现为普通文案层级偏弱。
+- 根因：hydration warning 暂无稳定证据；API Key 创建、duplicate name、禁用/删除失败共用普通 muted 文案，错误状态缺少视觉优先级和可访问性语义。
+- 修复内容：`ApiKeyManager` 将普通 `message` 升级为 typed notice；错误提示使用 destructive 边框、浅红底色、错误图标、`role="alert"` 与 `aria-live="assertive"`；成功和信息提示使用独立的 status 语义与较低视觉强度。
+- 新增或更新的测试：`tests/api-console/api-key-manager.test.ts` 增加错误提示视觉与语义回归断言。
+- 验证命令和结果：`NODE_OPTIONS='--conditions react-server' pnpm exec tsx --test tests/api-console/api-key-manager.test.ts` 通过，6/6 pass；`pnpm test` 通过，240/240 pass；`pnpm exec tsc --noEmit --pretty false` 通过；gstack browse 访问 `/dashboard/api-keys` 触发创建失败提示，确认 `role=alert`、`aria-live=assertive`、destructive 样式生效且无 console error；移动视口 390px 下提示宽度 316px、无横向溢出。
+- 截图证据：`.gstack/qa-reports/user-mvp/screenshots/api-key-visual-after-create-click.png`、`.gstack/qa-reports/user-mvp/screenshots/api-key-visual-error-mobile.png`。
+- 最终状态：Fixed（错误提示视觉增强已处理；hydration warning 仍不可复现，未改动相关逻辑）。
 
 ## 三、代码评审结果
 
@@ -130,22 +131,21 @@
 
 ## 四、最终验证
 
-| 验证项 | 命令 | 结果 | 备注 |
-| --- | --- | --- | --- |
-| diff whitespace | `git diff --check` | 通过 | 无 whitespace error |
-| lint | `pnpm lint` | 通过 | 0 errors，196 warnings，为仓库既有 warning |
-| typecheck | `pnpm exec tsc --noEmit` | 通过 | 无错误输出 |
-| unit tests | `pnpm test` | 通过 | 239/239 pass |
-| integration tests | `pnpm test` 中 catalog、api-console、newapi-bridge、billing/ledger、smoke 行为测试 | 通过 | 覆盖本轮服务层和 API 形状 |
-| migration check | 临时 SQLite 旧库重复 key 场景应用 `0005` | 通过 | 重复 active key 被重命名，唯一索引创建成功 |
-| build | `pnpm build` | 通过 | Next 16/Turbopack production build 成功 |
-| live smoke | `APIPOOL_SMOKE_REQUIRE_LIVE=true ... pnpm exec tsx scripts/smoke-mvp.ts` | 通过 | 本地 New API Docker，10/10 pass |
-| browser/UI QA | gstack browse 访问 `/models`、`/dashboard/billing`、`/admin/apipool-adjustments` | 通过 | `/models` 仅 1 条 `GPT-4o mini`，受保护页跳 sign-in，均无 console error |
+| 验证项            | 命令                                                                                                    | 结果 | 备注                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------- |
+| diff whitespace   | `git diff --check`                                                                                      | 通过 | 无 whitespace error                                                                                           |
+| lint              | `pnpm lint`                                                                                             | 通过 | 0 errors，196 warnings，为仓库既有 warning                                                                    |
+| typecheck         | `pnpm exec tsc --noEmit`                                                                                | 通过 | 无错误输出                                                                                                    |
+| unit tests        | `pnpm test`                                                                                             | 通过 | 240/240 pass                                                                                                  |
+| integration tests | `pnpm test` 中 catalog、api-console、newapi-bridge、billing/ledger、smoke 行为测试                      | 通过 | 覆盖本轮服务层和 API 形状                                                                                     |
+| migration check   | 临时 SQLite 旧库重复 key 场景应用 `0005`                                                                | 通过 | 重复 active key 被重命名，唯一索引创建成功                                                                    |
+| build             | `pnpm build`                                                                                            | 通过 | Next 16/Turbopack production build 成功                                                                       |
+| live smoke        | `APIPOOL_SMOKE_REQUIRE_LIVE=true ... pnpm exec tsx scripts/smoke-mvp.ts`                                | 通过 | 本地 New API Docker，10/10 pass                                                                               |
+| browser/UI QA     | gstack browse 访问 `/models`、`/dashboard/billing`、`/admin/apipool-adjustments`、`/dashboard/api-keys` | 通过 | `/models` 仅 1 条 `GPT-4o mini`，API Key 错误提示为 destructive alert，受保护页跳 sign-in，均无 console error |
 
 ## 五、剩余风险
 
 - 未修复项：
-  - Issue 9 中错误提示视觉增强未处理。
   - hydration warning 本轮不可复现，暂未定位到稳定根因。
 - 延后项：
   - OAuth Google/GitHub live 登录。
@@ -154,12 +154,12 @@
   - 发布后 CDN/缓存/队列/canary。
   - CSRF/Origin 安全专项。
 - 需要产品或技术决策的问题：
-  - 是否把 duplicate/error 提示样式提升为本轮必修 UI 质量项。
+  - duplicate/error 提示样式已提升为本轮必修 UI 质量项并完成修复。
   - 是否在进入发布阶段前补真实支付 sandbox/live webhook 验收。
   - 是否把管理后台目录 CRUD 做一次完整写入式浏览器 QA。
 
 ## 六、变更落点
 
-- 主要实现：`scripts/smoke-mvp.ts`、`src/features/api-catalog/server/queries.ts`、`src/features/newapi-bridge/server/portal.ts`、`src/app/api/apipool/billing/route.ts`、`src/app/api/apipool/admin/adjust-quota/route.ts`。
+- 主要实现：`scripts/smoke-mvp.ts`、`src/features/api-catalog/server/queries.ts`、`src/features/newapi-bridge/server/portal.ts`、`src/app/api/apipool/billing/route.ts`、`src/app/api/apipool/admin/adjust-quota/route.ts`、`src/features/api-console/components/api-key-manager.tsx`。
 - 数据迁移：`src/config/db/migrations_sqlite/0005_elite_prowler.sql`、`src/config/db/migrations_sqlite/meta/0005_snapshot.json`、`src/config/db/migrations_sqlite/meta/_journal.json`、`src/config/db/schema.sqlite.ts`。
-- 回归测试：`tests/api-catalog/queries.test.ts`、`tests/newapi-bridge/portal.test.ts`、`tests/newapi-bridge/billing-ledger.test.ts`、`tests/api-console/billing.test.ts`、`tests/api-console/public-errors.test.ts`、`tests/smoke/mvp-smoke-script.test.ts`。
+- 回归测试：`tests/api-catalog/queries.test.ts`、`tests/newapi-bridge/portal.test.ts`、`tests/newapi-bridge/billing-ledger.test.ts`、`tests/api-console/billing.test.ts`、`tests/api-console/public-errors.test.ts`、`tests/api-console/api-key-manager.test.ts`、`tests/smoke/mvp-smoke-script.test.ts`。
