@@ -190,11 +190,11 @@ test('email settings document verification-link delivery check', async () => {
 
   assert.equal(emailVerification?.tab, 'email');
   assert.equal(emailVerification?.group, 'resend');
-  assert.match(
-    emailVerification?.tip ?? '',
-    /verification link/i,
-    'email verification setting should tell admins how to check link delivery'
-  );
+  const tip = emailVerification?.tip ?? '';
+  assert.match(tip, /Requires Resend/);
+  assert.match(tip, /after saving/i);
+  assert.match(tip, /verification link/i);
+  assert.match(tip, /sign-up|verify-email/i);
 });
 
 test('email verification flow sends links instead of custom code inputs', async () => {
