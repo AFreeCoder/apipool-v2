@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import {
   canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
   canRetryKeyStatus,
   getNextKeyStatus,
+  getUsageLogRowKey,
+  getUsageSyncDescription,
   getUsageSyncState,
 } from '@/features/api-console/lib/status';
 
@@ -84,4 +85,49 @@ test('usage sync state marks stale and failed windows', () => {
     getUsageSyncState(new Date('2026-05-24T09:30:00.000Z'), now),
     'failed'
   );
+});
+
+test('usage sync descriptions are readable for non-ready states', () => {
+  assert.equal(
+    getUsageSyncDescription({ status: 'empty' }),
+    'No usage in the last 7 days yet.'
+  );
+  assert.match(
+    getUsageSyncDescription({ status: 'syncing' }),
+    /Syncing usage/i
+  );
+  assert.equal(
+    getUsageSyncDescription({
+      status: 'stale',
+      errorMessage:
+        'Usage sync is temporarily unavailable. Showing the latest available portal data.',
+    }),
+    'Usage sync is temporarily unavailable. Showing the latest available portal data.'
+  );
+  assert.match(
+    getUsageSyncDescription({ status: 'failed' }),
+    /temporarily unavailable/i
+  );
+});
+
+test('usage log row keys remain unique when New API repeats request ids', () => {
+  const first = getUsageLogRowKey(
+    {
+      id: 'remote_request_duplicate',
+      modelId: 'gpt-4o-mini',
+      createdAt: new Date('2026-05-24T10:00:00.000Z'),
+    },
+    0
+  );
+  const second = getUsageLogRowKey(
+    {
+      id: 'remote_request_duplicate',
+      modelId: 'gpt-4o-mini',
+      createdAt: new Date('2026-05-24T10:00:00.000Z'),
+    },
+    1
+  );
+
+  assert.notEqual(first, second);
+  assert.match(first, /remote_request_duplicate/);
 });

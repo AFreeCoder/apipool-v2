@@ -29,6 +29,7 @@ import {
 } from '@/shared/components/ui/table';
 
 import {
+  applyApiKeyMutationResult,
   type ApiKeyGroup,
   buildCreateKeyRequest,
   buildGroupSelectOptions,
@@ -42,6 +43,7 @@ type ApiKeyRow = {
   allowedModels?: string[];
   groupName?: string | null;
   createdAt: string | Date;
+  deletedAt?: string | Date | null;
 };
 
 
@@ -114,7 +116,7 @@ export function ApiKeyManager({
     }
     if (!selectedGroupSlug) {
       setPlainKey('');
-      setMessage('Please select a group');
+      setMessage('Select a group first.');
       return;
     }
 
@@ -157,9 +159,7 @@ export function ApiKeyManager({
       await refreshKeys();
       return;
     }
-    setKeys((prev) =>
-      prev.map((key) => (key.id === id ? payload.data.key : key))
-    );
+    setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
   }
 
   async function deleteKey(id: string) {
@@ -183,9 +183,7 @@ export function ApiKeyManager({
       await refreshKeys();
       return;
     }
-    setKeys((prev) =>
-      prev.map((key) => (key.id === id ? payload.data.key : key))
-    );
+    setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
   }
 
   return (

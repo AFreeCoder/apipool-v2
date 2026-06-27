@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import {
+  getDefaultCallableModelId,
+  isModelCallable,
+  publicModels,
+} from '@/features/api-catalog/lib/catalog';
+import { createNewApiClient } from '@/features/newapi-bridge/server/client';
+import {
   adjustPortalQuota,
   createPortalApiKey,
   disablePortalApiKey,
   getPortalUsage,
 } from '@/features/newapi-bridge/server/portal';
-import { createNewApiClient } from '@/features/newapi-bridge/server/client';
-import {
-  getDefaultCallableModelId,
-  isModelCallable,
-  publicModels,
-} from '@/features/api-catalog/lib/catalog';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { findUserById } from '@/shared/models/user';
@@ -22,6 +22,8 @@ type SmokeStep = {
   ok: boolean;
   detail?: string;
 };
+
+type CleanupState = 'disabled' | 'disable_failed';
 
 const steps: SmokeStep[] = [];
 const PERMISSIONS = {
@@ -135,6 +137,44 @@ export function resolveSmokeLaunchModel(
   return requested.modelId;
 }
 
+export function assertHealthyNewApi(health: {
+  ok: boolean;
+  status?: number | string;
+  version?: string;
+}) {
+  if (health.ok) {
+    return;
+  }
+
+  throw new Error(
+    `New API health check failed: ${
+      [health.status, health.version].filter(Boolean).join(' ') || 'unhealthy'
+    }`
+  );
+}
+
+export function buildCleanupStateDetail({
+  keyId,
+  state,
+  errorMessage,
+}: {
+  keyId: string;
+  state: CleanupState;
+  errorMessage?: string;
+}) {
+  if (state === 'disabled') {
+    return `key ${keyId} is disabled and can be deleted from the dashboard if a fully clean state is required`;
+  }
+
+  return [
+    `key ${keyId} could not be disabled automatically`,
+    'manual cleanup required',
+    errorMessage,
+  ]
+    .filter(Boolean)
+    .join('; ');
+}
+
 async function waitForUsageVisibility(
   user: Awaited<ReturnType<typeof findUserById>>,
   expectedModel: string
@@ -228,6 +268,7 @@ async function main() {
     health.ok,
     [health.status, health.version].filter(Boolean).join(' ') || 'ready'
   );
+  assertHealthyNewApi(health);
 
   const user = await findUserById(portalUserId);
   if (!user) {
@@ -323,16 +364,29 @@ async function main() {
     if (!disabledRejected) {
       throw new Error('Disabled key still succeeded');
     }
+    record(
+      'cleanup state',
+      true,
+      buildCleanupStateDetail({ keyId, state: 'disabled' })
+    );
   } catch (error) {
     if (keyId) {
       try {
         await disablePortalApiKey(user.id, keyId);
-        record('cleanup disable API key', true);
+        record(
+          'cleanup state',
+          true,
+          buildCleanupStateDetail({ keyId, state: 'disabled' })
+        );
       } catch (cleanupError: any) {
         record(
-          'cleanup disable API key',
+          'cleanup state',
           false,
-          cleanupError?.message || 'cleanup failed'
+          buildCleanupStateDetail({
+            keyId,
+            state: 'disable_failed',
+            errorMessage: cleanupError?.message || 'cleanup failed',
+          })
         );
       }
     }

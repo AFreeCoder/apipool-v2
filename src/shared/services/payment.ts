@@ -1,3 +1,5 @@
+import { applyRechargeForOrder } from '@/features/newapi-bridge/server/recharge';
+
 import {
   CreemProvider,
   PaymentManager,
@@ -9,7 +11,6 @@ import {
   PaymentStatus,
   PaymentType,
 } from '@/extensions/payment/types';
-import { applyRechargeForOrder } from '@/features/newapi-bridge/server/recharge';
 import { getSnowId, getUuid } from '@/shared/lib/hash';
 import { Configs, getAllConfigs } from '@/shared/models/config';
 
@@ -21,7 +22,6 @@ import {
   NewCredit,
 } from '../models/credit';
 import {
-  findOrderByOrderNo,
   NewOrder,
   Order,
   OrderStatus,
@@ -122,7 +122,7 @@ export async function getPaymentService(
 
 /**
  * APIPool：订单入账后把同额 quota 加到 New API（兑换码模式，见 docs/06）。
- * 不抛出——webhook 必须成功返回；失败留在 ledger pending/failed 由 admin 重试。
+ * 不抛出——webhook 必须成功返回；未完成加额留给 ledger 状态和 admin 补偿入口处理。
  * 仅处理一次性 credits 订单（订阅不在 MVP 范围）。
  */
 async function applyApipoolRecharge(order: Order) {
@@ -162,13 +162,17 @@ export async function handleCheckoutSuccess({
   // Idempotency check: if order is already paid, skip processing
   if (order.status === OrderStatus.PAID) {
     console.log(`Order ${orderNo} is already paid, skipping`);
-    // webhook 重放时自愈：若此前加额未完成，借重放补执行（幂等）
+    // Webhook replay is also the recovery path when the order was marked paid
+    // but recharge ledger creation failed before it could be recorded.
     await applyApipoolRecharge(order);
     return;
   }
 
   // Only process orders in CREATED or PENDING status
-  if (order.status !== OrderStatus.CREATED && order.status !== OrderStatus.PENDING) {
+  if (
+    order.status !== OrderStatus.CREATED &&
+    order.status !== OrderStatus.PENDING
+  ) {
     console.log(`Order ${orderNo} status is ${order.status}, not processing`);
     return;
   }
@@ -273,14 +277,16 @@ export async function handleCheckoutSuccess({
       };
     }
 
-    await updateOrderInTransaction({
+    const transaction = await updateOrderInTransaction({
       orderNo,
       updateOrder,
       newSubscription,
       newCredit,
     });
 
-    await applyApipoolRecharge(order);
+    if (transaction?.order) {
+      await applyApipoolRecharge(order);
+    }
   } else if (
     session.paymentStatus === PaymentStatus.FAILED ||
     session.paymentStatus === PaymentStatus.CANCELED
@@ -313,6 +319,12 @@ export async function handlePaymentSuccess({
   const orderNo = order.orderNo;
   if (!orderNo) {
     throw new Error('invalid order');
+  }
+
+  if (order.status === OrderStatus.PAID) {
+    console.log(`Order ${orderNo} is already paid, skipping`);
+    await applyApipoolRecharge(order);
+    return;
   }
 
   if (order.paymentType === PaymentType.SUBSCRIPTION) {
@@ -412,14 +424,16 @@ export async function handlePaymentSuccess({
       };
     }
 
-    await updateOrderInTransaction({
+    const transaction = await updateOrderInTransaction({
       orderNo,
       updateOrder,
       newSubscription,
       newCredit,
     });
 
-    await applyApipoolRecharge(order);
+    if (transaction?.order) {
+      await applyApipoolRecharge(order);
+    }
   } else {
     throw new Error('unknown payment status');
   }

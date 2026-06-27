@@ -1,6 +1,13 @@
 import { BalanceWarning } from '@/features/api-console/components/balance-warning';
 import { StatCard } from '@/features/api-console/components/stat-card';
-import { formatUsdAmount } from '@/features/api-console/lib/money';
+import {
+  formatBalanceUsdAmount,
+  formatUsdAmount,
+} from '@/features/api-console/lib/money';
+import {
+  getUsageLogRowKey,
+  getUsageSyncDescription,
+} from '@/features/api-console/lib/status';
 import {
   getPortalUsage,
   listPortalApiKeys,
@@ -42,6 +49,7 @@ export default async function DashboardPage({
         listPortalApiKeys(user.id),
       ])
     : [EMPTY_USAGE, []];
+  const usageSyncDescription = getUsageSyncDescription(usage.summary);
 
   return (
     <div className="space-y-6">
@@ -80,14 +88,14 @@ export default async function DashboardPage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Balance"
-          value={formatUsdAmount(usage.summary.balanceUsd)}
+          value={formatBalanceUsdAmount(usage.summary.balanceUsd)}
           help="Billed per token"
           icon={<Wallet className="text-muted-foreground size-4" />}
         />
         <StatCard
           label="Requests · 7d"
           value={usage.summary.requestCount.toLocaleString()}
-          help={`Sync: ${usage.summary.status}`}
+          help={usageSyncDescription}
           icon={<Activity className="text-muted-foreground size-4" />}
         />
         <StatCard
@@ -145,7 +153,7 @@ export default async function DashboardPage({
               <tbody>
                 {usage.logs.slice(0, 8).map((log, index) => (
                   <tr
-                    key={`${log.id}-${index}`}
+                    key={getUsageLogRowKey(log, index)}
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">

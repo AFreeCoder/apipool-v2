@@ -40,6 +40,7 @@ export function isDealModel(model: ApiModel) {
 export type ModelFilters = {
   vendor?: string;
   group?: string;
+  category?: string;
   capability?: string;
   status?: string;
 };
@@ -72,7 +73,13 @@ export function parseModelFilters(
 ): ModelFilters {
   const filters: ModelFilters = {};
 
-  for (const key of ['vendor', 'group', 'capability', 'status'] as const) {
+  for (const key of [
+    'vendor',
+    'group',
+    'category',
+    'capability',
+    'status',
+  ] as const) {
     const value = firstParam(params[key]);
     if (value) filters[key] = value;
   }
@@ -85,7 +92,13 @@ export function buildModelFilterHref(
   patch: ModelFilters
 ) {
   const filters: ModelFilters = { ...current };
-  for (const key of ['vendor', 'group', 'capability', 'status'] as const) {
+  for (const key of [
+    'vendor',
+    'group',
+    'category',
+    'capability',
+    'status',
+  ] as const) {
     if (!(key in patch)) continue;
 
     const value = patch[key];
@@ -98,7 +111,13 @@ export function buildModelFilterHref(
 
   const params = new URLSearchParams();
 
-  for (const key of ['vendor', 'group', 'capability', 'status'] as const) {
+  for (const key of [
+    'vendor',
+    'group',
+    'category',
+    'capability',
+    'status',
+  ] as const) {
     if (filters[key]) params.set(key, filters[key]);
   }
 

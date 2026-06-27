@@ -26,6 +26,10 @@ const settingsZhPath = join(
   root,
   'src/config/locale/messages/zh/admin/settings.json'
 );
+const authConfigPath = join(root, 'src/core/auth/config.ts');
+const signUpPath = join(root, 'src/shared/blocks/sign/sign-up.tsx');
+const signUpFormPath = join(root, 'src/shared/blocks/sign/sign-up-form.tsx');
+const verifyEmailPath = join(root, 'src/shared/blocks/sign/verify-email.tsx');
 
 let configModel: typeof import('@/shared/models/config');
 let settingsService: typeof import('@/shared/services/settings');
@@ -91,7 +95,9 @@ async function setupDb() {
   for (const file of (await readdir(migrationsDir))
     .filter((name) => name.endsWith('.sql'))
     .sort()) {
-    await client.executeMultiple(await readFile(join(migrationsDir, file), 'utf8'));
+    await client.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
   }
   client.close();
 
@@ -104,7 +110,9 @@ function namesForTab(
   tab: string
 ) {
   return new Set(
-    settings.filter((setting) => setting.tab === tab).map((setting) => setting.name)
+    settings
+      .filter((setting) => setting.tab === tab)
+      .map((setting) => setting.name)
   );
 }
 
@@ -113,8 +121,8 @@ function collectKeyPaths(value: unknown, prefix = ''): string[] {
     return prefix ? [prefix] : [];
   }
 
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) =>
-    collectKeyPaths(child, prefix ? `${prefix}.${key}` : key)
+  return Object.entries(value as Record<string, unknown>).flatMap(
+    ([key, child]) => collectKeyPaths(child, prefix ? `${prefix}.${key}` : key)
   );
 }
 
@@ -156,13 +164,54 @@ test('settings service exposes auth and email fields for tab filtering', async (
     'google_client_secret',
     'github_client_id',
     'github_client_secret',
-    'email_verification_enabled',
   ]) {
     assert.ok(authNames.has(name), `auth tab should include ${name}`);
   }
+  assert.equal(
+    authNames.has('email_verification_enabled'),
+    false,
+    'auth tab should leave email verification delivery settings to the email tab'
+  );
 
-  for (const name of ['resend_api_key', 'resend_sender_email']) {
+  for (const name of [
+    'resend_api_key',
+    'resend_sender_email',
+    'email_verification_enabled',
+  ]) {
     assert.ok(emailNames.has(name), `email tab should include ${name}`);
+  }
+});
+
+test('email settings document verification-link delivery check', async () => {
+  const settings = await settingsService.getSettings();
+  const emailVerification = settings.find(
+    (setting) => setting.name === 'email_verification_enabled'
+  );
+
+  assert.equal(emailVerification?.tab, 'email');
+  assert.equal(emailVerification?.group, 'resend');
+  const tip = emailVerification?.tip ?? '';
+  assert.match(tip, /Requires Resend/);
+  assert.match(tip, /after saving/i);
+  assert.match(tip, /verification link/i);
+  assert.match(tip, /sign-up|verify-email/i);
+});
+
+test('email verification flow sends links instead of custom code inputs', async () => {
+  const [authConfig, signUp, signUpForm, verifyEmail] = await Promise.all([
+    readFile(authConfigPath, 'utf8'),
+    readFile(signUpPath, 'utf8'),
+    readFile(signUpFormPath, 'utf8'),
+    readFile(verifyEmailPath, 'utf8'),
+  ]);
+
+  assert.match(authConfig, /sendVerificationEmail/);
+  assert.match(signUp, /sendVerificationEmail/);
+  assert.match(signUpForm, /sendVerificationEmail/);
+  assert.match(verifyEmail, /sendVerificationEmail/);
+
+  for (const source of [authConfig, signUp, signUpForm, verifyEmail]) {
+    assert.doesNotMatch(source, /verification-code|VerificationCode/);
   }
 });
 

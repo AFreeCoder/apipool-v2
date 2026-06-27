@@ -120,6 +120,8 @@
         "amount": "Amount",
         "status": "Status",
         "reason": "Reason",
+        "newapi_change": "New API Change",
+        "audit": "Audit",
         "operator": "Operator"
       }
     },
@@ -144,8 +146,10 @@
       },
       "ledger": {
         "pending": "Pending",
+        "processing": "Processing",
         "applied": "Applied",
-        "failed": "Failed"
+        "failed": "Failed",
+        "reconciliation_required": "Needs reconciliation"
       },
       "request": {
         "success": "Success",

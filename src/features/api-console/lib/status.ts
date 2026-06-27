@@ -18,6 +18,17 @@ export type KeyLifecycleEvent =
 
 export type UsageSyncState = 'ready' | 'empty' | 'syncing' | 'stale' | 'failed';
 
+export type UsageSyncSummary = {
+  status: UsageSyncState;
+  errorMessage?: string | null;
+};
+
+export type UsageLogIdentity = {
+  id?: string | null;
+  modelId?: string | null;
+  createdAt?: Date | string | number | null;
+};
+
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
@@ -28,10 +39,7 @@ export function getNextKeyStatus(
   if (event === 'remote_failed_terminal') return 'failed_terminal';
   if (event === 'remote_failed_retriable') return 'failed_retriable';
 
-  if (
-    current === 'creating_remote' &&
-    event === 'remote_created_local_saved'
-  ) {
+  if (current === 'creating_remote' && event === 'remote_created_local_saved') {
     return 'active';
   }
 
@@ -54,8 +62,7 @@ export function getNextKeyStatus(
 
 export function canRetryKeyStatus(status: KeyLifecycleStatus) {
   return (
-    status === 'failed_retriable' ||
-    status === 'remote_created_binding_failed'
+    status === 'failed_retriable' || status === 'remote_created_binding_failed'
   );
 }
 
@@ -93,4 +100,34 @@ export function getUsageSyncState(
   if (age <= FIVE_MINUTES_MS) return 'ready';
   if (age <= TWO_HOURS_MS) return 'stale';
   return 'failed';
+}
+
+export function getUsageSyncDescription(summary: UsageSyncSummary) {
+  if (summary.status === 'empty') {
+    return 'No usage in the last 7 days yet.';
+  }
+  if (summary.status === 'syncing') {
+    return 'Syncing usage. Showing the latest available data.';
+  }
+  if (summary.status === 'stale') {
+    return (
+      summary.errorMessage ||
+      'Usage sync is delayed. Showing the latest available data.'
+    );
+  }
+  if (summary.status === 'failed') {
+    return (
+      summary.errorMessage ||
+      'Usage sync is temporarily unavailable. Try again later.'
+    );
+  }
+  return 'Usage data is up to date.';
+}
+
+export function getUsageLogRowKey(log: UsageLogIdentity, index: number) {
+  const createdAt =
+    log.createdAt instanceof Date
+      ? log.createdAt.toISOString()
+      : String(log.createdAt ?? 'unknown-time');
+  return `${log.id || 'usage-log'}:${createdAt}:${log.modelId || 'unknown-model'}:${index}`;
 }

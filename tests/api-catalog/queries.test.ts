@@ -63,13 +63,14 @@ async function createFixtureModel(input: {
   groupId: string;
   statusId: string;
   capabilityIds: string[];
+  category?: string;
   sortOrder: number;
 }) {
   const model = await modules.service.createModel({
     modelId: input.modelId,
     displayName: input.displayName,
     vendorId: input.vendorId,
-    category: 'llm',
+    category: input.category ?? 'llm',
     contextWindow: 128000,
   });
 
@@ -179,6 +180,12 @@ async function seedQueryFixtures() {
     sortOrder: 99,
     status: 'disabled',
   });
+  await modules.service.createCategory({
+    slug: 'hidden-category',
+    name: 'Hidden Category',
+    sortOrder: 99,
+    status: 'disabled',
+  });
   await modules.service.createStatus({
     slug: 'disabled-status',
     name: 'Disabled Status',
@@ -229,6 +236,16 @@ async function seedQueryFixtures() {
     statusId: retired.id,
     capabilityIds: [vision.id],
     sortOrder: 30,
+  });
+  await createFixtureModel({
+    modelId: 'query-image-category',
+    displayName: 'Query Image Category',
+    vendorId: openai.id,
+    groupId: official.id,
+    statusId: available.id,
+    capabilityIds: [vision.id],
+    category: 'image',
+    sortOrder: 40,
   });
 }
 
@@ -302,6 +319,31 @@ test('getPublicListings applies vendor, group, capability, and status filters', 
     combined.map((listing: { modelId: string }) => listing.modelId),
     ['claude-query-test']
   );
+
+  const categoryListings = await modules.queries.getPublicListingsUncached({
+    category: 'llm',
+  });
+  assert.ok(categoryListings.length > 0);
+  assert.equal(
+    categoryListings.some(
+      (listing: { modelId: string }) =>
+        listing.modelId === 'query-image-category'
+    ),
+    false
+  );
+  assert.ok(
+    categoryListings.every(
+      (listing: { category: string }) => listing.category === 'llm'
+    )
+  );
+
+  const imageListings = await modules.queries.getPublicListingsUncached({
+    category: 'image',
+  });
+  assert.deepEqual(
+    imageListings.map((listing: { modelId: string }) => listing.modelId),
+    ['query-image-category']
+  );
 });
 
 test('getPublicListings aggregates capabilities for each model without exposing internal columns', async () => {
@@ -314,6 +356,7 @@ test('getPublicListings aggregates capabilities for each model without exposing 
   );
 
   assert.ok(seeded);
+  assert.equal(seeded.category, 'llm');
   assert.deepEqual(new Set(seeded.capabilities), new Set(['text', 'vision']));
   assert.equal('id' in seeded, false);
   assert.equal('newapiGroup' in seeded, false);
@@ -353,6 +396,11 @@ test('getFilterDimensions returns only options present in public-visible listing
     ),
     false
   );
+  assert.ok(
+    dimensions.categories.some(
+      (category: { slug: string }) => category.slug === 'llm'
+    )
+  );
   assert.equal(
     dimensions.vendors.some(
       (vendor: { slug: string }) => vendor.slug === 'hidden-vendor'
@@ -362,6 +410,12 @@ test('getFilterDimensions returns only options present in public-visible listing
   assert.equal(
     dimensions.capabilities.some(
       (capability: { slug: string }) => capability.slug === 'hidden-capability'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.categories.some(
+      (category: { slug: string }) => category.slug === 'hidden-category'
     ),
     false
   );

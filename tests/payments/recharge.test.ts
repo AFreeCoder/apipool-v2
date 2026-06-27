@@ -26,12 +26,15 @@ async function setupDb() {
   for (const file of (await readdir(migrationsDir))
     .filter((name) => name.endsWith('.sql'))
     .sort()) {
-    await client.executeMultiple(await readFile(join(migrationsDir, file), 'utf8'));
+    await client.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
   }
 
   const schema = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
   const recharge = await import('@/features/newapi-bridge/server/recharge');
+  const crypto = await import('@/features/newapi-bridge/server/crypto');
   const payment = await import('@/shared/services/payment');
   const orderModel = await import('@/shared/models/order');
   const { NewApiBridgeError } = await import(
@@ -40,8 +43,10 @@ async function setupDb() {
 
   modules = {
     db,
+    rawClient: client,
     schema,
     recharge,
+    crypto,
     payment,
     orderModel,
     NewApiBridgeError,
@@ -49,7 +54,10 @@ async function setupDb() {
 }
 
 async function insertUser(id: string, email: string) {
-  await modules.db().insert(modules.schema.user).values({ id, name: id, email });
+  await modules
+    .db()
+    .insert(modules.schema.user)
+    .values({ id, name: id, email });
   return { id, name: id, email };
 }
 
@@ -68,12 +76,88 @@ function createWorkingRemoteClient() {
   return { client, getAdjustCalls: () => adjustCalls };
 }
 
+function createBlockingRemoteClient() {
+  let adjustCalls = 0;
+  let released = false;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = () => {
+      released = true;
+      resolve();
+    };
+  });
+  const client = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (input: { reference: string }) => {
+      adjustCalls += 1;
+      await gate;
+      return {
+        changeId: `code-${input.reference}-${adjustCalls}`,
+        balanceUsd: 5,
+      };
+    },
+  } as any;
+  return {
+    client,
+    release,
+    getAdjustCalls: () => adjustCalls,
+    isReleased: () => released,
+  };
+}
+
+async function insertActiveBinding(userId: string) {
+  await modules
+    .db()
+    .insert(modules.schema.newApiUserBinding)
+    .values({
+      id: `binding_${userId}`,
+      portalUserId: userId,
+      newapiUserId: `remote_${userId}`,
+      status: 'active',
+      newapiUsername: `remote_${userId}`,
+      newapiAccessTokenEnc:
+        modules.crypto.encryptCredential('test-access-token'),
+    });
+}
+
+async function insertRechargeLedger(input: {
+  id: string;
+  userId: string;
+  orderNo: string;
+  amountUsd: number;
+  status?: string;
+}) {
+  await modules
+    .db()
+    .insert(modules.schema.apipoolLedgerEntry)
+    .values({
+      id: input.id,
+      portalUserId: input.userId,
+      operatorUserId: input.userId,
+      newapiUserId: `remote_${input.userId}`,
+      orderNo: input.orderNo,
+      amountUsd: input.amountUsd,
+      source: 'recharge',
+      status: input.status ?? 'pending',
+      executor: 'newapi',
+      reason: `recharge order ${input.orderNo}`,
+      rollbackStatus: 'not_required',
+    });
+}
+
 async function listLedgerByOrderNo(orderNo: string) {
   return modules
     .db()
     .select()
     .from(modules.schema.apipoolLedgerEntry)
     .where(eq(modules.schema.apipoolLedgerEntry.orderNo, orderNo));
+}
+
+async function executeRaw(sql: string) {
+  await modules.rawClient.execute(sql);
 }
 
 test.before(setupDb);
@@ -109,6 +193,140 @@ test('recharge applies once and is idempotent on replay', async () => {
   assert.equal((await listLedgerByOrderNo(input.orderNo)).length, 1);
 });
 
+test('recharge remains applied when success audit logging fails after remote quota adjustment', async () => {
+  const user = await insertUser(
+    'recharge_user_audit_failure',
+    'recharge-audit-failure@example.com'
+  );
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const input = {
+    orderNo: 'order_recharge_audit_failure',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 500,
+    currency: 'USD',
+  };
+
+  await executeRaw(`
+    CREATE TRIGGER fail_recharge_apply_audit
+    BEFORE INSERT ON newapi_bridge_audit_log
+    WHEN NEW.action = 'newapi.recharge.apply'
+    BEGIN
+      SELECT RAISE(FAIL, 'simulate audit write failure');
+    END;
+  `);
+
+  try {
+    const result = await modules.recharge.applyRechargeForOrder(input, client);
+    assert.equal(result.outcome, 'applied');
+  } finally {
+    await executeRaw('DROP TRIGGER IF EXISTS fail_recharge_apply_audit');
+  }
+
+  const rows = await listLedgerByOrderNo(input.orderNo);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'applied');
+  assert.match(
+    rows[0].newapiChangeId,
+    /^code-recharge:order_recharge_audit_failure$/
+  );
+  assert.equal(getAdjustCalls(), 1);
+
+  const replay = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(replay.outcome, 'already_applied');
+  assert.equal(getAdjustCalls(), 1);
+});
+
+test('recharge claims a pending ledger before remote quota adjustment', async () => {
+  const user = await insertUser(
+    'recharge_user_concurrent_pending',
+    'recharge-concurrent-pending@example.com'
+  );
+  await insertActiveBinding(user.id);
+  await insertRechargeLedger({
+    id: 'ledger_concurrent_pending',
+    userId: user.id,
+    orderNo: 'order_recharge_concurrent_pending',
+    amountUsd: 5,
+  });
+  const { client, getAdjustCalls, isReleased, release } =
+    createBlockingRemoteClient();
+  const input = {
+    orderNo: 'order_recharge_concurrent_pending',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 500,
+    currency: 'USD',
+  };
+
+  const first = modules.recharge.applyRechargeForOrder(input, client);
+  const second = modules.recharge.applyRechargeForOrder(input, client);
+
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(getAdjustCalls(), 1);
+  } finally {
+    if (!isReleased()) release();
+  }
+
+  const results = await Promise.all([first, second]);
+  assert.equal(getAdjustCalls(), 1);
+  assert.deepEqual(results.map((result: any) => result.outcome).sort(), [
+    'applied',
+    'pending_retry',
+  ]);
+});
+
+test('recharge requires reconciliation instead of retrying after remote success and applied update failure', async () => {
+  const user = await insertUser(
+    'recharge_user_apply_failure',
+    'recharge-apply-failure@example.com'
+  );
+  await insertActiveBinding(user.id);
+  await insertRechargeLedger({
+    id: 'ledger_apply_failure',
+    userId: user.id,
+    orderNo: 'order_recharge_apply_failure',
+    amountUsd: 5,
+  });
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const input = {
+    orderNo: 'order_recharge_apply_failure',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 500,
+    currency: 'USD',
+  };
+
+  await executeRaw(`
+    CREATE TRIGGER fail_recharge_applied_update
+    BEFORE UPDATE OF status ON apipool_ledger_entry
+    WHEN NEW.status = 'applied' AND OLD.order_no = 'order_recharge_apply_failure'
+    BEGIN
+      SELECT RAISE(FAIL, 'simulate applied ledger update failure');
+    END;
+  `);
+
+  try {
+    const result = await modules.recharge.applyRechargeForOrder(input, client);
+    assert.equal(result.outcome, 'failed');
+  } finally {
+    await executeRaw('DROP TRIGGER IF EXISTS fail_recharge_applied_update');
+  }
+
+  let rows = await listLedgerByOrderNo(input.orderNo);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'reconciliation_required');
+  assert.equal(getAdjustCalls(), 1);
+
+  const replay = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(replay.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 1);
+
+  rows = await listLedgerByOrderNo(input.orderNo);
+  assert.equal(rows[0].status, 'reconciliation_required');
+});
+
 test('recharge survives a New API outage and retries without double-charging', async () => {
   const user = await insertUser('recharge_user_2', 'recharge2@example.com');
   const input = {
@@ -128,7 +346,10 @@ test('recharge survives a New API outage and retries without double-charging', a
     },
   } as any;
 
-  const failed = await modules.recharge.applyRechargeForOrder(input, downClient);
+  const failed = await modules.recharge.applyRechargeForOrder(
+    input,
+    downClient
+  );
   assert.equal(failed.outcome, 'pending_retry');
 
   let rows = await listLedgerByOrderNo(input.orderNo);
@@ -289,4 +510,168 @@ test('handleCheckoutSuccess grants credit once and leaves recharge retriable whe
   ledger = await listLedgerByOrderNo(orderNo);
   assert.equal(ledger.length, 1);
   assert.equal(ledger[0].status, 'applied');
+});
+
+test('handleCheckoutSuccess self-heals missing recharge ledger on paid webhook replay', async () => {
+  const user = await insertUser(
+    'recharge_user_paid_replay_missing_ledger',
+    'recharge-paid-replay-missing-ledger@example.com'
+  );
+  const orderNo = 'order_checkout_paid_replay_missing_ledger';
+
+  await modules.orderModel.createOrder({
+    id: 'order_row_paid_replay_missing_ledger',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    currency: 'USD',
+    productId: 'topup_5',
+    paymentType: 'one-time',
+    paymentInterval: 'one-time',
+    paymentProvider: 'stripe',
+    checkoutInfo: '',
+    createdAt: new Date(),
+    productName: 'APIPool Credit $5',
+    description: 'paid replay missing ledger',
+    callbackUrl: '',
+    creditsAmount: 500,
+    creditsValidDays: 0,
+    planName: '',
+    paymentProductId: '',
+  });
+
+  const paidOrder = await modules.orderModel.findOrderByOrderNo(orderNo);
+  const session = {
+    paymentStatus: 'paid',
+    paymentResult: { id: 'evt_paid_replay_missing_ledger' },
+    paymentInfo: {
+      paymentAmount: 500,
+      paymentCurrency: 'USD',
+      paidAt: new Date(),
+    },
+  } as any;
+
+  await modules.payment.handleCheckoutSuccess({ order: paidOrder, session });
+
+  const ledger = await listLedgerByOrderNo(orderNo);
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].status, 'pending');
+  assert.equal(ledger[0].source, 'recharge');
+  assert.equal(ledger[0].amountUsd, 5);
+});
+
+test('handleCheckoutSuccess does not start recharge when the paid transition is not won', async () => {
+  const user = await insertUser(
+    'recharge_user_lost_transition',
+    'recharge-lost-transition@example.com'
+  );
+  const orderNo = 'order_checkout_lost_transition';
+
+  await modules.orderModel.createOrder({
+    id: 'order_row_lost_transition',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    currency: 'USD',
+    productId: 'topup_5',
+    paymentType: 'one-time',
+    paymentInterval: 'one-time',
+    paymentProvider: 'stripe',
+    checkoutInfo: '',
+    createdAt: new Date(),
+    productName: 'APIPool Credit $5',
+    description: 'stale paid order',
+    callbackUrl: '',
+    creditsAmount: 500,
+    creditsValidDays: 0,
+    planName: '',
+    paymentProductId: '',
+  });
+
+  const paidOrder = await modules.orderModel.findOrderByOrderNo(orderNo);
+  const staleOrder = { ...paidOrder, status: 'created' };
+  const session = {
+    paymentStatus: 'paid',
+    paymentResult: { id: 'evt_lost_transition' },
+    paymentInfo: {
+      paymentAmount: 500,
+      paymentCurrency: 'USD',
+      paidAt: new Date(),
+    },
+  } as any;
+
+  await modules.payment.handleCheckoutSuccess({ order: staleOrder, session });
+
+  const credits = await modules
+    .db()
+    .select()
+    .from(modules.schema.credit)
+    .where(eq(modules.schema.credit.orderNo, orderNo));
+  assert.equal(credits.length, 0);
+
+  const ledger = await listLedgerByOrderNo(orderNo);
+  assert.equal(ledger.length, 0);
+});
+
+test('order transaction does not grant credit when paid-order optimistic lock is not won', async () => {
+  const user = await insertUser(
+    'recharge_user_stale_order',
+    'recharge-stale-order@example.com'
+  );
+  const orderNo = 'order_checkout_stale_paid';
+
+  await modules.orderModel.createOrder({
+    id: 'order_row_stale_paid',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    currency: 'USD',
+    productId: 'topup_5',
+    paymentType: 'one-time',
+    paymentInterval: 'one-time',
+    paymentProvider: 'stripe',
+    checkoutInfo: '',
+    createdAt: new Date(),
+    productName: 'APIPool Credit $5',
+    description: 'stale paid order',
+    callbackUrl: '',
+    creditsAmount: 500,
+    creditsValidDays: 0,
+    planName: '',
+    paymentProductId: '',
+  });
+
+  const result = await modules.orderModel.updateOrderInTransaction({
+    orderNo,
+    updateOrder: { status: 'paid' },
+    newCredit: {
+      id: 'credit_should_not_be_inserted',
+      userId: user.id,
+      userEmail: user.email,
+      orderNo,
+      transactionNo: 'txn_should_not_be_inserted',
+      transactionType: 'grant',
+      transactionScene: 'payment',
+      credits: 500,
+      remainingCredits: 500,
+      description: 'Grant credit',
+      status: 'active',
+    },
+  });
+
+  assert.equal(result.order ?? null, null);
+  assert.equal(result.credit ?? null, null);
+
+  const credits = await modules
+    .db()
+    .select()
+    .from(modules.schema.credit)
+    .where(eq(modules.schema.credit.orderNo, orderNo));
+  assert.equal(credits.length, 0);
 });

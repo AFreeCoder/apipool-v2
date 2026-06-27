@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
-import { formatUsdAmount } from '@/features/api-console/lib/money';
+import {
+  formatBalanceUsdAmount,
+  formatLedgerUsdAmount,
+  formatUsdAmount,
+} from '@/features/api-console/lib/money';
 import {
   getPortalUsage,
   listAdjustmentLedgerByPortalUser,
@@ -21,7 +25,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card';
-import { findUserById } from '@/shared/models/user';
+import { findUserById, getUserInfo } from '@/shared/models/user';
+import { hasPermission } from '@/shared/services/rbac';
 import { Crumb } from '@/shared/types/blocks/common';
 
 type LoadResult<T> = {
@@ -71,6 +76,31 @@ function formatOptionalUsd(value: number | null | undefined, fallback: string) {
   return formatUsdAmount(value);
 }
 
+function formatOptionalBalanceUsd(
+  value: number | null | undefined,
+  fallback: string
+) {
+  if (value === undefined || value === null) return fallback;
+  return formatBalanceUsdAmount(value);
+}
+
+function formatOptionalQuotaUnits(
+  value: number | null | undefined,
+  locale: string,
+  fallback: string
+) {
+  if (value === undefined || value === null) return fallback;
+  return new Intl.NumberFormat(localeTag(locale)).format(value);
+}
+
+function formatOptionalLedgerUsd(
+  value: number | null | undefined,
+  fallback: string
+) {
+  if (value === undefined || value === null) return fallback;
+  return formatLedgerUsdAmount(value);
+}
+
 function formatDateTime(
   value: Date | number | string | null | undefined,
   locale: string,
@@ -101,7 +131,11 @@ function translateStatus(
 }
 
 function statusVariant(status: string | null | undefined) {
-  if (status === 'failed' || status === 'failed_terminal') {
+  if (
+    status === 'failed' ||
+    status === 'failed_terminal' ||
+    status === 'reconciliation_required'
+  ) {
     return 'destructive' as const;
   }
   if (status === 'active' || status === 'applied' || status === 'ready') {
@@ -150,6 +184,10 @@ export default async function AdminUserDetailPage({
     redirectUrl: '/admin/no-permission',
     locale,
   });
+  const currentUser = await getUserInfo();
+  const canAdjustApipoolQuota = currentUser
+    ? await hasPermission(currentUser.id, PERMISSIONS.APIPOOL_QUOTA_ADJUST)
+    : false;
 
   const t = await getTranslations('admin.users');
   const targetUser = await findUserById(id);
@@ -272,7 +310,8 @@ export default async function AdminUserDetailPage({
     {
       name: 'amountUsd',
       title: t('detail.ledger.columns.amount'),
-      callback: (item: any) => formatOptionalUsd(item.amountUsd, emptyValue),
+      callback: (item: any) =>
+        formatOptionalLedgerUsd(item.amountUsd, emptyValue),
     },
     {
       name: 'status',
@@ -287,6 +326,26 @@ export default async function AdminUserDetailPage({
       name: 'reason',
       title: t('detail.ledger.columns.reason'),
       placeholder: emptyValue,
+    },
+    {
+      name: 'newapiChangeId',
+      title: t('detail.ledger.columns.newapi_change'),
+      callback: (item: any) => item.newapiChangeId || emptyValue,
+    },
+    {
+      name: 'audit',
+      title: t('detail.ledger.columns.audit'),
+      callback: (item: any) =>
+        item.audit ? (
+          <div className="flex flex-col gap-1">
+            <span>{item.audit.idempotencyKey || item.audit.id}</span>
+            <span className="text-muted-foreground text-xs">
+              {item.audit.errorMessage || item.audit.status}
+            </span>
+          </div>
+        ) : (
+          emptyValue
+        ),
     },
     {
       name: 'operator',
@@ -312,14 +371,18 @@ export default async function AdminUserDetailPage({
         <MainHeader
           title={t('detail.title')}
           description={targetUser.email}
-          actions={[
-            {
-              title: t('detail.buttons.adjust_quota'),
-              icon: 'Gauge',
-              url: `/admin/apipool-adjustments?portalUserId=${targetUser.id}`,
-              variant: 'outline',
-            },
-          ]}
+          actions={
+            canAdjustApipoolQuota
+              ? [
+                  {
+                    title: t('detail.buttons.adjust_quota'),
+                    icon: 'Gauge',
+                    url: `/admin/apipool-adjustments?portalUserId=${targetUser.id}`,
+                    variant: 'outline',
+                  },
+                ]
+              : []
+          }
         />
 
         <div className="space-y-6">
@@ -337,15 +400,16 @@ export default async function AdminUserDetailPage({
               <dl className="grid gap-4 md:grid-cols-3">
                 <Metric
                   label={t('detail.balance.fields.balance')}
-                  value={formatOptionalUsd(
+                  value={formatOptionalBalanceUsd(
                     usageResult.data.summary.balanceUsd,
                     t('detail.empty.not_initialized')
                   )}
                 />
                 <Metric
                   label={t('detail.balance.fields.quota_remaining')}
-                  value={formatOptionalUsd(
+                  value={formatOptionalQuotaUnits(
                     usageResult.data.summary.quotaRemaining,
+                    locale,
                     t('detail.empty.not_initialized')
                   )}
                 />

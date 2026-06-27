@@ -467,8 +467,19 @@ test('listPortalApiKeys keeps delete pending until remote revocation is visible'
     portalUser.id,
     remote
   );
-  assert.equal(listedAfterRevocation[0].status, 'deleted');
-  assert.ok(listedAfterRevocation[0].deletedAt instanceof Date);
+  assert.equal(
+    listedAfterRevocation.some((key: any) => key.id === created.binding.id),
+    false,
+    'revoked keys should be persisted as deleted but filtered from user lists'
+  );
+
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+  assert.equal(row.status, 'deleted');
+  assert.ok(row.deletedAt instanceof Date);
 });
 
 test('disablePortalApiKey and deletePortalApiKey complete only after remote confirmation', async () => {
@@ -577,6 +588,162 @@ test('deletePortalApiKey keeps retriable failure when remote confirms a differen
 
   assert.equal(row.status, 'failed_retriable');
   assert.equal(row.deletedAt, null);
+});
+
+test('deletePortalApiKey cleans up Task 4 cleanable statuses with real remote-id shapes', async () => {
+  const portalUser = await insertUser(
+    'portal_user_cleanup_cleanable_statuses',
+    'cleanup-cleanable-statuses@example.com'
+  );
+  const remote = createSuccessfulRemoteClient();
+
+  const creating = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Cleanup creating_remote'),
+    remote as any
+  );
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({
+      status: 'creating_remote',
+      newapiKeyId: 'pending:cleanup-creating',
+    })
+    .where(eq(modules.newApiKeyBinding.id, creating.binding.id));
+
+  const terminal = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Cleanup failed_terminal'),
+    remote as any
+  );
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({ status: 'failed_terminal' })
+    .where(eq(modules.newApiKeyBinding.id, terminal.binding.id));
+
+  const retriableRemote = {
+    ...remote,
+    createKey: async () => ({
+      id: 'remote_cleanup_retriable',
+      key: 'sk-cleanup-retriable',
+      maskedKey: 'sk-...cleanup-retriable',
+      status: 'disabled',
+    }),
+  };
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        portalKeyInput('Cleanup failed_retriable'),
+        retriableRemote as any
+      ),
+    /did not return active/
+  );
+
+  const conflictSeed = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Cleanup conflict seed'),
+    remote as any
+  );
+  const [conflictRow] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, conflictSeed.binding.id));
+
+  const bindingFailureRemote = {
+    ...remote,
+    createKey: async () => ({
+      id: conflictRow.newapiKeyId,
+      key: 'sk-cleanup-binding-failed',
+      maskedKey: 'sk-...cleanup-binding-failed',
+      status: 'active',
+    }),
+  };
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        portalKeyInput('Cleanup remote_created_binding_failed'),
+        bindingFailureRemote as any
+      ),
+    /Failed query|UNIQUE|unique|constraint/i
+  );
+
+  let remoteDeleteAttempts = 0;
+  const cleanupRemote = {
+    deleteKey: async () => {
+      remoteDeleteAttempts += 1;
+      throw new Error('remote residue delete failed');
+    },
+  };
+
+  const rowsBeforeCleanup = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
+  const cleanupTargets = [
+    {
+      id: creating.binding.id,
+      expectedStatus: 'creating_remote',
+      expectRemoteDelete: false,
+    },
+    {
+      id: terminal.binding.id,
+      expectedStatus: 'failed_terminal',
+      expectRemoteDelete: true,
+    },
+    {
+      id: rowsBeforeCleanup.find(
+        (row: any) => row.newapiKeyId === 'remote_cleanup_retriable'
+      )?.id,
+      expectedStatus: 'failed_retriable',
+      expectRemoteDelete: true,
+    },
+    {
+      id: rowsBeforeCleanup.find(
+        (row: any) =>
+          row.displayName === 'Cleanup remote_created_binding_failed'
+      )?.id,
+      expectedStatus: 'remote_created_binding_failed',
+      expectRemoteDelete: false,
+    },
+  ];
+
+  for (const target of cleanupTargets) {
+    assert.ok(target.id, `${target.expectedStatus} fixture should exist`);
+    const before = rowsBeforeCleanup.find((row: any) => row.id === target.id);
+    assert.equal(before.status, target.expectedStatus);
+
+    const attemptsBefore = remoteDeleteAttempts;
+    const deleted = await modules.portal.deletePortalApiKey(
+      portalUser.id,
+      target.id,
+      cleanupRemote as any
+    );
+
+    assert.equal(deleted.status, 'deleted');
+    assert.ok(deleted.deletedAt instanceof Date);
+    assert.equal(
+      remoteDeleteAttempts - attemptsBefore,
+      target.expectRemoteDelete ? 1 : 0
+    );
+  }
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
+
+  assert.deepEqual(
+    cleanupTargets.map(
+      (target) => rows.find((row: any) => row.id === target.id)?.status
+    ),
+    ['deleted', 'deleted', 'deleted', 'deleted']
+  );
 });
 
 test('key lifecycle mutations reject non-actionable statuses before remote calls', async () => {
@@ -862,6 +1029,47 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
   assert.equal(entries[0].rollbackStatus, 'not_required');
 });
 
+test('adjustPortalQuota marks remote-applied confirmation failures for reconciliation', async () => {
+  const portalUser = await insertUser(
+    'portal_user_adjust_reconciliation',
+    'adjust-reconciliation@example.com'
+  );
+  const operator = await insertUser(
+    'operator_adjust_reconciliation',
+    'ops-reconciliation@example.com'
+  );
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async () => {
+      const error = new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'quota confirmation timed out',
+      }) as any;
+      error.reconciliationRequired = true;
+      error.changeId = 'portal-adjustment:reconciliation-change';
+      throw error;
+    },
+  } as any;
+
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: -5,
+    reason: 'Manual MVP decrease',
+    client: fakeRemote,
+  });
+
+  assert.equal(ledger.status, 'reconciliation_required');
+  assert.equal(
+    ledger.newapiChangeId,
+    'portal-adjustment:reconciliation-change'
+  );
+  assert.equal(ledger.rollbackStatus, 'not_required');
+});
+
 test('getPortalUsage snapshots repeated remote logs only once', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_sync',
@@ -915,6 +1123,95 @@ test('getPortalUsage snapshots repeated remote logs only once', async () => {
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].newapiRequestId, syncedLog.id);
+});
+
+test('getPortalUsage preserves duplicate request ids from a single sync response', async () => {
+  const portalUser = await insertUser(
+    'portal_user_usage_duplicate_ids',
+    'usage-duplicate-ids@example.com'
+  );
+  const duplicateLogs = [
+    {
+      id: 'remote_request_duplicate_id',
+      keyMasked: 'sk-...duplicate',
+      modelId: 'gpt-4o-mini',
+      status: 'success',
+      inputTokens: 12,
+      outputTokens: 8,
+      spendUsd: 1,
+      createdAt: '2026-05-24T10:00:00.000Z',
+    },
+    {
+      id: 'remote_request_duplicate_id',
+      keyMasked: 'sk-...duplicate',
+      modelId: 'gpt-4o-mini',
+      status: 'success',
+      inputTokens: 4,
+      outputTokens: 6,
+      spendUsd: 0.5,
+      createdAt: '2026-05-24T10:01:00.000Z',
+    },
+  ];
+  const healthyRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    getQuota: async () => ({ balanceUsd: 25, quotaRemaining: 25 }),
+    getUsageSummary: async () => ({
+      requestCount: 2,
+      inputTokens: 16,
+      outputTokens: 14,
+      spendUsd: 1.5,
+      byModel: [
+        { modelId: 'gpt-4o-mini', requests: 2, tokens: 30, spendUsd: 1.5 },
+      ],
+    }),
+    listUsageLogs: async () => duplicateLogs,
+  } as any;
+  const failingRemote = {
+    getQuota: async () => {
+      throw new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'usage sync timed out',
+      });
+    },
+    getUsageSummary: async () => healthyRemote.getUsageSummary(),
+    listUsageLogs: async () => duplicateLogs,
+  } as any;
+
+  await modules.portal.ensurePortalUserBinding(portalUser, healthyRemote);
+  const freshUsage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    healthyRemote
+  );
+  assert.equal(freshUsage.logs.length, 2);
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.usageLogSnapshot)
+    .where(eq(modules.usageLogSnapshot.portalUserId, portalUser.id));
+  assert.equal(rows.length, 2);
+  assert.equal(new Set(rows.map((row: any) => row.newapiRequestId)).size, 2);
+
+  const staleUsage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    failingRemote
+  );
+  assert.equal(staleUsage.summary.status, 'stale');
+  assert.equal(staleUsage.logs.length, 2);
+  assert.deepEqual(
+    staleUsage.logs.map((log: { id: string }) => log.id),
+    duplicateLogs.map((log) => log.id)
+  );
+  assert.ok(
+    staleUsage.logs.every(
+      (log: { id: string }) => !log.id.includes('#apipool-duplicate-')
+    )
+  );
 });
 
 test('cached usage logs do not expose internal snapshot or New API request fields', async () => {
@@ -978,6 +1275,74 @@ test('cached usage logs do not expose internal snapshot or New API request field
     'newapiRequestId',
     'syncedAt',
   ]);
+});
+
+test('getPortalUsage returns stale when an old usable cache exists and sync fails', async () => {
+  const portalUser = await insertUser(
+    'portal_user_usage_old_cache',
+    'usage-old-cache@example.com'
+  );
+  const syncedLog = {
+    id: 'remote_request_old_cache_1',
+    keyMasked: 'sk-...old-cache',
+    modelId: 'gpt-4o-mini',
+    status: 'success',
+    inputTokens: 8,
+    outputTokens: 5,
+    spendUsd: 0.75,
+    createdAt: '2026-05-24T12:00:00.000Z',
+  };
+  const healthyRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    getQuota: async () => ({ balanceUsd: 10, quotaRemaining: 10 }),
+    getUsageSummary: async () => ({
+      requestCount: 1,
+      inputTokens: 8,
+      outputTokens: 5,
+      spendUsd: 0.75,
+      byModel: [
+        {
+          modelId: 'gpt-4o-mini',
+          requests: 1,
+          tokens: 13,
+          spendUsd: 0.75,
+        },
+      ],
+    }),
+    listUsageLogs: async () => [syncedLog],
+  } as any;
+  const failingRemote = {
+    getQuota: async () => {
+      throw new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'old cache usage sync timed out',
+      });
+    },
+    getUsageSummary: async () => healthyRemote.getUsageSummary(),
+    listUsageLogs: async () => [syncedLog],
+  } as any;
+
+  await modules.portal.ensurePortalUserBinding(portalUser, healthyRemote);
+  await modules.portal.getPortalUsage(portalUser, '7d', healthyRemote);
+  await modules
+    .db()
+    .update(modules.usageSnapshot)
+    .set({ syncedAt: new Date('2026-05-24T12:00:00.000Z') })
+    .where(eq(modules.usageSnapshot.portalUserId, portalUser.id));
+
+  const usage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    failingRemote
+  );
+
+  assert.equal(usage.summary.status, 'stale');
+  assert.equal(usage.summary.requestCount, 1);
+  assert.equal(usage.logs.length, 1);
+  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/);
 });
 
 test('getPortalUsage returns syncing snapshot without duplicate remote reads', async () => {

@@ -30,3 +30,17 @@ export function buildGroupSelectOptions(
     ...(group.userDescription ? { description: group.userDescription } : {}),
   }));
 }
+
+export function applyApiKeyMutationResult<
+  T extends { id: string },
+  U extends { id: string; status: string },
+>(
+  keys: readonly T[],
+  updatedKey: U
+): Array<T | U> {
+  if (updatedKey.status === 'deleted') {
+    return keys.filter((key) => key.id !== updatedKey.id);
+  }
+
+  return keys.map((key) => (key.id === updatedKey.id ? updatedKey : key));
+}

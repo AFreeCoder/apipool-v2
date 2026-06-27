@@ -4,6 +4,7 @@ export type ListingRow = {
   vendorName: string;
   groupName: string;
   groupSlug: string;
+  category: string;
   capabilities: string[];
   contextWindow: number | null;
   inputMicroUsd: number;
@@ -20,6 +21,7 @@ export type ListingRow = {
 export type FilterDimensions = {
   vendors: { slug: string; name: string }[];
   groups: { slug: string; name: string }[];
+  categories: { slug: string; name: string }[];
   capabilities: { slug: string; name: string }[];
   statuses: { slug: string; name: string }[];
 };

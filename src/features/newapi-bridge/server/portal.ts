@@ -7,7 +7,6 @@ import {
   canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
-  getUsageSyncState,
   type KeyLifecycleStatus,
 } from '@/features/api-console/lib/status';
 import {
@@ -33,11 +32,13 @@ import { User } from '@/shared/models/user';
 
 import {
   createNewApiClient,
+  isQuotaAdjustmentReconciliationError,
   NewApiBridgeError,
   NewApiClient,
   type NewApiBridgeErrorCode,
   type NewApiUserCredentials,
   type RemoteKey,
+  type RemoteUsageLog,
 } from './client';
 import { decryptCredential, encryptCredential } from './crypto';
 
@@ -109,6 +110,7 @@ const TERMINAL_KEY_MUTATION_ERROR_CODES = new Set<NewApiBridgeErrorCode>([
   'malformed_response',
 ]);
 const USAGE_SYNC_LOCK_TTL_MS = 60_000;
+const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
 
 function getFailedKeyMutationStatus(error: unknown): KeyLifecycleStatus {
   if (
@@ -158,6 +160,18 @@ function parseJsonArray<T>(value: string | null | undefined): T[] {
   }
 }
 
+function parseJsonObject(value: string | null | undefined) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function toPublicApiKey(row: any) {
   return {
     id: row.id,
@@ -199,9 +213,26 @@ function toNullableTimestampMs(
   return toTimestampMs(value);
 }
 
+function toPublicUsageLogId(
+  requestId: string | null | undefined,
+  fallbackId: string
+) {
+  if (!requestId) return fallbackId;
+
+  const separatorIndex = requestId.lastIndexOf(
+    DUPLICATE_USAGE_LOG_ID_SEPARATOR
+  );
+  if (separatorIndex === -1) return requestId;
+
+  const suffix = requestId.slice(
+    separatorIndex + DUPLICATE_USAGE_LOG_ID_SEPARATOR.length
+  );
+  return /^\d+$/.test(suffix) ? requestId.slice(0, separatorIndex) : requestId;
+}
+
 function toPublicUsageLog(row: any) {
   return {
-    id: row.newapiRequestId || row.id,
+    id: toPublicUsageLogId(row.newapiRequestId, row.id),
     keyMasked: row.keyMasked,
     modelId: row.modelId,
     status: row.status,
@@ -231,6 +262,23 @@ function isFreshSyncingSnapshot(row: any, now = new Date()) {
 
 function hasUsableUsageSnapshot(row: any) {
   return Boolean(row?.syncedAt);
+}
+
+function countRemoteUsageLogIds(logs: RemoteUsageLog[]) {
+  const counts = new Map<string, number>();
+  for (const log of logs) {
+    counts.set(log.id, (counts.get(log.id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function toUsageLogSnapshotRequestId(
+  log: RemoteUsageLog,
+  index: number,
+  requestIdCounts: Map<string, number>
+) {
+  if ((requestIdCounts.get(log.id) ?? 0) <= 1) return log.id;
+  return `${log.id}${DUPLICATE_USAGE_LOG_ID_SEPARATOR}${index}`;
 }
 
 function toPortalUsageViewFromSnapshot(
@@ -622,6 +670,9 @@ async function syncPortalApiKeyStatuses(
         })
         .where(eq(newApiKeyBinding.id, row.id))
         .returning();
+      if (syncedStatus === 'deleted') {
+        continue;
+      }
       syncedRows.push(updated ? { ...updated, groupName: row.groupName } : row);
     }
 
@@ -1027,13 +1078,18 @@ export async function getPortalUsage(
       .delete(usageLogSnapshot)
       .where(eq(usageLogSnapshot.portalUserId, user.id));
 
-    for (const log of logs) {
+    const requestIdCounts = countRemoteUsageLogIds(logs);
+    for (const [index, log] of logs.entries()) {
       await db()
         .insert(usageLogSnapshot)
         .values({
           id: getUuid(),
           portalUserId: user.id,
-          newapiRequestId: log.id,
+          newapiRequestId: toUsageLogSnapshotRequestId(
+            log,
+            index,
+            requestIdCounts
+          ),
           keyMasked: log.keyMasked,
           modelId: log.modelId,
           status: log.status,
@@ -1083,11 +1139,10 @@ export async function getPortalUsage(
       .limit(1);
 
     if (cached && hasUsableUsageSnapshot(cached)) {
-      const state = getUsageSyncState(cached.syncedAt || null);
       await db()
         .update(usageSnapshot)
         .set({
-          status: state === 'failed' ? 'failed' : 'stale',
+          status: 'stale',
           errorMessage: publicErrorMessage,
         })
         .where(eq(usageSnapshot.id, cached.id));
@@ -1097,7 +1152,7 @@ export async function getPortalUsage(
       return toPortalUsageViewFromSnapshot(
         cached,
         cachedLogs,
-        state === 'failed' ? 'failed' : 'stale',
+        'stale',
         publicErrorMessage
       );
     }
@@ -1140,6 +1195,9 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
   const rows = await db()
     .select({
       id: apipoolLedgerEntry.id,
+      operatorUserId: apipoolLedgerEntry.operatorUserId,
+      newapiUserId: apipoolLedgerEntry.newapiUserId,
+      newapiChangeId: apipoolLedgerEntry.newapiChangeId,
       amountUsd: apipoolLedgerEntry.amountUsd,
       source: apipoolLedgerEntry.source,
       status: apipoolLedgerEntry.status,
@@ -1161,8 +1219,49 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
     )
     .orderBy(desc(apipoolLedgerEntry.createdAt));
 
+  const audits = await db()
+    .select({
+      id: newApiBridgeAuditLog.id,
+      operatorUserId: newApiBridgeAuditLog.operatorUserId,
+      targetId: newApiBridgeAuditLog.targetId,
+      status: newApiBridgeAuditLog.status,
+      idempotencyKey: newApiBridgeAuditLog.idempotencyKey,
+      requestBody: newApiBridgeAuditLog.requestBody,
+      responseBody: newApiBridgeAuditLog.responseBody,
+      errorMessage: newApiBridgeAuditLog.errorMessage,
+      createdAt: newApiBridgeAuditLog.createdAt,
+    })
+    .from(newApiBridgeAuditLog)
+    .where(
+      and(
+        eq(newApiBridgeAuditLog.portalUserId, portalUserId),
+        eq(newApiBridgeAuditLog.action, 'newapi.quota.adjust')
+      )
+    )
+    .orderBy(desc(newApiBridgeAuditLog.createdAt));
+
+  function findAudit(row: any) {
+    return audits.find((audit: any) => {
+      if (audit.operatorUserId !== row.operatorUserId) return false;
+      if (audit.targetId !== row.newapiUserId) return false;
+
+      const requestBody: any = parseJsonObject(audit.requestBody);
+      if (Number(requestBody.amountUsd) !== row.amountUsd) return false;
+      if (requestBody.reason !== row.reason) return false;
+      if (!row.newapiChangeId) return audit.status === row.status;
+
+      const responseBody: any = parseJsonObject(audit.responseBody);
+      return (
+        responseBody.changeId === row.newapiChangeId ||
+        audit.idempotencyKey === row.newapiChangeId
+      );
+    });
+  }
+
   return rows.map((row: any) => ({
     id: row.id,
+    newapiUserId: row.newapiUserId,
+    newapiChangeId: row.newapiChangeId,
     amountUsd: row.amountUsd,
     source: row.source,
     status: row.status,
@@ -1177,6 +1276,17 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
           email: row.operatorEmail,
         }
       : null,
+    audit: (() => {
+      const audit = findAudit(row);
+      return audit
+        ? {
+            id: audit.id,
+            status: audit.status,
+            idempotencyKey: audit.idempotencyKey,
+            errorMessage: audit.errorMessage,
+          }
+        : null;
+    })(),
   }));
 }
 
@@ -1273,10 +1383,12 @@ export async function adjustPortalQuota(input: {
 
     return updated;
   } catch (error: any) {
+    const needsReconciliation = isQuotaAdjustmentReconciliationError(error);
     const [failed] = await db()
       .update(apipoolLedgerEntry)
       .set({
-        status: 'failed',
+        status: needsReconciliation ? 'reconciliation_required' : 'failed',
+        newapiChangeId: needsReconciliation ? error.changeId : undefined,
         rollbackStatus: 'not_required',
       })
       .where(eq(apipoolLedgerEntry.id, pending.id))
@@ -1291,6 +1403,9 @@ export async function adjustPortalQuota(input: {
       status: 'failed',
       idempotencyKey,
       requestBody: { amountUsd: input.amountUsd, reason: input.reason },
+      responseBody: needsReconciliation
+        ? { changeId: error.changeId, reconciliationRequired: true }
+        : undefined,
       errorMessage: error?.message || 'adjust quota failed',
     });
 
