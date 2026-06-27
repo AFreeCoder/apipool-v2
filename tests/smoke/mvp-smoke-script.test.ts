@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import {
+  assertHealthyNewApi,
+  buildCleanupStateDetail,
   isDisabledKeyRejected,
   parseLaunchModelAssistantText,
   resolveSmokeLaunchModel,
@@ -63,18 +65,12 @@ test('MVP smoke only accepts HTTP rejection for disabled keys', () => {
 });
 
 test('MVP smoke only accepts verified launch models', () => {
-  assert.equal(
-    resolveSmokeLaunchModel(undefined, 'gpt-4o'),
-    'gpt-4o-mini'
-  );
+  assert.equal(resolveSmokeLaunchModel(undefined, 'gpt-4o'), 'gpt-4o-mini');
   assert.throws(
     () => resolveSmokeLaunchModel('gpt-4o', 'gpt-4o-mini'),
     /must be an available smoke-tested model/
   );
-  assert.equal(
-    resolveSmokeLaunchModel('gpt-4o-mini', 'gpt-4o'),
-    'gpt-4o-mini'
-  );
+  assert.equal(resolveSmokeLaunchModel('gpt-4o-mini', 'gpt-4o'), 'gpt-4o-mini');
 });
 
 test('MVP smoke requires an operator with quota adjustment permission', async () => {
@@ -85,7 +81,10 @@ test('MVP smoke requires an operator with quota adjustment permission', async ()
 
   assert.match(script, /APIPOOL_SMOKE_OPERATOR_USER_ID/);
   assert.match(script, /PERMISSIONS\.APIPOOL_QUOTA_ADJUST/);
-  assert.match(script, /hasPermission\([\s\S]*PERMISSIONS\.APIPOOL_QUOTA_ADJUST/);
+  assert.match(
+    script,
+    /hasPermission\([\s\S]*PERMISSIONS\.APIPOOL_QUOTA_ADJUST/
+  );
   assert.doesNotMatch(
     script,
     /getEnv\('APIPOOL_SMOKE_OPERATOR_USER_ID'\)\s*\|\|\s*portalUserId/
@@ -101,14 +100,69 @@ test('MVP smoke checks New API health before creating keys', async () => {
   assert.match(script, /createNewApiClient/);
   assert.match(script, /\.healthCheck\(\)/);
   assert.match(script, /record\(\s*'check New API health'/);
-  const healthRecordIndex = script.search(
-    /record\(\s*'check New API health'/
-  );
+  const healthRecordIndex = script.search(/record\(\s*'check New API health'/);
   const keyCreationIndex = script.indexOf('await createPortalApiKey');
   assert.ok(
     healthRecordIndex >= 0 && healthRecordIndex < keyCreationIndex,
     'health check should run before key creation smoke'
   );
+});
+
+test('MVP smoke fails fast when New API health is unavailable', () => {
+  assert.doesNotThrow(() =>
+    assertHealthyNewApi({ ok: true, status: 200, version: 'ready' })
+  );
+
+  assert.throws(
+    () => assertHealthyNewApi({ ok: false, status: 503 }),
+    /New API health check failed: 503/
+  );
+});
+
+test('MVP smoke creates an official group-bound key and records cleanup state', async () => {
+  const script = await readFile(
+    join(process.cwd(), 'scripts/smoke-mvp.ts'),
+    'utf8'
+  );
+
+  assert.match(script, /groupSlug:\s*['"]official['"]/);
+  assert.match(script, /record\(\s*['"]cleanup state['"]/);
+  assert.match(script, /disabled/);
+});
+
+test('MVP smoke cleanup state output includes the key id and manual cleanup details', () => {
+  assert.match(
+    buildCleanupStateDetail({
+      keyId: 'key_smoke_123',
+      state: 'disabled',
+    }),
+    /key_smoke_123/
+  );
+
+  const failedDetail = buildCleanupStateDetail({
+    keyId: 'key_smoke_123',
+    state: 'disable_failed',
+    errorMessage: 'remote unavailable',
+  });
+
+  assert.match(failedDetail, /key_smoke_123/);
+  assert.match(failedDetail, /manual cleanup required/);
+  assert.match(failedDetail, /remote unavailable/);
+});
+
+test('runbook documents MVP smoke commands, live gate, and prerequisites', async () => {
+  const runbook = await readFile(
+    join(process.cwd(), 'docs/07-runbook.md'),
+    'utf8'
+  );
+
+  assert.match(runbook, /npm run catalog:init/);
+  assert.match(runbook, /npm run smoke:mvp/);
+  assert.match(runbook, /APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp/);
+  assert.match(runbook, /APIPOOL_SMOKE_MODEL/);
+  assert.match(runbook, /APIPOOL_SMOKE_QUOTA_USD/);
+  assert.match(runbook, /official/);
+  assert.doesNotMatch(runbook, /live\/sandbox/);
 });
 
 test('New API bridge contract documents the health endpoint', async () => {

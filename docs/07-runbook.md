@@ -42,6 +42,10 @@
 ### 冒烟
 
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
+- `APIPOOL_SMOKE_MODEL`（可选；默认使用配置里的 smoke-tested launch model）
+- `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
+- `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
+- `APIPOOL_SMOKE_REQUIRE_LIVE=true`：缺少 live smoke 必需配置时让 smoke 失败，而不是跳过。
 
 ## 1.5 New API 实例初始化（每个新实例一次性，✅已实测）
 
@@ -79,6 +83,30 @@
 8. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
 GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密钥配置后用 `workflow_dispatch` 跑真实冒烟门禁。
+
+### 3.1 自动化 MVP smoke
+
+发布前先确认本地或发布环境数据库已迁移，且目录种子已写入至少一个 provider/group/model/listing：
+
+```bash
+npm run catalog:init
+```
+
+`official` 分组必须在后台维护好 `newapiGroup`，并与 New API 侧真实可调用 group 对齐。冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。`APIPOOL_SMOKE_MODEL` 指向一个可调用且 smoke-tested 的模型；不设置时使用默认 launch model。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
+
+普通本地验证允许缺少 live smoke 必需配置时跳过：
+
+```bash
+npm run smoke:mvp
+```
+
+发布若依赖真实或等价 New API 证据，必须使用强制 live 门禁：
+
+```bash
+APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp
+```
+
+该脚本会创建 `official` 分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 
 ## 3.5 自动化部署流程
 
