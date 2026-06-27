@@ -467,8 +467,19 @@ test('listPortalApiKeys keeps delete pending until remote revocation is visible'
     portalUser.id,
     remote
   );
-  assert.equal(listedAfterRevocation[0].status, 'deleted');
-  assert.ok(listedAfterRevocation[0].deletedAt instanceof Date);
+  assert.equal(
+    listedAfterRevocation.some((key: any) => key.id === created.binding.id),
+    false,
+    'revoked keys should be persisted as deleted but filtered from user lists'
+  );
+
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+  assert.equal(row.status, 'deleted');
+  assert.ok(row.deletedAt instanceof Date);
 });
 
 test('disablePortalApiKey and deletePortalApiKey complete only after remote confirmation', async () => {
@@ -579,32 +590,86 @@ test('deletePortalApiKey keeps retriable failure when remote confirms a differen
   assert.equal(row.deletedAt, null);
 });
 
-test('deletePortalApiKey cleans up Task 4 cleanable statuses even when remote delete fails', async () => {
+test('deletePortalApiKey cleans up Task 4 cleanable statuses with real remote-id shapes', async () => {
   const portalUser = await insertUser(
     'portal_user_cleanup_cleanable_statuses',
     'cleanup-cleanable-statuses@example.com'
   );
   const remote = createSuccessfulRemoteClient();
-  const statuses = [
-    'creating_remote',
-    'failed_terminal',
-    'remote_created_binding_failed',
-  ] as const;
 
-  const created = [];
-  for (const status of statuses) {
-    const result = await modules.portal.createPortalApiKey(
-      portalUser,
-      portalKeyInput(`Cleanup ${status}`),
-      remote as any
-    );
-    await modules
-      .db()
-      .update(modules.newApiKeyBinding)
-      .set({ status })
-      .where(eq(modules.newApiKeyBinding.id, result.binding.id));
-    created.push(result.binding.id);
-  }
+  const creating = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Cleanup creating_remote'),
+    remote as any
+  );
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({
+      status: 'creating_remote',
+      newapiKeyId: 'pending:cleanup-creating',
+    })
+    .where(eq(modules.newApiKeyBinding.id, creating.binding.id));
+
+  const terminal = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Cleanup failed_terminal'),
+    remote as any
+  );
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({ status: 'failed_terminal' })
+    .where(eq(modules.newApiKeyBinding.id, terminal.binding.id));
+
+  const retriableRemote = {
+    ...remote,
+    createKey: async () => ({
+      id: 'remote_cleanup_retriable',
+      key: 'sk-cleanup-retriable',
+      maskedKey: 'sk-...cleanup-retriable',
+      status: 'disabled',
+    }),
+  };
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        portalKeyInput('Cleanup failed_retriable'),
+        retriableRemote as any
+      ),
+    /did not return active/
+  );
+
+  const conflictSeed = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Cleanup conflict seed'),
+    remote as any
+  );
+  const [conflictRow] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, conflictSeed.binding.id));
+
+  const bindingFailureRemote = {
+    ...remote,
+    createKey: async () => ({
+      id: conflictRow.newapiKeyId,
+      key: 'sk-cleanup-binding-failed',
+      maskedKey: 'sk-...cleanup-binding-failed',
+      status: 'active',
+    }),
+  };
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        portalKeyInput('Cleanup remote_created_binding_failed'),
+        bindingFailureRemote as any
+      ),
+    /Failed query|UNIQUE|unique|constraint/i
+  );
 
   let remoteDeleteAttempts = 0;
   const cleanupRemote = {
@@ -614,18 +679,58 @@ test('deletePortalApiKey cleans up Task 4 cleanable statuses even when remote de
     },
   };
 
-  for (const keyId of created) {
+  const rowsBeforeCleanup = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
+  const cleanupTargets = [
+    {
+      id: creating.binding.id,
+      expectedStatus: 'creating_remote',
+      expectRemoteDelete: false,
+    },
+    {
+      id: terminal.binding.id,
+      expectedStatus: 'failed_terminal',
+      expectRemoteDelete: true,
+    },
+    {
+      id: rowsBeforeCleanup.find(
+        (row: any) => row.newapiKeyId === 'remote_cleanup_retriable'
+      )?.id,
+      expectedStatus: 'failed_retriable',
+      expectRemoteDelete: true,
+    },
+    {
+      id: rowsBeforeCleanup.find(
+        (row: any) =>
+          row.displayName === 'Cleanup remote_created_binding_failed'
+      )?.id,
+      expectedStatus: 'remote_created_binding_failed',
+      expectRemoteDelete: false,
+    },
+  ];
+
+  for (const target of cleanupTargets) {
+    assert.ok(target.id, `${target.expectedStatus} fixture should exist`);
+    const before = rowsBeforeCleanup.find((row: any) => row.id === target.id);
+    assert.equal(before.status, target.expectedStatus);
+
+    const attemptsBefore = remoteDeleteAttempts;
     const deleted = await modules.portal.deletePortalApiKey(
       portalUser.id,
-      keyId,
+      target.id,
       cleanupRemote as any
     );
 
     assert.equal(deleted.status, 'deleted');
     assert.ok(deleted.deletedAt instanceof Date);
+    assert.equal(
+      remoteDeleteAttempts - attemptsBefore,
+      target.expectRemoteDelete ? 1 : 0
+    );
   }
-
-  assert.equal(remoteDeleteAttempts, statuses.length);
 
   const rows = await modules
     .db()
@@ -634,8 +739,10 @@ test('deletePortalApiKey cleans up Task 4 cleanable statuses even when remote de
     .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
 
   assert.deepEqual(
-    created.map((keyId) => rows.find((row: any) => row.id === keyId)?.status),
-    ['deleted', 'deleted', 'deleted']
+    cleanupTargets.map(
+      (target) => rows.find((row: any) => row.id === target.id)?.status
+    ),
+    ['deleted', 'deleted', 'deleted', 'deleted']
   );
 });
 

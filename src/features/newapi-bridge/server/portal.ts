@@ -622,6 +622,9 @@ async function syncPortalApiKeyStatuses(
         })
         .where(eq(newApiKeyBinding.id, row.id))
         .returning();
+      if (syncedStatus === 'deleted') {
+        continue;
+      }
       syncedRows.push(updated ? { ...updated, groupName: row.groupName } : row);
     }
 
