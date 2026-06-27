@@ -233,6 +233,27 @@ test('listKeys maps remote token status to bridge statuses', async () => {
   ]);
 });
 
+test('listKeys masks any full key returned by the remote token list', async () => {
+  const { client } = createMockedClient({
+    'GET /api/token/': () =>
+      ok({
+        items: [
+          { id: 1, name: 'a', key: 'sk-live-secret-2001', status: 1 },
+          { id: 2, name: 'b', key: 'live-secret-2002', status: 1 },
+          { id: 3, name: 'c', key: 'mask-c', status: 1 },
+        ],
+      }),
+  });
+
+  const keys = await client.listKeys(USER);
+
+  assert.equal(keys[0].maskedKey, 'sk-l**********2001');
+  assert.equal(keys[1].maskedKey, 'live**********2002');
+  assert.equal(keys[2].maskedKey, 'mask-c');
+  assert.notEqual(keys[0].maskedKey, 'sk-live-secret-2001');
+  assert.notEqual(keys[1].maskedKey, 'live-secret-2002');
+});
+
 test('disableKey uses status_only update with numeric id', async () => {
   const { client, requests } = createMockedClient({
     'PUT /api/token/': (req) => {
@@ -246,6 +267,18 @@ test('disableKey uses status_only update with numeric id', async () => {
 
   assert.equal(result.status, 'disabled');
   assert.deepEqual(await requests[0].json(), { id: 31, status: 2 });
+});
+
+test('disableKey masks any full key returned by the remote update response', async () => {
+  const { client } = createMockedClient({
+    'PUT /api/token/': () =>
+      ok({ id: 31, name: 'pk_abc', key: 'live-secret-2001', status: 2 }),
+  });
+
+  const result = await client.disableKey(USER, '31');
+
+  assert.equal(result.maskedKey, 'live**********2001');
+  assert.notEqual(result.maskedKey, 'live-secret-2001');
 });
 
 test('getQuota converts integer quota into USD balance', async () => {

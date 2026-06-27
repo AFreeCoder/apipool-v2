@@ -194,6 +194,13 @@ function maskKey(key: string) {
   return `${key.slice(0, 4)}${'*'.repeat(10)}${key.slice(-4)}`;
 }
 
+function maskRemoteTokenListKey(key: unknown) {
+  if (typeof key !== 'string' || key.length === 0) return '';
+  if (key.includes('*')) return key;
+  if (key.startsWith('sk-') || key.length > 8) return maskKey(key);
+  return key;
+}
+
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -205,7 +212,7 @@ function mapRemoteTokenStatus(status: unknown): RemoteKey['status'] {
 function toRemoteKey(item: any): RemoteKey {
   return {
     id: String(item.id),
-    maskedKey: typeof item.key === 'string' ? item.key : '',
+    maskedKey: maskRemoteTokenListKey(item.key),
     status: mapRemoteTokenStatus(item.status),
   };
 }

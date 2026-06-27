@@ -1,5 +1,4 @@
 import { Link } from '@/core/i18n/navigation';
-import { LazyImage } from '@/shared/blocks/common';
 import { Badge } from '@/shared/components/ui/badge';
 import {
   SidebarHeader as SidebarHeaderComponent,
@@ -23,7 +22,10 @@ export function SidebarHeader({ header }: { header: SidebarHeaderType }) {
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
               {header.brand && (
-                <Link href={header.brand.url || ''}>
+                <Link
+                  href={header.brand.url || ''}
+                  className="flex min-w-0 items-center gap-2"
+                >
                   {header.brand.logo && (
                     <img
                       src={header.brand.logo.src}
@@ -31,12 +33,12 @@ export function SidebarHeader({ header }: { header: SidebarHeaderType }) {
                       className="h-auto w-8 shrink-0 rounded-md"
                     />
                   )}
-                  <div className="relative text-base font-semibold">
-                    {header.brand.title}
+                  <div className="flex min-w-0 items-center gap-1 text-base font-semibold">
+                    <span className="truncate">{header.brand.title}</span>
                     {header.version && (
                       <Badge
                         variant="secondary"
-                        className="absolute -top-0 -right-16 scale-100 px-1 py-0"
+                        className="shrink-0 px-1 py-0 text-[10px]"
                       >
                         v{header.version}
                       </Badge>

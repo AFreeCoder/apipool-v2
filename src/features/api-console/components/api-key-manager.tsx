@@ -141,7 +141,7 @@ export function ApiKeyManager({
     }
     if (!selectedGroupSlug) {
       setPlainKey('');
-      setMessage('请选择分组');
+      setMessage('Select a group first.');
       return;
     }
 
@@ -227,11 +227,11 @@ export function ApiKeyManager({
           <select
             value={selectedGroupSlug}
             onChange={(event) => setSelectedGroupSlug(event.target.value)}
-            aria-label="分组"
+            aria-label="Group"
             className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
             disabled={loading || groupOptions.length === 0}
           >
-            <option value="">选择分组</option>
+            <option value="">Select group</option>
             {groupOptions.map((group) => (
               <option key={group.value} value={group.value}>
                 {group.label}
@@ -247,7 +247,7 @@ export function ApiKeyManager({
           </Button>
         </div>
         <div className="bg-muted/40 mt-4 rounded-md border p-3">
-          <div className="text-sm font-medium">可调模型范围</div>
+          <div className="text-sm font-medium">Callable models</div>
           {selectedGroupModels.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-2">
               {selectedGroupModels.map((modelName) => (
@@ -260,7 +260,9 @@ export function ApiKeyManager({
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground mt-2 text-xs">暂无可调模型</p>
+            <p className="text-muted-foreground mt-2 text-xs">
+              No callable models
+            </p>
           )}
         </div>
         <p className="text-muted-foreground mt-3 text-xs">
@@ -310,7 +312,7 @@ export function ApiKeyManager({
               <TableHead>Name</TableHead>
               <TableHead>Masked key</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>分组</TableHead>
+              <TableHead>Group</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>

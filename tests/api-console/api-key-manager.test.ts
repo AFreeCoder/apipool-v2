@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   applyApiKeyMutationResult,
@@ -82,4 +84,16 @@ test('applyApiKeyMutationResult removes a key when the mutation returns deleted'
     next.map((key) => key.id),
     ['key_active']
   );
+});
+
+test('API key manager does not ship Chinese fallback copy into the English console', async () => {
+  const source = await readFile(
+    join(
+      process.cwd(),
+      'src/features/api-console/components/api-key-manager.tsx'
+    ),
+    'utf8'
+  );
+
+  assert.doesNotMatch(source, /分组|选择分组|可调模型范围|暂无可调模型/);
 });
