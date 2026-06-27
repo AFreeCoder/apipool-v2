@@ -79,4 +79,6 @@ src/config/db/migrations_mysql/
 .agents/
 skills-lock.json
 .claude/skills/gstack
+.claude/launch.json
+.context/
 .gstack/
