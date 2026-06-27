@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   buildCreateKeyRequest,
   buildGroupSelectOptions,
-} from '@/features/api-console/components/api-key-manager';
+} from '@/features/api-console/lib/key-request';
 
 test('buildCreateKeyRequest sends a public group slug without model or internal fields', () => {
   const body = buildCreateKeyRequest('  Smoke key  ', ' official ');

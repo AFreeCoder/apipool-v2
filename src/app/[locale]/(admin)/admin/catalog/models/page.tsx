@@ -47,11 +47,20 @@ export default async function AdminCatalogModelsPage({
 
   const table: Table = {
     columns: [
-      { name: 'modelId', title: t('fields.modelId'), type: 'copy' },
+      {
+        name: 'modelId',
+        title: t('fields.modelId'),
+        type: 'copy',
+        className: 'font-mono text-xs',
+      },
       { name: 'displayName', title: t('fields.displayName') },
       { name: 'vendorName', title: t('fields.vendor') },
       { name: 'category', title: t('fields.category') },
-      { name: 'contextWindow', title: t('fields.contextWindow') },
+      {
+        name: 'contextWindow',
+        title: t('fields.contextWindow'),
+        className: 'font-mono text-xs',
+      },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },
       {
         name: 'actions',

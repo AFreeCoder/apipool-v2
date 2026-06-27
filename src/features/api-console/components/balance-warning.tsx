@@ -22,9 +22,15 @@ export function BalanceWarning({
       className="bg-background flex flex-col gap-3 rounded-xl border border-amber-200 px-5 py-4 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60"
     >
       <div className="font-medium">Low balance — please top up</div>
+      {/*
+        Plain anchor (not the i18n <Link>) keeps this component server-pure so it
+        loads under the `--conditions react-server` unit test without pulling in
+        client-only context. Middleware still resolves the locale on navigation.
+      */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a
         href="/dashboard/billing"
-        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium transition-colors"
+        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-medium transition-colors"
       >
         Add credit
       </a>

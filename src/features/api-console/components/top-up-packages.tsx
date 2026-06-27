@@ -55,7 +55,7 @@ export function TopUpPackages({
           <div
             key={pkg.productId}
             className={cn(
-              'bg-background flex flex-col rounded-xl border p-5',
+              'bg-card flex flex-col rounded-xl border p-5',
               pkg.isFeatured && 'border-primary/40'
             )}
           >

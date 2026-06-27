@@ -32,8 +32,10 @@ export function LegalNotice() {
           ),
         })}
       </p>
-      <div className="rounded-md border border-amber-600/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-        <span className="font-medium">{t('region_notice_title')}: </span>
+      <div className="bg-muted text-muted-foreground rounded-md border px-3 py-2 text-xs leading-relaxed">
+        <span className="text-foreground font-medium">
+          {t('region_notice_title')}:{' '}
+        </span>
         {t('region_notice', {
           brand: APIPOOL_PUBLIC_CONFIG.brandName,
           email: APIPOOL_PUBLIC_CONFIG.supportEmail,

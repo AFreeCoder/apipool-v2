@@ -72,7 +72,7 @@ export function QuotaAdjustmentForm({
   }
 
   return (
-    <div className="bg-background max-w-2xl rounded-lg border p-5">
+    <div className="bg-card max-w-2xl rounded-xl border p-5">
       <div className="grid gap-4">
         <label className="grid gap-2 text-sm">
           Find user by email
@@ -106,7 +106,7 @@ export function QuotaAdjustmentForm({
             placeholder="Looked up from email, or paste an ID"
           />
           {resolvedUser && (
-            <span className="text-xs text-emerald-600">✓ {resolvedUser}</span>
+            <span className="text-primary text-xs">✓ {resolvedUser}</span>
           )}
         </label>
 

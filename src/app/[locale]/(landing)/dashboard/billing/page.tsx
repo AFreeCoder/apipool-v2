@@ -84,11 +84,11 @@ export default async function BillingPage({
             Usage is billed per token. Balance never expires.
           </p>
         </div>
-        <div className="bg-background rounded-xl border px-5 py-4">
+        <div className="bg-card rounded-xl border px-5 py-4">
           <div className="text-muted-foreground text-xs tracking-wide uppercase">
             Current balance
           </div>
-          <div className="mt-1 font-mono text-3xl font-semibold">
+          <div className="mt-1 font-mono text-2xl font-semibold">
             {formatUsdAmount(usage.summary.balanceUsd)}
           </div>
         </div>
@@ -99,7 +99,7 @@ export default async function BillingPage({
         <TopUpPackages packages={packages} locale={locale} />
       </div>
 
-      <div className="bg-background overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border">
         <div className="border-b px-5 py-4 font-medium">Credit history</div>
         {ledger.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
@@ -166,7 +166,7 @@ export default async function BillingPage({
         )}
       </div>
 
-      <div className="bg-background overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border">
         <div className="border-b px-5 py-4 font-medium">Usage charges</div>
         {charges.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">

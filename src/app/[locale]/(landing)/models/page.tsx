@@ -40,7 +40,7 @@ export default async function ModelsPage({
     { label: 'Provider', key: 'vendor', options: dimensions.vendors },
     { label: 'Group', key: 'group', options: dimensions.groups },
     {
-      label: 'Capability',
+      label: 'Capabilities',
       key: 'capability',
       options: dimensions.capabilities,
     },
@@ -130,13 +130,16 @@ function FilterLink({
   href: string;
   children: React.ReactNode;
 }) {
+  const base =
+    'focus-visible:ring-ring inline-flex min-h-8 items-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none sm:min-h-0';
+
   return (
     <Link
       href={href}
       className={
         active
-          ? 'bg-primary text-primary-foreground focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
+          ? `${base} bg-primary text-primary-foreground font-medium`
+          : `${base} text-muted-foreground hover:text-foreground hover:bg-muted border`
       }
     >
       {children}
@@ -148,9 +151,14 @@ function ModelsTable({ listings }: { listings: ListingRow[] }) {
   if (listings.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto rounded-xl border">
-      <table className="w-full min-w-[920px] text-sm">
-        <thead>
+    <>
+      <p className="text-muted-foreground mb-2 text-xs min-[960px]:hidden">
+        Scroll horizontally to see context, pricing and status →
+      </p>
+      <div className="relative">
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead>
           <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
             <th className="px-4 py-3 text-left font-medium">Model</th>
             <th className="px-4 py-3 text-left font-medium">Provider</th>
@@ -238,7 +246,10 @@ function ModelsTable({ listings }: { listings: ListingRow[] }) {
             );
           })}
         </tbody>
-      </table>
-    </div>
+          </table>
+        </div>
+        <div className="from-background pointer-events-none absolute inset-y-0 right-0 w-12 rounded-r-xl bg-gradient-to-l to-transparent min-[960px]:hidden" />
+      </div>
+    </>
   );
 }

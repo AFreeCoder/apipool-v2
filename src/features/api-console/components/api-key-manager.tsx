@@ -13,6 +13,13 @@ import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -20,6 +27,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/shared/components/ui/table';
+
+import {
+  type ApiKeyGroup,
+  buildCreateKeyRequest,
+  buildGroupSelectOptions,
+} from '../lib/key-request';
 
 type ApiKeyRow = {
   id: string;
@@ -31,17 +44,6 @@ type ApiKeyRow = {
   createdAt: string | Date;
 };
 
-type ApiKeyGroup = {
-  slug: string;
-  name: string;
-  userDescription?: string;
-};
-
-type GroupSelectOption = {
-  value: string;
-  label: string;
-  description?: string;
-};
 
 const KEY_CREATION_PAUSED_MESSAGE =
   'API key creation is temporarily paused. Existing keys remain manageable.';
@@ -54,23 +56,6 @@ const STATUS_LABELS: Record<string, string> = {
   disable_pending: 'Disabling…',
   delete_pending: 'Deleting…',
 };
-
-export function buildCreateKeyRequest(name: string, groupSlug: string) {
-  return {
-    name: name.trim() || 'Default APIPool key',
-    groupSlug: groupSlug.trim(),
-  };
-}
-
-export function buildGroupSelectOptions(
-  groups: ApiKeyGroup[]
-): GroupSelectOption[] {
-  return groups.map((group) => ({
-    value: group.slug,
-    label: group.name,
-    ...(group.userDescription ? { description: group.userDescription } : {}),
-  }));
-}
 
 function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
   const className =
@@ -129,7 +114,7 @@ export function ApiKeyManager({
     }
     if (!selectedGroupSlug) {
       setPlainKey('');
-      setMessage('请选择分组');
+      setMessage('Please select a group');
       return;
     }
 
@@ -205,7 +190,7 @@ export function ApiKeyManager({
 
   return (
     <div className="space-y-6">
-      <div className="bg-background rounded-lg border p-5">
+      <div className="bg-card rounded-xl border p-5">
         <div className="mb-4 flex items-center gap-2 font-medium">
           <KeyRound className="size-4" />
           Create API Key
@@ -216,20 +201,22 @@ export function ApiKeyManager({
             onChange={(event) => setName(event.target.value)}
             placeholder="Key name"
           />
-          <select
-            value={selectedGroupSlug}
-            onChange={(event) => setSelectedGroupSlug(event.target.value)}
-            aria-label="分组"
-            className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+          <Select
+            value={selectedGroupSlug || undefined}
+            onValueChange={setSelectedGroupSlug}
             disabled={loading || groupOptions.length === 0}
           >
-            <option value="">选择分组</option>
-            {groupOptions.map((group) => (
-              <option key={group.value} value={group.value}>
-                {group.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Group" className="w-full">
+              <SelectValue placeholder="Select a group" />
+            </SelectTrigger>
+            <SelectContent>
+              {groupOptions.map((group) => (
+                <SelectItem key={group.value} value={group.value}>
+                  {group.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             onClick={createKey}
             disabled={loading || !creationEnabled || !selectedGroupSlug}
@@ -239,7 +226,7 @@ export function ApiKeyManager({
           </Button>
         </div>
         <div className="bg-muted/40 mt-4 rounded-md border p-3">
-          <div className="text-sm font-medium">可调模型范围</div>
+          <div className="text-sm font-medium">Callable models</div>
           {selectedGroupModels.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-2">
               {selectedGroupModels.map((modelName) => (
@@ -252,7 +239,7 @@ export function ApiKeyManager({
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground mt-2 text-xs">暂无可调模型</p>
+            <p className="text-muted-foreground mt-2 text-xs">No callable models</p>
           )}
         </div>
         <p className="text-muted-foreground mt-3 text-xs">
@@ -290,7 +277,7 @@ export function ApiKeyManager({
         )}
       </div>
 
-      <div className="bg-background rounded-lg border">
+      <div className="bg-card rounded-xl border">
         <div className="border-b p-5">
           <h2 className="font-medium">
             Keys for {APIPOOL_PUBLIC_CONFIG.apiBaseUrl}
@@ -302,7 +289,7 @@ export function ApiKeyManager({
               <TableHead>Name</TableHead>
               <TableHead>Masked key</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>分组</TableHead>
+              <TableHead>Group</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>

@@ -319,23 +319,39 @@ test('getPublicListings aggregates capabilities for each model without exposing 
   assert.equal('newapiGroup' in seeded, false);
 });
 
-test('getFilterDimensions returns only active dictionary options in sort order', async () => {
+test('getFilterDimensions returns only options present in public-visible listings, in sort order', async () => {
   const dimensions = await modules.queries.getFilterDimensionsUncached();
 
+  // Backed by a public-visible listing -> shown (no dead-end filter chips).
   assert.ok(
     dimensions.vendors.some(
       (vendor: { slug: string }) => vendor.slug === 'openai'
     )
   );
+  // 'partner' group has an available (public-visible) listing in the fixture.
   assert.ok(
     dimensions.groups.some(
       (group: { slug: string }) => group.slug === 'partner'
     )
   );
   assert.ok(
+    dimensions.groups.some(
+      (group: { slug: string }) => group.slug === 'official'
+    )
+  );
+  assert.ok(
+    dimensions.statuses.some(
+      (status: { slug: string }) => status.slug === 'available'
+    )
+  );
+
+  // Active dictionary entries with NO public-visible listing are hidden so a
+  // chip never dead-ends. 'retired' only has a non-public listing in the fixture.
+  assert.equal(
     dimensions.statuses.some(
       (status: { slug: string }) => status.slug === 'retired'
-    )
+    ),
+    false
   );
   assert.equal(
     dimensions.vendors.some(

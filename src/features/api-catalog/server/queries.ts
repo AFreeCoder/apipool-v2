@@ -184,27 +184,82 @@ export async function getPublicListingsUncached(
 }
 
 export async function getFilterDimensionsUncached(): Promise<FilterDimensions> {
+  // Only advertise filter options that match at least one public-visible
+  // listing, so a chip never dead-ends into the "no models match" empty state.
+  const isPublicVisible = eq(catalogStatus.isPublicVisible, true);
+
+  const stripSortOrder = <T extends { slug: string; name: string }>(rows: T[]) =>
+    rows.map(({ slug, name }) => ({ slug, name }));
+
   const [vendors, groups, capabilities, statuses] = await Promise.all([
     db()
-      .select({ slug: catalogVendor.slug, name: catalogVendor.name })
-      .from(catalogVendor)
-      .where(eq(catalogVendor.status, 'active'))
-      .orderBy(asc(catalogVendor.sortOrder)),
+      .selectDistinct({
+        slug: catalogVendor.slug,
+        name: catalogVendor.name,
+        sortOrder: catalogVendor.sortOrder,
+      })
+      .from(catalogModelListing)
+      .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
+      .innerJoin(catalogVendor, eq(catalogModel.vendorId, catalogVendor.id))
+      .innerJoin(
+        catalogStatus,
+        eq(catalogModelListing.statusId, catalogStatus.id)
+      )
+      .where(and(eq(catalogVendor.status, 'active'), isPublicVisible))
+      .orderBy(asc(catalogVendor.sortOrder))
+      .then(stripSortOrder),
     db()
-      .select({ slug: catalogGroup.slug, name: catalogGroup.name })
-      .from(catalogGroup)
-      .where(eq(catalogGroup.status, 'active'))
-      .orderBy(asc(catalogGroup.sortOrder)),
+      .selectDistinct({
+        slug: catalogGroup.slug,
+        name: catalogGroup.name,
+        sortOrder: catalogGroup.sortOrder,
+      })
+      .from(catalogModelListing)
+      .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
+      .innerJoin(
+        catalogStatus,
+        eq(catalogModelListing.statusId, catalogStatus.id)
+      )
+      .where(and(eq(catalogGroup.status, 'active'), isPublicVisible))
+      .orderBy(asc(catalogGroup.sortOrder))
+      .then(stripSortOrder),
     db()
-      .select({ slug: catalogCapability.slug, name: catalogCapability.name })
-      .from(catalogCapability)
-      .where(eq(catalogCapability.status, 'active'))
-      .orderBy(asc(catalogCapability.sortOrder)),
+      .selectDistinct({
+        slug: catalogCapability.slug,
+        name: catalogCapability.name,
+        sortOrder: catalogCapability.sortOrder,
+      })
+      .from(catalogModelListing)
+      .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
+      .innerJoin(
+        catalogStatus,
+        eq(catalogModelListing.statusId, catalogStatus.id)
+      )
+      .innerJoin(
+        catalogModelCapability,
+        eq(catalogModelCapability.modelId, catalogModel.id)
+      )
+      .innerJoin(
+        catalogCapability,
+        eq(catalogModelCapability.capabilityId, catalogCapability.id)
+      )
+      .where(and(eq(catalogCapability.status, 'active'), isPublicVisible))
+      .orderBy(asc(catalogCapability.sortOrder))
+      .then(stripSortOrder),
     db()
-      .select({ slug: catalogStatus.slug, name: catalogStatus.name })
-      .from(catalogStatus)
-      .where(eq(catalogStatus.status, 'active'))
-      .orderBy(asc(catalogStatus.sortOrder)),
+      .selectDistinct({
+        slug: catalogStatus.slug,
+        name: catalogStatus.name,
+        sortOrder: catalogStatus.sortOrder,
+      })
+      .from(catalogModelListing)
+      .innerJoin(
+        catalogStatus,
+        eq(catalogModelListing.statusId, catalogStatus.id)
+      )
+      .where(and(eq(catalogStatus.status, 'active'), isPublicVisible))
+      .orderBy(asc(catalogStatus.sortOrder))
+      .then(stripSortOrder),
   ]);
 
   return { vendors, groups, capabilities, statuses };

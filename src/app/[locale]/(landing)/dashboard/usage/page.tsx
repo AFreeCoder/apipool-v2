@@ -60,7 +60,7 @@ export default async function UsagePage({
         />
       </div>
 
-      <div className="bg-background overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border">
         <div className="border-b px-5 py-4 font-medium">
           Model distribution
         </div>
@@ -106,7 +106,7 @@ export default async function UsagePage({
         )}
       </div>
 
-      <div className="bg-background overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border">
         <div className="border-b px-5 py-4 font-medium">Request log</div>
         {usage.logs.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">

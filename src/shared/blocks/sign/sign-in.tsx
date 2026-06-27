@@ -21,6 +21,7 @@ import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 
 import { LegalNotice } from './legal-notice';
+import { PasswordInput } from './password-input';
 import { SocialProviders } from './social-providers';
 
 export function SignIn({
@@ -175,11 +176,10 @@ export function SignIn({
                   </Link> */}
                 </div>
 
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder={t('password_placeholder')}
-                  autoComplete="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -218,12 +218,13 @@ export function SignIn({
       {isEmailAuthEnabled && (
         <CardFooter>
           <div className="flex w-full justify-center border-t py-4">
-            <p className="text-center text-xs text-neutral-500">
-              {t('no_account')}
-              <Link href="/sign-up" className="underline">
-                <span className="cursor-pointer dark:text-white/70">
-                  {t('sign_up_title')}
-                </span>
+            <p className="text-muted-foreground text-center text-xs">
+              {t('no_account')}{' '}
+              <Link
+                href="/sign-up"
+                className="text-foreground hover:text-primary cursor-pointer underline underline-offset-2 transition-colors"
+              >
+                {t('sign_up_title')}
               </Link>
             </p>
           </div>

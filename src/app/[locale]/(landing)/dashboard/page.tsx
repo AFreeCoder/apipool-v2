@@ -53,10 +53,10 @@ export default async function DashboardPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline">
             <Link href="/dashboard/billing">Add credit</Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild>
             <Link href="/dashboard/api-keys">
               <KeyRound className="size-4" />
               Create key
@@ -65,7 +65,7 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="bg-background flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
+      <div className="bg-card flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
         <span className="text-muted-foreground text-xs tracking-wide uppercase">
           Base URL
         </span>
@@ -108,7 +108,7 @@ export default async function DashboardPage({
 
       <BalanceWarning balanceUsd={usage.summary.balanceUsd} />
 
-      <div className="bg-background overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="font-medium">Recent requests</h2>
           <Link
@@ -119,8 +119,16 @@ export default async function DashboardPage({
           </Link>
         </div>
         {usage.logs.length === 0 ? (
-          <div className="text-muted-foreground p-8 text-center text-sm">
-            No usage yet. Create a key, add credit, and make your first call.
+          <div className="text-muted-foreground flex flex-col items-center gap-3 p-8 text-center text-sm">
+            <span>
+              No usage yet. Create a key, add credit, and make your first call.
+            </span>
+            <Button asChild variant="outline">
+              <Link href="/dashboard/api-keys">
+                <KeyRound className="size-4" />
+                Create key
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="overflow-x-auto">

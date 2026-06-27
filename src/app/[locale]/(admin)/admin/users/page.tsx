@@ -67,7 +67,12 @@ export default async function AdminUsersPage({
 
   const table: Table = {
     columns: [
-      { name: 'id', title: t('fields.id'), type: 'copy' },
+      {
+        name: 'id',
+        title: t('fields.id'),
+        type: 'copy',
+        className: 'font-mono text-xs',
+      },
       { name: 'name', title: t('fields.name') },
       {
         name: 'image',
@@ -100,7 +105,7 @@ export default async function AdminUsersPage({
         placeholder: '-',
       },
       { name: 'createdAt', title: t('fields.created_at'), type: 'time' },
-      { name: 'ip', title: t('fields.ip'), type: 'copy' },
+      { name: 'ip', title: t('fields.ip'), type: 'copy', className: 'font-mono text-xs' },
       { name: 'locale', title: t('fields.locale') },
       { name: 'utmSource', title: t('fields.utm_source') },
       {

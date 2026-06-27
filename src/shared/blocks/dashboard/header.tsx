@@ -24,7 +24,7 @@ export function Header({
   crumbs,
   buttons,
   show_locale,
-  show_theme,
+  show_theme = true,
 }: {
   title?: string;
   crumbs?: Crumb[];
