@@ -231,6 +231,36 @@ export async function updateOrderInTransaction({
       credit: null,
     };
 
+    // Update order with optimistic lock before granting side effects.
+    // For paid webhooks, only the transaction that moves CREATED/PENDING -> PAID
+    // may create subscription or credit rows.
+    const [orderResult] = await tx
+      .update(order)
+      .set(updateOrder)
+      .where(
+        and(
+          eq(order.orderNo, orderNo),
+          updateOrder.status === OrderStatus.PAID
+            ? or(
+                eq(order.status, OrderStatus.CREATED),
+                eq(order.status, OrderStatus.PENDING)
+              )
+            : undefined
+        )
+      )
+      .returning();
+
+    if (!orderResult) {
+      if (updateOrder.status === OrderStatus.PAID) {
+        console.log(
+          `Order ${orderNo} already paid or not in CREATED status, skipping update`
+        );
+      }
+      return result;
+    }
+
+    result.order = orderResult;
+
     // deal with subscription
     if (newSubscription) {
       let existingSubscription: any = null;
@@ -282,33 +312,6 @@ export async function updateOrderInTransaction({
 
       result.credit = existingCredit;
     }
-
-    // update order with optimistic lock
-    // only update if status is not PAID (prevent duplicate processing)
-    const [orderResult] = await tx
-      .update(order)
-      .set(updateOrder)
-      .where(
-        and(
-          eq(order.orderNo, orderNo),
-          // Only update if not already paid (optimistic lock)
-          updateOrder.status === OrderStatus.PAID
-            ? or(
-                eq(order.status, OrderStatus.CREATED),
-                eq(order.status, OrderStatus.PENDING)
-              )
-            : undefined
-        )
-      )
-      .returning();
-
-    // If no order was updated and we're trying to set status to PAID,
-    // it means the order was already processed
-    if (!orderResult && updateOrder.status === OrderStatus.PAID) {
-      console.log(`Order ${orderNo} already paid or not in CREATED status, skipping update`);
-    }
-
-    result.order = orderResult;
 
     return result;
   });

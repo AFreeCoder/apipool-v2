@@ -1,6 +1,9 @@
 import { BalanceWarning } from '@/features/api-console/components/balance-warning';
 import { StatCard } from '@/features/api-console/components/stat-card';
-import { formatUsdAmount } from '@/features/api-console/lib/money';
+import {
+  formatBalanceUsdAmount,
+  formatUsdAmount,
+} from '@/features/api-console/lib/money';
 import {
   getPortalUsage,
   listPortalApiKeys,
@@ -80,7 +83,7 @@ export default async function DashboardPage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Balance"
-          value={formatUsdAmount(usage.summary.balanceUsd)}
+          value={formatBalanceUsdAmount(usage.summary.balanceUsd)}
           help="Billed per token"
           icon={<Wallet className="text-muted-foreground size-4" />}
         />

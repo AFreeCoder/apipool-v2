@@ -145,9 +145,14 @@ test('listBillingLedgerEntries joins order payment fields for recharge ledgers',
   ]);
 });
 
-test('billing amounts format amountUsd as dollars without cent conversion', async () => {
-  assert.equal(modules.money.formatUsdAmount(5), '$5.000000');
-  assert.notEqual(modules.money.formatUsdAmount(5), '$500.000000');
+test('billing amounts format ledger dollars without cent conversion while preserving usage precision', async () => {
+  assert.equal(modules.money.formatBalanceUsdAmount(5), '$5.00');
+  assert.equal(modules.money.formatBalanceUsdAmount(5.5), '$5.50');
+  assert.equal(modules.money.formatLedgerUsdAmount(5), '$5.00');
+  assert.equal(modules.money.formatLedgerUsdAmount(5.5), '$5.50');
+  assert.notEqual(modules.money.formatLedgerUsdAmount(5), '$500.000000');
+  assert.notEqual(modules.money.formatLedgerUsdAmount(5), '$5.000000');
+  assert.equal(modules.money.formatUsdAmount(0.004), '$0.004000');
 });
 
 test('listBillingLedgerEntries keeps ledger entries without orderNo with nullable order fields', async () => {
@@ -180,6 +185,41 @@ test('listBillingLedgerEntries keeps ledger entries without orderNo with nullabl
   assert.equal(entries[0].createdAt, ledgerCreatedAt.getTime());
 });
 
+test('listBillingLedgerEntries keeps paid orders distinct from pending credit application', async () => {
+  const user = await insertUser(
+    'billing_paid_pending_user',
+    'billing-paid-pending@example.com'
+  );
+  const orderNo = 'billing_order_paid_pending';
+  const paidAt = new Date('2026-06-24T12:00:00.000Z');
+
+  await insertOrder({
+    id: 'order_paid_pending',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    paymentProvider: 'stripe',
+    paidAt,
+  });
+  await insertLedger({
+    id: 'ledger_paid_pending',
+    portalUserId: user.id,
+    orderNo,
+    amountUsd: 5,
+    status: 'pending',
+  });
+
+  const entries = await modules.portal.listBillingLedgerEntries(user.id);
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].orderNo, orderNo);
+  assert.equal(entries[0].orderStatus, 'paid');
+  assert.equal(entries[0].ledgerStatus, 'pending');
+  assert.equal(entries[0].paidAt, paidAt.getTime());
+});
+
 test('billing status labels cover payment and ledger states', async () => {
   const billingPage = await import(
     '@/app/[locale]/(landing)/dashboard/billing/page'
@@ -193,7 +233,12 @@ test('billing status labels cover payment and ledger states', async () => {
   assert.equal(billingPage.mapPayStatus('failed'), 'Failed');
   assert.equal(billingPage.mapPayStatus(null), '—');
 
-  assert.equal(billingPage.mapApplyStatus('applied'), 'Credited');
-  assert.equal(billingPage.mapApplyStatus('pending'), 'Processing');
-  assert.equal(billingPage.mapApplyStatus('failed'), 'Failed');
+  assert.equal(billingPage.mapApplyStatus('applied'), '已到账');
+  assert.equal(billingPage.mapApplyStatus('pending'), '到账处理中');
+  assert.equal(billingPage.mapApplyStatus('processing'), '到账处理中');
+  assert.equal(billingPage.mapApplyStatus('failed'), '到账失败，请联系客服');
+  assert.equal(
+    billingPage.mapApplyStatus('reconciliation_required'),
+    '到账失败，请联系客服'
+  );
 });

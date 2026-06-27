@@ -144,8 +144,10 @@
       },
       "ledger": {
         "pending": "Pending",
+        "processing": "Processing",
         "applied": "Applied",
-        "failed": "Failed"
+        "failed": "Failed",
+        "reconciliation_required": "Needs reconciliation"
       },
       "request": {
         "success": "Success",

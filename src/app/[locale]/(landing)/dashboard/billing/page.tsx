@@ -1,16 +1,20 @@
 import {
+  TopUpPackages,
+  type TopUpPackage,
+} from '@/features/api-console/components/top-up-packages';
+import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
+import {
+  formatBalanceUsdAmount,
+  formatLedgerUsdAmount,
+  formatUsdAmount,
+} from '@/features/api-console/lib/money';
+import {
   getPortalUsage,
   listBillingLedgerEntries,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
-import { formatUsdAmount } from '@/features/api-console/lib/money';
-import {
-  TopUpPackages,
-  type TopUpPackage,
-} from '@/features/api-console/components/top-up-packages';
 import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
@@ -32,9 +36,13 @@ export function mapPayStatus(orderStatus: string | null) {
 }
 
 export function mapApplyStatus(ledgerStatus: string) {
-  if (ledgerStatus === 'applied') return 'Credited';
-  if (ledgerStatus === 'pending') return 'Processing';
-  if (ledgerStatus === 'failed') return 'Failed';
+  if (ledgerStatus === 'applied') return '已到账';
+  if (ledgerStatus === 'pending' || ledgerStatus === 'processing') {
+    return '到账处理中';
+  }
+  if (ledgerStatus === 'failed' || ledgerStatus === 'reconciliation_required') {
+    return '到账失败，请联系客服';
+  }
   return ledgerStatus;
 }
 
@@ -89,7 +97,7 @@ export default async function BillingPage({
             Current balance
           </div>
           <div className="mt-1 font-mono text-3xl font-semibold">
-            {formatUsdAmount(usage.summary.balanceUsd)}
+            {formatBalanceUsdAmount(usage.summary.balanceUsd)}
           </div>
         </div>
       </div>
@@ -113,9 +121,7 @@ export default async function BillingPage({
                   <th className="px-4 py-2.5 text-left font-medium">
                     Order time
                   </th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Amount
-                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Amount</th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     Payment status
                   </th>
@@ -134,7 +140,7 @@ export default async function BillingPage({
                       {new Date(entry.createdAt).toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {formatUsdAmount(entry.amountUsd)}
+                      {formatLedgerUsdAmount(entry.amountUsd)}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <span
@@ -180,9 +186,7 @@ export default async function BillingPage({
                   <th className="px-4 py-2.5 text-left font-medium">Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">Key</th>
                   <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Tokens
-                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Tokens</th>
                   <th className="px-4 py-2.5 text-right font-medium">Spend</th>
                 </tr>
               </thead>

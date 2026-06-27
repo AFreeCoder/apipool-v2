@@ -144,8 +144,10 @@
       },
       "ledger": {
         "pending": "待处理",
+        "processing": "处理中",
         "applied": "已生效",
-        "failed": "失败"
+        "failed": "失败",
+        "reconciliation_required": "需要人工核对"
       },
       "request": {
         "success": "成功",
