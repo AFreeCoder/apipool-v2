@@ -150,7 +150,7 @@ async function seedQueryFixtures() {
     sortOrder: 15,
     status: 'active',
   });
-  await modules.service.createGroup({
+  const disabledRoute = await modules.service.createGroup({
     slug: 'disabled-route',
     name: 'Disabled Route',
     userDescription: 'Disabled route.',
@@ -168,17 +168,81 @@ async function seedQueryFixtures() {
     sortOrder: 91,
     status: 'active',
   });
-  await modules.service.createVendor({
+  const hiddenVendor = await modules.service.createVendor({
     slug: 'hidden-vendor',
     name: 'Hidden Vendor',
     sortOrder: 99,
     status: 'disabled',
   });
-  await modules.service.createCapability({
+  const hiddenCapability = await modules.service.createCapability({
     slug: 'hidden-capability',
     name: 'Hidden Capability',
     sortOrder: 99,
     status: 'disabled',
+  });
+  const crossHiddenVendor = await modules.service.createVendor({
+    slug: 'cross-hidden-vendor',
+    name: 'Cross Hidden Vendor',
+    sortOrder: 98,
+    status: 'active',
+  });
+  const crossHiddenGroup = await modules.service.createGroup({
+    slug: 'cross-hidden-group',
+    name: 'Cross Hidden Group',
+    userDescription: 'Active group hidden by another disabled dimension.',
+    newapiGroup: 'newapi-cross-hidden-secret',
+    allowCreateKey: true,
+    sortOrder: 98,
+    status: 'active',
+  });
+  const crossHiddenCategory = await modules.service.createCategory({
+    slug: 'cross-hidden-category',
+    name: 'Cross Hidden Category',
+    sortOrder: 98,
+    status: 'active',
+  });
+  const crossHiddenCapability = await modules.service.createCapability({
+    slug: 'cross-hidden-capability',
+    name: 'Cross Hidden Capability',
+    sortOrder: 98,
+    status: 'active',
+  });
+  const crossHiddenStatus = await modules.service.createStatus({
+    slug: 'cross_hidden_status',
+    name: 'Cross Hidden Status',
+    isCallable: true,
+    isPublicVisible: true,
+    sortOrder: 98,
+    status: 'active',
+  });
+  const capabilityOnlyVendor = await modules.service.createVendor({
+    slug: 'capability-only-vendor',
+    name: 'Capability Only Vendor',
+    sortOrder: 97,
+    status: 'active',
+  });
+  const capabilityOnlyGroup = await modules.service.createGroup({
+    slug: 'capability-only-group',
+    name: 'Capability Only Group',
+    userDescription: 'Active group hidden by disabled capability only.',
+    newapiGroup: 'newapi-capability-only-secret',
+    allowCreateKey: true,
+    sortOrder: 97,
+    status: 'active',
+  });
+  const capabilityOnlyCategory = await modules.service.createCategory({
+    slug: 'capability-only-category',
+    name: 'Capability Only Category',
+    sortOrder: 97,
+    status: 'active',
+  });
+  const capabilityOnlyStatus = await modules.service.createStatus({
+    slug: 'capability_only_status',
+    name: 'Capability Only Status',
+    isCallable: true,
+    isPublicVisible: true,
+    sortOrder: 97,
+    status: 'active',
   });
   await modules.service.createCategory({
     slug: 'hidden-category',
@@ -247,9 +311,110 @@ async function seedQueryFixtures() {
     category: 'image',
     sortOrder: 40,
   });
+  await createFixtureModel({
+    modelId: 'query-disabled-group',
+    displayName: 'Query Disabled Group',
+    vendorId: openai.id,
+    groupId: disabledRoute.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    sortOrder: 50,
+  });
+  await createFixtureModel({
+    modelId: 'query-hidden-vendor',
+    displayName: 'Query Hidden Vendor',
+    vendorId: hiddenVendor.id,
+    groupId: official.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    sortOrder: 51,
+  });
+  await createFixtureModel({
+    modelId: 'query-hidden-category',
+    displayName: 'Query Hidden Category',
+    vendorId: openai.id,
+    groupId: official.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    category: 'hidden-category',
+    sortOrder: 52,
+  });
+  await createFixtureModel({
+    modelId: 'query-hidden-capability',
+    displayName: 'Query Hidden Capability',
+    vendorId: openai.id,
+    groupId: official.id,
+    statusId: available.id,
+    capabilityIds: [hiddenCapability.id],
+    sortOrder: 53,
+  });
+  await createFixtureModel({
+    modelId: 'query-cross-vendor-disabled-group',
+    displayName: 'Query Cross Vendor Disabled Group',
+    vendorId: crossHiddenVendor.id,
+    groupId: disabledRoute.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    sortOrder: 60,
+  });
+  await createFixtureModel({
+    modelId: 'query-cross-group-hidden-vendor',
+    displayName: 'Query Cross Group Hidden Vendor',
+    vendorId: hiddenVendor.id,
+    groupId: crossHiddenGroup.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    sortOrder: 61,
+  });
+  await createFixtureModel({
+    modelId: 'query-cross-category-disabled-group',
+    displayName: 'Query Cross Category Disabled Group',
+    vendorId: openai.id,
+    groupId: disabledRoute.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    category: crossHiddenCategory.slug,
+    sortOrder: 62,
+  });
+  await createFixtureModel({
+    modelId: 'query-cross-capability-disabled-group',
+    displayName: 'Query Cross Capability Disabled Group',
+    vendorId: openai.id,
+    groupId: disabledRoute.id,
+    statusId: available.id,
+    capabilityIds: [crossHiddenCapability.id],
+    sortOrder: 63,
+  });
+  await createFixtureModel({
+    modelId: 'query-cross-status-disabled-group',
+    displayName: 'Query Cross Status Disabled Group',
+    vendorId: openai.id,
+    groupId: disabledRoute.id,
+    statusId: crossHiddenStatus.id,
+    capabilityIds: [text.id],
+    sortOrder: 64,
+  });
+  await createFixtureModel({
+    modelId: 'query-capability-only-hidden',
+    displayName: 'Query Capability Only Hidden',
+    vendorId: capabilityOnlyVendor.id,
+    groupId: capabilityOnlyGroup.id,
+    statusId: capabilityOnlyStatus.id,
+    capabilityIds: [hiddenCapability.id],
+    category: capabilityOnlyCategory.slug,
+    sortOrder: 65,
+  });
 }
 
 test.before(setupDb);
+
+function assertNoDuplicateRows(
+  rows: { modelId: string; groupSlug?: string }[],
+  buildKey: (row: { modelId: string; groupSlug?: string }) => string
+) {
+  const keys = rows.map(buildKey);
+  assert.deepEqual(keys, [...new Set(keys)]);
+}
 
 test('getPublicListings returns only listings whose catalog status is public visible by default', async () => {
   const listings = await modules.queries.getPublicListingsUncached({});
@@ -346,11 +511,51 @@ test('getPublicListings applies vendor, group, capability, and status filters', 
   );
 });
 
+test('getPublicListings excludes listings attached to disabled catalog dimensions', async () => {
+  const listings = await modules.queries.getPublicListingsUncached({});
+  const modelIds = listings.map(
+    (listing: { modelId: string }) => listing.modelId
+  );
+
+  assert.equal(modelIds.includes('query-disabled-group'), false);
+  assert.equal(modelIds.includes('query-hidden-vendor'), false);
+  assert.equal(modelIds.includes('query-hidden-category'), false);
+
+  assert.deepEqual(
+    await modules.queries.getPublicListingsUncached({
+      group: 'disabled-route',
+    }),
+    []
+  );
+  assert.deepEqual(
+    await modules.queries.getPublicListingsUncached({
+      vendor: 'hidden-vendor',
+    }),
+    []
+  );
+  assert.deepEqual(
+    await modules.queries.getPublicListingsUncached({
+      category: 'hidden-category',
+    }),
+    []
+  );
+  assert.deepEqual(
+    await modules.queries.getPublicListingsUncached({
+      capability: 'hidden-capability',
+    }),
+    []
+  );
+});
+
 test('getPublicListings aggregates capabilities for each model without exposing internal columns', async () => {
   const listings = await modules.queries.getPublicListingsUncached({
     group: 'official',
     status: 'available',
   });
+  assertNoDuplicateRows(
+    listings,
+    (listing) => `${listing.modelId}:${listing.groupSlug}`
+  );
   const seeded = listings.find(
     (listing: { modelId: string }) => listing.modelId === 'gpt-4o-mini'
   );
@@ -408,8 +613,27 @@ test('getFilterDimensions returns only options present in public-visible listing
     false
   );
   assert.equal(
+    dimensions.vendors.some(
+      (vendor: { slug: string }) => vendor.slug === 'cross-hidden-vendor'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.vendors.some(
+      (vendor: { slug: string }) => vendor.slug === 'capability-only-vendor'
+    ),
+    false
+  );
+  assert.equal(
     dimensions.capabilities.some(
       (capability: { slug: string }) => capability.slug === 'hidden-capability'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.capabilities.some(
+      (capability: { slug: string }) =>
+        capability.slug === 'cross-hidden-capability'
     ),
     false
   );
@@ -420,14 +644,51 @@ test('getFilterDimensions returns only options present in public-visible listing
     false
   );
   assert.equal(
+    dimensions.categories.some(
+      (category: { slug: string }) => category.slug === 'cross-hidden-category'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.categories.some(
+      (category: { slug: string }) =>
+        category.slug === 'capability-only-category'
+    ),
+    false
+  );
+  assert.equal(
     dimensions.groups.some(
       (group: { slug: string }) => group.slug === 'disabled-route'
     ),
     false
   );
   assert.equal(
+    dimensions.groups.some(
+      (group: { slug: string }) => group.slug === 'cross-hidden-group'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.groups.some(
+      (group: { slug: string }) => group.slug === 'capability-only-group'
+    ),
+    false
+  );
+  assert.equal(
     dimensions.statuses.some(
       (status: { slug: string }) => status.slug === 'disabled-status'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.statuses.some(
+      (status: { slug: string }) => status.slug === 'cross_hidden_status'
+    ),
+    false
+  );
+  assert.equal(
+    dimensions.statuses.some(
+      (status: { slug: string }) => status.slug === 'capability_only_status'
     ),
     false
   );
@@ -441,6 +702,8 @@ test('getGroupsForKeyCreation returns only active groups that allow key creation
   assert.ok(slugs.includes('partner'));
   assert.equal(slugs.includes('disabled-route'), false);
   assert.equal(slugs.includes('read-only-route'), false);
+  assert.equal(slugs.includes('cross-hidden-group'), false);
+  assert.equal(slugs.includes('capability-only-group'), false);
 
   for (const group of groups) {
     assert.deepEqual(
@@ -459,6 +722,10 @@ test('getCallableListingsByGroup returns only callable listings in the selected 
     (listing: { modelId: string }) => listing.modelId
   );
 
+  assertNoDuplicateRows(
+    listings,
+    (listing) => `${listing.modelId}:${listing.groupSlug}`
+  );
   assert.ok(modelIds.includes('gpt-4o-mini'));
   assert.equal(modelIds.includes('query-coming-soon'), false);
   assert.equal(modelIds.includes('query-retired'), false);
@@ -467,6 +734,29 @@ test('getCallableListingsByGroup returns only callable listings in the selected 
       (listing: { groupSlug: string; isCallable: boolean }) =>
         listing.groupSlug === 'official' && listing.isCallable
     )
+  );
+});
+
+test('getSmokeTestedCallableModelIdsByGroup returns only publicly callable catalog models', async () => {
+  const officialModelIds =
+    await modules.queries.getSmokeTestedCallableModelIdsByGroupUncached(
+      'official'
+    );
+
+  assert.deepEqual(officialModelIds, [...new Set(officialModelIds)]);
+  assert.ok(officialModelIds.includes('gpt-4o-mini'));
+  assert.equal(officialModelIds.includes('query-hidden-capability'), false);
+  assert.deepEqual(
+    await modules.queries.getSmokeTestedCallableModelIdsByGroupUncached(
+      'disabled-route'
+    ),
+    []
+  );
+  assert.deepEqual(
+    await modules.queries.getSmokeTestedCallableModelIdsByGroupUncached(
+      'capability-only-group'
+    ),
+    []
   );
 });
 

@@ -111,6 +111,39 @@ const TERMINAL_KEY_MUTATION_ERROR_CODES = new Set<NewApiBridgeErrorCode>([
 ]);
 const USAGE_SYNC_LOCK_TTL_MS = 60_000;
 const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
+const DUPLICATE_KEY_NAME_MESSAGE =
+  'A key with this name already exists. Delete the existing key or choose another name.';
+
+function getUnknownErrorMessage(error: unknown) {
+  return error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : '';
+}
+
+function isConstraintErrorFor(error: unknown, expectedNeedles: string[]) {
+  const message = getUnknownErrorMessage(error);
+  return (
+    /constraint|unique|duplicate/i.test(message) &&
+    expectedNeedles.some((needle) => message.includes(needle))
+  );
+}
+
+function isDuplicateKeyNameConstraintError(error: unknown) {
+  return isConstraintErrorFor(error, [
+    'idx_newapi_key_binding_user_display_name_active',
+    'newapi_key_binding.portal_user_id',
+    'newapi_key_binding.display_name',
+  ]);
+}
+
+function isQuotaIdempotencyConstraintError(error: unknown) {
+  return isConstraintErrorFor(error, [
+    'idx_apipool_ledger_idempotency',
+    'apipool_ledger_entry.idempotency_key',
+  ]);
+}
 
 function getFailedKeyMutationStatus(error: unknown): KeyLifecycleStatus {
   if (
@@ -481,9 +514,7 @@ export async function createPortalApiKey(
     )
     .limit(1);
   if (duplicateName) {
-    throw new Error(
-      'A key with this name already exists. Delete the existing key or choose another name.'
-    );
+    throw new Error(DUPLICATE_KEY_NAME_MESSAGE);
   }
 
   const binding = await ensurePortalUserBinding(user, client);
@@ -493,24 +524,32 @@ export async function createPortalApiKey(
   const remoteName = deriveRemoteKeyName(localKeyId);
   const pendingRemoteKeyId = `pending:${idempotencyKey}`;
 
-  const [pending] = await db()
-    .insert(newApiKeyBinding)
-    .values({
-      id: localKeyId,
-      portalUserId: user.id,
-      newapiUserId: binding.newapiUserId,
-      newapiKeyId: pendingRemoteKeyId,
-      keyMasked: 'pending',
-      displayName: input.name,
-      status: 'creating_remote',
-      allowedModels: '[]',
-      groupId: group.id,
-      newapiGroup: group.newapiGroup,
-      quotaLimit: input.quotaLimit,
-      ipAllowlist: JSON.stringify(input.ipAllowlist || []),
-      idempotencyKey,
-    })
-    .returning();
+  let pending: typeof newApiKeyBinding.$inferSelect;
+  try {
+    [pending] = await db()
+      .insert(newApiKeyBinding)
+      .values({
+        id: localKeyId,
+        portalUserId: user.id,
+        newapiUserId: binding.newapiUserId,
+        newapiKeyId: pendingRemoteKeyId,
+        keyMasked: 'pending',
+        displayName: input.name,
+        status: 'creating_remote',
+        allowedModels: '[]',
+        groupId: group.id,
+        newapiGroup: group.newapiGroup,
+        quotaLimit: input.quotaLimit,
+        ipAllowlist: JSON.stringify(input.ipAllowlist || []),
+        idempotencyKey,
+      })
+      .returning();
+  } catch (error) {
+    if (isDuplicateKeyNameConstraintError(error)) {
+      throw new Error(DUPLICATE_KEY_NAME_MESSAGE);
+    }
+    throw error;
+  }
 
   let remote: Awaited<ReturnType<NewApiClient['createKey']>>;
   try {
@@ -629,7 +668,11 @@ export async function createPortalApiKey(
       responseBody: { ...remote, key: remote.key ? '[redacted]' : undefined },
       errorMessage: localBindingError,
     });
-    throw error;
+    throw new NewApiBridgeError({
+      code: 'remote_error',
+      message:
+        'Local key binding failed after remote key creation. Please clean up the failed key and try again.',
+    });
   }
 }
 
@@ -1319,16 +1362,49 @@ export async function listBillingLedgerEntries(
   }));
 }
 
+async function getLedgerEntryByIdempotencyKey({
+  portalUserId,
+  idempotencyKey,
+}: {
+  portalUserId: string;
+  idempotencyKey: string;
+}) {
+  const [entry] = await db()
+    .select()
+    .from(apipoolLedgerEntry)
+    .where(
+      and(
+        eq(apipoolLedgerEntry.portalUserId, portalUserId),
+        eq(apipoolLedgerEntry.idempotencyKey, idempotencyKey)
+      )
+    )
+    .limit(1);
+
+  return entry;
+}
+
 export async function adjustPortalQuota(input: {
   portalUser: Pick<User, 'id' | 'email'>;
   operatorUserId: string;
   amountUsd: number;
   reason: string;
+  idempotencyKey?: string;
   client?: NewApiClient;
 }) {
+  const requestedIdempotencyKey = input.idempotencyKey?.trim();
+  const idempotencyKey =
+    requestedIdempotencyKey ||
+    `portal-adjustment:${input.portalUser.id}:${getUuid()}`;
+  if (requestedIdempotencyKey) {
+    const existing = await getLedgerEntryByIdempotencyKey({
+      portalUserId: input.portalUser.id,
+      idempotencyKey,
+    });
+    if (existing) return existing;
+  }
+
   const client = input.client || createNewApiClient();
   const binding = await ensurePortalUserBinding(input.portalUser, client);
-  const idempotencyKey = `portal-adjustment:${input.portalUser.id}:${getUuid()}`;
   const baseDraft: AdjustmentLedgerDraft = createAdjustmentLedgerDraft({
     portalUserId: input.portalUser.id,
     operatorUserId: input.operatorUserId,
@@ -1337,21 +1413,36 @@ export async function adjustPortalQuota(input: {
     newapiUserId: binding.newapiUserId,
   });
 
-  const [pending] = await db()
-    .insert(apipoolLedgerEntry)
-    .values({
-      id: getUuid(),
-      portalUserId: baseDraft.portalUserId,
-      operatorUserId: baseDraft.operatorUserId,
-      newapiUserId: baseDraft.newapiUserId,
-      amountUsd: baseDraft.amountUsd,
-      source: baseDraft.source,
-      status: baseDraft.status,
-      executor: baseDraft.executor,
-      reason: baseDraft.reason,
-      rollbackStatus: baseDraft.rollbackStatus,
-    })
-    .returning();
+  let pending: typeof apipoolLedgerEntry.$inferSelect;
+  try {
+    [pending] = await db()
+      .insert(apipoolLedgerEntry)
+      .values({
+        id: getUuid(),
+        portalUserId: baseDraft.portalUserId,
+        operatorUserId: baseDraft.operatorUserId,
+        newapiUserId: baseDraft.newapiUserId,
+        newapiChangeId: null,
+        orderNo: null,
+        idempotencyKey,
+        amountUsd: baseDraft.amountUsd,
+        source: baseDraft.source,
+        status: baseDraft.status,
+        executor: baseDraft.executor,
+        reason: baseDraft.reason,
+        rollbackStatus: baseDraft.rollbackStatus,
+      })
+      .returning();
+  } catch (error) {
+    if (isQuotaIdempotencyConstraintError(error)) {
+      const existing = await getLedgerEntryByIdempotencyKey({
+        portalUserId: input.portalUser.id,
+        idempotencyKey,
+      });
+      if (existing) return existing;
+    }
+    throw error;
+  }
 
   try {
     const remote = await client.adjustQuota({

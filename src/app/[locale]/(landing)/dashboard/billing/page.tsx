@@ -28,22 +28,53 @@ const EMPTY_USAGE: PortalUsageView = {
   logs: [],
 };
 
-export function mapPayStatus(orderStatus: string | null) {
-  if (orderStatus === 'paid') return 'Paid';
-  if (orderStatus === 'created') return 'Pending';
-  if (orderStatus === 'failed') return 'Failed';
+type BillingLocale = 'en' | 'zh';
+
+const PAY_STATUS_LABELS: Record<BillingLocale, Record<string, string>> = {
+  en: {
+    paid: 'Paid',
+    created: 'Pending',
+    failed: 'Failed',
+  },
+  zh: {
+    paid: '已支付',
+    created: '待支付',
+    failed: '支付失败',
+  },
+};
+
+const APPLY_STATUS_LABELS: Record<BillingLocale, Record<string, string>> = {
+  en: {
+    applied: 'Applied',
+    pending: 'Processing',
+    processing: 'Processing',
+    failed: 'Credit failed. Contact support.',
+    reconciliation_required: 'Credit failed. Contact support.',
+  },
+  zh: {
+    applied: '已到账',
+    pending: '到账处理中',
+    processing: '到账处理中',
+    failed: '到账失败，请联系客服',
+    reconciliation_required: '到账失败，请联系客服',
+  },
+};
+
+function normalizeBillingLocale(locale: string): BillingLocale {
+  return locale === 'zh' ? 'zh' : 'en';
+}
+
+export function mapPayStatus(locale: string, orderStatus: string | null) {
+  if (!orderStatus) return '—';
+  const normalizedLocale = normalizeBillingLocale(locale);
+  const label = PAY_STATUS_LABELS[normalizedLocale][orderStatus];
+  if (label) return label;
   return '—';
 }
 
-export function mapApplyStatus(ledgerStatus: string) {
-  if (ledgerStatus === 'applied') return '已到账';
-  if (ledgerStatus === 'pending' || ledgerStatus === 'processing') {
-    return '到账处理中';
-  }
-  if (ledgerStatus === 'failed' || ledgerStatus === 'reconciliation_required') {
-    return '到账失败，请联系客服';
-  }
-  return ledgerStatus;
+export function mapApplyStatus(locale: string, ledgerStatus: string) {
+  const normalizedLocale = normalizeBillingLocale(locale);
+  return APPLY_STATUS_LABELS[normalizedLocale][ledgerStatus] ?? ledgerStatus;
 }
 
 export default async function BillingPage({
@@ -150,7 +181,7 @@ export default async function BillingPage({
                             : 'bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs'
                         }
                       >
-                        {mapPayStatus(entry.orderStatus)}
+                        {mapPayStatus(locale, entry.orderStatus)}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right">
@@ -161,7 +192,7 @@ export default async function BillingPage({
                             : 'bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs'
                         }
                       >
-                        {mapApplyStatus(entry.ledgerStatus)}
+                        {mapApplyStatus(locale, entry.ledgerStatus)}
                       </span>
                     </td>
                   </tr>

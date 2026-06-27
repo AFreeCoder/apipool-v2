@@ -242,7 +242,12 @@ test('createPortalApiKey preserves remote-created evidence when local binding fa
         portalKeyInput('Binding failure key'),
         failingRemote
       ),
-    /Failed query|UNIQUE|unique|constraint/i
+    (error: any) => {
+      assert.ok(error instanceof modules.NewApiBridgeError);
+      assert.doesNotMatch(error.message, /Failed query|UNIQUE|constraint/i);
+      assert.match(error.message, /local key binding failed/i);
+      return true;
+    }
   );
 
   const rows = await modules
@@ -319,6 +324,66 @@ test('portal users cannot disable or delete another user key', async () => {
   const keys = await modules.portal.listPortalApiKeys(owner.id);
   assert.equal(keys[0].status, 'active');
   assert.equal(remoteCalls, 0);
+});
+
+test('database rejects duplicate undeleted key display names per portal user', async () => {
+  const portalUser = await insertUser(
+    'portal_user_duplicate_name_index',
+    'duplicate-name-index@example.com'
+  );
+
+  await modules.db().insert(modules.newApiKeyBinding).values({
+    id: 'duplicate_name_key_1',
+    portalUserId: portalUser.id,
+    newapiUserId: 'remote_duplicate_name',
+    newapiKeyId: 'remote_duplicate_name_1',
+    keyMasked: 'sk-...duplicate-1',
+    displayName: 'Duplicate display name',
+    status: 'active',
+    allowedModels: '[]',
+    groupId: 'catalog_group_portal_test',
+    newapiGroup: 'ng-portal-test',
+    ipAllowlist: '[]',
+    idempotencyKey: 'portal-key:duplicate-name-index:1',
+  });
+
+  await assert.rejects(() =>
+    modules.db().insert(modules.newApiKeyBinding).values({
+      id: 'duplicate_name_key_2',
+      portalUserId: portalUser.id,
+      newapiUserId: 'remote_duplicate_name',
+      newapiKeyId: 'remote_duplicate_name_2',
+      keyMasked: 'sk-...duplicate-2',
+      displayName: 'Duplicate display name',
+      status: 'creating_remote',
+      allowedModels: '[]',
+      groupId: 'catalog_group_portal_test',
+      newapiGroup: 'ng-portal-test',
+      ipAllowlist: '[]',
+      idempotencyKey: 'portal-key:duplicate-name-index:2',
+    })
+  );
+
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({ status: 'deleted', deletedAt: new Date() })
+    .where(eq(modules.newApiKeyBinding.id, 'duplicate_name_key_1'));
+
+  await modules.db().insert(modules.newApiKeyBinding).values({
+    id: 'duplicate_name_key_3',
+    portalUserId: portalUser.id,
+    newapiUserId: 'remote_duplicate_name',
+    newapiKeyId: 'remote_duplicate_name_3',
+    keyMasked: 'sk-...duplicate-3',
+    displayName: 'Duplicate display name',
+    status: 'active',
+    allowedModels: '[]',
+    groupId: 'catalog_group_portal_test',
+    newapiGroup: 'ng-portal-test',
+    ipAllowlist: '[]',
+    idempotencyKey: 'portal-key:duplicate-name-index:3',
+  });
 });
 
 test('portal key DTOs expose only MVP customer key fields', async () => {
@@ -668,7 +733,7 @@ test('deletePortalApiKey cleans up Task 4 cleanable statuses with real remote-id
         portalKeyInput('Cleanup remote_created_binding_failed'),
         bindingFailureRemote as any
       ),
-    /Failed query|UNIQUE|unique|constraint/i
+    /local key binding failed/i
   );
 
   let remoteDeleteAttempts = 0;
@@ -948,6 +1013,50 @@ test('adjustPortalQuota applies ledger only after New API returns a change id', 
   assert.equal(ledger.status, 'applied');
   assert.equal(ledger.newapiChangeId, 'change_success_1');
   assert.equal(ledger.rollbackStatus, 'not_required');
+});
+
+test('adjustPortalQuota reuses an idempotency key without applying quota twice', async () => {
+  const portalUser = await insertUser(
+    'portal_user_adjust_idempotent',
+    'adjust-idempotent@example.com'
+  );
+  const operator = await insertUser(
+    'operator_adjust_idempotent',
+    'ops-idempotent@example.com'
+  );
+  let adjustmentCalls = 0;
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async () => {
+      adjustmentCalls += 1;
+      return {
+        changeId: 'change_idempotent_1',
+        balanceUsd: 25,
+      };
+    },
+  } as any;
+  const input = {
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 25,
+    reason: 'Manual MVP idempotent credit',
+    idempotencyKey: 'portal-adjustment:test-idempotency-key',
+    client: fakeRemote,
+  };
+
+  const first = await modules.portal.adjustPortalQuota(input);
+  const second = await modules.portal.adjustPortalQuota(input);
+
+  assert.equal(first.id, second.id);
+  assert.equal(first.status, 'applied');
+  assert.equal(second.status, 'applied');
+  assert.equal(adjustmentCalls, 1);
+
+  const entries = await modules.portal.listLedgerEntries(portalUser.id);
+  assert.equal(entries.length, 1);
 });
 
 test('customer ledger list does not expose New API or operator internals', async () => {

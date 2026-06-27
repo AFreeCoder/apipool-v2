@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
-import {
-  getDefaultCallableModelId,
-  isModelCallable,
-  publicModels,
-} from '@/features/api-catalog/lib/catalog';
+import { getSmokeTestedCallableModelIdsByGroupUncached } from '@/features/api-catalog/server/queries';
 import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 import {
   adjustPortalQuota,
@@ -116,25 +112,28 @@ export function parseLaunchModelAssistantText(body: string) {
 
 export function resolveSmokeLaunchModel(
   requestedModel?: string,
+  smokeTestedCallableModelIds: string[] = [],
   configuredDefault = APIPOOL_CONFIG.defaultLaunchModel
 ) {
-  if (!requestedModel) {
-    return getDefaultCallableModelId(configuredDefault);
-  }
-
-  const requested = publicModels.find(
-    (model) =>
-      (model.modelId === requestedModel || model.slug === requestedModel) &&
-      isModelCallable(model)
-  );
-
-  if (!requested) {
+  if (smokeTestedCallableModelIds.length === 0) {
     throw new Error(
-      `APIPOOL_SMOKE_MODEL must be an available smoke-tested model: ${requestedModel}`
+      'No smoke-tested callable model is configured for MVP smoke'
     );
   }
 
-  return requested.modelId;
+  if (!requestedModel) {
+    return smokeTestedCallableModelIds.includes(configuredDefault)
+      ? configuredDefault
+      : smokeTestedCallableModelIds[0];
+  }
+
+  if (!smokeTestedCallableModelIds.includes(requestedModel)) {
+    throw new Error(
+      `APIPOOL_SMOKE_MODEL must be a smoke-tested callable model: ${requestedModel}`
+    );
+  }
+
+  return requestedModel;
 }
 
 export function assertHealthyNewApi(health: {
@@ -256,7 +255,13 @@ async function main() {
   const portalUserId = getEnv('APIPOOL_SMOKE_PORTAL_USER_ID')!;
   const operatorUserId = getEnv('APIPOOL_SMOKE_OPERATOR_USER_ID')!;
   const amountUsd = Number(getEnv('APIPOOL_SMOKE_QUOTA_USD') || '1');
-  const model = resolveSmokeLaunchModel(getEnv('APIPOOL_SMOKE_MODEL'));
+  const smokeGroupSlug = 'official';
+  const smokeTestedModelIds =
+    await getSmokeTestedCallableModelIdsByGroupUncached(smokeGroupSlug);
+  const model = resolveSmokeLaunchModel(
+    getEnv('APIPOOL_SMOKE_MODEL'),
+    smokeTestedModelIds
+  );
 
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
     throw new Error('APIPOOL_SMOKE_QUOTA_USD must be a positive number');
@@ -299,7 +304,7 @@ async function main() {
     // that group's newapiGroup with the external New API group per DESIGN §9.1.
     const created = await createPortalApiKey(user, {
       name: `MVP smoke ${new Date().toISOString()}`,
-      groupSlug: 'official',
+      groupSlug: smokeGroupSlug,
     });
     keyId = created.binding.id;
     plainKey = created.plainKey;

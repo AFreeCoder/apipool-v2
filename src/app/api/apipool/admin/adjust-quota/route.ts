@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     const portalUserId = String(body.portalUserId || '');
     const amountUsd = Number(body.amountUsd);
     const reason = String(body.reason || '').trim();
+    const idempotencyKey = String(body.idempotencyKey || '').trim();
 
     if (!portalUserId) return withNoStore(respErr('portalUserId is required'));
     if (!Number.isFinite(amountUsd) || amountUsd === 0) {
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
       operatorUserId: operator.id,
       amountUsd,
       reason,
+      idempotencyKey: idempotencyKey || undefined,
     });
 
     return withNoStore(respData({ ledger }));

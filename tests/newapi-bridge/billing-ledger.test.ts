@@ -220,7 +220,7 @@ test('listBillingLedgerEntries keeps paid orders distinct from pending credit ap
   assert.equal(entries[0].paidAt, paidAt.getTime());
 });
 
-test('billing status labels cover payment and ledger states', async () => {
+test('billing status labels are localized by locale', async () => {
   const billingPage = await import(
     '@/app/[locale]/(landing)/dashboard/billing/page'
   );
@@ -228,17 +228,30 @@ test('billing status labels cover payment and ledger states', async () => {
   assert.equal(typeof billingPage.mapPayStatus, 'function');
   assert.equal(typeof billingPage.mapApplyStatus, 'function');
 
-  assert.equal(billingPage.mapPayStatus('paid'), 'Paid');
-  assert.equal(billingPage.mapPayStatus('created'), 'Pending');
-  assert.equal(billingPage.mapPayStatus('failed'), 'Failed');
-  assert.equal(billingPage.mapPayStatus(null), '—');
+  assert.equal(billingPage.mapPayStatus('en', 'paid'), 'Paid');
+  assert.equal(billingPage.mapPayStatus('en', 'created'), 'Pending');
+  assert.equal(billingPage.mapPayStatus('en', 'failed'), 'Failed');
+  assert.equal(billingPage.mapPayStatus('en', null), '—');
 
-  assert.equal(billingPage.mapApplyStatus('applied'), '已到账');
-  assert.equal(billingPage.mapApplyStatus('pending'), '到账处理中');
-  assert.equal(billingPage.mapApplyStatus('processing'), '到账处理中');
-  assert.equal(billingPage.mapApplyStatus('failed'), '到账失败，请联系客服');
+  assert.equal(billingPage.mapApplyStatus('en', 'applied'), 'Applied');
+  assert.equal(billingPage.mapApplyStatus('en', 'pending'), 'Processing');
+  assert.equal(billingPage.mapApplyStatus('en', 'processing'), 'Processing');
   assert.equal(
-    billingPage.mapApplyStatus('reconciliation_required'),
+    billingPage.mapApplyStatus('en', 'failed'),
+    'Credit failed. Contact support.'
+  );
+  assert.equal(
+    billingPage.mapApplyStatus('en', 'reconciliation_required'),
+    'Credit failed. Contact support.'
+  );
+
+  assert.equal(billingPage.mapPayStatus('zh', 'paid'), '已支付');
+  assert.equal(billingPage.mapPayStatus('zh', 'created'), '待支付');
+  assert.equal(billingPage.mapPayStatus('zh', 'failed'), '支付失败');
+  assert.equal(billingPage.mapApplyStatus('zh', 'applied'), '已到账');
+  assert.equal(billingPage.mapApplyStatus('zh', 'pending'), '到账处理中');
+  assert.equal(
+    billingPage.mapApplyStatus('zh', 'failed'),
     '到账失败，请联系客服'
   );
 });

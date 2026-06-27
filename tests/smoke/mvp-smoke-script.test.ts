@@ -65,12 +65,30 @@ test('MVP smoke only accepts HTTP rejection for disabled keys', () => {
 });
 
 test('MVP smoke only accepts verified launch models', () => {
-  assert.equal(resolveSmokeLaunchModel(undefined, 'gpt-4o'), 'gpt-4o-mini');
-  assert.throws(
-    () => resolveSmokeLaunchModel('gpt-4o', 'gpt-4o-mini'),
-    /must be an available smoke-tested model/
+  assert.equal(
+    resolveSmokeLaunchModel(undefined, ['gpt-4o-mini'], 'gpt-4o'),
+    'gpt-4o-mini'
   );
-  assert.equal(resolveSmokeLaunchModel('gpt-4o-mini', 'gpt-4o'), 'gpt-4o-mini');
+  assert.throws(
+    () => resolveSmokeLaunchModel('gpt-4o', ['gpt-4o-mini'], 'gpt-4o-mini'),
+    /must be a smoke-tested callable model/
+  );
+  assert.equal(
+    resolveSmokeLaunchModel('gpt-4o-mini', ['gpt-4o-mini'], 'gpt-4o'),
+    'gpt-4o-mini'
+  );
+});
+
+test('MVP smoke resolves launch candidates from the database catalog', async () => {
+  const script = await readFile(
+    join(process.cwd(), 'scripts/smoke-mvp.ts'),
+    'utf8'
+  );
+
+  assert.match(script, /getSmokeTestedCallableModelIdsByGroupUncached/);
+  assert.doesNotMatch(script, /publicModels/);
+  assert.doesNotMatch(script, /getDefaultCallableModelId/);
+  assert.doesNotMatch(script, /isModelCallable/);
 });
 
 test('MVP smoke requires an operator with quota adjustment permission', async () => {
@@ -125,7 +143,8 @@ test('MVP smoke creates an official group-bound key and records cleanup state', 
     'utf8'
   );
 
-  assert.match(script, /groupSlug:\s*['"]official['"]/);
+  assert.match(script, /smokeGroupSlug\s*=\s*['"]official['"]/);
+  assert.match(script, /groupSlug:\s*smokeGroupSlug/);
   assert.match(script, /record\(\s*['"]cleanup state['"]/);
   assert.match(script, /disabled/);
 });

@@ -1,12 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { lookupPortalUserByEmail } from '@/features/api-console/server/quota-admin-actions';
 import { Search, Send } from 'lucide-react';
 
-import { lookupPortalUserByEmail } from '@/features/api-console/server/quota-admin-actions';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Textarea } from '@/shared/components/ui/textarea';
+
+function createRequestId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export function QuotaAdjustmentForm({
   initialPortalUserId = '',
@@ -24,6 +31,21 @@ export function QuotaAdjustmentForm({
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const submittingRef = useRef(false);
+  const requestDraftRef = useRef<{
+    signature: string;
+    idempotencyKey: string;
+  } | null>(null);
+
+  function getIdempotencyKeyForDraft(signature: string) {
+    if (requestDraftRef.current?.signature !== signature) {
+      requestDraftRef.current = {
+        signature,
+        idempotencyKey: `portal-adjustment:${portalUserId}:${createRequestId()}`,
+      };
+    }
+    return requestDraftRef.current.idempotencyKey;
+  }
 
   async function lookup() {
     setLookupLoading(true);
@@ -45,11 +67,20 @@ export function QuotaAdjustmentForm({
   }
 
   async function submit() {
+    if (loading || submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setMessage('');
+    let responseReceived = false;
     try {
       const magnitude = Math.abs(Number(amountUsd));
       const signedAmount = direction === 'decrease' ? -magnitude : magnitude;
+      const draftSignature = JSON.stringify({
+        portalUserId,
+        amountUsd: signedAmount,
+        reason,
+      });
+      const idempotencyKey = getIdempotencyKeyForDraft(draftSignature);
       const response = await fetch('/api/apipool/admin/adjust-quota', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -57,16 +88,23 @@ export function QuotaAdjustmentForm({
           portalUserId,
           amountUsd: signedAmount,
           reason,
+          idempotencyKey,
         }),
       });
+      responseReceived = true;
       const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
       setMessage(
         `Ledger entry ${payload.data.ledger.id} is ${payload.data.ledger.status}.`
       );
+      requestDraftRef.current = null;
     } catch (error: any) {
+      if (responseReceived) {
+        requestDraftRef.current = null;
+      }
       setMessage(error?.message || 'Adjustment failed');
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
@@ -151,9 +189,7 @@ export function QuotaAdjustmentForm({
               ? 'Apply decrease'
               : 'Apply increase'}
         </Button>
-        {message && (
-          <p className="text-muted-foreground text-sm">{message}</p>
-        )}
+        {message && <p className="text-muted-foreground text-sm">{message}</p>}
       </div>
     </div>
   );

@@ -13,6 +13,9 @@ test('public portal errors do not expose New API bridge internals', () => {
     'NEWAPI_ADMIN_TOKEN is not configured',
     'New API request failed with status 403',
     'Malformed New API response for /api/admin/users/newapi_1/quota',
+    'Failed query: update "newapi_key_binding" set "newapi_key_id" = ?',
+    'SQLITE_CONSTRAINT: UNIQUE constraint failed: newapi_key_binding.newapi_key_id',
+    'duplicate key value violates unique constraint "idx_newapi_key_binding_remote_key"',
     new NewApiBridgeError({
       code: 'timeout',
       message: 'New API request timed out after 15000ms',

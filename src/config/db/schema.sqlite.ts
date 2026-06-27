@@ -655,6 +655,9 @@ export const newApiKeyBinding = table(
     ),
     uniqueIndex('idx_newapi_key_binding_remote_key').on(table.newapiKeyId),
     uniqueIndex('idx_newapi_key_binding_idempotency').on(table.idempotencyKey),
+    uniqueIndex('idx_newapi_key_binding_user_display_name_active')
+      .on(table.portalUserId, table.displayName)
+      .where(sql`${table.status} <> 'deleted'`),
     index('idx_newapi_key_binding_group').on(table.groupId),
   ]
 );
@@ -739,6 +742,7 @@ export const apipoolLedgerEntry = table(
     newapiUserId: text('newapi_user_id').notNull(),
     newapiChangeId: text('newapi_change_id'),
     orderNo: text('order_no'),
+    idempotencyKey: text('idempotency_key'),
     amountUsd: integer('amount_usd').notNull(),
     source: text('source').notNull(),
     status: text('status').notNull(),
@@ -761,6 +765,7 @@ export const apipoolLedgerEntry = table(
     index('idx_apipool_ledger_status').on(table.status),
     uniqueIndex('idx_apipool_ledger_newapi_change').on(table.newapiChangeId),
     uniqueIndex('idx_apipool_ledger_order_no').on(table.orderNo),
+    uniqueIndex('idx_apipool_ledger_idempotency').on(table.idempotencyKey),
   ]
 );
 
