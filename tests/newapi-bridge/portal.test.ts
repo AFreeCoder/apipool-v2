@@ -1084,6 +1084,95 @@ test('getPortalUsage snapshots repeated remote logs only once', async () => {
   assert.equal(rows[0].newapiRequestId, syncedLog.id);
 });
 
+test('getPortalUsage preserves duplicate request ids from a single sync response', async () => {
+  const portalUser = await insertUser(
+    'portal_user_usage_duplicate_ids',
+    'usage-duplicate-ids@example.com'
+  );
+  const duplicateLogs = [
+    {
+      id: 'remote_request_duplicate_id',
+      keyMasked: 'sk-...duplicate',
+      modelId: 'gpt-4o-mini',
+      status: 'success',
+      inputTokens: 12,
+      outputTokens: 8,
+      spendUsd: 1,
+      createdAt: '2026-05-24T10:00:00.000Z',
+    },
+    {
+      id: 'remote_request_duplicate_id',
+      keyMasked: 'sk-...duplicate',
+      modelId: 'gpt-4o-mini',
+      status: 'success',
+      inputTokens: 4,
+      outputTokens: 6,
+      spendUsd: 0.5,
+      createdAt: '2026-05-24T10:01:00.000Z',
+    },
+  ];
+  const healthyRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    getQuota: async () => ({ balanceUsd: 25, quotaRemaining: 25 }),
+    getUsageSummary: async () => ({
+      requestCount: 2,
+      inputTokens: 16,
+      outputTokens: 14,
+      spendUsd: 1.5,
+      byModel: [
+        { modelId: 'gpt-4o-mini', requests: 2, tokens: 30, spendUsd: 1.5 },
+      ],
+    }),
+    listUsageLogs: async () => duplicateLogs,
+  } as any;
+  const failingRemote = {
+    getQuota: async () => {
+      throw new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'usage sync timed out',
+      });
+    },
+    getUsageSummary: async () => healthyRemote.getUsageSummary(),
+    listUsageLogs: async () => duplicateLogs,
+  } as any;
+
+  await modules.portal.ensurePortalUserBinding(portalUser, healthyRemote);
+  const freshUsage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    healthyRemote
+  );
+  assert.equal(freshUsage.logs.length, 2);
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.usageLogSnapshot)
+    .where(eq(modules.usageLogSnapshot.portalUserId, portalUser.id));
+  assert.equal(rows.length, 2);
+  assert.equal(new Set(rows.map((row: any) => row.newapiRequestId)).size, 2);
+
+  const staleUsage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    failingRemote
+  );
+  assert.equal(staleUsage.summary.status, 'stale');
+  assert.equal(staleUsage.logs.length, 2);
+  assert.deepEqual(
+    staleUsage.logs.map((log: { id: string }) => log.id),
+    duplicateLogs.map((log) => log.id)
+  );
+  assert.ok(
+    staleUsage.logs.every(
+      (log: { id: string }) => !log.id.includes('#apipool-duplicate-')
+    )
+  );
+});
+
 test('cached usage logs do not expose internal snapshot or New API request fields', async () => {
   const portalUser = await insertUser(
     'portal_user_cached_usage_dto',
@@ -1145,6 +1234,74 @@ test('cached usage logs do not expose internal snapshot or New API request field
     'newapiRequestId',
     'syncedAt',
   ]);
+});
+
+test('getPortalUsage returns stale when an old usable cache exists and sync fails', async () => {
+  const portalUser = await insertUser(
+    'portal_user_usage_old_cache',
+    'usage-old-cache@example.com'
+  );
+  const syncedLog = {
+    id: 'remote_request_old_cache_1',
+    keyMasked: 'sk-...old-cache',
+    modelId: 'gpt-4o-mini',
+    status: 'success',
+    inputTokens: 8,
+    outputTokens: 5,
+    spendUsd: 0.75,
+    createdAt: '2026-05-24T12:00:00.000Z',
+  };
+  const healthyRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    getQuota: async () => ({ balanceUsd: 10, quotaRemaining: 10 }),
+    getUsageSummary: async () => ({
+      requestCount: 1,
+      inputTokens: 8,
+      outputTokens: 5,
+      spendUsd: 0.75,
+      byModel: [
+        {
+          modelId: 'gpt-4o-mini',
+          requests: 1,
+          tokens: 13,
+          spendUsd: 0.75,
+        },
+      ],
+    }),
+    listUsageLogs: async () => [syncedLog],
+  } as any;
+  const failingRemote = {
+    getQuota: async () => {
+      throw new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'old cache usage sync timed out',
+      });
+    },
+    getUsageSummary: async () => healthyRemote.getUsageSummary(),
+    listUsageLogs: async () => [syncedLog],
+  } as any;
+
+  await modules.portal.ensurePortalUserBinding(portalUser, healthyRemote);
+  await modules.portal.getPortalUsage(portalUser, '7d', healthyRemote);
+  await modules
+    .db()
+    .update(modules.usageSnapshot)
+    .set({ syncedAt: new Date('2026-05-24T12:00:00.000Z') })
+    .where(eq(modules.usageSnapshot.portalUserId, portalUser.id));
+
+  const usage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    failingRemote
+  );
+
+  assert.equal(usage.summary.status, 'stale');
+  assert.equal(usage.summary.requestCount, 1);
+  assert.equal(usage.logs.length, 1);
+  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/);
 });
 
 test('getPortalUsage returns syncing snapshot without duplicate remote reads', async () => {

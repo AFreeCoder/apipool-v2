@@ -1,8 +1,12 @@
-import { setRequestLocale } from 'next-intl/server';
-
-import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
 import { StatCard } from '@/features/api-console/components/stat-card';
 import { formatUsdAmount } from '@/features/api-console/lib/money';
+import {
+  getUsageLogRowKey,
+  getUsageSyncDescription,
+} from '@/features/api-console/lib/status';
+import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
+import { setRequestLocale } from 'next-intl/server';
+
 import { getUserInfo } from '@/shared/models/user';
 
 export default async function UsagePage({
@@ -25,19 +29,18 @@ export default async function UsagePage({
         },
         logs: [],
       };
+  const usageSyncDescription = getUsageSyncDescription(usage.summary);
+  const usageHeaderDescription =
+    usage.summary.status === 'ready' && usage.summary.syncedAt
+      ? `Last 7 days · synced ${new Date(usage.summary.syncedAt).toLocaleString()}`
+      : usageSyncDescription;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Usage</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          {usage.summary.status === 'empty'
-            ? 'No usage in the last 7 days yet.'
-            : `Last 7 days${
-                usage.summary.syncedAt
-                  ? ` · synced ${new Date(usage.summary.syncedAt).toLocaleString()}`
-                  : ''
-              }`}
+          {usageHeaderDescription}
         </p>
       </div>
 
@@ -61,9 +64,7 @@ export default async function UsagePage({
       </div>
 
       <div className="bg-background overflow-hidden rounded-xl border">
-        <div className="border-b px-5 py-4 font-medium">
-          Model distribution
-        </div>
+        <div className="border-b px-5 py-4 font-medium">Model distribution</div>
         {usage.summary.byModel.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
             No model distribution synced yet.
@@ -77,9 +78,7 @@ export default async function UsagePage({
                   <th className="px-4 py-2.5 text-right font-medium">
                     Requests
                   </th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Tokens
-                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Tokens</th>
                   <th className="px-4 py-2.5 text-right font-medium">Spend</th>
                 </tr>
               </thead>
@@ -127,7 +126,7 @@ export default async function UsagePage({
               <tbody>
                 {usage.logs.map((log, index) => (
                   <tr
-                    key={`${log.id}-${index}`}
+                    key={getUsageLogRowKey(log, index)}
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">

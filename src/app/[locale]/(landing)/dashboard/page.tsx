@@ -5,6 +5,10 @@ import {
   formatUsdAmount,
 } from '@/features/api-console/lib/money';
 import {
+  getUsageLogRowKey,
+  getUsageSyncDescription,
+} from '@/features/api-console/lib/status';
+import {
   getPortalUsage,
   listPortalApiKeys,
   type PortalUsageView,
@@ -45,6 +49,7 @@ export default async function DashboardPage({
         listPortalApiKeys(user.id),
       ])
     : [EMPTY_USAGE, []];
+  const usageSyncDescription = getUsageSyncDescription(usage.summary);
 
   return (
     <div className="space-y-6">
@@ -90,7 +95,7 @@ export default async function DashboardPage({
         <StatCard
           label="Requests · 7d"
           value={usage.summary.requestCount.toLocaleString()}
-          help={`Sync: ${usage.summary.status}`}
+          help={usageSyncDescription}
           icon={<Activity className="text-muted-foreground size-4" />}
         />
         <StatCard
@@ -140,7 +145,7 @@ export default async function DashboardPage({
               <tbody>
                 {usage.logs.slice(0, 8).map((log, index) => (
                   <tr
-                    key={`${log.id}-${index}`}
+                    key={getUsageLogRowKey(log, index)}
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">
