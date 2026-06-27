@@ -151,8 +151,13 @@ ssh apipool_vps 'df -h /opt/apipool-v2 && free -h && docker system df'
 
 ```bash
 curl -fsS https://new.apipool.dev/ >/dev/null
-curl -fsS https://api.apipool.dev/v1/models >/dev/null
+curl -fsS https://newapi.apipool.dev/api/status >/dev/null
+test "$(curl -sS -o /tmp/apipool-v1-models-no-key.out -w '%{http_code}' https://api.apipool.dev/v1/models)" = "401"
 ```
+
+`https://api.apipool.dev/v1` 是用户调用入口；无 API key 访问 `/v1/models`
+应返回认证错误。真实可调用性由 `APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp`
+或 `APIPool MVP Verify` 的手动 `workflow_dispatch` live smoke 覆盖。
 
 ## Success Criteria
 
@@ -163,7 +168,9 @@ curl -fsS https://api.apipool.dev/v1/models >/dev/null
 - 服务器 `/opt/apipool-v2/release.env` 中的 `IMAGE_TAG` 是目标 `sha-<commit>`。
 - `docker compose ps` 显示 `apipool-v2` 和 `new-api` 运行中。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
-- 外部 `https://new.apipool.dev/` 与 `https://api.apipool.dev/v1/models` 通过。
+- 外部 `https://new.apipool.dev/` 和 `https://newapi.apipool.dev/api/status` 通过。
+- 外部 `https://api.apipool.dev/v1/models` 无 API key 返回 401 认证错误；带 Key
+  真实调用由 live smoke 验证。
 - 新的 `pre-deploy-*.tar.gz` 存在并能列出内容。
 - 上一个稳定镜像 tag 或 commit 可用于快速恢复。
 - 发布要求的 smoke、管理后台或用户闭环验收通过。
