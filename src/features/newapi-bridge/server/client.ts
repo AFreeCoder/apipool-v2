@@ -33,6 +33,31 @@ export class NewApiBridgeError extends Error {
   }
 }
 
+export class NewApiQuotaAdjustmentReconciliationError extends NewApiBridgeError {
+  changeId: string;
+  reconciliationRequired = true;
+
+  constructor({ changeId, message }: { changeId: string; message: string }) {
+    super({ code: 'remote_error', message });
+    this.name = 'NewApiQuotaAdjustmentReconciliationError';
+    this.changeId = changeId;
+  }
+}
+
+export function isQuotaAdjustmentReconciliationError(
+  error: unknown
+): error is NewApiQuotaAdjustmentReconciliationError {
+  return (
+    error instanceof NewApiQuotaAdjustmentReconciliationError ||
+    Boolean(
+      error &&
+        typeof error === 'object' &&
+        (error as any).reconciliationRequired === true &&
+        typeof (error as any).changeId === 'string'
+    )
+  );
+}
+
 export type NewApiClientOptions = {
   baseUrl?: string;
   adminToken?: string;
@@ -44,6 +69,31 @@ export type NewApiClientOptions = {
   retryDelayMs?: number;
   fetcher?: typeof fetch;
 };
+
+const quotaAdjustmentLocks = new Map<string, Promise<void>>();
+
+async function withQuotaAdjustmentLock<T>(
+  newapiUserId: string,
+  task: () => Promise<T>
+) {
+  const previous = quotaAdjustmentLocks.get(newapiUserId) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => next);
+  quotaAdjustmentLocks.set(newapiUserId, tail);
+
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (quotaAdjustmentLocks.get(newapiUserId) === tail) {
+      quotaAdjustmentLocks.delete(newapiUserId);
+    }
+  }
+}
 
 // New API 的 token 归属用户：所有 Key/用量/兑换操作必须携带该用户自己的
 // access token 与用户 ID（双 header），管理员令牌无法代替。
@@ -223,6 +273,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return quota / quotaPerUnit;
   }
 
+  function toRemoteUserId(value: string) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : value;
+  }
+
   function canRetryRequest(options: RequestOptions) {
     // New API 不支持幂等键，写操作一律不自动重试，由 portal 侧查重后决定
     return (options.method || 'GET').toUpperCase() === 'GET';
@@ -386,10 +441,9 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
   }
 
   async function findTokenByName(user: NewApiUserCredentials, name: string) {
-    const data = await request<any>(
-      `/api/token/?p=1&size=${LIST_PAGE_SIZE}`,
-      { auth: userAuth(user) }
-    );
+    const data = await request<any>(`/api/token/?p=1&size=${LIST_PAGE_SIZE}`, {
+      auth: userAuth(user),
+    });
     return unwrapListItems(data).find((item: any) => item?.name === name);
   }
 
@@ -672,10 +726,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
 
       const logs = await listUsageLogsInRange(user, LIST_PAGE_SIZE, window);
       const inputTokens = logs.reduce((sum, log) => sum + log.inputTokens, 0);
-      const outputTokens = logs.reduce(
-        (sum, log) => sum + log.outputTokens,
-        0
-      );
+      const outputTokens = logs.reduce((sum, log) => sum + log.outputTokens, 0);
 
       // /api/data/self 由 New API 周期性聚合，刚发生的调用尚未入仓；
       // 聚合为空而日志非空时，用同窗口的消费日志推导汇总，保证近实时
@@ -732,43 +783,85 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       reason: string;
       reference: string;
     }): Promise<{ changeId: string; balanceUsd?: number }> {
-      if (input.amountUsd <= 0) {
-        throw new NewApiBridgeError({
-          code: 'remote_error',
-          message: 'Quota adjustment amount must be positive',
+      return withQuotaAdjustmentLock(input.user.newapiUserId, async () => {
+        if (input.amountUsd === 0) {
+          throw new NewApiBridgeError({
+            code: 'remote_error',
+            message: 'Quota adjustment amount must be non-zero',
+          });
+        }
+        if (input.amountUsd < 0) {
+          const current = await getQuotaForUser(input.user);
+          if (current.quotaRemaining === undefined) {
+            throw new NewApiBridgeError({
+              code: 'malformed_response',
+              message: 'New API quota response missing remaining quota',
+            });
+          }
+          const nextQuota =
+            current.quotaRemaining + usdToQuota(input.amountUsd);
+          if (nextQuota < 0) {
+            throw new NewApiBridgeError({
+              code: 'remote_error',
+              message: 'Quota adjustment would make the balance negative',
+            });
+          }
+
+          await request('/api/user/', {
+            method: 'PUT',
+            body: {
+              id: toRemoteUserId(input.user.newapiUserId),
+              quota: nextQuota,
+            },
+          });
+          try {
+            const quota = await getQuotaForUser(input.user);
+            return { changeId: input.reference, balanceUsd: quota.balanceUsd };
+          } catch (error: any) {
+            throw new NewApiQuotaAdjustmentReconciliationError({
+              changeId: input.reference,
+              message: error?.message || 'Quota adjustment confirmation failed',
+            });
+          }
+        }
+
+        // 兑换码名称限长 20 字符，存 reference 的短哈希；
+        // 对账以兑换码值（changeId）与 ledger/审计中的 reference 关联
+        const redemptionName = `r${createHash('sha256')
+          .update(input.reference)
+          .digest('hex')
+          .slice(0, 18)}`;
+        const codes = await request<any>('/api/redemption/', {
+          method: 'POST',
+          body: {
+            name: redemptionName,
+            quota: usdToQuota(input.amountUsd),
+            count: 1,
+          },
         });
-      }
+        const code = Array.isArray(codes) ? codes[0] : undefined;
+        if (typeof code !== 'string' || code.length === 0) {
+          throw new NewApiBridgeError({
+            code: 'malformed_response',
+            message: 'New API did not return a redemption code',
+          });
+        }
 
-      // 兑换码名称限长 20 字符，存 reference 的短哈希；
-      // 对账以兑换码值（changeId）与 ledger/审计中的 reference 关联
-      const redemptionName = `r${createHash('sha256')
-        .update(input.reference)
-        .digest('hex')
-        .slice(0, 18)}`;
-      const codes = await request<any>('/api/redemption/', {
-        method: 'POST',
-        body: {
-          name: redemptionName,
-          quota: usdToQuota(input.amountUsd),
-          count: 1,
-        },
-      });
-      const code = Array.isArray(codes) ? codes[0] : undefined;
-      if (typeof code !== 'string' || code.length === 0) {
-        throw new NewApiBridgeError({
-          code: 'malformed_response',
-          message: 'New API did not return a redemption code',
+        await request('/api/user/topup', {
+          method: 'POST',
+          auth: userAuth(input.user),
+          body: { key: code },
         });
-      }
-
-      await request('/api/user/topup', {
-        method: 'POST',
-        auth: userAuth(input.user),
-        body: { key: code },
+        try {
+          const quota = await getQuotaForUser(input.user);
+          return { changeId: code, balanceUsd: quota.balanceUsd };
+        } catch (error: any) {
+          throw new NewApiQuotaAdjustmentReconciliationError({
+            changeId: code,
+            message: error?.message || 'Quota adjustment confirmation failed',
+          });
+        }
       });
-
-      const quota = await getQuotaForUser(input.user);
-      return { changeId: code, balanceUsd: quota.balanceUsd };
     },
   };
 }

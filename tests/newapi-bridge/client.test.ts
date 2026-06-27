@@ -67,10 +67,7 @@ test('admin requests carry bearer token and New-Api-User headers', async () => {
     client.provisionUser({ username: 'missing_user', password: 'pw' })
   );
 
-  assert.equal(
-    requests[0].headers.get('authorization'),
-    'Bearer admin-token'
-  );
+  assert.equal(requests[0].headers.get('authorization'), 'Bearer admin-token');
   assert.equal(requests[0].headers.get('new-api-user'), '1');
 });
 
@@ -393,6 +390,128 @@ test('adjustQuota issues a short-named redemption code and redeems it as the use
   assert.ok(
     redemptionBody.name.length <= 20,
     `redemption name must fit the 20-char limit: ${redemptionBody.name}`
+  );
+});
+
+test('adjustQuota decreases quota through an admin user quota update', async () => {
+  let selfCalls = 0;
+  let updateBody: any;
+  const { client, requests } = createMockedClient({
+    'GET /api/user/self': (req) => {
+      selfCalls += 1;
+      assert.equal(req.headers.get('authorization'), 'Bearer user-token');
+      return ok({ id: 2, quota: selfCalls === 1 ? 500_000 : 250_000 });
+    },
+    'PUT /api/user/': async (req) => {
+      updateBody = await req.json();
+      assert.equal(req.headers.get('authorization'), 'Bearer admin-token');
+      assert.equal(req.headers.get('new-api-user'), '1');
+      return ok({ id: 2, quota: 250_000 });
+    },
+  });
+
+  const result = await client.adjustQuota({
+    user: USER,
+    amountUsd: -0.5,
+    reason: 'manual decrease',
+    reference: 'portal-adjustment:user:decrease',
+  });
+
+  assert.deepEqual(updateBody, { id: 2, quota: 250_000 });
+  assert.equal(result.changeId, 'portal-adjustment:user:decrease');
+  assert.equal(result.balanceUsd, 0.5);
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    ['GET /api/user/self', 'PUT /api/user/', 'GET /api/user/self']
+  );
+});
+
+test('adjustQuota serializes quota adjustments for the same New API user', async () => {
+  let quota = 1_000_000;
+  let firstPutCanFinish!: () => void;
+  const firstPutBlocked = new Promise<void>((resolve) => {
+    firstPutCanFinish = resolve;
+  });
+  const events: string[] = [];
+  const { client } = createMockedClient({
+    'GET /api/user/self': () => {
+      events.push(`GET:${quota}`);
+      return ok({ id: 2, quota });
+    },
+    'PUT /api/user/': async (req) => {
+      const body = await req.json();
+      events.push(`PUT:${body.quota}`);
+      if (events.filter((event) => event.startsWith('PUT:')).length === 1) {
+        await firstPutBlocked;
+      }
+      quota = body.quota;
+      return ok({ id: 2, quota });
+    },
+    'POST /api/redemption/': () => {
+      events.push('REDEMPTION');
+      return ok(['code-positive']);
+    },
+    'POST /api/user/topup': () => {
+      events.push('TOPUP');
+      quota += 500_000;
+      return ok(500_000);
+    },
+  });
+
+  const decrease = client.adjustQuota({
+    user: USER,
+    amountUsd: -0.5,
+    reason: 'manual decrease',
+    reference: 'portal-adjustment:user:decrease-serialized',
+  });
+  const increase = client.adjustQuota({
+    user: USER,
+    amountUsd: 1,
+    reason: 'manual increase',
+    reference: 'portal-adjustment:user:increase-serialized',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  firstPutCanFinish();
+  await Promise.all([decrease, increase]);
+
+  assert.deepEqual(events, [
+    'GET:1000000',
+    'PUT:750000',
+    'GET:750000',
+    'REDEMPTION',
+    'TOPUP',
+    'GET:1250000',
+  ]);
+});
+
+test('adjustQuota marks negative quota confirmation failures for reconciliation', async () => {
+  let selfCalls = 0;
+  const { client } = createMockedClient({
+    'GET /api/user/self': () => {
+      selfCalls += 1;
+      return selfCalls === 1
+        ? ok({ id: 2, quota: 500_000 })
+        : new Response('timeout', { status: 504 });
+    },
+    'PUT /api/user/': () => ok({ id: 2, quota: 250_000 }),
+  });
+
+  await assert.rejects(
+    () =>
+      client.adjustQuota({
+        user: USER,
+        amountUsd: -0.5,
+        reason: 'manual decrease',
+        reference: 'portal-adjustment:user:confirm-failed',
+      }),
+    (error: any) => {
+      const candidate = error as any;
+      return (
+        error instanceof NewApiBridgeError &&
+        candidate.reconciliationRequired === true &&
+        candidate.changeId === 'portal-adjustment:user:confirm-failed'
+      );
+    }
   );
 });
 

@@ -120,6 +120,8 @@
         "amount": "金额",
         "status": "状态",
         "reason": "原因",
+        "newapi_change": "New API 变更",
+        "audit": "审计",
         "operator": "操作人"
       }
     },

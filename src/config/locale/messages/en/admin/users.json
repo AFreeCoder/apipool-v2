@@ -120,6 +120,8 @@
         "amount": "Amount",
         "status": "Status",
         "reason": "Reason",
+        "newapi_change": "New API Change",
+        "audit": "Audit",
         "operator": "Operator"
       }
     },

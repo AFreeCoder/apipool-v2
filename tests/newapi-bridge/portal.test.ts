@@ -1029,6 +1029,47 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
   assert.equal(entries[0].rollbackStatus, 'not_required');
 });
 
+test('adjustPortalQuota marks remote-applied confirmation failures for reconciliation', async () => {
+  const portalUser = await insertUser(
+    'portal_user_adjust_reconciliation',
+    'adjust-reconciliation@example.com'
+  );
+  const operator = await insertUser(
+    'operator_adjust_reconciliation',
+    'ops-reconciliation@example.com'
+  );
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async () => {
+      const error = new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'quota confirmation timed out',
+      }) as any;
+      error.reconciliationRequired = true;
+      error.changeId = 'portal-adjustment:reconciliation-change';
+      throw error;
+    },
+  } as any;
+
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: -5,
+    reason: 'Manual MVP decrease',
+    client: fakeRemote,
+  });
+
+  assert.equal(ledger.status, 'reconciliation_required');
+  assert.equal(
+    ledger.newapiChangeId,
+    'portal-adjustment:reconciliation-change'
+  );
+  assert.equal(ledger.rollbackStatus, 'not_required');
+});
+
 test('getPortalUsage snapshots repeated remote logs only once', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_sync',

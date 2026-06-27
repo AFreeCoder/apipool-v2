@@ -25,7 +25,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card';
-import { findUserById } from '@/shared/models/user';
+import { findUserById, getUserInfo } from '@/shared/models/user';
+import { hasPermission } from '@/shared/services/rbac';
 import { Crumb } from '@/shared/types/blocks/common';
 
 type LoadResult<T> = {
@@ -81,6 +82,15 @@ function formatOptionalBalanceUsd(
 ) {
   if (value === undefined || value === null) return fallback;
   return formatBalanceUsdAmount(value);
+}
+
+function formatOptionalQuotaUnits(
+  value: number | null | undefined,
+  locale: string,
+  fallback: string
+) {
+  if (value === undefined || value === null) return fallback;
+  return new Intl.NumberFormat(localeTag(locale)).format(value);
 }
 
 function formatOptionalLedgerUsd(
@@ -174,6 +184,10 @@ export default async function AdminUserDetailPage({
     redirectUrl: '/admin/no-permission',
     locale,
   });
+  const currentUser = await getUserInfo();
+  const canAdjustApipoolQuota = currentUser
+    ? await hasPermission(currentUser.id, PERMISSIONS.APIPOOL_QUOTA_ADJUST)
+    : false;
 
   const t = await getTranslations('admin.users');
   const targetUser = await findUserById(id);
@@ -314,6 +328,26 @@ export default async function AdminUserDetailPage({
       placeholder: emptyValue,
     },
     {
+      name: 'newapiChangeId',
+      title: t('detail.ledger.columns.newapi_change'),
+      callback: (item: any) => item.newapiChangeId || emptyValue,
+    },
+    {
+      name: 'audit',
+      title: t('detail.ledger.columns.audit'),
+      callback: (item: any) =>
+        item.audit ? (
+          <div className="flex flex-col gap-1">
+            <span>{item.audit.idempotencyKey || item.audit.id}</span>
+            <span className="text-muted-foreground text-xs">
+              {item.audit.errorMessage || item.audit.status}
+            </span>
+          </div>
+        ) : (
+          emptyValue
+        ),
+    },
+    {
       name: 'operator',
       title: t('detail.ledger.columns.operator'),
       callback: (item: any) =>
@@ -337,14 +371,18 @@ export default async function AdminUserDetailPage({
         <MainHeader
           title={t('detail.title')}
           description={targetUser.email}
-          actions={[
-            {
-              title: t('detail.buttons.adjust_quota'),
-              icon: 'Gauge',
-              url: `/admin/apipool-adjustments?portalUserId=${targetUser.id}`,
-              variant: 'outline',
-            },
-          ]}
+          actions={
+            canAdjustApipoolQuota
+              ? [
+                  {
+                    title: t('detail.buttons.adjust_quota'),
+                    icon: 'Gauge',
+                    url: `/admin/apipool-adjustments?portalUserId=${targetUser.id}`,
+                    variant: 'outline',
+                  },
+                ]
+              : []
+          }
         />
 
         <div className="space-y-6">
@@ -369,8 +407,9 @@ export default async function AdminUserDetailPage({
                 />
                 <Metric
                   label={t('detail.balance.fields.quota_remaining')}
-                  value={formatOptionalBalanceUsd(
+                  value={formatOptionalQuotaUnits(
                     usageResult.data.summary.quotaRemaining,
+                    locale,
                     t('detail.empty.not_initialized')
                   )}
                 />

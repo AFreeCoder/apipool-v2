@@ -154,6 +154,24 @@ test('listAdjustmentLedgerByPortalUser returns manual adjustments with operator 
         rollbackStatus: 'not_required',
       },
     ]);
+  await modules
+    .db()
+    .insert(modules.schema.newApiBridgeAuditLog)
+    .values({
+      id: 'admin_detail_manual_adjustment_audit',
+      portalUserId: user.id,
+      operatorUserId: operator.id,
+      action: 'newapi.quota.adjust',
+      targetType: 'newapi_user',
+      targetId: 'remote_user_ledger',
+      status: 'success',
+      idempotencyKey: 'portal-adjustment:admin_detail_user_ledger:success',
+      requestBody: JSON.stringify({
+        amountUsd: 12.34,
+        reason: 'Support credit',
+      }),
+      responseBody: JSON.stringify({ changeId: 'change_manual_adjustment' }),
+    });
 
   const entries = await modules.portal.listAdjustmentLedgerByPortalUser(
     user.id
@@ -163,11 +181,173 @@ test('listAdjustmentLedgerByPortalUser returns manual adjustments with operator 
   assert.equal(entries[0].id, 'admin_detail_manual_adjustment');
   assert.equal(entries[0].source, 'manual_adjustment');
   assert.equal(entries[0].amountUsd, 12.34);
+  assert.equal(entries[0].newapiUserId, 'remote_user_ledger');
+  assert.equal(entries[0].newapiChangeId, 'change_manual_adjustment');
+  assert.deepEqual(entries[0].audit, {
+    id: 'admin_detail_manual_adjustment_audit',
+    status: 'success',
+    idempotencyKey: 'portal-adjustment:admin_detail_user_ledger:success',
+    errorMessage: null,
+  });
   assert.deepEqual(entries[0].operator, {
     id: operator.id,
     name: operator.name,
     email: operator.email,
   });
+});
+
+test('listAdjustmentLedgerByPortalUser links failed decrease adjustments to failed audit data', async () => {
+  const user = await insertUser(
+    'admin_detail_user_failed_adjustment',
+    'failed-adjustment@example.com'
+  );
+  const operator = await insertUser(
+    'admin_detail_operator_failed_adjustment',
+    'operator-failed-adjustment@example.com',
+    'Quota Operator'
+  );
+
+  await modules.db().insert(modules.schema.apipoolLedgerEntry).values({
+    id: 'admin_detail_failed_decrease',
+    portalUserId: user.id,
+    operatorUserId: operator.id,
+    newapiUserId: 'remote_user_failed_adjustment',
+    amountUsd: -5,
+    source: 'manual_adjustment',
+    status: 'failed',
+    executor: 'admin',
+    reason: 'Refund correction',
+    rollbackStatus: 'not_required',
+  });
+  await modules
+    .db()
+    .insert(modules.schema.newApiBridgeAuditLog)
+    .values({
+      id: 'admin_detail_failed_decrease_audit',
+      portalUserId: user.id,
+      operatorUserId: operator.id,
+      action: 'newapi.quota.adjust',
+      targetType: 'newapi_user',
+      targetId: 'remote_user_failed_adjustment',
+      status: 'failed',
+      idempotencyKey:
+        'portal-adjustment:admin_detail_user_failed_adjustment:failed',
+      requestBody: JSON.stringify({
+        amountUsd: -5,
+        reason: 'Refund correction',
+      }),
+      errorMessage: 'quota update timed out',
+    });
+
+  const entries = await modules.portal.listAdjustmentLedgerByPortalUser(
+    user.id
+  );
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].id, 'admin_detail_failed_decrease');
+  assert.equal(entries[0].amountUsd, -5);
+  assert.equal(entries[0].status, 'failed');
+  assert.equal(entries[0].newapiUserId, 'remote_user_failed_adjustment');
+  assert.equal(entries[0].newapiChangeId, null);
+  assert.deepEqual(entries[0].audit, {
+    id: 'admin_detail_failed_decrease_audit',
+    status: 'failed',
+    idempotencyKey:
+      'portal-adjustment:admin_detail_user_failed_adjustment:failed',
+    errorMessage: 'quota update timed out',
+  });
+});
+
+test('listAdjustmentLedgerByPortalUser matches adjustment audits by exact change reference', async () => {
+  const user = await insertUser(
+    'admin_detail_user_repeated_adjustment',
+    'repeated-adjustment@example.com'
+  );
+  const operator = await insertUser(
+    'admin_detail_operator_repeated_adjustment',
+    'operator-repeated-adjustment@example.com',
+    'Quota Operator'
+  );
+
+  await modules
+    .db()
+    .insert(modules.schema.apipoolLedgerEntry)
+    .values([
+      {
+        id: 'admin_detail_repeated_adjustment_one',
+        portalUserId: user.id,
+        operatorUserId: operator.id,
+        newapiUserId: 'remote_user_repeated_adjustment',
+        newapiChangeId: 'change_repeated_one',
+        amountUsd: 10,
+        source: 'manual_adjustment',
+        status: 'applied',
+        executor: 'admin',
+        reason: 'Repeated correction',
+        rollbackStatus: 'not_required',
+      },
+      {
+        id: 'admin_detail_repeated_adjustment_two',
+        portalUserId: user.id,
+        operatorUserId: operator.id,
+        newapiUserId: 'remote_user_repeated_adjustment',
+        newapiChangeId: 'change_repeated_two',
+        amountUsd: 10,
+        source: 'manual_adjustment',
+        status: 'applied',
+        executor: 'admin',
+        reason: 'Repeated correction',
+        rollbackStatus: 'not_required',
+      },
+    ]);
+  await modules
+    .db()
+    .insert(modules.schema.newApiBridgeAuditLog)
+    .values([
+      {
+        id: 'admin_detail_repeated_audit_one',
+        portalUserId: user.id,
+        operatorUserId: operator.id,
+        action: 'newapi.quota.adjust',
+        targetType: 'newapi_user',
+        targetId: 'remote_user_repeated_adjustment',
+        status: 'success',
+        idempotencyKey: 'portal-adjustment:repeated:one',
+        requestBody: JSON.stringify({
+          amountUsd: 10,
+          reason: 'Repeated correction',
+        }),
+        responseBody: JSON.stringify({ changeId: 'change_repeated_one' }),
+      },
+      {
+        id: 'admin_detail_repeated_audit_two',
+        portalUserId: user.id,
+        operatorUserId: operator.id,
+        action: 'newapi.quota.adjust',
+        targetType: 'newapi_user',
+        targetId: 'remote_user_repeated_adjustment',
+        status: 'success',
+        idempotencyKey: 'portal-adjustment:repeated:two',
+        requestBody: JSON.stringify({
+          amountUsd: 10,
+          reason: 'Repeated correction',
+        }),
+        responseBody: JSON.stringify({ changeId: 'change_repeated_two' }),
+      },
+    ]);
+
+  const entries = await modules.portal.listAdjustmentLedgerByPortalUser(
+    user.id
+  );
+  const one = entries.find(
+    (entry: any) => entry.id === 'admin_detail_repeated_adjustment_one'
+  );
+  const two = entries.find(
+    (entry: any) => entry.id === 'admin_detail_repeated_adjustment_two'
+  );
+
+  assert.equal(one.audit.id, 'admin_detail_repeated_audit_one');
+  assert.equal(two.audit.id, 'admin_detail_repeated_audit_two');
 });
 
 test('admin detail queries return empty arrays for users without bindings or ledger', async () => {
@@ -194,6 +374,16 @@ test('admin user detail page keeps the required read-only data sources and i18n 
   assert.match(page, /getPortalUsage\s*\(/);
   assert.match(page, /listKeysByPortalUser\s*\(/);
   assert.match(page, /listAdjustmentLedgerByPortalUser\s*\(/);
+  assert.match(page, /hasPermission\s*\(/);
+  assert.match(page, /PERMISSIONS\.APIPOOL_QUOTA_ADJUST/);
+  assert.match(page, /canAdjustApipoolQuota/);
+  assert.match(page, /formatOptionalQuotaUnits/);
+  assert.doesNotMatch(
+    page,
+    /formatOptionalBalanceUsd\(\s*usageResult\.data\.summary\.quotaRemaining/
+  );
+  assert.match(page, /detail\.ledger\.columns\.newapi_change/);
+  assert.match(page, /detail\.ledger\.columns\.audit/);
   assert.match(page, /getTranslations\(['"]admin\.users['"]\)/);
   assert.doesNotMatch(page, /[\u4e00-\u9fff]/);
 });

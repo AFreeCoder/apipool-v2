@@ -32,6 +32,7 @@ import { User } from '@/shared/models/user';
 
 import {
   createNewApiClient,
+  isQuotaAdjustmentReconciliationError,
   NewApiBridgeError,
   NewApiClient,
   type NewApiBridgeErrorCode,
@@ -156,6 +157,18 @@ function parseJsonArray<T>(value: string | null | undefined): T[] {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function parseJsonObject(value: string | null | undefined) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
   }
 }
 
@@ -1182,6 +1195,9 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
   const rows = await db()
     .select({
       id: apipoolLedgerEntry.id,
+      operatorUserId: apipoolLedgerEntry.operatorUserId,
+      newapiUserId: apipoolLedgerEntry.newapiUserId,
+      newapiChangeId: apipoolLedgerEntry.newapiChangeId,
       amountUsd: apipoolLedgerEntry.amountUsd,
       source: apipoolLedgerEntry.source,
       status: apipoolLedgerEntry.status,
@@ -1203,8 +1219,49 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
     )
     .orderBy(desc(apipoolLedgerEntry.createdAt));
 
+  const audits = await db()
+    .select({
+      id: newApiBridgeAuditLog.id,
+      operatorUserId: newApiBridgeAuditLog.operatorUserId,
+      targetId: newApiBridgeAuditLog.targetId,
+      status: newApiBridgeAuditLog.status,
+      idempotencyKey: newApiBridgeAuditLog.idempotencyKey,
+      requestBody: newApiBridgeAuditLog.requestBody,
+      responseBody: newApiBridgeAuditLog.responseBody,
+      errorMessage: newApiBridgeAuditLog.errorMessage,
+      createdAt: newApiBridgeAuditLog.createdAt,
+    })
+    .from(newApiBridgeAuditLog)
+    .where(
+      and(
+        eq(newApiBridgeAuditLog.portalUserId, portalUserId),
+        eq(newApiBridgeAuditLog.action, 'newapi.quota.adjust')
+      )
+    )
+    .orderBy(desc(newApiBridgeAuditLog.createdAt));
+
+  function findAudit(row: any) {
+    return audits.find((audit: any) => {
+      if (audit.operatorUserId !== row.operatorUserId) return false;
+      if (audit.targetId !== row.newapiUserId) return false;
+
+      const requestBody: any = parseJsonObject(audit.requestBody);
+      if (Number(requestBody.amountUsd) !== row.amountUsd) return false;
+      if (requestBody.reason !== row.reason) return false;
+      if (!row.newapiChangeId) return audit.status === row.status;
+
+      const responseBody: any = parseJsonObject(audit.responseBody);
+      return (
+        responseBody.changeId === row.newapiChangeId ||
+        audit.idempotencyKey === row.newapiChangeId
+      );
+    });
+  }
+
   return rows.map((row: any) => ({
     id: row.id,
+    newapiUserId: row.newapiUserId,
+    newapiChangeId: row.newapiChangeId,
     amountUsd: row.amountUsd,
     source: row.source,
     status: row.status,
@@ -1219,6 +1276,17 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
           email: row.operatorEmail,
         }
       : null,
+    audit: (() => {
+      const audit = findAudit(row);
+      return audit
+        ? {
+            id: audit.id,
+            status: audit.status,
+            idempotencyKey: audit.idempotencyKey,
+            errorMessage: audit.errorMessage,
+          }
+        : null;
+    })(),
   }));
 }
 
@@ -1315,10 +1383,12 @@ export async function adjustPortalQuota(input: {
 
     return updated;
   } catch (error: any) {
+    const needsReconciliation = isQuotaAdjustmentReconciliationError(error);
     const [failed] = await db()
       .update(apipoolLedgerEntry)
       .set({
-        status: 'failed',
+        status: needsReconciliation ? 'reconciliation_required' : 'failed',
+        newapiChangeId: needsReconciliation ? error.changeId : undefined,
         rollbackStatus: 'not_required',
       })
       .where(eq(apipoolLedgerEntry.id, pending.id))
@@ -1333,6 +1403,9 @@ export async function adjustPortalQuota(input: {
       status: 'failed',
       idempotencyKey,
       requestBody: { amountUsd: input.amountUsd, reason: input.reason },
+      responseBody: needsReconciliation
+        ? { changeId: error.changeId, reconciliationRequired: true }
+        : undefined,
       errorMessage: error?.message || 'adjust quota failed',
     });
 
