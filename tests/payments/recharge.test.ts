@@ -512,6 +512,56 @@ test('handleCheckoutSuccess grants credit once and leaves recharge retriable whe
   assert.equal(ledger[0].status, 'applied');
 });
 
+test('handleCheckoutSuccess self-heals missing recharge ledger on paid webhook replay', async () => {
+  const user = await insertUser(
+    'recharge_user_paid_replay_missing_ledger',
+    'recharge-paid-replay-missing-ledger@example.com'
+  );
+  const orderNo = 'order_checkout_paid_replay_missing_ledger';
+
+  await modules.orderModel.createOrder({
+    id: 'order_row_paid_replay_missing_ledger',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    currency: 'USD',
+    productId: 'topup_5',
+    paymentType: 'one-time',
+    paymentInterval: 'one-time',
+    paymentProvider: 'stripe',
+    checkoutInfo: '',
+    createdAt: new Date(),
+    productName: 'APIPool Credit $5',
+    description: 'paid replay missing ledger',
+    callbackUrl: '',
+    creditsAmount: 500,
+    creditsValidDays: 0,
+    planName: '',
+    paymentProductId: '',
+  });
+
+  const paidOrder = await modules.orderModel.findOrderByOrderNo(orderNo);
+  const session = {
+    paymentStatus: 'paid',
+    paymentResult: { id: 'evt_paid_replay_missing_ledger' },
+    paymentInfo: {
+      paymentAmount: 500,
+      paymentCurrency: 'USD',
+      paidAt: new Date(),
+    },
+  } as any;
+
+  await modules.payment.handleCheckoutSuccess({ order: paidOrder, session });
+
+  const ledger = await listLedgerByOrderNo(orderNo);
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].status, 'pending');
+  assert.equal(ledger[0].source, 'recharge');
+  assert.equal(ledger[0].amountUsd, 5);
+});
+
 test('handleCheckoutSuccess does not start recharge when the paid transition is not won', async () => {
   const user = await insertUser(
     'recharge_user_lost_transition',

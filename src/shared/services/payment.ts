@@ -162,6 +162,9 @@ export async function handleCheckoutSuccess({
   // Idempotency check: if order is already paid, skip processing
   if (order.status === OrderStatus.PAID) {
     console.log(`Order ${orderNo} is already paid, skipping`);
+    // Webhook replay is also the recovery path when the order was marked paid
+    // but recharge ledger creation failed before it could be recorded.
+    await applyApipoolRecharge(order);
     return;
   }
 
@@ -316,6 +319,12 @@ export async function handlePaymentSuccess({
   const orderNo = order.orderNo;
   if (!orderNo) {
     throw new Error('invalid order');
+  }
+
+  if (order.status === OrderStatus.PAID) {
+    console.log(`Order ${orderNo} is already paid, skipping`);
+    await applyApipoolRecharge(order);
+    return;
   }
 
   if (order.paymentType === PaymentType.SUBSCRIPTION) {
