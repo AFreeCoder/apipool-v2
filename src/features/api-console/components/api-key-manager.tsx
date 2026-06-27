@@ -29,6 +29,7 @@ type ApiKeyRow = {
   allowedModels?: string[];
   groupName?: string | null;
   createdAt: string | Date;
+  deletedAt?: string | Date | null;
 };
 
 type ApiKeyGroup = {
@@ -70,6 +71,17 @@ export function buildGroupSelectOptions(
     label: group.name,
     ...(group.userDescription ? { description: group.userDescription } : {}),
   }));
+}
+
+export function applyApiKeyMutationResult(
+  keys: readonly ApiKeyRow[],
+  updatedKey: ApiKeyRow
+) {
+  if (updatedKey.status === 'deleted') {
+    return keys.filter((key) => key.id !== updatedKey.id);
+  }
+
+  return keys.map((key) => (key.id === updatedKey.id ? updatedKey : key));
 }
 
 function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
@@ -172,9 +184,7 @@ export function ApiKeyManager({
       await refreshKeys();
       return;
     }
-    setKeys((prev) =>
-      prev.map((key) => (key.id === id ? payload.data.key : key))
-    );
+    setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
   }
 
   async function deleteKey(id: string) {
@@ -198,9 +208,7 @@ export function ApiKeyManager({
       await refreshKeys();
       return;
     }
-    setKeys((prev) =>
-      prev.map((key) => (key.id === id ? payload.data.key : key))
-    );
+    setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
   }
 
   return (

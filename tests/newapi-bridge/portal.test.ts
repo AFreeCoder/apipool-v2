@@ -579,6 +579,66 @@ test('deletePortalApiKey keeps retriable failure when remote confirms a differen
   assert.equal(row.deletedAt, null);
 });
 
+test('deletePortalApiKey cleans up Task 4 cleanable statuses even when remote delete fails', async () => {
+  const portalUser = await insertUser(
+    'portal_user_cleanup_cleanable_statuses',
+    'cleanup-cleanable-statuses@example.com'
+  );
+  const remote = createSuccessfulRemoteClient();
+  const statuses = [
+    'creating_remote',
+    'failed_terminal',
+    'remote_created_binding_failed',
+  ] as const;
+
+  const created = [];
+  for (const status of statuses) {
+    const result = await modules.portal.createPortalApiKey(
+      portalUser,
+      portalKeyInput(`Cleanup ${status}`),
+      remote as any
+    );
+    await modules
+      .db()
+      .update(modules.newApiKeyBinding)
+      .set({ status })
+      .where(eq(modules.newApiKeyBinding.id, result.binding.id));
+    created.push(result.binding.id);
+  }
+
+  let remoteDeleteAttempts = 0;
+  const cleanupRemote = {
+    deleteKey: async () => {
+      remoteDeleteAttempts += 1;
+      throw new Error('remote residue delete failed');
+    },
+  };
+
+  for (const keyId of created) {
+    const deleted = await modules.portal.deletePortalApiKey(
+      portalUser.id,
+      keyId,
+      cleanupRemote as any
+    );
+
+    assert.equal(deleted.status, 'deleted');
+    assert.ok(deleted.deletedAt instanceof Date);
+  }
+
+  assert.equal(remoteDeleteAttempts, statuses.length);
+
+  const rows = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
+
+  assert.deepEqual(
+    created.map((keyId) => rows.find((row: any) => row.id === keyId)?.status),
+    ['deleted', 'deleted', 'deleted']
+  );
+});
+
 test('key lifecycle mutations reject non-actionable statuses before remote calls', async () => {
   const portalUser = await insertUser(
     'portal_user_key_action_guard',
