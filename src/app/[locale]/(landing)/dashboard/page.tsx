@@ -14,7 +14,7 @@ import {
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
-import { setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
@@ -39,6 +39,10 @@ export default async function DashboardPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const [t, common] = await Promise.all([
+    getTranslations({ locale, namespace: 'dashboard.overview' }),
+    getTranslations({ locale, namespace: 'dashboard.common' }),
+  ]);
   const user = await getUserInfo();
   const [usage, keys]: [
     PortalUsageView,
@@ -49,25 +53,30 @@ export default async function DashboardPage({
         listPortalApiKeys(user.id),
       ])
     : [EMPTY_USAGE, []];
-  const usageSyncDescription = getUsageSyncDescription(usage.summary);
+  const usageSyncDescription = getUsageSyncDescription(
+    usage.summary,
+    common.raw('usageSync')
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t('title')}
+          </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Keys, balance, and usage for the APIPool API.
+            {t('description')}
           </p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline">
-            <Link href="/dashboard/billing">Add credit</Link>
+            <Link href="/dashboard/billing">{t('actions.addCredit')}</Link>
           </Button>
           <Button asChild>
             <Link href="/dashboard/api-keys">
               <KeyRound className="size-4" />
-              Create key
+              {t('actions.createKey')}
             </Link>
           </Button>
         </div>
@@ -75,41 +84,44 @@ export default async function DashboardPage({
 
       <div className="bg-card flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
         <span className="text-muted-foreground text-xs tracking-wide uppercase">
-          Base URL
+          {t('baseUrl')}
         </span>
         <code className="bg-muted overflow-x-auto rounded-md border px-2.5 py-1 font-mono text-xs">
           {APIPOOL_CONFIG.apiBaseUrl}
         </code>
         <Link href="/docs" className="text-primary ml-auto text-sm font-medium">
-          Quickstart →
+          {t('actions.quickstart')}
         </Link>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Balance"
+          label={t('stats.balance')}
           value={formatBalanceUsdAmount(usage.summary.balanceUsd)}
-          help="Billed per token"
+          help={t('stats.balanceHelp')}
           icon={<Wallet className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label="Requests · 7d"
+          label={t('stats.requests')}
           value={usage.summary.requestCount.toLocaleString()}
           help={usageSyncDescription}
           icon={<Activity className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label="Tokens · 7d"
+          label={t('stats.tokens')}
           value={(
             usage.summary.inputTokens + usage.summary.outputTokens
           ).toLocaleString()}
-          help={`${usage.summary.inputTokens.toLocaleString()} in · ${usage.summary.outputTokens.toLocaleString()} out`}
+          help={t('stats.tokensHelp', {
+            input: usage.summary.inputTokens.toLocaleString(),
+            output: usage.summary.outputTokens.toLocaleString(),
+          })}
           icon={<BarChart3 className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label="API Keys"
+          label={t('stats.apiKeys')}
           value={keys.length}
-          help="Created from this console"
+          help={t('stats.apiKeysHelp')}
           icon={<KeyRound className="text-muted-foreground size-4" />}
         />
       </div>
@@ -118,23 +130,21 @@ export default async function DashboardPage({
 
       <div className="bg-card overflow-hidden rounded-xl border">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="font-medium">Recent requests</h2>
+          <h2 className="font-medium">{t('recentRequests.title')}</h2>
           <Link
             href="/dashboard/usage"
             className="text-primary text-sm font-medium"
           >
-            View usage →
+            {t('actions.viewUsage')}
           </Link>
         </div>
         {usage.logs.length === 0 ? (
           <div className="text-muted-foreground flex flex-col items-center gap-3 p-8 text-center text-sm">
-            <span>
-              No usage yet. Create a key, add credit, and make your first call.
-            </span>
+            <span>{t('recentRequests.empty')}</span>
             <Button asChild variant="outline">
               <Link href="/dashboard/api-keys">
                 <KeyRound className="size-4" />
-                Create key
+                {t('actions.createKey')}
               </Link>
             </Button>
           </div>
@@ -143,11 +153,21 @@ export default async function DashboardPage({
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Input</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Output</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Spend</th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('recentRequests.columns.date')}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('recentRequests.columns.model')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('recentRequests.columns.input')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('recentRequests.columns.output')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('recentRequests.columns.spend')}
+                  </th>
                 </tr>
               </thead>
               <tbody>

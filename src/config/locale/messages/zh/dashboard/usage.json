@@ -1,0 +1,30 @@
+{
+  "title": "用量",
+  "lastSynced": "最近 7 天 · 同步于 {date}",
+  "stats": {
+    "requests": "请求数",
+    "inputTokens": "输入 tokens",
+    "outputTokens": "输出 tokens",
+    "spend": "花费"
+  },
+  "sections": {
+    "modelDistribution": {
+      "title": "模型分布",
+      "empty": "暂无已同步的模型分布。"
+    },
+    "requestLog": {
+      "title": "请求日志",
+      "empty": "暂无已同步的请求日志。"
+    }
+  },
+  "columns": {
+    "date": "日期",
+    "key": "Key",
+    "model": "模型",
+    "requests": "请求数",
+    "tokens": "Tokens",
+    "spend": "花费",
+    "input": "输入",
+    "output": "输出"
+  }
+}

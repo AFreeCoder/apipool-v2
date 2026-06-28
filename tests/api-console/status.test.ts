@@ -110,6 +110,22 @@ test('usage sync descriptions are readable for non-ready states', () => {
   );
 });
 
+test('usage sync descriptions can be localized by callers', () => {
+  assert.equal(
+    getUsageSyncDescription(
+      { status: 'empty' },
+      {
+        empty: '最近 7 天暂无用量。',
+        syncing: '正在同步用量。',
+        stale: '用量同步有延迟。',
+        failed: '用量同步暂不可用。',
+        ready: '用量数据已是最新。',
+      }
+    ),
+    '最近 7 天暂无用量。'
+  );
+});
+
 test('usage log row keys remain unique when New API repeats request ids', () => {
   const first = getUsageLogRowKey(
     {

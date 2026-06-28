@@ -163,3 +163,54 @@
 - 主要实现：`scripts/smoke-mvp.ts`、`src/features/api-catalog/server/queries.ts`、`src/features/newapi-bridge/server/portal.ts`、`src/app/api/apipool/billing/route.ts`、`src/app/api/apipool/admin/adjust-quota/route.ts`、`src/features/api-console/components/api-key-manager.tsx`。
 - 数据迁移：`src/config/db/migrations_sqlite/0005_elite_prowler.sql`、`src/config/db/migrations_sqlite/meta/0005_snapshot.json`、`src/config/db/migrations_sqlite/meta/_journal.json`、`src/config/db/schema.sqlite.ts`。
 - 回归测试：`tests/api-catalog/queries.test.ts`、`tests/newapi-bridge/portal.test.ts`、`tests/newapi-bridge/billing-ledger.test.ts`、`tests/api-console/billing.test.ts`、`tests/api-console/public-errors.test.ts`、`tests/api-console/api-key-manager.test.ts`、`tests/smoke/mvp-smoke-script.test.ts`。
+
+## 七、2026-06-28 多语言切换补充修复
+
+- 原始问题描述：切换到中文后，公开页和控制台仍有部分英文文案；网站默认英文时，如果检测到用户浏览器语言是中文，需要提示是否切换到中文。
+- 问题类型：多语言缺失 + UI 交互问题。
+- 复现结果：确认真实。`/zh`、`/zh/models`、dashboard 相关页面仍有硬编码英文；`LocaleDetector` 默认未启用且只挂在 landing/admin layout，未覆盖全部 localized routes；`/zh/models` 的目录维度还会直接回显数据库英文名，如 `Official`、`Text`、`Vision`、`Available`；登录态走查 `/zh/dashboard/api-keys` 时，创建 Key 分组下拉仍显示 `Official`。
+- 根因：
+  - public shell、首页、模型页、dashboard 页面和 API Key 组件未统一接入 `next-intl` namespace。
+  - `locale_detect_enabled` 默认关闭，且 `LocaleDetector` 未挂在根 `[locale]` layout。
+  - 模型目录维度使用后台 catalog 数据名作为公开展示文案，没有按 locale 做展示映射。
+  - API Key 创建表单和 key 列表使用 catalog 分组名或 API DTO 的 `groupName` 直接展示，没有按公开 `groupSlug` 做 locale 映射。
+- 修复内容：
+  - `LocaleDetector` 默认启用，并移动到 `src/app/[locale]/layout.tsx`，只提示切换、不自动改写默认英文路由。
+  - `LocaleDetector` 文案改为 `common.locale_detector.*`，移除组件内硬编码中英文。
+  - 公开站点 shell、首页、模型页、dashboard overview/billing/usage/api-keys、API Key 管理、余额提醒、充值组件接入中英文 locale。
+  - `/zh/models` 增加公开目录维度映射：`official -> 官方`、`llm -> 大语言模型`、`text -> 文本`、`vision -> 视觉`、`available -> 可用`。
+  - `/zh/dashboard/api-keys` 增加 API Key 分组映射：`official -> 官方`；portal key DTO 增加公开 `groupSlug`，组件渲染时用 `groupSlug` 本地化已有 key 表格和刷新后的 key 列表。
+  - 移动菜单 Radix Sheet 延迟到客户端 mount 后渲染，修复本轮浏览器 QA 发现的 `aria-controls` hydration mismatch。
+  - API Key 创建表单的 Radix Select 延迟到客户端 mount 后渲染，修复登录态 dashboard 走查发现的 `aria-controls` hydration mismatch。
+- 新增或更新的 locale namespace：
+  - `site`
+  - `pages/home`
+  - `pages/models`
+  - `dashboard/common`
+  - `dashboard/overview`
+  - `dashboard/billing`
+  - `dashboard/usage`
+  - `dashboard/apiKeys`
+  - `dashboard/apiKeys.groups.official`
+  - `common.locale_detector.close`
+- 新增或更新的测试：
+  - `tests/public-content/i18n-coverage.test.ts`
+  - `tests/api-catalog/models-filter.test.ts`
+  - `tests/api-console/status.test.ts`
+  - `tests/api-console/usage-page.test.ts`
+  - `tests/api-console/balance-warning.test.ts`
+  - `tests/newapi-bridge/portal.test.ts`
+- 浏览器 QA：
+  - `gstack browse` 验证 `/` 默认英文、`/zh` 中文首页、`/zh/models` 中文模型页。
+  - 使用无状态浏览器上下文模拟 `navigator.language=zh-CN`，确认 `/` 显示“切换到中文”提示，点击后进入 `/zh`。
+  - 本地服务使用测试账号登录后走查 `/zh/dashboard`、`/zh/dashboard/api-keys`、`/zh/dashboard/billing`、`/zh/dashboard/usage`，确认无 console error；`/zh/dashboard/api-keys` 显示 `官方`，不再显示 `Official`。
+  - `gstack:qa-only` 范围验证生成本地报告：`.gstack/qa-reports/qa-report-localhost-3000-2026-06-28.md`；截图位于 `.gstack/qa-reports/screenshots/`。
+  - 登录态 dashboard QA 证据：`.gstack/qa-reports/dashboard-auth/screenshots/`、`.gstack/qa-reports/dashboard-auth/text/`、`.gstack/qa-reports/dashboard-auth/console/`。
+- 验证命令和结果：
+  - `git diff --check`：通过。
+  - `pnpm run lint`：通过，0 errors，196 warnings 为仓库既有 warning。
+  - `pnpm exec tsc --noEmit --pretty false`：通过。
+  - `pnpm test`：通过，249/249 pass。
+  - `pnpm run smoke:mvp`：脚本可运行；因缺少 `APIPOOL_SMOKE_PORTAL_USER_ID`、`APIPOOL_SMOKE_OPERATOR_USER_ID`，按 live gate 预期跳过真实网关路径。
+  - `pnpm run build`：通过。
+- 最终状态：Fixed。

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Menu } from 'lucide-react';
 
 import { Link } from '@/core/i18n/navigation';
@@ -18,24 +18,42 @@ import {
  * Mobile navigation drawer. The design system requires the nav to collapse into
  * a drawer below the lg breakpoint instead of an always-open inline strip.
  */
-export function MobileNav({ items }: { items: { href: string; label: string }[] }) {
+export function MobileNav({
+  items,
+  openLabel,
+  menuTitle,
+}: {
+  items: { href: string; label: string }[];
+  openLabel: string;
+  menuTitle: string;
+}) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const triggerButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={openLabel}
+      className="lg:hidden"
+    >
+      <Menu className="size-5" />
+    </Button>
+  );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return triggerButton;
+  }
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Open menu"
-          className="lg:hidden"
-        >
-          <Menu className="size-5" />
-        </Button>
-      </SheetTrigger>
+      <SheetTrigger asChild>{triggerButton}</SheetTrigger>
       <SheetContent side="left" className="w-72">
         <SheetHeader>
-          <SheetTitle>Menu</SheetTitle>
+          <SheetTitle>{menuTitle}</SheetTitle>
         </SheetHeader>
         <nav className="grid gap-1 px-2">
           {items.map((item) => (

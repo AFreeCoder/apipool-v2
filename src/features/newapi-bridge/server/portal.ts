@@ -216,6 +216,7 @@ function toPublicApiKey(row: any) {
     updatedAt: row.updatedAt,
     lastUsedAt: row.lastUsedAt,
     deletedAt: row.deletedAt,
+    groupSlug: row.groupSlug ?? null,
     groupName: row.groupName ?? null,
   };
 }
@@ -640,7 +641,11 @@ export async function createPortalApiKey(
     });
 
     return {
-      binding: toPublicApiKey({ ...created, groupName: group.name }),
+      binding: toPublicApiKey({
+        ...created,
+        groupSlug: group.slug,
+        groupName: group.name,
+      }),
       plainKey: remote.key,
     };
   } catch (error: any) {
@@ -716,7 +721,11 @@ async function syncPortalApiKeyStatuses(
       if (syncedStatus === 'deleted') {
         continue;
       }
-      syncedRows.push(updated ? { ...updated, groupName: row.groupName } : row);
+      syncedRows.push(
+        updated
+          ? { ...updated, groupSlug: row.groupSlug, groupName: row.groupName }
+          : row
+      );
     }
 
     return syncedRows;
@@ -749,6 +758,7 @@ export async function listPortalApiKeys(
       updatedAt: newApiKeyBinding.updatedAt,
       lastUsedAt: newApiKeyBinding.lastUsedAt,
       deletedAt: newApiKeyBinding.deletedAt,
+      groupSlug: catalogGroup.slug,
       groupName: catalogGroup.name,
     })
     .from(newApiKeyBinding)
@@ -778,6 +788,7 @@ export async function listKeysByPortalUser(portalUserId: string) {
       updatedAt: newApiKeyBinding.updatedAt,
       lastUsedAt: newApiKeyBinding.lastUsedAt,
       deletedAt: newApiKeyBinding.deletedAt,
+      groupSlug: catalogGroup.slug,
       groupName: catalogGroup.name,
     })
     .from(newApiKeyBinding)
@@ -804,6 +815,7 @@ export async function disablePortalApiKey(
       portalUserId: newApiKeyBinding.portalUserId,
       newapiKeyId: newApiKeyBinding.newapiKeyId,
       status: newApiKeyBinding.status,
+      groupSlug: catalogGroup.slug,
       groupName: catalogGroup.name,
     })
     .from(newApiKeyBinding)
@@ -860,7 +872,11 @@ export async function disablePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey({ ...updated, groupName: row.groupName });
+    return toPublicApiKey({
+      ...updated,
+      groupSlug: row.groupSlug,
+      groupName: row.groupName,
+    });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)
@@ -893,6 +909,7 @@ export async function deletePortalApiKey(
       portalUserId: newApiKeyBinding.portalUserId,
       newapiKeyId: newApiKeyBinding.newapiKeyId,
       status: newApiKeyBinding.status,
+      groupSlug: catalogGroup.slug,
       groupName: catalogGroup.name,
     })
     .from(newApiKeyBinding)
@@ -948,7 +965,11 @@ export async function deletePortalApiKey(
       idempotencyKey,
       responseBody: { cleanup: true, previousStatus: status },
     });
-    return toPublicApiKey({ ...cleaned, groupName: row.groupName });
+    return toPublicApiKey({
+      ...cleaned,
+      groupSlug: row.groupSlug,
+      groupName: row.groupName,
+    });
   }
 
   const binding = await getPortalUserBinding(portalUserId);
@@ -985,7 +1006,11 @@ export async function deletePortalApiKey(
       idempotencyKey,
       responseBody: remote,
     });
-    return toPublicApiKey({ ...updated, groupName: row.groupName });
+    return toPublicApiKey({
+      ...updated,
+      groupSlug: row.groupSlug,
+      groupName: row.groupName,
+    });
   } catch (error: any) {
     await db()
       .update(newApiKeyBinding)

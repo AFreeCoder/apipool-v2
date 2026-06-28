@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   canCleanupKeyStatus,
   canDeleteKeyStatus,
@@ -17,6 +17,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import { Button } from '@/shared/components/ui/button';
@@ -50,31 +51,34 @@ type ApiKeyRow = {
   keyMasked: string;
   status: KeyLifecycleStatus;
   allowedModels?: string[];
+  groupSlug?: string | null;
   groupName?: string | null;
   createdAt: string | Date;
   deletedAt?: string | Date | null;
 };
 
 type NoticeTone = 'error' | 'info' | 'success';
+type GroupMessages = Record<string, string>;
 
 type NoticeState = {
   tone: NoticeTone;
   text: string;
 };
 
-const KEY_CREATION_PAUSED_MESSAGE =
-  'API key creation is temporarily paused. Existing keys remain manageable.';
+function localizeApiKeyRowGroupName(
+  messages: GroupMessages,
+  key: Pick<ApiKeyRow, 'groupSlug' | 'groupName'>
+) {
+  return (key.groupSlug ? messages[key.groupSlug] : undefined) ?? key.groupName;
+}
 
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  disabled: 'Disabled',
-  deleted: 'Deleted',
-  creating_remote: 'Creating…',
-  disable_pending: 'Disabling…',
-  delete_pending: 'Deleting…',
-};
-
-function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
+function StatusBadge({
+  status,
+  label,
+}: {
+  status: KeyLifecycleStatus;
+  label: string;
+}) {
   const className =
     status === 'active'
       ? 'bg-primary/10 text-primary'
@@ -86,7 +90,7 @@ function StatusBadge({ status }: { status: KeyLifecycleStatus }) {
     <span
       className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${className}`}
     >
-      {STATUS_LABELS[status] || status.replaceAll('_', ' ')}
+      {label}
     </span>
   );
 }
@@ -143,18 +147,28 @@ export function ApiKeyManager({
   callableByGroup: Record<string, string[]>;
   creationEnabled?: boolean;
 }) {
+  const t = useTranslations('dashboard.apiKeys');
+  const groupMessages = t.raw('groups') as GroupMessages;
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
-  const [name, setName] = useState('Default APIPool key');
+  const [name, setName] = useState(t('defaultName'));
   const [selectedGroupSlug, setSelectedGroupSlug] = useState(
     groups[0]?.slug ?? ''
   );
   const [plainKey, setPlainKey] = useState('');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const groupOptions = buildGroupSelectOptions(groups);
+  const selectedGroupLabel =
+    groupOptions.find((group) => group.value === selectedGroupSlug)?.label ??
+    t('form.groupPlaceholder');
   const selectedGroupModels = selectedGroupSlug
     ? (callableByGroup[selectedGroupSlug] ?? [])
     : [];
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function refreshKeys() {
     const response = await fetch('/api/apipool/keys');
@@ -167,12 +181,12 @@ export function ApiKeyManager({
   async function createKey() {
     if (!creationEnabled) {
       setPlainKey('');
-      setNotice({ tone: 'info', text: KEY_CREATION_PAUSED_MESSAGE });
+      setNotice({ tone: 'info', text: t('creationPaused') });
       return;
     }
     if (!selectedGroupSlug) {
       setPlainKey('');
-      setNotice({ tone: 'error', text: 'Select a group first.' });
+      setNotice({ tone: 'error', text: t('notices.selectGroup') });
       return;
     }
 
@@ -191,12 +205,12 @@ export function ApiKeyManager({
       setKeys((prev) => [payload.data.key, ...prev]);
       setNotice({
         tone: 'success',
-        text: 'Key created. The full key is shown once below.',
+        text: t('notices.created'),
       });
     } catch (error: any) {
       setNotice({
         tone: 'error',
-        text: error?.message || 'Create key failed',
+        text: error?.message || t('notices.createFailed'),
       });
       await refreshKeys();
     } finally {
@@ -210,7 +224,7 @@ export function ApiKeyManager({
     if (!target || !canDisableKeyStatus(target.status)) {
       setNotice({
         tone: 'error',
-        text: 'This key cannot be disabled in its current state.',
+        text: t('notices.disableUnavailable'),
       });
       return;
     }
@@ -237,7 +251,7 @@ export function ApiKeyManager({
     ) {
       setNotice({
         tone: 'error',
-        text: 'This key cannot be deleted in its current state.',
+        text: t('notices.deleteUnavailable'),
       });
       return;
     }
@@ -259,40 +273,55 @@ export function ApiKeyManager({
       <div className="bg-card rounded-xl border p-5">
         <div className="mb-4 flex items-center gap-2 font-medium">
           <KeyRound className="size-4" />
-          Create API Key
+          {t('form.title')}
         </div>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]">
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Key name"
+            placeholder={t('form.namePlaceholder')}
           />
-          <Select
-            value={selectedGroupSlug || undefined}
-            onValueChange={setSelectedGroupSlug}
-            disabled={loading || groupOptions.length === 0}
-          >
-            <SelectTrigger aria-label="Group" className="w-full">
-              <SelectValue placeholder="Select a group" />
-            </SelectTrigger>
-            <SelectContent>
-              {groupOptions.map((group) => (
-                <SelectItem key={group.value} value={group.value}>
-                  {group.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {mounted ? (
+            <Select
+              value={selectedGroupSlug || undefined}
+              onValueChange={setSelectedGroupSlug}
+              disabled={loading || groupOptions.length === 0}
+            >
+              <SelectTrigger
+                aria-label={t('form.groupLabel')}
+                className="w-full"
+              >
+                <SelectValue placeholder={t('form.groupPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {groupOptions.map((group) => (
+                  <SelectItem key={group.value} value={group.value}>
+                    {group.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              aria-label={t('form.groupLabel')}
+              className="w-full justify-start"
+            >
+              <span className="truncate">{selectedGroupLabel}</span>
+            </Button>
+          )}
           <Button
             onClick={createKey}
             disabled={loading || !creationEnabled || !selectedGroupSlug}
           >
             <Plus className="size-4" />
-            {loading ? 'Creating...' : 'Create key'}
+            {loading ? t('form.creating') : t('form.create')}
           </Button>
         </div>
         <div className="bg-muted/40 mt-4 rounded-md border p-3">
-          <div className="text-sm font-medium">Callable models</div>
+          <div className="text-sm font-medium">{t('form.callableModels')}</div>
           {selectedGroupModels.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-2">
               {selectedGroupModels.map((modelName) => (
@@ -306,25 +335,20 @@ export function ApiKeyManager({
             </div>
           ) : (
             <p className="text-muted-foreground mt-2 text-xs">
-              No callable models
+              {t('form.noCallableModels')}
             </p>
           )}
         </div>
-        <p className="text-muted-foreground mt-3 text-xs">
-          Add credit on the Balance tab before making paid calls. The full key
-          is shown once after creation.
-        </p>
+        <p className="text-muted-foreground mt-3 text-xs">{t('form.hint')}</p>
         {!creationEnabled && (
           <p className="text-muted-foreground mt-2 text-xs">
-            {KEY_CREATION_PAUSED_MESSAGE}
+            {t('creationPaused')}
           </p>
         )}
         {notice && <ApiKeyNotice notice={notice} />}
         {plainKey && (
           <div className="bg-muted mt-4 rounded-md border p-4">
-            <div className="mb-2 text-sm font-medium">
-              Full key. This is shown once.
-            </div>
+            <div className="mb-2 text-sm font-medium">{t('fullKey.title')}</div>
             <div className="flex items-center gap-2">
               <code className="min-w-0 flex-1 overflow-x-auto text-sm">
                 {plainKey}
@@ -334,7 +358,7 @@ export function ApiKeyManager({
                 variant="outline"
                 size="icon"
                 onClick={() => navigator.clipboard.writeText(plainKey)}
-                title="Copy full key"
+                title={t('fullKey.copy')}
               >
                 <Copy className="size-4" />
               </Button>
@@ -346,24 +370,24 @@ export function ApiKeyManager({
       <div className="bg-card rounded-xl border">
         <div className="border-b p-5">
           <h2 className="font-medium">
-            Keys for {APIPOOL_PUBLIC_CONFIG.apiBaseUrl}
+            {t('table.title', { baseUrl: APIPOOL_PUBLIC_CONFIG.apiBaseUrl })}
           </h2>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Masked key</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Group</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{t('table.name')}</TableHead>
+              <TableHead>{t('table.maskedKey')}</TableHead>
+              <TableHead>{t('table.status')}</TableHead>
+              <TableHead>{t('table.group')}</TableHead>
+              <TableHead className="text-right">{t('table.actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {keys.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center">
-                  No API keys yet.
+                  {t('table.empty')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -381,9 +405,14 @@ export function ApiKeyManager({
                       {key.keyMasked}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={key.status} />
+                      <StatusBadge
+                        status={key.status}
+                        label={t(`status.${key.status}`)}
+                      />
                     </TableCell>
-                    <TableCell>{key.groupName ?? '—'}</TableCell>
+                    <TableCell>
+                      {localizeApiKeyRowGroupName(groupMessages, key) ?? '—'}
+                    </TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
                         variant="outline"
@@ -391,8 +420,8 @@ export function ApiKeyManager({
                         onClick={() =>
                           navigator.clipboard.writeText(key.keyMasked)
                         }
-                        title="Copy masked key"
-                        aria-label="Copy masked key"
+                        title={t('table.copyMasked')}
+                        aria-label={t('table.copyMasked')}
                       >
                         <Copy className="size-4" />
                       </Button>
@@ -403,10 +432,10 @@ export function ApiKeyManager({
                         disabled={!canDisable}
                         title={
                           canDisable
-                            ? 'Disable key'
-                            : 'Key cannot be disabled in this state'
+                            ? t('table.disable')
+                            : t('table.disableUnavailable')
                         }
-                        aria-label="Disable key"
+                        aria-label={t('table.disable')}
                       >
                         <Ban className="size-4" />
                       </Button>
@@ -417,13 +446,13 @@ export function ApiKeyManager({
                         disabled={!canDelete}
                         title={
                           canCleanup
-                            ? 'Clean up failed key'
+                            ? t('table.cleanup')
                             : canDelete
-                              ? 'Delete key'
-                              : 'Key cannot be deleted in this state'
+                              ? t('table.delete')
+                              : t('table.deleteUnavailable')
                         }
                         aria-label={
-                          canCleanup ? 'Clean up failed key' : 'Delete key'
+                          canCleanup ? t('table.cleanup') : t('table.delete')
                         }
                       >
                         <Trash2 className="size-4" />

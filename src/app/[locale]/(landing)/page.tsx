@@ -7,7 +7,7 @@ import {
   PlugZap,
   Wallet,
 } from 'lucide-react';
-import { setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
@@ -17,54 +17,7 @@ export const revalidate = 3600;
 
 const providers = ['OpenAI', 'Anthropic', 'Google', 'Qwen', 'Kimi', 'MiniMax'];
 
-const heroBullets = ['OpenAI-compatible', 'No subscription', 'Balance never expires'];
-
-const steps = [
-  {
-    index: '01',
-    title: 'Create an account',
-    description:
-      'Sign up and add credit to your balance. Usage is billed per token — no subscription, balance never expires.',
-  },
-  {
-    index: '02',
-    title: 'Create an API key',
-    description:
-      'Generate a key in the console. The plaintext key is shown once — keep it safe.',
-  },
-  {
-    index: '03',
-    title: 'Call any model',
-    description:
-      'Use your favorite SDK with one key. Switch models by name — that is the whole migration.',
-  },
-];
-
-const features = [
-  {
-    icon: CircleDollarSign,
-    title: 'Transparent pricing',
-    description:
-      'Per-token prices listed next to official rates. What you see is what you pay.',
-  },
-  {
-    icon: Wallet,
-    title: 'Pay as you go',
-    description:
-      'Top up in dollars, spend by the token. No plans, no lock-in, no expiry.',
-  },
-  {
-    icon: PlugZap,
-    title: 'OpenAI-compatible',
-    description:
-      'Works with the official SDKs and most tools by changing one base URL.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Real usage data',
-    description: 'Requests, tokens, and spend per model — live in your console.',
-  },
-];
+const featureIcons = [CircleDollarSign, Wallet, PlugZap, BarChart3] as const;
 
 // 终端配色仅用于深底代码块（设计规范允许的唯一例外区）
 const t = {
@@ -76,7 +29,13 @@ const t = {
   comment: '#9aa4ae',
 };
 
-function QuickstartTerminal({ model }: { model: string }) {
+function QuickstartTerminal({
+  model,
+  response,
+}: {
+  model: string;
+  response: string;
+}) {
   return (
     <div className="relative">
       <div
@@ -137,9 +96,7 @@ function QuickstartTerminal({ model }: { model: string }) {
           <span style={{ color: t.dim }}>{'{ '}</span>
           <span style={{ color: t.cmd }}>{'"content"'}</span>
           <span style={{ color: t.dim }}>: </span>
-          <span style={{ color: t.str }}>
-            {'"Hello! How can I help you today?"'}
-          </span>
+          <span style={{ color: t.str }}>{JSON.stringify(response)}</span>
           <span style={{ color: t.dim }}>{' }'}</span>
         </div>
       </div>
@@ -147,41 +104,40 @@ function QuickstartTerminal({ model }: { model: string }) {
   );
 }
 
-const scenarios = [
-  {
-    title: 'Coding agents',
-    description:
-      'Long-running agents and dev tools that plan, edit, and test with frontier models.',
-    vignette: (
+function ScenarioVignette({
+  index,
+  item,
+}: {
+  index: number;
+  item: Record<string, string>;
+}) {
+  if (index === 0) {
+    return (
       <div className="h-36 overflow-hidden rounded-lg bg-[#0a0a0a] p-4 font-mono text-xs leading-6">
-        <div style={{ color: t.dim }}>▸ agent run · fix-build</div>
-        <div style={{ color: t.fg }}>plan → edit → test</div>
-        <div style={{ color: t.cmd }}>✓ 14 files changed</div>
-        <div style={{ color: t.cmd }}>✓ tests passed in 42s</div>
+        <div style={{ color: t.dim }}>{item.vignetteLine1}</div>
+        <div style={{ color: t.fg }}>{item.vignetteLine2}</div>
+        <div style={{ color: t.cmd }}>{item.vignetteLine3}</div>
+        <div style={{ color: t.cmd }}>{item.vignetteLine4}</div>
         <div style={{ color: t.dim }}>▮</div>
       </div>
-    ),
-  },
-  {
-    title: 'Chat & copilots',
-    description:
-      'Production assistants with streaming responses and per-conversation cost control.',
-    vignette: (
+    );
+  }
+
+  if (index === 1) {
+    return (
       <div className="bg-muted/50 flex h-36 flex-col justify-center gap-2 rounded-lg border p-4">
         <div className="bg-background text-muted-foreground w-3/4 rounded-lg rounded-bl-sm border px-3 py-2 text-xs">
-          Summarize this PR for review
+          {item.vignetteUser}
         </div>
         <div className="bg-primary/10 text-foreground ml-auto w-3/4 rounded-lg rounded-br-sm px-3 py-2 text-xs">
-          3 changes: auth middleware, retry logic, tests…
+          {item.vignetteAssistant}
         </div>
       </div>
-    ),
-  },
-  {
-    title: 'Image & media generation',
-    description:
-      'Multimodal pipelines for product art, thumbnails, and creative tooling.',
-    vignette: (
+    );
+  }
+
+  if (index === 2) {
+    return (
       <div className="grid h-36 grid-cols-3 gap-2 rounded-lg border p-3">
         {[
           'from-emerald-200 to-teal-400',
@@ -197,26 +153,22 @@ const scenarios = [
           />
         ))}
       </div>
-    ),
-  },
-  {
-    title: 'Batch & data pipelines',
-    description:
-      'Large-scale extraction, classification, and evals with predictable spend.',
-    vignette: (
-      <div className="flex h-36 flex-col justify-center gap-2 rounded-lg border p-4 font-mono text-xs">
-        <div className="text-muted-foreground">processing 12,408 docs…</div>
-        <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
-          <div className="bg-primary h-full w-4/5 rounded-full" />
-        </div>
-        <div className="text-muted-foreground flex justify-between">
-          <span>batch-07.jsonl</span>
-          <span className="text-primary">82%</span>
-        </div>
+    );
+  }
+
+  return (
+    <div className="flex h-36 flex-col justify-center gap-2 rounded-lg border p-4 font-mono text-xs">
+      <div className="text-muted-foreground">{item.vignetteLine1}</div>
+      <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
+        <div className="bg-primary h-full w-4/5 rounded-full" />
       </div>
-    ),
-  },
-];
+      <div className="text-muted-foreground flex justify-between">
+        <span>{item.vignetteFile}</span>
+        <span className="text-primary">82%</span>
+      </div>
+    </div>
+  );
+}
 
 export default async function HomePage({
   params,
@@ -225,6 +177,25 @@ export default async function HomePage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const home = await getTranslations({ locale, namespace: 'pages.home' });
+  const heroBullets = home.raw('hero.bullets') as string[];
+  const steps = home.raw('steps.items') as Array<{
+    index: string;
+    title: string;
+    description: string;
+  }>;
+  const features = (
+    home.raw('features.items') as Array<{
+      title: string;
+      description: string;
+    }>
+  ).map((feature, index) => ({
+    ...feature,
+    icon: featureIcons[index] ?? CircleDollarSign,
+  }));
+  const scenarios = home.raw('scenarios.items') as Array<
+    Record<string, string>
+  >;
 
   return (
     <div>
@@ -233,21 +204,24 @@ export default async function HomePage({
         <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-24">
           <div className="min-w-0">
             <div className="text-primary font-mono text-xs tracking-widest uppercase">
-              {'// unified llm api'}
+              {home('hero.eyebrow')}
             </div>
             <h1 className="mt-4 text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">
-              One endpoint.
+              {home('hero.titleLine1')}
               <br />
-              Every frontier model.
+              {home('hero.titleLine2')}
             </h1>
             <p className="text-muted-foreground mt-5 max-w-xl text-base leading-7">
-              Call OpenAI, Anthropic, and more through a single API. Transparent
-              per-token pricing, balance you control, usage you can see.
+              {home('hero.description')}
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <CtaButton href="/dashboard">Start building</CtaButton>
-              <Button asChild variant="outline" className="h-10 rounded-md px-5">
-                <Link href="/docs">Read the docs</Link>
+              <CtaButton href="/dashboard">{home('hero.start')}</CtaButton>
+              <Button
+                asChild
+                variant="outline"
+                className="h-10 rounded-md px-5"
+              >
+                <Link href="/docs">{home('hero.docs')}</Link>
               </Button>
             </div>
             <div className="text-muted-foreground mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
@@ -261,7 +235,10 @@ export default async function HomePage({
           </div>
 
           <div className="min-w-0">
-            <QuickstartTerminal model={APIPOOL_CONFIG.defaultLaunchModel} />
+            <QuickstartTerminal
+              model={APIPOOL_CONFIG.defaultLaunchModel}
+              response={home('terminal.response')}
+            />
           </div>
         </div>
       </section>
@@ -270,7 +247,7 @@ export default async function HomePage({
       <section className="border-border border-b">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-6 sm:px-6 lg:px-8">
           <span className="text-muted-foreground text-xs tracking-widest uppercase">
-            Providers
+            {home('providers.label')}
           </span>
           {providers.map((provider) => (
             <span
@@ -289,25 +266,25 @@ export default async function HomePage({
           <div className="mb-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-3xl font-semibold tracking-tight">
-                From agents to images
+                {home('scenarios.title')}
               </h2>
               <p className="text-muted-foreground mt-2 max-w-xl">
-                One balance and one key behind whatever you are building.
+                {home('scenarios.description')}
               </p>
             </div>
             <Link
               href="/models"
               className="text-primary inline-flex items-center gap-1 text-sm font-medium"
             >
-              Models & pricing
+              {home('scenarios.modelsLink')}
               <ArrowRight className="size-4" />
             </Link>
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {scenarios.map((scenario) => (
+            {scenarios.map((scenario, index) => (
               <div key={scenario.title}>
-                {scenario.vignette}
+                <ScenarioVignette index={index} item={scenario} />
                 <h3 className="mt-4 font-semibold">{scenario.title}</h3>
                 <p className="text-muted-foreground mt-1.5 text-sm leading-6">
                   {scenario.description}
@@ -322,7 +299,7 @@ export default async function HomePage({
       <section className="border-border border-b py-14 sm:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-semibold tracking-tight">
-            Up and running in minutes
+            {home('steps.title')}
           </h2>
           <div className="mt-10 grid gap-8 md:grid-cols-3">
             {steps.map((step) => (
@@ -359,16 +336,15 @@ export default async function HomePage({
       <section className="py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="text-3xl font-semibold tracking-tight">
-            Ship with one API today
+            {home('cta.title')}
           </h2>
           <p className="text-muted-foreground mx-auto mt-3 max-w-md">
-            Create a key, add credit, and make your first call in under five
-            minutes.
+            {home('cta.description')}
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <CtaButton href="/dashboard">Open the console</CtaButton>
+            <CtaButton href="/dashboard">{home('cta.console')}</CtaButton>
             <Button asChild variant="outline" className="h-10 rounded-md px-5">
-              <Link href="/models">Browse models</Link>
+              <Link href="/models">{home('cta.models')}</Link>
             </Button>
           </div>
         </div>

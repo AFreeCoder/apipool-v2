@@ -17,10 +17,14 @@ export function BalanceWarningView({
   balanceUsd,
   threshold = 0,
   LinkComponent,
+  message,
+  actionLabel,
 }: {
   balanceUsd: number | null | undefined;
   threshold?: number;
   LinkComponent: ComponentType<BillingLinkProps>;
+  message: string;
+  actionLabel: string;
 }) {
   if (!isLowBalance(balanceUsd, threshold)) {
     return null;
@@ -31,12 +35,12 @@ export function BalanceWarningView({
       role="status"
       className="bg-background flex flex-col gap-3 rounded-xl border border-amber-200 px-5 py-4 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60"
     >
-      <div className="font-medium">Low balance — please top up</div>
+      <div className="font-medium">{message}</div>
       <LinkComponent
         href="/dashboard/billing"
         className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-medium transition-colors"
       >
-        Add credit
+        {actionLabel}
       </LinkComponent>
     </div>
   );

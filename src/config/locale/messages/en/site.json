@@ -1,0 +1,24 @@
+{
+  "nav": {
+    "models": "Models & Pricing",
+    "docs": "Docs",
+    "console": "Console"
+  },
+  "mobile": {
+    "openMenu": "Open menu",
+    "menu": "Menu"
+  },
+  "footer": {
+    "description": "One API endpoint for frontier models. Transparent pricing, real usage data, no subscriptions.",
+    "emailSupport": "Email support",
+    "product": "Product",
+    "models": "Models & Pricing",
+    "apiDocs": "API Docs",
+    "console": "Console",
+    "legal": "Legal",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "copyright": "© 2026 {brand}. All rights reserved.",
+    "tagline": "built for developers"
+  }
+}

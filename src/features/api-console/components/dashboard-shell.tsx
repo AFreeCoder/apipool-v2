@@ -1,16 +1,10 @@
 'use client';
 
 import { ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { Link, usePathname } from '@/core/i18n/navigation';
 import { cn } from '@/shared/lib/utils';
-
-const items = [
-  { href: '/dashboard', label: 'Overview' },
-  { href: '/dashboard/api-keys', label: 'API Keys' },
-  { href: '/dashboard/billing', label: 'Balance' },
-  { href: '/dashboard/usage', label: 'Usage' },
-];
 
 function isActive(pathname: string, href: string) {
   // Overview is only active on the exact /dashboard route; nested routes own
@@ -21,12 +15,19 @@ function isActive(pathname: string, href: string) {
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const t = useTranslations('dashboard.common');
+  const items = [
+    { href: '/dashboard', label: t('nav.overview') },
+    { href: '/dashboard/api-keys', label: t('nav.apiKeys') },
+    { href: '/dashboard/billing', label: t('nav.balance') },
+    { href: '/dashboard/usage', label: t('nav.usage') },
+  ];
 
   return (
     <div className="bg-muted/30 border-t">
       <div className="bg-background border-b">
         <nav
-          aria-label="console-navigation"
+          aria-label={t('nav.ariaLabel')}
           className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 sm:px-6 lg:px-8"
         >
           {items.map((item) => {

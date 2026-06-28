@@ -45,15 +45,25 @@ test('parseModelFilters accepts loose slug filters', () => {
 });
 
 test('models page exposes category as a public filter dimension', async () => {
-  const source = await readFile(
-    join(process.cwd(), 'src/app/[locale]/(landing)/models/page.tsx'),
-    'utf8'
-  );
+  const [source, enMessages, zhMessages] = await Promise.all([
+    readFile(
+      join(process.cwd(), 'src/app/[locale]/(landing)/models/page.tsx'),
+      'utf8'
+    ),
+    readFile(
+      join(process.cwd(), 'src/config/locale/messages/en/pages/models.json'),
+      'utf8'
+    ),
+    readFile(
+      join(process.cwd(), 'src/config/locale/messages/zh/pages/models.json'),
+      'utf8'
+    ),
+  ]);
 
-  assert.match(
-    source,
-    /label:\s*['"]Category['"][\s\S]*?key:\s*['"]category['"]/
-  );
+  assert.match(source, /label:\s*t\(['"]filters\.category['"]\)/);
+  assert.match(source, /key:\s*['"]category['"]/);
+  assert.equal(JSON.parse(enMessages).filters.category, 'Category');
+  assert.equal(JSON.parse(zhMessages).filters.category, '分类');
 });
 
 test('formatMicroUsdPerMillion formats integer micro-USD prices', () => {

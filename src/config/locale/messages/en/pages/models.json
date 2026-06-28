@@ -1,0 +1,44 @@
+{
+  "eyebrow": "// models & pricing",
+  "title": "Models & pricing",
+  "description": "All prices are per 1M tokens, billed by actual usage. One key works for every model below.",
+  "filters": {
+    "provider": "Provider",
+    "group": "Group",
+    "category": "Category",
+    "capability": "Capabilities",
+    "status": "Status",
+    "all": "All"
+  },
+  "dimensions": {
+    "groups": {
+      "official": "Official"
+    },
+    "categories": {
+      "llm": "LLM"
+    },
+    "capabilities": {
+      "text": "Text",
+      "vision": "Vision"
+    },
+    "statuses": {
+      "available": "Available"
+    }
+  },
+  "empty": {
+    "title": "No models match these filters.",
+    "clear": "Clear filters"
+  },
+  "table": {
+    "mobileHint": "Scroll horizontally to see context, pricing and status →",
+    "model": "Model",
+    "provider": "Provider",
+    "group": "Group",
+    "category": "Category",
+    "capabilities": "Capabilities",
+    "context": "Context",
+    "input": "Input·1M",
+    "output": "Output·1M",
+    "status": "Status"
+  }
+}

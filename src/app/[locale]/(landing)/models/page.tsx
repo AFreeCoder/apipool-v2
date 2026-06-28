@@ -8,7 +8,7 @@ import {
   getFilterDimensions,
   getPublicListings,
 } from '@/features/api-catalog/server/queries';
-import { setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
 import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
@@ -22,6 +22,21 @@ function formatContextWindow(tokens: number | null) {
   return String(tokens);
 }
 
+type CatalogDimension = 'groups' | 'categories' | 'capabilities' | 'statuses';
+
+type CatalogDimensionMessages = Partial<
+  Record<CatalogDimension, Record<string, string>>
+>;
+
+function localizeCatalogDimension(
+  messages: CatalogDimensionMessages,
+  dimension: CatalogDimension,
+  slug: string,
+  fallback: string
+) {
+  return messages[dimension]?.[slug] ?? fallback;
+}
+
 export default async function ModelsPage({
   params,
   searchParams,
@@ -31,21 +46,88 @@ export default async function ModelsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations({ locale, namespace: 'pages.models' });
   const filters = parseModelFilters(await searchParams);
   const [listings, dimensions] = await Promise.all([
     getPublicListings(filters),
     getFilterDimensions(),
   ]);
+  const dimensionMessages = t.raw('dimensions') as CatalogDimensionMessages;
+  const localizeOption = (
+    dimension: CatalogDimension,
+    option: { slug: string; name: string }
+  ) => ({
+    ...option,
+    name: localizeCatalogDimension(
+      dimensionMessages,
+      dimension,
+      option.slug,
+      option.name
+    ),
+  });
+  const localizedListings = listings.map((listing) => ({
+    ...listing,
+    groupName: localizeCatalogDimension(
+      dimensionMessages,
+      'groups',
+      listing.groupSlug,
+      listing.groupName
+    ),
+    category: localizeCatalogDimension(
+      dimensionMessages,
+      'categories',
+      listing.category,
+      listing.category
+    ),
+    capabilities: listing.capabilities.map((capability) =>
+      localizeCatalogDimension(
+        dimensionMessages,
+        'capabilities',
+        capability,
+        capability
+      )
+    ),
+    statusName: localizeCatalogDimension(
+      dimensionMessages,
+      'statuses',
+      listing.statusSlug,
+      listing.statusName
+    ),
+  }));
   const filterGroups = [
-    { label: 'Provider', key: 'vendor', options: dimensions.vendors },
-    { label: 'Group', key: 'group', options: dimensions.groups },
-    { label: 'Category', key: 'category', options: dimensions.categories },
     {
-      label: 'Capabilities',
-      key: 'capability',
-      options: dimensions.capabilities,
+      label: t('filters.provider'),
+      key: 'vendor',
+      options: dimensions.vendors,
     },
-    { label: 'Status', key: 'status', options: dimensions.statuses },
+    {
+      label: t('filters.group'),
+      key: 'group',
+      options: dimensions.groups.map((option) =>
+        localizeOption('groups', option)
+      ),
+    },
+    {
+      label: t('filters.category'),
+      key: 'category',
+      options: dimensions.categories.map((option) =>
+        localizeOption('categories', option)
+      ),
+    },
+    {
+      label: t('filters.capability'),
+      key: 'capability',
+      options: dimensions.capabilities.map((option) =>
+        localizeOption('capabilities', option)
+      ),
+    },
+    {
+      label: t('filters.status'),
+      key: 'status',
+      options: dimensions.statuses.map((option) =>
+        localizeOption('statuses', option)
+      ),
+    },
   ] as const;
 
   return (
@@ -54,14 +136,13 @@ export default async function ModelsPage({
       <section className="border-border border-b">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="text-primary font-mono text-xs tracking-widest uppercase">
-            {'// models & pricing'}
+            {t('eyebrow')}
           </div>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Models & pricing
+            {t('title')}
           </h1>
           <p className="text-muted-foreground mt-3 max-w-2xl leading-7">
-            All prices are per 1M tokens, billed by actual usage. One key works
-            for every model below.
+            {t('description')}
           </p>
 
           <div className="mt-8 space-y-2">
@@ -79,7 +160,7 @@ export default async function ModelsPage({
                     [group.key]: undefined,
                   })}
                 >
-                  All
+                  {t('filters.all')}
                 </FilterLink>
                 {group.options.map((option) => {
                   const active = filters[group.key] === option.slug;
@@ -105,13 +186,13 @@ export default async function ModelsPage({
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {listings.length === 0 ? (
             <div className="rounded-xl border p-10 text-center">
-              <div className="font-medium">No models match these filters.</div>
+              <div className="font-medium">{t('empty.title')}</div>
               <Button asChild variant="outline" className="mt-4 rounded-md">
-                <Link href="/models">Clear filters</Link>
+                <Link href="/models">{t('empty.clear')}</Link>
               </Button>
             </div>
           ) : (
-            <ModelsTable listings={listings} />
+            <ModelsTable listings={localizedListings} labels={t.raw('table')} />
           )}
           <p className="text-muted-foreground mt-3 text-xs">
             {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
@@ -148,109 +229,133 @@ function FilterLink({
   );
 }
 
-function ModelsTable({ listings }: { listings: ListingRow[] }) {
+function ModelsTable({
+  listings,
+  labels,
+}: {
+  listings: ListingRow[];
+  labels: Record<string, string>;
+}) {
   if (listings.length === 0) return null;
 
   return (
     <>
       <p className="text-muted-foreground mb-2 text-xs min-[960px]:hidden">
-        Scroll horizontally to see context, pricing and status →
+        {labels.mobileHint}
       </p>
       <div className="relative">
         <div className="overflow-x-auto rounded-xl border">
           <table className="w-full min-w-[920px] text-sm">
             <thead>
-          <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-            <th className="px-4 py-3 text-left font-medium">Model</th>
-            <th className="px-4 py-3 text-left font-medium">Provider</th>
-            <th className="px-4 py-3 text-left font-medium">Group</th>
-            <th className="px-4 py-3 text-left font-medium">Category</th>
-            <th className="px-4 py-3 text-left font-medium">Capabilities</th>
-            <th className="px-4 py-3 text-right font-medium">Context</th>
-            <th className="px-4 py-3 text-right font-medium">Input·1M</th>
-            <th className="px-4 py-3 text-right font-medium">Output·1M</th>
-            <th className="px-4 py-3 text-right font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {listings.map((listing) => {
-            return (
-              <tr
-                key={`${listing.modelId}:${listing.groupSlug}`}
-                className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
-              >
-                <td className="px-4 py-3">
-                  <div className="font-medium">{listing.displayName}</div>
-                  <div className="text-muted-foreground font-mono text-xs">
-                    {listing.modelId}
-                  </div>
-                  {listing.description && (
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {listing.description}
-                    </div>
-                  )}
-                </td>
-                <td className="text-muted-foreground px-4 py-3">
-                  {listing.vendorName}
-                </td>
-                <td className="text-muted-foreground px-4 py-3">
-                  {listing.groupName}
-                </td>
-                <td className="text-muted-foreground px-4 py-3">
-                  {listing.category}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {listing.capabilities.map((capability) => (
-                      <span
-                        key={capability}
-                        className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
-                      >
-                        {capability}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="text-muted-foreground px-4 py-3 text-right font-mono">
-                  {formatContextWindow(listing.contextWindow)}
-                </td>
-                <td className="px-4 py-3 text-right font-mono">
-                  {formatMicroUsdPerMillion(listing.inputMicroUsd)}
-                  {listing.listInputMicroUsd !== undefined && (
-                    <div className="text-muted-foreground text-xs line-through">
-                      {formatMicroUsdPerMillion(listing.listInputMicroUsd)}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right font-mono">
-                  {formatMicroUsdPerMillion(listing.outputMicroUsd)}
-                  {listing.listOutputMicroUsd !== undefined && (
-                    <div className="text-muted-foreground text-xs line-through">
-                      {formatMicroUsdPerMillion(listing.listOutputMicroUsd)}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Badge
-                    variant={listing.isCallable ? 'default' : 'secondary'}
-                    className={
-                      listing.isCallable
-                        ? 'bg-primary/10 text-primary border-transparent'
-                        : ''
-                    }
-                  >
-                    {listing.statusName}
-                  </Badge>
-                  {listing.discountNote && (
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {listing.discountNote}
-                    </div>
-                  )}
-                </td>
+              <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.model}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.provider}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.group}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.category}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.capabilities}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.context}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.input}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.output}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.status}
+                </th>
               </tr>
-            );
-          })}
-        </tbody>
+            </thead>
+            <tbody>
+              {listings.map((listing) => {
+                return (
+                  <tr
+                    key={`${listing.modelId}:${listing.groupSlug}`}
+                    className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{listing.displayName}</div>
+                      <div className="text-muted-foreground font-mono text-xs">
+                        {listing.modelId}
+                      </div>
+                      {listing.description && (
+                        <div className="text-muted-foreground mt-1 text-xs">
+                          {listing.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3">
+                      {listing.vendorName}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3">
+                      {listing.groupName}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3">
+                      {listing.category}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {listing.capabilities.map((capability) => (
+                          <span
+                            key={capability}
+                            className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
+                          >
+                            {capability}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3 text-right font-mono">
+                      {formatContextWindow(listing.contextWindow)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatMicroUsdPerMillion(listing.inputMicroUsd)}
+                      {listing.listInputMicroUsd !== undefined && (
+                        <div className="text-muted-foreground text-xs line-through">
+                          {formatMicroUsdPerMillion(listing.listInputMicroUsd)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatMicroUsdPerMillion(listing.outputMicroUsd)}
+                      {listing.listOutputMicroUsd !== undefined && (
+                        <div className="text-muted-foreground text-xs line-through">
+                          {formatMicroUsdPerMillion(listing.listOutputMicroUsd)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Badge
+                        variant={listing.isCallable ? 'default' : 'secondary'}
+                        className={
+                          listing.isCallable
+                            ? 'bg-primary/10 text-primary border-transparent'
+                            : ''
+                        }
+                      >
+                        {listing.statusName}
+                      </Badge>
+                      {listing.discountNote && (
+                        <div className="text-muted-foreground mt-1 text-xs">
+                          {listing.discountNote}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
           </table>
         </div>
         <div className="from-background pointer-events-none absolute inset-y-0 right-0 w-12 rounded-r-xl bg-gradient-to-l to-transparent min-[960px]:hidden" />

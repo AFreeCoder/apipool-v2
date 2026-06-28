@@ -5,7 +5,7 @@ import {
   getUsageSyncDescription,
 } from '@/features/api-console/lib/status';
 import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
-import { setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { getUserInfo } from '@/shared/models/user';
 
@@ -16,6 +16,10 @@ export default async function UsagePage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const [t, common] = await Promise.all([
+    getTranslations({ locale, namespace: 'dashboard.usage' }),
+    getTranslations({ locale, namespace: 'dashboard.common' }),
+  ]);
   const user = await getUserInfo();
   const usage = user
     ? await getPortalUsage(user as any, '7d')
@@ -29,16 +33,21 @@ export default async function UsagePage({
         },
         logs: [],
       };
-  const usageSyncDescription = getUsageSyncDescription(usage.summary);
+  const usageSyncDescription = getUsageSyncDescription(
+    usage.summary,
+    common.raw('usageSync')
+  );
   const usageHeaderDescription =
     usage.summary.status === 'ready' && usage.summary.syncedAt
-      ? `Last 7 days · synced ${new Date(usage.summary.syncedAt).toLocaleString()}`
+      ? t('lastSynced', {
+          date: new Date(usage.summary.syncedAt).toLocaleString(),
+        })
       : usageSyncDescription;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Usage</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           {usageHeaderDescription}
         </p>
@@ -46,42 +55,48 @@ export default async function UsagePage({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Requests"
+          label={t('stats.requests')}
           value={usage.summary.requestCount.toLocaleString()}
         />
         <StatCard
-          label="Input tokens"
+          label={t('stats.inputTokens')}
           value={usage.summary.inputTokens.toLocaleString()}
         />
         <StatCard
-          label="Output tokens"
+          label={t('stats.outputTokens')}
           value={usage.summary.outputTokens.toLocaleString()}
         />
         <StatCard
-          label="Spend"
+          label={t('stats.spend')}
           value={formatUsdAmount(usage.summary.spendUsd)}
         />
       </div>
 
       <div className="bg-card overflow-hidden rounded-xl border">
         <div className="border-b px-5 py-4 font-medium">
-          Model distribution
+          {t('sections.modelDistribution.title')}
         </div>
         {usage.summary.byModel.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
-            No model distribution synced yet.
+            {t('sections.modelDistribution.empty')}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Requests
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('columns.model')}
                   </th>
-                  <th className="px-4 py-2.5 text-right font-medium">Tokens</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Spend</th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('columns.requests')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('columns.tokens')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('columns.spend')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -108,21 +123,33 @@ export default async function UsagePage({
       </div>
 
       <div className="bg-card overflow-hidden rounded-xl border">
-        <div className="border-b px-5 py-4 font-medium">Request log</div>
+        <div className="border-b px-5 py-4 font-medium">
+          {t('sections.requestLog.title')}
+        </div>
         {usage.logs.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
-            No request logs synced yet.
+            {t('sections.requestLog.empty')}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Key</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Model</th>
-                  <th className="px-4 py-2.5 text-right font-medium">In</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Out</th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('columns.date')}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('columns.key')}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('columns.model')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('columns.input')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('columns.output')}
+                  </th>
                 </tr>
               </thead>
               <tbody>

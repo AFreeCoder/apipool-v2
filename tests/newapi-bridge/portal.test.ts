@@ -427,7 +427,7 @@ test('portal key DTOs expose only MVP customer key fields', async () => {
   assertNoFields(deleted, forbiddenFields);
 });
 
-test('listPortalApiKeys returns the portal group name without leaking internal group fields', async () => {
+test('listPortalApiKeys returns the portal group name and public slug without leaking internal group fields', async () => {
   const portalUser = await insertUser(
     'portal_user_key_group_name',
     'key-group-name@example.com'
@@ -444,6 +444,7 @@ test('listPortalApiKeys returns the portal group name without leaking internal g
 
   assert.ok(listedKey);
   assert.equal(listedKey.groupName, 'Portal Test');
+  assert.equal(listedKey.groupSlug, 'portal-test');
   assertNoFields(listedKey, ['groupId', 'newapiGroup']);
 
   const serialized = JSON.stringify(listedKey);

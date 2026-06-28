@@ -1,0 +1,31 @@
+{
+  "title": "概览",
+  "description": "查看 APIPool API 的 Key、余额和用量。",
+  "actions": {
+    "addCredit": "充值",
+    "createKey": "创建 Key",
+    "quickstart": "快速开始 →",
+    "viewUsage": "查看用量 →"
+  },
+  "baseUrl": "Base URL",
+  "stats": {
+    "balance": "余额",
+    "balanceHelp": "按 token 计费",
+    "requests": "请求数 · 7天",
+    "tokens": "Tokens · 7天",
+    "tokensHelp": "{input} 输入 · {output} 输出",
+    "apiKeys": "API 密钥",
+    "apiKeysHelp": "由当前控制台创建"
+  },
+  "recentRequests": {
+    "title": "最近请求",
+    "empty": "暂无用量。创建 Key、充值余额，然后发起第一次调用。",
+    "columns": {
+      "date": "日期",
+      "model": "模型",
+      "input": "输入",
+      "output": "输出",
+      "spend": "花费"
+    }
+  }
+}

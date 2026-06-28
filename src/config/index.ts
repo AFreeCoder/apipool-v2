@@ -42,9 +42,8 @@ export const envConfigs: ConfigMap = {
     'https://api.apipool.dev/v1',
   newapi_base_url: process.env.NEWAPI_BASE_URL ?? '',
   newapi_admin_token: process.env.NEWAPI_ADMIN_TOKEN ?? '',
-  newapi_integration_enabled:
-    process.env.NEWAPI_INTEGRATION_ENABLED ?? 'true',
+  newapi_integration_enabled: process.env.NEWAPI_INTEGRATION_ENABLED ?? 'true',
   version: packageJson.version,
   locale_detect_enabled:
-    process.env.NEXT_PUBLIC_LOCALE_DETECT_ENABLED ?? 'false',
+    process.env.NEXT_PUBLIC_LOCALE_DETECT_ENABLED ?? 'true',
 };

@@ -81,10 +81,13 @@ test('BalanceWarning renders a low balance prompt with an add credit link', () =
   const warning = BalanceWarningView({
     balanceUsd: 0,
     LinkComponent: TestLink,
+    message: '余额较低，请及时充值',
+    actionLabel: '充值',
   });
 
   assert.ok(isValidElement(warning));
-  assert.match(collectText(warning), /Low balance — please top up/);
+  assert.match(collectText(warning), /余额较低，请及时充值/);
+  assert.match(collectText(warning), /充值/);
   assert.equal(hasHref(warning, '/dashboard/billing'), true);
 });
 
@@ -92,6 +95,8 @@ test('BalanceWarning uses client-side navigation for the billing link', () => {
   const warning = BalanceWarningView({
     balanceUsd: 0,
     LinkComponent: TestLink,
+    message: 'Low balance',
+    actionLabel: 'Add credit',
   });
 
   assert.equal(hasIntrinsicAnchorHref(warning, '/dashboard/billing'), false);
@@ -99,15 +104,30 @@ test('BalanceWarning uses client-side navigation for the billing link', () => {
 
 test('BalanceWarning renders nothing when balance is above threshold or missing', () => {
   assert.equal(
-    BalanceWarningView({ balanceUsd: 5, LinkComponent: TestLink }),
+    BalanceWarningView({
+      balanceUsd: 5,
+      LinkComponent: TestLink,
+      message: 'Low balance',
+      actionLabel: 'Add credit',
+    }),
     null
   );
   assert.equal(
-    BalanceWarningView({ balanceUsd: null, LinkComponent: TestLink }),
+    BalanceWarningView({
+      balanceUsd: null,
+      LinkComponent: TestLink,
+      message: 'Low balance',
+      actionLabel: 'Add credit',
+    }),
     null
   );
   assert.equal(
-    BalanceWarningView({ balanceUsd: undefined, LinkComponent: TestLink }),
+    BalanceWarningView({
+      balanceUsd: undefined,
+      LinkComponent: TestLink,
+      message: 'Low balance',
+      actionLabel: 'Add credit',
+    }),
     null
   );
 });

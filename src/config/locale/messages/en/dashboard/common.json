@@ -1,0 +1,20 @@
+{
+  "nav": {
+    "ariaLabel": "Console navigation",
+    "overview": "Overview",
+    "apiKeys": "API Keys",
+    "balance": "Balance",
+    "usage": "Usage"
+  },
+  "usageSync": {
+    "empty": "No usage in the last 7 days yet.",
+    "syncing": "Syncing usage. Showing the latest available data.",
+    "stale": "Usage sync is delayed. Showing the latest available data.",
+    "failed": "Usage sync is temporarily unavailable. Try again later.",
+    "ready": "Usage data is up to date."
+  },
+  "balanceWarning": {
+    "message": "Low balance — please top up",
+    "action": "Add credit"
+  }
+}

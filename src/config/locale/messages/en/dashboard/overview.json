@@ -1,0 +1,31 @@
+{
+  "title": "Overview",
+  "description": "Keys, balance, and usage for the APIPool API.",
+  "actions": {
+    "addCredit": "Add credit",
+    "createKey": "Create key",
+    "quickstart": "Quickstart →",
+    "viewUsage": "View usage →"
+  },
+  "baseUrl": "Base URL",
+  "stats": {
+    "balance": "Balance",
+    "balanceHelp": "Billed per token",
+    "requests": "Requests · 7d",
+    "tokens": "Tokens · 7d",
+    "tokensHelp": "{input} in · {output} out",
+    "apiKeys": "API Keys",
+    "apiKeysHelp": "Created from this console"
+  },
+  "recentRequests": {
+    "title": "Recent requests",
+    "empty": "No usage yet. Create a key, add credit, and make your first call.",
+    "columns": {
+      "date": "Date",
+      "model": "Model",
+      "input": "Input",
+      "output": "Output",
+      "spend": "Spend"
+    }
+  }
+}

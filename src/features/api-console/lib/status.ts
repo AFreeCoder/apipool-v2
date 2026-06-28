@@ -23,6 +23,8 @@ export type UsageSyncSummary = {
   errorMessage?: string | null;
 };
 
+export type UsageSyncDescriptionMessages = Record<UsageSyncState, string>;
+
 export type UsageLogIdentity = {
   id?: string | null;
   modelId?: string | null;
@@ -102,26 +104,33 @@ export function getUsageSyncState(
   return 'failed';
 }
 
-export function getUsageSyncDescription(summary: UsageSyncSummary) {
+const DEFAULT_USAGE_SYNC_MESSAGES: UsageSyncDescriptionMessages = {
+  empty: 'No usage in the last 7 days yet.',
+  syncing: 'Syncing usage. Showing the latest available data.',
+  stale: 'Usage sync is delayed. Showing the latest available data.',
+  failed: 'Usage sync is temporarily unavailable. Try again later.',
+  ready: 'Usage data is up to date.',
+};
+
+export function getUsageSyncDescription(
+  summary: UsageSyncSummary,
+  messages: Partial<UsageSyncDescriptionMessages> = DEFAULT_USAGE_SYNC_MESSAGES
+) {
+  const labels = { ...DEFAULT_USAGE_SYNC_MESSAGES, ...messages };
+
   if (summary.status === 'empty') {
-    return 'No usage in the last 7 days yet.';
+    return labels.empty;
   }
   if (summary.status === 'syncing') {
-    return 'Syncing usage. Showing the latest available data.';
+    return labels.syncing;
   }
   if (summary.status === 'stale') {
-    return (
-      summary.errorMessage ||
-      'Usage sync is delayed. Showing the latest available data.'
-    );
+    return summary.errorMessage || labels.stale;
   }
   if (summary.status === 'failed') {
-    return (
-      summary.errorMessage ||
-      'Usage sync is temporarily unavailable. Try again later.'
-    );
+    return summary.errorMessage || labels.failed;
   }
-  return 'Usage data is up to date.';
+  return labels.ready;
 }
 
 export function getUsageLogRowKey(log: UsageLogIdentity, index: number) {
