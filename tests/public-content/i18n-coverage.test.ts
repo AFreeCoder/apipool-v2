@@ -129,6 +129,10 @@ const SOURCE_COPY_EXPECTATIONS: Array<{
 test('locale detector is enabled by default and mounted once for all localized routes', async () => {
   const configSource = await readFile('src/config/index.ts', 'utf8');
   const localeLayout = await readFile('src/app/[locale]/layout.tsx', 'utf8');
+  const localeTemplate = await readFile(
+    'src/app/[locale]/template.tsx',
+    'utf8'
+  );
   const landingLayout = await readFile(
     'src/app/[locale]/(landing)/layout.tsx',
     'utf8'
@@ -142,8 +146,10 @@ test('locale detector is enabled by default and mounted once for all localized r
     configSource,
     /NEXT_PUBLIC_LOCALE_DETECT_ENABLED\s*\?\?\s*'true'/
   );
-  assert.match(localeLayout, /<LocaleDetector \/>/);
-  assert.match(localeLayout, /<NextIntlClientProvider key=\{locale\}>/);
+  assert.doesNotMatch(localeLayout, /NextIntlClientProvider/);
+  assert.match(localeTemplate, /<LocaleDetector \/>/);
+  assert.match(localeTemplate, /<NextIntlClientProvider key=\{locale\}>/);
+  assert.match(localeTemplate, /const locale = await getLocale\(\)/);
   assert.doesNotMatch(landingLayout, /LocaleDetector/);
   assert.doesNotMatch(adminLayout, /LocaleDetector/);
 });
