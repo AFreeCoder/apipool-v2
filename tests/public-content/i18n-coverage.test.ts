@@ -143,6 +143,7 @@ test('locale detector is enabled by default and mounted once for all localized r
     /NEXT_PUBLIC_LOCALE_DETECT_ENABLED\s*\?\?\s*'true'/
   );
   assert.match(localeLayout, /<LocaleDetector \/>/);
+  assert.match(localeLayout, /<NextIntlClientProvider key=\{locale\}>/);
   assert.doesNotMatch(landingLayout, /LocaleDetector/);
   assert.doesNotMatch(adminLayout, /LocaleDetector/);
 });
