@@ -44,13 +44,15 @@ New-Api-User: <该令牌所属用户的 ID>
    → 仅返回 {success:true}，不返回用户 ID
 2. 管理员 GET /api/user/search?keyword=<username>
    → 反查取得 newapiUserId（创建接口不返回 ID，必须反查）
-3. POST /api/user/login  body {username, password}（cookie 会话）
-4. GET  /api/user/token  + New-Api-User: <id>（cookie 会话）
+3. 如本次 Key 创建指定了 `newapiGroup`，管理员 PUT /api/user/ 补齐该用户的 `group`
+   → New API 会同时校验 token.group 与 user.group，不一致时 `/v1` 调用会被 403 拒绝
+4. POST /api/user/login  body {username, password}（cookie 会话）
+5. GET  /api/user/token  + New-Api-User: <id>（cookie 会话）
    → 返回 32 字符 access token（每次调用重新生成，旧 token 失效）
-5. 门户加密保存 access token + newapiUserId 至 newApiUserBinding
+6. 门户加密保存 access token + newapiUserId 至 newApiUserBinding
 ```
 
-注意：步骤 4 的 token 是"重新生成"语义——门户保存后不得再次调用该接口，否则已存 token 失效。
+注意：步骤 5 的 token 是"重新生成"语义——门户保存后不得再次调用该接口，否则已存 token 失效。已有绑定用户再次创建 Key 时，门户只补齐远端用户 group，不重新生成 access token。
 
 凭据存储规则：access token 与密码使用应用级加密（AES-256-GCM，密钥来自 env）落库，永不明文存储、永不出现在日志与审计明细中。
 
@@ -62,6 +64,7 @@ New-Api-User: <该令牌所属用户的 ID>
 |---|---|---|---|
 | 健康检查 | 无 | `GET /api/status` | ✅公开接口，返回 `version`、`quota_per_unit` |
 | 创建用户 | 管理员 | `POST /api/user/` | ✅body `{username, password, display_name}`；**密码限长 8-20 字符**（超长报 `Password failed on the 'max' tag`）；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查 |
+| 更新用户分组 | 管理员 | `PUT /api/user/` | 用于让 New API 用户具备对应 token group 权限；需带 `id`、`username`、`display_name`、`group`、`role`、`remark`，只传 `{id, group}` 会触发 New API 校验/唯一约束问题 |
 | 读取用户额度 | 用户 | `GET /api/user/self` | ✅`data.quota` 为整数 |
 | 创建 Key | 用户 | `POST /api/token/` | ✅字段：`name`、`remain_quota`、`unlimited_quota`、`expired_time`(-1 永久)、`model_limits_enabled`+`model_limits`、`allow_ips`、`group`；**响应不含 key**；自带 `key` 字段会被忽略 |
 | 读取完整 Key | 用户 | `POST /api/token/:id/key` | ✅返回 48 字符明文（限流保护）；**用户实际调用需加 `sk-` 前缀**；列表/单查接口的 key 一律掩码 |

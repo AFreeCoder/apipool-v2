@@ -28,14 +28,7 @@ async function setupDb() {
   process.env.DB_SINGLETON_ENABLED = 'false';
 
   const client = createClient({ url: `file:${dbPath}` });
-  const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
-  for (const file of (await readdir(migrationsDir))
-    .filter((name) => name.endsWith('.sql'))
-    .sort()) {
-    await client.executeMultiple(
-      await readFile(join(migrationsDir, file), 'utf8')
-    );
-  }
+  await applyMigrations(client);
 
   const schema = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
@@ -46,6 +39,17 @@ async function setupDb() {
     initCatalog,
     schema,
   };
+}
+
+async function applyMigrations(client: ReturnType<typeof createClient>) {
+  const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  for (const file of (await readdir(migrationsDir))
+    .filter((name) => name.endsWith('.sql'))
+    .sort()) {
+    await client.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
+  }
 }
 
 async function countCatalogRows() {
@@ -97,6 +101,40 @@ async function initCatalogToleratingBusyRetry() {
 
 test.before(setupDb);
 
+test('migrations seed the minimum official catalog needed at production startup', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'catalog-migration-seed.db');
+  await rm(dbPath, { force: true });
+  const client = createClient({ url: `file:${dbPath}` });
+  await applyMigrations(client);
+
+  const official = await client.execute(
+    "select slug, newapi_group, allow_create_key, status from catalog_group where slug = 'official'"
+  );
+  assert.deepEqual(official.rows[0], {
+    slug: 'official',
+    newapi_group: 'official',
+    allow_create_key: 1,
+    status: 'active',
+  });
+
+  const listing = await client.execute(`
+    select
+      catalog_model.model_id as model_id,
+      catalog_model_listing.smoke_tested as smoke_tested,
+      catalog_status.is_callable as is_callable
+    from catalog_model_listing
+    join catalog_model on catalog_model.id = catalog_model_listing.model_id
+    join catalog_group on catalog_group.id = catalog_model_listing.group_id
+    join catalog_status on catalog_status.id = catalog_model_listing.status_id
+    where catalog_group.slug = 'official'
+  `);
+  assert.deepEqual(listing.rows[0], {
+    model_id: 'gpt-4o-mini',
+    smoke_tested: 1,
+    is_callable: 1,
+  });
+});
+
 test('initCatalog is idempotent when run twice', async () => {
   await modules.initCatalog();
   const afterFirstRun = await countCatalogRows();
@@ -143,7 +181,7 @@ test('initCatalog seeds the required first catalog data', async () => {
     'official'
   );
   assert.equal(official?.name, 'Official');
-  assert.equal(official?.newapiGroup, '');
+  assert.equal(official?.newapiGroup, 'official');
   assert.equal(official?.allowCreateKey, true);
   assert.equal(official?.status, 'active');
 
@@ -201,6 +239,75 @@ test('initCatalog seeds the required first catalog data', async () => {
   assert.equal(listing?.statusId, available.id);
   assert.equal(listing?.smokeTested, true);
   assert.equal(listing?.sortOrder, 10);
+});
+
+test('initCatalog repairs older official groups that still target the default New API group', async () => {
+  await modules.initCatalog();
+
+  const { catalogGroup } = modules.schema;
+  await modules
+    .db()
+    .update(catalogGroup)
+    .set({ newapiGroup: '' })
+    .where(eq(catalogGroup.slug, 'official'));
+
+  await modules.initCatalog();
+
+  const official = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'official'
+  );
+  assert.equal(official?.newapiGroup, 'official');
+});
+
+test('official New API group migration repairs older empty mappings', async () => {
+  await modules.initCatalog();
+
+  const { catalogGroup } = modules.schema;
+  await modules
+    .db()
+    .update(catalogGroup)
+    .set({ newapiGroup: '' })
+    .where(eq(catalogGroup.slug, 'official'));
+
+  const migration = await readFile(
+    join(
+      process.cwd(),
+      'src/config/db/migrations_sqlite/0006_official_newapi_group.sql'
+    ),
+    'utf8'
+  );
+  const client = createClient({ url: process.env.DATABASE_URL! });
+  await client.executeMultiple(migration);
+  await client.executeMultiple(migration);
+
+  const official = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'official'
+  );
+  assert.equal(official?.newapiGroup, 'official');
+});
+
+test('initCatalog preserves an operator-provided official New API mapping', async () => {
+  await modules.initCatalog();
+
+  const { catalogGroup } = modules.schema;
+  await modules
+    .db()
+    .update(catalogGroup)
+    .set({ newapiGroup: 'production-official' })
+    .where(eq(catalogGroup.slug, 'official'));
+
+  await modules.initCatalog();
+
+  const official = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'official'
+  );
+  assert.equal(official?.newapiGroup, 'production-official');
 });
 
 test('initCatalog handles concurrent re-entry without unique conflicts', async () => {

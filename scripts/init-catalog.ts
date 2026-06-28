@@ -7,7 +7,7 @@
 
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import type {
   catalogCapability as catalogCapabilityTable,
@@ -89,7 +89,7 @@ const groups = [
     slug: 'official',
     name: 'Official',
     userDescription: 'Default verified model route for production usage.',
-    newapiGroup: '',
+    newapiGroup: 'official',
     allowCreateKey: true,
     sortOrder: 10,
     status: 'active',
@@ -275,6 +275,16 @@ export async function initCatalog() {
         }))
       )
       .onConflictDoNothing({ target: catalogGroup.slug });
+
+    await tx
+      .update(catalogGroup)
+      .set({ newapiGroup: 'official' })
+      .where(
+        and(
+          eq(catalogGroup.slug, 'official'),
+          eq(catalogGroup.newapiGroup, '')
+        )
+      );
 
     const groupBySlug = indexBy<CatalogGroupRow, 'slug'>(
       await tx

@@ -43,6 +43,13 @@
       "when": 1782556624969,
       "tag": "0005_elite_prowler",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1782629603000,
+      "tag": "0006_official_newapi_group",
+      "breakpoints": true
     }
   ]
 }

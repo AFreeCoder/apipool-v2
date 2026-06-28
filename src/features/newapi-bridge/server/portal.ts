@@ -403,19 +403,27 @@ export function bindingToUserCredentials(binding: {
 
 export async function ensurePortalUserBinding(
   user: Pick<User, 'id' | 'email'>,
-  client: NewApiClient = createNewApiClient()
+  client: NewApiClient = createNewApiClient(),
+  options: { requiredNewapiGroup?: string } = {}
 ) {
   const existing = await getPortalUserBinding(user.id);
+  const username = existing?.newapiUsername || deriveNewapiUsername(user.id);
   if (
     existing &&
     existing.status === 'active' &&
     existing.newapiAccessTokenEnc
   ) {
+    if (options.requiredNewapiGroup) {
+      await client.ensureUserGroup({
+        newapiUserId: existing.newapiUserId,
+        username,
+        group: options.requiredNewapiGroup,
+      });
+    }
     return existing;
   }
 
   const idempotencyKey = `portal-user:${user.id}`;
-  const username = existing?.newapiUsername || deriveNewapiUsername(user.id);
   const password = existing?.newapiPasswordEnc
     ? decryptCredential(existing.newapiPasswordEnc)
     : generateNewapiPassword();
@@ -454,6 +462,7 @@ export async function ensurePortalUserBinding(
       username,
       password,
       displayName: username,
+      group: options.requiredNewapiGroup,
     });
 
     const [bound] = await db()
@@ -500,6 +509,10 @@ export async function createPortalApiKey(
   if (!group || group.status !== 'active' || group.allowCreateKey !== true) {
     throw new Error('group not available');
   }
+  const newapiGroup = group.newapiGroup.trim();
+  if (!newapiGroup) {
+    throw new Error('group not available');
+  }
 
   // 同名校验：同一用户下不允许重复的未删除 Key 名（清理失败 / 旧 Key 后可复用同名）。
   // 用普通 Error 且不嵌入用户输入的 name，确保提示透传给前端而非被兜底成内部错误。
@@ -518,7 +531,9 @@ export async function createPortalApiKey(
     throw new Error(DUPLICATE_KEY_NAME_MESSAGE);
   }
 
-  const binding = await ensurePortalUserBinding(user, client);
+  const binding = await ensurePortalUserBinding(user, client, {
+    requiredNewapiGroup: newapiGroup,
+  });
   const credentials = bindingToUserCredentials(binding);
   const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
   const localKeyId = getUuid();
@@ -539,7 +554,7 @@ export async function createPortalApiKey(
         status: 'creating_remote',
         allowedModels: '[]',
         groupId: group.id,
-        newapiGroup: group.newapiGroup,
+        newapiGroup,
         quotaLimit: input.quotaLimit,
         ipAllowlist: JSON.stringify(input.ipAllowlist || []),
         idempotencyKey,
@@ -557,7 +572,7 @@ export async function createPortalApiKey(
     remote = await client.createKey({
       user: credentials,
       remoteName,
-      group: group.newapiGroup,
+      group: newapiGroup,
       quotaLimitUsd: input.quotaLimit,
       ipAllowlist: input.ipAllowlist || [],
     });

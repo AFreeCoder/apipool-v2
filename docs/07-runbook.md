@@ -92,7 +92,9 @@ GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密�
 npm run catalog:init
 ```
 
-`official` 分组必须在后台维护好 `newapiGroup`，并与 New API 侧真实可调用 group 对齐。冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。`APIPOOL_SMOKE_MODEL` 指向一个可调用且 smoke-tested 的模型；不设置时使用默认 launch model。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
+`official` 分组必须在后台维护好 `newapiGroup`，并与 New API 侧真实可调用 group 对齐；不能让 `official.newapiGroup` 为空落入 New API 默认分组。New API 侧也必须启用同名或指定分组：`GroupRatio` 包含该 group，相关 channel 的 group 包含该 group，并通过 New API 后台保存渠道或重建 abilities 使选路表生效。门户创建 Key 时会把 New API 用户 group 补齐到本次 `newapiGroup`，否则 New API 会以无权访问该分组拒绝 `/v1` 调用。
+
+冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。`APIPOOL_SMOKE_MODEL` 指向一个可调用且 smoke-tested 的模型；不设置时使用默认 launch model。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
 
 普通本地验证允许缺少 live smoke 必需配置时跳过：
 

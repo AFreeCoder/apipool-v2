@@ -35,17 +35,20 @@ async function setupDb() {
 
   modules = { db, portal, schema };
 
-  await modules.db().insert(modules.schema.catalogGroup).values([
-    {
-      id: 'catalog_group_internal_official',
-      slug: 'official',
+  await modules
+    .db()
+    .update(modules.schema.catalogGroup)
+    .set({
       name: 'Official',
       userDescription: 'Official route',
       newapiGroup: 'ng-official',
       allowCreateKey: true,
       sortOrder: 1,
       status: 'active',
-    },
+    })
+    .where(eq(modules.schema.catalogGroup.slug, 'official'));
+
+  await modules.db().insert(modules.schema.catalogGroup).values([
     {
       id: 'catalog_group_internal_disabled',
       slug: 'disabled',
@@ -66,12 +69,23 @@ async function setupDb() {
       sortOrder: 3,
       status: 'active',
     },
+    {
+      id: 'catalog_group_internal_unmapped',
+      slug: 'unmapped',
+      name: 'Unmapped',
+      userDescription: 'Missing remote route',
+      newapiGroup: '',
+      allowCreateKey: true,
+      sortOrder: 4,
+      status: 'active',
+    },
   ]);
 
   groupIds = {
-    official: 'catalog_group_internal_official',
+    official: 'seed_group_official',
     disabled: 'catalog_group_internal_disabled',
     locked: 'catalog_group_internal_locked',
+    unmapped: 'catalog_group_internal_unmapped',
   };
 }
 
@@ -87,15 +101,23 @@ async function insertUser(id: string, email: string) {
 
 function createRecordingRemoteClient() {
   const createKeyInputs: any[] = [];
+  const provisionUserInputs: any[] = [];
+  const ensureUserGroupInputs: any[] = [];
   const client = {
-    provisionUser: async (input: { username: string }) => ({
-      newapiUserId: `remote_${input.username}`,
-      accessToken: 'test-access-token',
-    }),
+    provisionUser: async (input: { username: string }) => {
+      provisionUserInputs.push(input);
+      return {
+        newapiUserId: `remote_${input.username}`,
+        accessToken: 'test-access-token',
+      };
+    },
+    ensureUserGroup: async (input: any) => {
+      ensureUserGroupInputs.push(input);
+    },
     createKey: async (input: any) => {
       createKeyInputs.push(input);
       return {
-        id: `remote_key_${createKeyInputs.length}`,
+        id: input.remoteName,
         key: `sk-test-${createKeyInputs.length}`,
         maskedKey: `sk-...${createKeyInputs.length}`,
         status: 'active',
@@ -106,6 +128,8 @@ function createRecordingRemoteClient() {
   return {
     client,
     getCreateKeyInputs: () => createKeyInputs,
+    getProvisionUserInputs: () => provisionUserInputs,
+    getEnsureUserGroupInputs: () => ensureUserGroupInputs,
   };
 }
 
@@ -134,6 +158,8 @@ test('createPortalApiKey resolves groupSlug server-side and stores only internal
   );
 
   const [createKeyInput] = remote.getCreateKeyInputs();
+  const [provisionUserInput] = remote.getProvisionUserInputs();
+  assert.equal(provisionUserInput.group, 'ng-official');
   assert.equal(createKeyInput.group, 'ng-official');
   assert.notEqual(createKeyInput.group, 'official');
   assert.notEqual(createKeyInput.group, groupIds.official);
@@ -150,6 +176,55 @@ test('createPortalApiKey resolves groupSlug server-side and stores only internal
   assert.equal(serialized.includes(groupIds.official), false);
   assert.equal(Object.hasOwn(result.binding, 'groupId'), false);
   assert.equal(Object.hasOwn(result.binding, 'newapiGroup'), false);
+});
+
+test('createPortalApiKey ensures an existing New API user can access the target group', async () => {
+  const portalUser = await insertUser(
+    'create_key_existing_group_user',
+    'create-key-existing-group@example.com'
+  );
+  const remote = createRecordingRemoteClient();
+
+  await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'First official key', groupSlug: 'official' },
+    remote.client
+  );
+  await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Second official key', groupSlug: 'official' },
+    remote.client
+  );
+
+  const [provisionInput] = remote.getProvisionUserInputs();
+  assert.equal(remote.getProvisionUserInputs().length, 1);
+  assert.deepEqual(remote.getEnsureUserGroupInputs(), [
+    {
+      newapiUserId: `remote_${provisionInput.username}`,
+      username: provisionInput.username,
+      group: 'ng-official',
+    },
+  ]);
+  assert.equal(remote.getCreateKeyInputs()[1].group, 'ng-official');
+});
+
+test('createPortalApiKey rejects key-capable groups without explicit New API mapping before calling remote', async () => {
+  const portalUser = await insertUser(
+    'create_key_unmapped_user',
+    'create-key-unmapped@example.com'
+  );
+  const remote = createRecordingRemoteClient();
+
+  await assert.rejects(
+    () =>
+      modules.portal.createPortalApiKey(
+        portalUser,
+        { name: 'Unmapped key', groupSlug: 'unmapped' },
+        remote.client
+      ),
+    /group not available/
+  );
+  assert.equal(remote.getCreateKeyInputs().length, 0);
 });
 
 test('createPortalApiKey rejects unavailable groups before calling the remote client', async () => {

@@ -443,8 +443,39 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       (item: any) => item?.username === username
     );
     return match
-      ? { id: String(match.id), quota: asNumber(match.quota) }
+      ? {
+          id: String(match.id),
+          username: String(match.username || username),
+          displayName:
+            typeof match.display_name === 'string'
+              ? match.display_name
+              : String(match.username || username),
+          group: typeof match.group === 'string' ? match.group : '',
+          role: typeof match.role === 'number' ? match.role : 1,
+          remark: typeof match.remark === 'string' ? match.remark : '',
+          quota: asNumber(match.quota),
+        }
       : undefined;
+  }
+
+  async function ensureRemoteUserGroup(
+    user: Awaited<ReturnType<typeof findUserByUsername>>,
+    group?: string
+  ) {
+    const targetGroup = group?.trim();
+    if (!user || !targetGroup || user.group === targetGroup) return;
+
+    await request('/api/user/', {
+      method: 'PUT',
+      body: {
+        id: toRemoteUserId(user.id),
+        username: user.username,
+        display_name: user.displayName || user.username,
+        group: targetGroup,
+        role: user.role || 1,
+        remark: user.remark || '',
+      },
+    });
   }
 
   async function findTokenByName(user: NewApiUserCredentials, name: string) {
@@ -547,6 +578,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       username: string;
       password: string;
       displayName?: string;
+      group?: string;
     }): Promise<RemoteProvisionedUser> {
       const existing = await findUserByUsername(input.username);
       if (!existing) {
@@ -567,6 +599,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
           message: `New API user not found after creation: ${input.username}`,
         });
       }
+      await ensureRemoteUserGroup(found, input.group);
 
       const loginResponse = await rawRequest('/api/user/login', {
         method: 'POST',
@@ -600,6 +633,27 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       }
 
       return { newapiUserId: found.id, accessToken };
+    },
+
+    async ensureUserGroup(input: {
+      newapiUserId: string;
+      username: string;
+      group: string;
+    }): Promise<void> {
+      const found = await findUserByUsername(input.username);
+      if (!found) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API user not found for group update: ${input.username}`,
+        });
+      }
+      if (found.id !== input.newapiUserId) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API user id mismatch for group update: ${input.username}`,
+        });
+      }
+      await ensureRemoteUserGroup(found, input.group);
     },
 
     /**

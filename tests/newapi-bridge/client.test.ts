@@ -150,6 +150,116 @@ test('provisionUser reuses an existing remote user without re-creating it', asyn
   );
 });
 
+test('provisionUser assigns the requested New API user group before issuing an access token', async () => {
+  let created = false;
+  const { client, requests } = createMockedClient({
+    'GET /api/user/search': () =>
+      created
+        ? ok({
+            items: [
+              {
+                id: 9,
+                username: 'pu_grouped',
+                display_name: 'PU Grouped',
+                group: 'default',
+                role: 1,
+                remark: '',
+                quota: 0,
+              },
+            ],
+          })
+        : ok({ items: [] }),
+    'POST /api/user/': () => {
+      created = true;
+      return ok(null);
+    },
+    'PUT /api/user/': async (req) => {
+      assert.deepEqual(await req.json(), {
+        id: 9,
+        username: 'pu_grouped',
+        display_name: 'PU Grouped',
+        group: 'official',
+        role: 1,
+        remark: '',
+      });
+      return ok(null);
+    },
+    'POST /api/user/login': () =>
+      new Response(JSON.stringify({ success: true, data: { id: 9 } }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'set-cookie': 'session=grouped',
+        },
+      }),
+    'GET /api/user/token': () => ok('grouped-access-token'),
+  });
+
+  const result = await client.provisionUser({
+    username: 'pu_grouped',
+    password: 'strong-password',
+    displayName: 'PU Grouped',
+    group: 'official',
+  });
+
+  assert.deepEqual(result, {
+    newapiUserId: '9',
+    accessToken: 'grouped-access-token',
+  });
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    [
+      'GET /api/user/search',
+      'POST /api/user/',
+      'GET /api/user/search',
+      'PUT /api/user/',
+      'POST /api/user/login',
+      'GET /api/user/token',
+    ]
+  );
+});
+
+test('ensureUserGroup updates an existing New API user group without regenerating the access token', async () => {
+  const { client, requests } = createMockedClient({
+    'GET /api/user/search': () =>
+      ok({
+        items: [
+          {
+            id: 5,
+            username: 'pu_existing',
+            display_name: 'PU Existing',
+            group: 'default',
+            role: 1,
+            remark: '',
+            quota: 0,
+          },
+        ],
+      }),
+    'PUT /api/user/': async (req) => {
+      assert.deepEqual(await req.json(), {
+        id: 5,
+        username: 'pu_existing',
+        display_name: 'PU Existing',
+        group: 'official',
+        role: 1,
+        remark: '',
+      });
+      return ok(null);
+    },
+  });
+
+  await client.ensureUserGroup({
+    newapiUserId: '5',
+    username: 'pu_existing',
+    group: 'official',
+  });
+
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    ['GET /api/user/search', 'PUT /api/user/']
+  );
+});
+
 test('createKey creates a remote token and fetches the full key with sk- prefix', async () => {
   let createdToken: any;
   const { client, requests } = createMockedClient({

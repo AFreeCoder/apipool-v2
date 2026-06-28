@@ -83,6 +83,7 @@ function createSuccessfulRemoteClient() {
       newapiUserId: `remote_${input.username}`,
       accessToken: 'test-access-token',
     }),
+    ensureUserGroup: async () => {},
     createKey: async () => {
       remoteKeySeq += 1;
       return {
@@ -227,6 +228,7 @@ test('createPortalApiKey preserves remote-created evidence when local binding fa
       newapiUserId: `remote_${input.username}`,
       accessToken: 'test-access-token',
     }),
+    ensureUserGroup: async () => {},
     createKey: async () => ({
       id: conflictingRemoteId,
       key: 'sk-local-binding-failure',
