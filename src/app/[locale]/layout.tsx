@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation';
-import { hasLocale } from 'next-intl';
+import { hasLocale, NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 
 import { routing } from '@/core/i18n/config';
+import { ThemeProvider } from '@/core/theme/provider';
+import { LocaleDetector } from '@/shared/blocks/common';
 import { Toaster } from '@/shared/components/ui/sonner';
 import { AppContextProvider } from '@/shared/contexts/app';
 import { getMetadata } from '@/shared/lib/seo';
@@ -24,9 +26,14 @@ export default async function LocaleLayout({
   setRequestLocale(locale);
 
   return (
-    <AppContextProvider>
-      {children}
-      <Toaster position="top-center" richColors />
-    </AppContextProvider>
+    <NextIntlClientProvider key={locale}>
+      <ThemeProvider>
+        <AppContextProvider>
+          <LocaleDetector />
+          {children}
+          <Toaster position="top-center" richColors />
+        </AppContextProvider>
+      </ThemeProvider>
+    </NextIntlClientProvider>
   );
 }

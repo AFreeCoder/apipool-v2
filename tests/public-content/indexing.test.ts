@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import {
   getRobotsDisallowRules,
+  localizePathForLocale,
   shouldNoIndexPath,
 } from '@/features/apipool-ui/lib/indexing';
 
@@ -28,6 +29,26 @@ test('indexing policy keeps authenticated and internal routes out of search', ()
   for (const path of publicPaths) {
     assert.equal(shouldNoIndexPath(path), false, path);
   }
+});
+
+test('locale path helper strips existing locale prefixes before applying the target locale', () => {
+  assert.equal(localizePathForLocale('/zh', 'zh'), '/zh');
+  assert.equal(
+    localizePathForLocale('/zh/models?view=list', 'zh'),
+    '/zh/models?view=list'
+  );
+  assert.equal(
+    localizePathForLocale('/zh/models?view=list', 'en'),
+    '/models?view=list'
+  );
+  assert.equal(
+    localizePathForLocale('/models?view=list', 'zh'),
+    '/zh/models?view=list'
+  );
+  assert.equal(
+    localizePathForLocale('/models?view=list', 'en'),
+    '/models?view=list'
+  );
 });
 
 test('robots disallow rules include dashboard and internal routes', () => {

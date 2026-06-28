@@ -129,10 +129,6 @@ const SOURCE_COPY_EXPECTATIONS: Array<{
 test('locale detector is enabled by default and mounted once for all localized routes', async () => {
   const configSource = await readFile('src/config/index.ts', 'utf8');
   const localeLayout = await readFile('src/app/[locale]/layout.tsx', 'utf8');
-  const localeTemplate = await readFile(
-    'src/app/[locale]/template.tsx',
-    'utf8'
-  );
   const landingLayout = await readFile(
     'src/app/[locale]/(landing)/layout.tsx',
     'utf8'
@@ -146,10 +142,8 @@ test('locale detector is enabled by default and mounted once for all localized r
     configSource,
     /NEXT_PUBLIC_LOCALE_DETECT_ENABLED\s*\?\?\s*'true'/
   );
-  assert.doesNotMatch(localeLayout, /NextIntlClientProvider/);
-  assert.match(localeTemplate, /<LocaleDetector \/>/);
-  assert.match(localeTemplate, /<NextIntlClientProvider key=\{locale\}>/);
-  assert.match(localeTemplate, /const locale = await getLocale\(\)/);
+  assert.match(localeLayout, /<LocaleDetector \/>/);
+  assert.match(localeLayout, /<NextIntlClientProvider key=\{locale\}>/);
   assert.doesNotMatch(landingLayout, /LocaleDetector/);
   assert.doesNotMatch(adminLayout, /LocaleDetector/);
 });
@@ -177,15 +171,15 @@ test('locale switchers strip any existing locale prefix before navigating', asyn
     indexingSource,
     /export function normalizePathWithoutLocale\(pathname: string\)/
   );
+  assert.match(
+    indexingSource,
+    /export function localizePathForLocale\(pathname: string, locale: string\)/
+  );
 
-  for (const source of [selectorSource, detectorSource]) {
-    assert.match(source, /normalizePathWithoutLocale/);
-    assert.match(
-      source,
-      /const normalizedPathname = normalizePathWithoutLocale\(pathname\)/
-    );
-    assert.match(source, /\$\{normalizedPathname\}\?\$\{query\}/);
-  }
+  assert.match(selectorSource, /localizePathForLocale\(href, value\)/);
+  assert.match(selectorSource, /window\.location\.assign/);
+  assert.match(detectorSource, /localizePathForLocale\(href, locale\)/);
+  assert.match(detectorSource, /window\.location\.replace/);
 });
 
 test('public and console locale namespaces are registered', async () => {

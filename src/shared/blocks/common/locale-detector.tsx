@@ -5,10 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 
-import { usePathname, useRouter } from '@/core/i18n/navigation';
+import { usePathname } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { localeNames, locales } from '@/config/locale';
-import { normalizePathWithoutLocale } from '@/features/apipool-ui/lib/indexing';
+import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { Button } from '@/shared/components/ui/button';
 import { cacheGet, cacheSet } from '@/shared/lib/cache';
 import { getTimestamp } from '@/shared/lib/time';
@@ -24,7 +24,6 @@ export function LocaleDetector() {
 
   const currentLocale = useLocale();
   const t = useTranslations('common');
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showBanner, setShowBanner] = useState(false);
@@ -62,15 +61,14 @@ export function LocaleDetector() {
   const switchToLocale = useCallback(
     (locale: string) => {
       const query = searchParams?.toString?.() ?? '';
-      const normalizedPathname = normalizePathWithoutLocale(pathname);
       const href = query
-        ? `${normalizedPathname}?${query}`
-        : normalizedPathname;
-      router.replace(href, { locale });
+        ? `${pathname}?${query}`
+        : pathname;
+      window.location.replace(localizePathForLocale(href, locale));
       cacheSet(PREFERRED_LOCALE_KEY, locale);
       setShowBanner(false);
     },
-    [router, pathname, searchParams]
+    [pathname, searchParams]
   );
 
   useEffect(() => {

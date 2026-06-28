@@ -21,6 +21,25 @@ export function normalizePathWithoutLocale(pathname: string): string {
   return normalized === '' ? '/' : normalized;
 }
 
+export function localizePathForLocale(pathname: string, locale: string): string {
+  const [, pathOnly = '/', suffix = ''] =
+    pathname.match(/^([^?#]*)(.*)$/) ?? [];
+  const normalizedPath = normalizePathWithoutLocale(pathOnly);
+
+  if (!LOCALE_SEGMENTS.has(locale)) {
+    return `${normalizedPath}${suffix}`;
+  }
+
+  if (locale === 'en') {
+    return `${normalizedPath}${suffix}`;
+  }
+
+  const localizedPath =
+    normalizedPath === '/' ? `/${locale}` : `/${locale}${normalizedPath}`;
+
+  return `${localizedPath}${suffix}`;
+}
+
 export function shouldNoIndexPath(pathname: string): boolean {
   const normalized = normalizePathWithoutLocale(pathname);
 
