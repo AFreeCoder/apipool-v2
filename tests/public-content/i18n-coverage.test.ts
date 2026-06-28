@@ -159,6 +159,28 @@ test('locale detector banner copy comes from the common locale namespace', async
   assert.doesNotMatch(detectorSource, /切换到中文/);
 });
 
+test('locale switchers strip any existing locale prefix before navigating', async () => {
+  const [selectorSource, detectorSource, indexingSource] = await Promise.all([
+    readFile('src/shared/blocks/common/locale-selector.tsx', 'utf8'),
+    readFile('src/shared/blocks/common/locale-detector.tsx', 'utf8'),
+    readFile('src/features/apipool-ui/lib/indexing.ts', 'utf8'),
+  ]);
+
+  assert.match(
+    indexingSource,
+    /export function normalizePathWithoutLocale\(pathname: string\)/
+  );
+
+  for (const source of [selectorSource, detectorSource]) {
+    assert.match(source, /normalizePathWithoutLocale/);
+    assert.match(
+      source,
+      /const normalizedPathname = normalizePathWithoutLocale\(pathname\)/
+    );
+    assert.match(source, /\$\{normalizedPathname\}\?\$\{query\}/);
+  }
+});
+
 test('public and console locale namespaces are registered', async () => {
   const localeIndex = await readFile('src/config/locale/index.ts', 'utf8');
 

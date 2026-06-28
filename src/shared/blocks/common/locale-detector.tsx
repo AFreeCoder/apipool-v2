@@ -8,6 +8,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { usePathname, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { localeNames, locales } from '@/config/locale';
+import { normalizePathWithoutLocale } from '@/features/apipool-ui/lib/indexing';
 import { Button } from '@/shared/components/ui/button';
 import { cacheGet, cacheSet } from '@/shared/lib/cache';
 import { getTimestamp } from '@/shared/lib/time';
@@ -61,7 +62,10 @@ export function LocaleDetector() {
   const switchToLocale = useCallback(
     (locale: string) => {
       const query = searchParams?.toString?.() ?? '';
-      const href = query ? `${pathname}?${query}` : pathname;
+      const normalizedPathname = normalizePathWithoutLocale(pathname);
+      const href = query
+        ? `${normalizedPathname}?${query}`
+        : normalizedPathname;
       router.replace(href, { locale });
       cacheSet(PREFERRED_LOCALE_KEY, locale);
       setShowBanner(false);

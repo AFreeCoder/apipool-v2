@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 
 import { usePathname, useRouter } from '@/core/i18n/navigation';
 import { localeNames } from '@/config/locale';
+import { normalizePathWithoutLocale } from '@/features/apipool-ui/lib/indexing';
 import { Button } from '@/shared/components/ui/button';
 import {
   DropdownMenu,
@@ -36,7 +37,10 @@ export function LocaleSelector({
       // Update localStorage to sync with locale detector
       cacheSet('locale', value);
       const query = searchParams?.toString?.() ?? '';
-      const href = query ? `${pathname}?${query}` : pathname;
+      const normalizedPathname = normalizePathWithoutLocale(pathname);
+      const href = query
+        ? `${normalizedPathname}?${query}`
+        : normalizedPathname;
       router.push(href, {
         locale: value,
       });
