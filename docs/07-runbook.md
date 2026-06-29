@@ -13,13 +13,21 @@
 - 系统：Debian GNU/Linux 13 (`trixie`)。
 - Docker：已切到 Docker 官方 apt 源并启用开机自启。当前版本：Docker `29.5.3`，Docker Compose plugin `v5.1.4`，Buildx `v0.34.1`，sqlite3 `3.46.1-7+deb13u1`。若现场版本与本节不一致，以 `deploy/server-bootstrap.sh` 重新对齐后更新此记录。
 
+## 0.5 域名迁移期 DNS
+
+- `apipool.dev`：排空期继续归老站。
+- `api.apipool.dev`：排空期继续归老站；正式 cutover 后才作为 APIPool 正牌 API Endpoint，且不固化 `/v1`。
+- `app.apipool.dev`：v2 门户与控制台。
+- `api2.apipool.dev`：v2 用户 API Endpoint，不包含 OpenAI、Anthropic 等具体协议路径；调用方按协议追加 `/v1/...`。
+- `newapi.apipool.dev`：New API 运营管理面，仅运营访问。
+
 ## 1. 必需环境变量
 
 ### 基础
 
 - `DATABASE_PROVIDER` / `DATABASE_URL`
 - `AUTH_SECRET` / `AUTH_URL` —— **容器 entrypoint fail-fast：`AUTH_SECRET` 必须非空且 ≥16 字符**（空值会让 Better Auth 回退已知默认签名密钥），否则拒绝启动。用 `openssl rand -base64 32` 生成。
-- `NEXT_PUBLIC_APP_URL=https://new.apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效；正式切换主域名前与 Caddy 门户域名保持一致）
+- `NEXT_PUBLIC_APP_URL=https://app.apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效；与 Caddy 门户域名保持一致）
 
 ### New API 桥接（见 04-newapi-contract.md）
 
@@ -28,7 +36,7 @@
 - `NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID`
 - `NEWAPI_QUOTA_PER_UNIT`（与实例核对）
 - `APIPOOL_KEY_CREATION_ENABLED=true`
-- `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1`
+- `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev`（公开 API Endpoint，不含具体协议路径）
 - `APIPOOL_CREDENTIALS_SECRET`（AES-256-GCM 凭据加密密钥；与 `AUTH_SECRET` 同样被 entrypoint fail-fast 校验非空 ≥16 字符）
 - 集成开启时（默认开），`NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID` 必填，否则 entrypoint 拒绝启动（避免绑定/建 Key 拖到用户操作时才失败）
 - **凭据隔离**：仅引导脚本用的 `NEWAPI_ROOT_USER` / `NEWAPI_ROOT_PASS` 不进门户容器（compose 用 `environment:` allowlist 而非 `env_file:`）
@@ -37,7 +45,7 @@
 
 - Stripe：`STRIPE_*`（secret key、webhook secret）
 - Creem：`CREEM_*`（同上）
-- webhook 回调地址在渠道后台配置为 `https://apipool.dev/api/payment/notify/<provider>`
+- webhook 回调地址在渠道后台配置为 `https://app.apipool.dev/api/payment/notify/<provider>`
 
 ### 冒烟
 
@@ -78,7 +86,7 @@
 3. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
 4. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → credit 入账 → ledger applied → New API quota 增加 → 控制台余额一致。
 5. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
-6. **调用冒烟**：用该 Key 通过 `https://api.apipool.dev/v1` 调用发布模型成功，用量页可见日志。
+6. **调用冒烟**：用该 Key 通过 `https://api2.apipool.dev` 的 OpenAI 兼容路径调用发布模型成功，用量页可见日志。
 7. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
 8. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
@@ -121,8 +129,8 @@ APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp
 - 触发：push 到 `main` / `dev`、PR、手动 `workflow_dispatch`
 - tag：`sha-<完整 commit>`、分支名、tag 名；默认分支额外推 `latest`
 - 构建期生产参数：
-  - `NEXT_PUBLIC_APP_URL=https://new.apipool.dev`
-  - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1`
+  - `NEXT_PUBLIC_APP_URL=https://app.apipool.dev`
+  - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev`
   - `NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini`
 
 生产部署必须使用 `sha-<commit>` 这类不可变 tag。`latest` 只用于人工排查，不作为正式发布输入。
@@ -159,7 +167,8 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 
 `server-bootstrap.sh` 同时安装 Caddy 并生成反代配置：
 
-- `new.apipool.dev` → 门户 `127.0.0.1:3000`
+- `app.apipool.dev` → 门户 `127.0.0.1:3000`
+- `api2.apipool.dev` → New API `127.0.0.1:3001`
 - `newapi.apipool.dev` → New API `127.0.0.1:3001`
 
 New API 管理面直接对公网开放登录页，并加 `X-Robots-Tag: noindex, nofollow`。上线后需确保 New API root 密码和后台账号权限已设置妥当。

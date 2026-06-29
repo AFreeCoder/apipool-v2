@@ -54,9 +54,8 @@ function QuickstartTerminal({
           <code>
             <span style={{ color: t.dim }}>$ </span>
             <span style={{ color: t.cmd }}>curl</span>{' '}
-            <span style={{ color: t.url }}>
-              https://api.apipool.dev/v1/chat/completions
-            </span>
+            <span style={{ color: t.url }}>https://api2.apipool.dev</span>
+            <span style={{ color: t.dim }}>/v1/chat/completions</span>
             <span style={{ color: t.dim }}> \</span>
             {'\n  '}
             <span style={{ color: t.fg }}>-H</span>{' '}

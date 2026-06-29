@@ -38,8 +38,7 @@ export const envConfigs: ConfigMap = {
   auth_url: process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || '',
   auth_secret: process.env.AUTH_SECRET ?? '', // openssl rand -base64 32
   apipool_api_base_url:
-    process.env.NEXT_PUBLIC_APIPOOL_API_BASE_URL ??
-    'https://api.apipool.dev/v1',
+    process.env.NEXT_PUBLIC_APIPOOL_API_BASE_URL ?? 'https://api2.apipool.dev',
   newapi_base_url: process.env.NEWAPI_BASE_URL ?? '',
   newapi_admin_token: process.env.NEWAPI_ADMIN_TOKEN ?? '',
   newapi_integration_enabled: process.env.NEWAPI_INTEGRATION_ENABLED ?? 'true',

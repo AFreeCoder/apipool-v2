@@ -8,8 +8,8 @@
 
 - 发布分支：`main`
 - 生产环境：腾讯云 VPS，部署目录 `/opt/apipool-v2`
-- 生产门户：`https://new.apipool.dev`
-- 生产 API Base：`https://api.apipool.dev/v1`
+- 生产门户：`https://app.apipool.dev`
+- 生产 API Endpoint：`https://api2.apipool.dev`
 - New API 管理面：`https://newapi.apipool.dev`，仅运营访问
 - 远端 SSH：使用本机 SSH config 中的 `apipool_vps` 别名
 
@@ -36,8 +36,9 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 - 持久化数据：
   - `data/portal/`：门户 SQLite 数据
   - `data/new-api/`：New API SQLite 数据
-- 反向代理：Caddy，`new.apipool.dev` 到 `127.0.0.1:3000`，
-  `newapi.apipool.dev` 到 `127.0.0.1:3001`
+- 反向代理：Caddy，`app.apipool.dev` 到 `127.0.0.1:3000`，
+  `api2.apipool.dev` 到 `127.0.0.1:3001`，`newapi.apipool.dev` 到
+  `127.0.0.1:3001`
 - 运行时配置：
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
@@ -92,6 +93,14 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `deploy/bootstrap.md`
 - `src/config/db/migrations_sqlite/`
 - `scripts/smoke-mvp.ts`
+
+## DNS Phase
+
+- `apipool.dev`：排空期继续归老站。
+- `api.apipool.dev`：排空期继续归老站；正式 cutover 后切为 APIPool 正牌 API Endpoint，且不固化 `/v1`。
+- `app.apipool.dev`：v2 门户与控制台。
+- `api2.apipool.dev`：v2 用户 API Endpoint，不包含 OpenAI、Anthropic 等具体协议路径。
+- `newapi.apipool.dev`：New API 运营管理面，仅运营访问。
 
 ## Backup Requirements
 
@@ -150,13 +159,14 @@ ssh apipool_vps 'df -h /opt/apipool-v2 && free -h && docker system df'
 外部健康检查：
 
 ```bash
-curl -fsS https://new.apipool.dev/ >/dev/null
+curl -fsS https://app.apipool.dev/ >/dev/null
 curl -fsS https://newapi.apipool.dev/api/status >/dev/null
-test "$(curl -sS -o /tmp/apipool-v1-models-no-key.out -w '%{http_code}' https://api.apipool.dev/v1/models)" = "401"
+APIPOOL_API_ENDPOINT=https://api2.apipool.dev
+test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIPOOL_API_ENDPOINT/v1/models")" = "401"
 ```
 
-`https://api.apipool.dev/v1` 是用户调用入口；无 API key 访问 `/v1/models`
-应返回认证错误。真实可调用性由 `APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp`
+`https://api2.apipool.dev` 是排空期用户调用入口；无 API key 访问 OpenAI-compatible
+`/v1/models` 应返回认证错误。真实可调用性由 `APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp`
 或 `APIPool MVP Verify` 的手动 `workflow_dispatch` live smoke 覆盖。
 
 ## Success Criteria
@@ -168,9 +178,9 @@ test "$(curl -sS -o /tmp/apipool-v1-models-no-key.out -w '%{http_code}' https://
 - 服务器 `/opt/apipool-v2/release.env` 中的 `IMAGE_TAG` 是目标 `sha-<commit>`。
 - `docker compose ps` 显示 `apipool-v2` 和 `new-api` 运行中。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
-- 外部 `https://new.apipool.dev/` 和 `https://newapi.apipool.dev/api/status` 通过。
-- 外部 `https://api.apipool.dev/v1/models` 无 API key 返回 401 认证错误；带 Key
-  真实调用由 live smoke 验证。
+- 外部 `https://app.apipool.dev/` 和 `https://newapi.apipool.dev/api/status` 通过。
+- 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回
+  401 认证错误；带 Key 真实调用由 live smoke 验证。
 - 新的 `pre-deploy-*.tar.gz` 存在并能列出内容。
 - 上一个稳定镜像 tag 或 commit 可用于快速恢复。
 - 发布要求的 smoke、管理后台或用户闭环验收通过。

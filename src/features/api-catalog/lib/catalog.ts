@@ -371,7 +371,7 @@ export function formatModelPrice(model: ApiModel) {
 }
 
 export function getQuickstartCurl(modelId = getDefaultCallableModelId()) {
-  return `curl ${APIPOOL_CONFIG.apiBaseUrl}/chat/completions \\
+  return `curl ${APIPOOL_CONFIG.apiBaseUrl}/v1/chat/completions \\
   -H "Authorization: Bearer $APIPOOL_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{

@@ -16,4 +16,10 @@ test('APIPool public config owns brand and canonical site URL', async () => {
     envExample,
     /NEXT_PUBLIC_APIPOOL_SITE_URL\s*=\s*"https:\/\/apipool\.dev"/
   );
+  assert.match(
+    envExample,
+    /NEXT_PUBLIC_APIPOOL_API_BASE_URL\s*=\s*"https:\/\/api2\.apipool\.dev"/
+  );
+  assert.doesNotMatch(source, /api2\.apipool\.dev\/v1/);
+  assert.doesNotMatch(envExample, /api2\.apipool\.dev\/v1/);
 });

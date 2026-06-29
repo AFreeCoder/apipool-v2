@@ -3,17 +3,18 @@ title: APIPool Quickstart
 description: Create a key, add credit, and make your first API call in minutes.
 ---
 
-## Base URL
+## Endpoint
 
 ```text
-https://api.apipool.dev/v1
+https://api2.apipool.dev
 ```
 
-One base URL and one key for every model, with two ways to call it:
+One provider-neutral endpoint and one key for every model, with protocol paths
+added by the client you use:
 
 - **OpenAI-compatible protocol (default)** — every model, regardless of vendor,
   can be called through `/v1/chat/completions`. Most SDKs and tools work by
-  pointing the base URL at APIPool.
+  setting their protocol base URL to the APIPool endpoint plus `/v1`.
 - **Vendor-native protocols** — the same endpoint and key also serve native
   formats, such as Anthropic's Messages API at `/v1/messages`. Use these when
   your tooling expects a vendor's own protocol.
@@ -40,7 +41,9 @@ once after creation — the list shows a masked value afterward.
 ## curl
 
 ```bash
-curl https://api.apipool.dev/v1/chat/completions \
+APIPOOL_ENDPOINT="https://api2.apipool.dev"
+
+curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
@@ -51,8 +54,10 @@ curl https://api.apipool.dev/v1/chat/completions \
 ```ts
 import OpenAI from 'openai';
 
+const APIPOOL_ENDPOINT = 'https://api2.apipool.dev';
+
 const client = new OpenAI({
-  baseURL: 'https://api.apipool.dev/v1',
+  baseURL: `${APIPOOL_ENDPOINT}/v1`,
   apiKey: process.env.APIPOOL_API_KEY,
 });
 
@@ -70,8 +75,10 @@ console.log(completion.choices[0].message.content);
 import os
 from openai import OpenAI
 
+APIPOOL_ENDPOINT = "https://api2.apipool.dev"
+
 client = OpenAI(
-    base_url="https://api.apipool.dev/v1",
+    base_url=f"{APIPOOL_ENDPOINT}/v1",
     api_key=os.environ["APIPOOL_API_KEY"],
 )
 
@@ -86,15 +93,17 @@ print(completion.choices[0].message.content)
 ## Plain HTTP (fetch)
 
 ```ts
-const response = await fetch("https://api.apipool.dev/v1/chat/completions", {
-  method: "POST",
+const APIPOOL_ENDPOINT = 'https://api2.apipool.dev';
+
+const response = await fetch(`${APIPOOL_ENDPOINT}/v1/chat/completions`, {
+  method: 'POST',
   headers: {
     Authorization: `Bearer ${process.env.APIPOOL_API_KEY}`,
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: "Hello from APIPool" }],
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: 'Hello from APIPool' }],
   }),
 });
 
@@ -107,7 +116,9 @@ Claude models can also be called with Anthropic's native Messages API — same
 base URL, same key:
 
 ```bash
-curl https://api.apipool.dev/v1/messages \
+APIPOOL_ENDPOINT="https://api2.apipool.dev"
+
+curl "$APIPOOL_ENDPOINT/v1/messages" \
   -H "x-api-key: $APIPOOL_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
@@ -119,7 +130,7 @@ curl https://api.apipool.dev/v1/messages \
 ```
 
 The official Anthropic SDKs work by setting `baseURL` to
-`https://api.apipool.dev` and `apiKey` to your APIPool key.
+`https://api2.apipool.dev` and `apiKey` to your APIPool key.
 
 ## Streaming
 
@@ -129,13 +140,13 @@ streaming helpers.
 
 ## Error reference
 
-| Status | Meaning | What to do |
-| ------ | ------- | ---------- |
-| `401`  | Key missing, invalid, disabled, or deleted | Check the header and key status in the console |
-| `403`  | Key has no access to the requested model | Review the key's model restrictions |
-| `429`  | Rate limited | Retry with backoff |
-| `402` / quota error | Balance is exhausted | Add credit in the console |
-| `404` model_not_found | Model ID not available | Pick a model from the [model list](/models) |
+| Status                | Meaning                                    | What to do                                     |
+| --------------------- | ------------------------------------------ | ---------------------------------------------- |
+| `401`                 | Key missing, invalid, disabled, or deleted | Check the header and key status in the console |
+| `403`                 | Key has no access to the requested model   | Review the key's model restrictions            |
+| `429`                 | Rate limited                               | Retry with backoff                             |
+| `402` / quota error   | Balance is exhausted                       | Add credit in the console                      |
+| `404` model_not_found | Model ID not available                     | Pick a model from the [model list](/models)    |
 
 ## Billing
 

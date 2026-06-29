@@ -19,7 +19,7 @@
 | `NEWAPI_ADMIN_TOKEN` | 管理员系统访问令牌（server-only） |
 | `NEWAPI_ADMIN_USER_ID` | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要） |
 | `NEWAPI_QUOTA_PER_UNIT` | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000` |
-| `NEXT_PUBLIC_APIPOOL_API_BASE_URL` | 客户 API 端点，`https://api.apipool.dev/v1` |
+| `NEXT_PUBLIC_APIPOOL_API_BASE_URL` | 客户 API Endpoint，排空期为 `https://api2.apipool.dev`，不包含具体协议路径；OpenAI-compatible `/v1/...` 由调用方追加，正式 cutover 后切为 `https://api.apipool.dev` |
 
 ## 3. 认证模型
 

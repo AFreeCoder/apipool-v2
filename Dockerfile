@@ -17,7 +17,7 @@ WORKDIR /app
 # NEXT_PUBLIC_* are inlined into the client bundle at build time. Defaults match
 # code defaults so CI builds are unaffected; local compose overrides via build.args.
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
-ARG NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1
+ARG NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev
 ARG NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-4o-mini
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NEXT_PUBLIC_APIPOOL_API_BASE_URL=$NEXT_PUBLIC_APIPOOL_API_BASE_URL \

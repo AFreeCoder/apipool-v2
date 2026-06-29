@@ -214,7 +214,7 @@ async function callLaunchModel({
   model: string;
 }) {
   const response = await fetch(
-    `${APIPOOL_CONFIG.apiBaseUrl}/chat/completions`,
+    `${APIPOOL_CONFIG.apiBaseUrl}/v1/chat/completions`,
     {
       method: 'POST',
       headers: {

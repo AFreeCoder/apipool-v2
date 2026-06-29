@@ -4,11 +4,13 @@ import test from 'node:test';
 
 test('docker image workflow builds production-configured immutable images', async () => {
   const workflow = await readFile('.github/workflows/docker-build.yaml', 'utf8');
+  const api2Env = 'NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://api2.apipool.dev';
 
   assert.match(workflow, /type=sha,format=long/);
   assert.match(workflow, /push:\s*\$\{\{\s*github\.event_name != 'pull_request'\s*\}\}/);
-  assert.match(workflow, /NEXT_PUBLIC_APP_URL:\s*https:\/\/new\.apipool\.dev/);
-  assert.match(workflow, /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/api\.apipool\.dev\/v1/);
+  assert.match(workflow, /NEXT_PUBLIC_APP_URL:\s*https:\/\/app\.apipool\.dev/);
+  assert.match(workflow, /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/api2\.apipool\.dev/);
+  assert.ok(!workflow.includes(`${api2Env}/v1`));
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL:\s*gpt-5\.4-mini/);
   assert.match(workflow, /deploy-production:/);
   assert.match(workflow, /IMAGE_TAG:\s*sha-\$\{\{\s*github\.sha\s*\}\}/);
@@ -63,9 +65,11 @@ test('Caddy setup routes public subdomains to local containers without Caddy aut
   const script = await readFile('deploy/configure-caddy.sh', 'utf8');
   const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
 
-  assert.match(script, /new\.apipool\.dev/);
+  assert.match(script, /app\.apipool\.dev/);
+  assert.match(script, /api2\.apipool\.dev/);
   assert.match(script, /newapi\.apipool\.dev/);
   assert.match(script, /reverse_proxy \$PORTAL_UPSTREAM/);
+  assert.match(script, /reverse_proxy \$API_UPSTREAM/);
   assert.match(script, /reverse_proxy \$NEWAPI_UPSTREAM/);
   assert.doesNotMatch(script, /basicauth/);
   assert.match(script, /X-Robots-Tag "noindex, nofollow"/);

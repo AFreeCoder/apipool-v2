@@ -142,6 +142,10 @@ test('quickstart curl is only generated for available smoke-tested models', () =
   const availableCurl = getCallableModelQuickstartCurl(available);
   assert.ok(availableCurl);
   assert.match(availableCurl, /gpt-4o-mini/);
+  assert.match(
+    availableCurl,
+    /https:\/\/api2\.apipool\.dev\/v1\/chat\/completions/
+  );
   assert.equal(getCallableModelQuickstartCurl(comingSoon), null);
 });
 
