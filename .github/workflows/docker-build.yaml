@@ -89,7 +89,7 @@ jobs:
             -p "$APIPOOL_VPS_PORT" \
             -i ~/.ssh/apipool_vps \
             "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST" \
-            'mkdir -p /opt/apipool-v2 && tar -xzf - -C /opt/apipool-v2 && find /opt/apipool-v2 -name "._*" -delete && chmod +x /opt/apipool-v2/deploy/backup.sh /opt/apipool-v2/deploy/deploy.sh /opt/apipool-v2/deploy/server-bootstrap.sh'
+            'mkdir -p /opt/apipool-v2 && tar -xzf - -C /opt/apipool-v2 && find /opt/apipool-v2 -name "._*" -delete && chmod +x /opt/apipool-v2/deploy/backup.sh /opt/apipool-v2/deploy/configure-caddy.sh /opt/apipool-v2/deploy/deploy.sh /opt/apipool-v2/deploy/server-bootstrap.sh'
 
       - name: Deploy on VPS
         env:
