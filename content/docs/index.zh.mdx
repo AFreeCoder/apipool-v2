@@ -3,17 +3,18 @@ title: APIPool 快速接入
 description: 几分钟内创建 Key、充值并发出第一个 API 调用。
 ---
 
-## Endpoint
+## Base URL
 
 ```text
 https://api2.apipool.dev
 ```
 
-一个不绑定具体厂商协议的 endpoint、一个 Key 调用所有模型，协议路径由客户端按需追加：
+一个协议中立的 endpoint、一个 Key 调用所有模型。具体请求路径由你选择的 SDK 或
+provider-compatible 协议决定：
 
 - **OpenAI 兼容协议（默认）**——所有模型（无论厂商）都可以通过
-  `/v1/chat/completions` 调用，大多数 SDK 和工具只需把协议 base URL 设置为
-  APIPool endpoint 加 `/v1`。
+  `/v1/chat/completions` 调用；OpenAI SDK 这类工具需要把 OpenAI-compatible
+  `/v1` 前缀追加到 APIPool endpoint 后。
 - **各家原生协议**——同一入口与 Key 也直接支持厂商原生格式，例如 Anthropic 的
   Messages API（`/v1/messages`）。当你的工具链依赖厂商原生协议时使用。
 

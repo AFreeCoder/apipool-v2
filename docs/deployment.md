@@ -37,12 +37,20 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
   - `data/portal/`：门户 SQLite 数据
   - `data/new-api/`：New API SQLite 数据
 - 反向代理：Caddy，`app.apipool.dev` 到 `127.0.0.1:3000`，
-  `api2.apipool.dev` 到 `127.0.0.1:3001`，`newapi.apipool.dev` 到
-  `127.0.0.1:3001`
+  `api2.apipool.dev` 到 `127.0.0.1:3001`，
+  `newapi.apipool.dev` 到 `127.0.0.1:3001`
 - 运行时配置：
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
   - `/opt/apipool-v2/docker-compose.prod.yml`
+
+## DNS Phase
+
+当前处于老站排空期：
+
+- `app.apipool.dev`、`api2.apipool.dev`、`newapi.apipool.dev` 指向 v2 VPS。
+- `apipool.dev` 和 `api.apipool.dev` 保持指向老站；不要在排空期发布中改到 v2。
+- final cutover 才把 `apipool.dev` 回收给 v2 营销站、把 `api.apipool.dev` 回收给 v2 API；`api2.apipool.dev` 永久保留为别名。
 
 ## Pre-Deploy Checks
 
@@ -93,14 +101,6 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `deploy/bootstrap.md`
 - `src/config/db/migrations_sqlite/`
 - `scripts/smoke-mvp.ts`
-
-## DNS Phase
-
-- `apipool.dev`：排空期继续归老站。
-- `api.apipool.dev`：排空期继续归老站；正式 cutover 后切为 APIPool 正牌 API Endpoint，且不固化 `/v1`。
-- `app.apipool.dev`：v2 门户与控制台。
-- `api2.apipool.dev`：v2 用户 API Endpoint，不包含 OpenAI、Anthropic 等具体协议路径。
-- `newapi.apipool.dev`：New API 运营管理面，仅运营访问。
 
 ## Backup Requirements
 
@@ -165,9 +165,11 @@ APIPOOL_API_ENDPOINT=https://api2.apipool.dev
 test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIPOOL_API_ENDPOINT/v1/models")" = "401"
 ```
 
-`https://api2.apipool.dev` 是排空期用户调用入口；无 API key 访问 OpenAI-compatible
-`/v1/models` 应返回认证错误。真实可调用性由 `APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp`
-或 `APIPool MVP Verify` 的手动 `workflow_dispatch` live smoke 覆盖。
+`https://api2.apipool.dev` 是排空期 v2 用户 API endpoint；无 API key 访问
+OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性由
+`APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp` 或 `APIPool MVP Verify` 的手动
+`workflow_dispatch` live smoke 覆盖。`api.apipool.dev` 在老站排空期继续服务老用户，
+cutover 后再回收给 v2。
 
 ## Success Criteria
 
@@ -179,8 +181,8 @@ test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIP
 - `docker compose ps` 显示 `apipool-v2` 和 `new-api` 运行中。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
 - 外部 `https://app.apipool.dev/` 和 `https://newapi.apipool.dev/api/status` 通过。
-- 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回
-  401 认证错误；带 Key 真实调用由 live smoke 验证。
+- 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回 401 认证错误；带 Key
+  真实调用由 live smoke 验证。
 - 新的 `pre-deploy-*.tar.gz` 存在并能列出内容。
 - 上一个稳定镜像 tag 或 commit 可用于快速恢复。
 - 发布要求的 smoke、管理后台或用户闭环验收通过。

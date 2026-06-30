@@ -3,18 +3,18 @@ title: APIPool Quickstart
 description: Create a key, add credit, and make your first API call in minutes.
 ---
 
-## Endpoint
+## Base URL
 
 ```text
 https://api2.apipool.dev
 ```
 
-One provider-neutral endpoint and one key for every model, with protocol paths
-added by the client you use:
+One provider-neutral endpoint and one key for every model. Add the protocol path
+that matches your SDK or provider-compatible format:
 
 - **OpenAI-compatible protocol (default)** — every model, regardless of vendor,
   can be called through `/v1/chat/completions`. Most SDKs and tools work by
-  setting their protocol base URL to the APIPool endpoint plus `/v1`.
+  appending the OpenAI-compatible `/v1` prefix to the APIPool endpoint.
 - **Vendor-native protocols** — the same endpoint and key also serve native
   formats, such as Anthropic's Messages API at `/v1/messages`. Use these when
   your tooling expects a vendor's own protocol.

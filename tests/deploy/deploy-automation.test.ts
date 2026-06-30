@@ -3,14 +3,21 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 test('docker image workflow builds production-configured immutable images', async () => {
-  const workflow = await readFile('.github/workflows/docker-build.yaml', 'utf8');
-  const api2Env = 'NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://api2.apipool.dev';
+  const workflow = await readFile(
+    '.github/workflows/docker-build.yaml',
+    'utf8'
+  );
 
   assert.match(workflow, /type=sha,format=long/);
-  assert.match(workflow, /push:\s*\$\{\{\s*github\.event_name != 'pull_request'\s*\}\}/);
+  assert.match(
+    workflow,
+    /push:\s*\$\{\{\s*github\.event_name != 'pull_request'\s*\}\}/
+  );
   assert.match(workflow, /NEXT_PUBLIC_APP_URL:\s*https:\/\/app\.apipool\.dev/);
-  assert.match(workflow, /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/api2\.apipool\.dev/);
-  assert.ok(!workflow.includes(`${api2Env}/v1`));
+  assert.match(
+    workflow,
+    /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/api2\.apipool\.dev$/m
+  );
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL:\s*gpt-5\.4-mini/);
   assert.match(workflow, /deploy-production:/);
   assert.match(workflow, /IMAGE_TAG:\s*sha-\$\{\{\s*github\.sha\s*\}\}/);
@@ -53,12 +60,21 @@ test('backup script has separate pre-deploy and daily retention rules', async ()
 });
 
 test('systemd timer runs daily backup at 04:00 Asia/Shanghai', async () => {
-  const timer = await readFile('deploy/systemd/apipool-v2-backup.timer', 'utf8');
-  const service = await readFile('deploy/systemd/apipool-v2-backup.service', 'utf8');
+  const timer = await readFile(
+    'deploy/systemd/apipool-v2-backup.timer',
+    'utf8'
+  );
+  const service = await readFile(
+    'deploy/systemd/apipool-v2-backup.service',
+    'utf8'
+  );
 
   assert.match(timer, /OnCalendar=\*-\*-\* 04:00:00 Asia\/Shanghai/);
   assert.match(timer, /Persistent=true/);
-  assert.match(service, /ExecStart=\/opt\/apipool-v2\/deploy\/backup\.sh daily/);
+  assert.match(
+    service,
+    /ExecStart=\/opt\/apipool-v2\/deploy\/backup\.sh daily/
+  );
 });
 
 test('Caddy setup routes public subdomains to local containers without Caddy auth', async () => {

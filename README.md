@@ -79,14 +79,10 @@ pnpm smoke:mvp
 
 `smoke:mvp` creates a portal API key, applies a manual quota adjustment with an
 operator that has `admin.apipool.quota.adjust`, calls the launch model through
-the OpenAI-compatible path under `https://api2.apipool.dev`, disables the key,
-and checks that the disabled key is rejected. It skips when live New API credentials,
+the OpenAI-compatible path under `https://api2.apipool.dev`, disables the key, and checks that the disabled key
+is rejected. It skips when live New API credentials,
 `APIPOOL_SMOKE_PORTAL_USER_ID`, or `APIPOOL_SMOKE_OPERATOR_USER_ID` are missing; set
 `APIPOOL_SMOKE_REQUIRE_LIVE=true` in CI/prod validation to make missing live
 configuration fail.
 
-Real MVP acceptance still requires live smoke tests against `https://api2.apipool.dev`
-after New API credentials, the launch model, and operator access are configured.
-During the domain migration drain period, `apipool.dev` and `api.apipool.dev`
-remain on the legacy stack while v2 uses `app.apipool.dev` and
-`api2.apipool.dev`.
+Real MVP acceptance still requires live smoke tests against `https://api2.apipool.dev` after New API credentials, the launch model, and operator access are configured. During the legacy drain period, `apipool.dev` and `api.apipool.dev` stay on the old service; v2 uses `app.apipool.dev` and `api2.apipool.dev` until the final cutover.

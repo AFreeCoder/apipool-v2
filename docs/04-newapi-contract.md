@@ -12,14 +12,14 @@
 
 ## 2. 环境变量
 
-| 变量 | 说明 |
-|---|---|
-| `NEWAPI_INTEGRATION_ENABLED` | 桥接总开关，非 `false` 即启用 |
-| `NEWAPI_BASE_URL` | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器 |
-| `NEWAPI_ADMIN_TOKEN` | 管理员系统访问令牌（server-only） |
-| `NEWAPI_ADMIN_USER_ID` | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要） |
-| `NEWAPI_QUOTA_PER_UNIT` | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000` |
-| `NEXT_PUBLIC_APIPOOL_API_BASE_URL` | 客户 API Endpoint，排空期为 `https://api2.apipool.dev`，不包含具体协议路径；OpenAI-compatible `/v1/...` 由调用方追加，正式 cutover 后切为 `https://api.apipool.dev` |
+| 变量                               | 说明                                                                                                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEWAPI_INTEGRATION_ENABLED`       | 桥接总开关，非 `false` 即启用                                                                                                                                                                                                 |
+| `NEWAPI_BASE_URL`                  | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器                                                                                                                                                      |
+| `NEWAPI_ADMIN_TOKEN`               | 管理员系统访问令牌（server-only）                                                                                                                                                                                             |
+| `NEWAPI_ADMIN_USER_ID`             | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要）                                                                                                                                                                    |
+| `NEWAPI_QUOTA_PER_UNIT`            | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000`                                                                                                                          |
+| `NEXT_PUBLIC_APIPOOL_API_BASE_URL` | 排空期客户 API endpoint，`https://api2.apipool.dev`；协议路径（如 OpenAI-compatible `/v1/chat/completions`）由调用方按具体 provider 协议附加。cutover 后 `https://api.apipool.dev` 回收为正牌 endpoint，`api2` 永久保留为别名 |
 
 ## 3. 认证模型
 
@@ -60,22 +60,22 @@ New-Api-User: <该令牌所属用户的 ID>
 
 ## 4. 端点矩阵（门户操作 → 真实 New API 接口）
 
-| 门户操作 | 凭据上下文 | 方法与路径 | 实测说明 |
-|---|---|---|---|
-| 健康检查 | 无 | `GET /api/status` | ✅公开接口，返回 `version`、`quota_per_unit` |
-| 创建用户 | 管理员 | `POST /api/user/` | ✅body `{username, password, display_name}`；**密码限长 8-20 字符**（超长报 `Password failed on the 'max' tag`）；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查 |
-| 更新用户分组 | 管理员 | `PUT /api/user/` | 用于让 New API 用户具备对应 token group 权限；需带 `id`、`username`、`display_name`、`group`、`role`、`remark`，只传 `{id, group}` 会触发 New API 校验/唯一约束问题 |
-| 读取用户额度 | 用户 | `GET /api/user/self` | ✅`data.quota` 为整数 |
-| 创建 Key | 用户 | `POST /api/token/` | ✅字段：`name`、`remain_quota`、`unlimited_quota`、`expired_time`(-1 永久)、`model_limits_enabled`+`model_limits`、`allow_ips`、`group`；**响应不含 key**；自带 `key` 字段会被忽略 |
-| 读取完整 Key | 用户 | `POST /api/token/:id/key` | ✅返回 48 字符明文（限流保护）；**用户实际调用需加 `sk-` 前缀**；列表/单查接口的 key 一律掩码 |
-| 列出 Key | 用户 | `GET /api/token/?p=1&size=N` | ✅分页 `{items, total, page}`；key 掩码 |
-| 禁用/启用 Key | 用户 | `PUT /api/token/?status_only=true` | ✅body `{id, status}`；1=启用 2=禁用 |
-| 删除 Key | 用户 | `DELETE /api/token/:id` | |
-| 用量汇总 | 用户 | `GET /api/data/self` | ✅参数 `start_timestamp`/`end_timestamp`/`default_time=hour\|day` |
-| 消费日志 | 用户 | `GET /api/log/self?p=1&page_size=N&type=0` | ✅分页；type=1 为充值记录、type=2 为消费记录 |
-| 生成兑换码 | 管理员 | `POST /api/redemption/` | ✅body `{name, quota, count}`（quota 为整数额度单位）；**响应 `data` 直接返回码值数组**；name 限长 20 字符（源码校验），存 reference 短哈希，对账以码值关联 |
-| 兑换加额 | 用户 | `POST /api/user/topup` | ✅body `{key}`；返回 `data:<加额数>`；**一码一兑实测成立**，重复兑换报错 |
-| 手动调额（兜底） | 管理员 | `PUT /api/user/` 全量更新 quota | 读改写有竞态，只作降级方案且需串行化 |
+| 门户操作         | 凭据上下文 | 方法与路径                                 | 实测说明                                                                                                                                                                           |
+| ---------------- | ---------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 健康检查         | 无         | `GET /api/status`                          | ✅公开接口，返回 `version`、`quota_per_unit`                                                                                                                                       |
+| 创建用户         | 管理员     | `POST /api/user/`                          | ✅body `{username, password, display_name}`；**密码限长 8-20 字符**（超长报 `Password failed on the 'max' tag`）；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查           |
+| 更新用户分组     | 管理员     | `PUT /api/user/`                           | 用于让 New API 用户具备对应 token group 权限；需带 `id`、`username`、`display_name`、`group`、`role`、`remark`，只传 `{id, group}` 会触发 New API 校验/唯一约束问题                |
+| 读取用户额度     | 用户       | `GET /api/user/self`                       | ✅`data.quota` 为整数                                                                                                                                                              |
+| 创建 Key         | 用户       | `POST /api/token/`                         | ✅字段：`name`、`remain_quota`、`unlimited_quota`、`expired_time`(-1 永久)、`model_limits_enabled`+`model_limits`、`allow_ips`、`group`；**响应不含 key**；自带 `key` 字段会被忽略 |
+| 读取完整 Key     | 用户       | `POST /api/token/:id/key`                  | ✅返回 48 字符明文（限流保护）；**用户实际调用需加 `sk-` 前缀**；列表/单查接口的 key 一律掩码                                                                                      |
+| 列出 Key         | 用户       | `GET /api/token/?p=1&size=N`               | ✅分页 `{items, total, page}`；key 掩码                                                                                                                                            |
+| 禁用/启用 Key    | 用户       | `PUT /api/token/?status_only=true`         | ✅body `{id, status}`；1=启用 2=禁用                                                                                                                                               |
+| 删除 Key         | 用户       | `DELETE /api/token/:id`                    |                                                                                                                                                                                    |
+| 用量汇总         | 用户       | `GET /api/data/self`                       | ✅参数 `start_timestamp`/`end_timestamp`/`default_time=hour\|day`                                                                                                                  |
+| 消费日志         | 用户       | `GET /api/log/self?p=1&page_size=N&type=0` | ✅分页；type=1 为充值记录、type=2 为消费记录                                                                                                                                       |
+| 生成兑换码       | 管理员     | `POST /api/redemption/`                    | ✅body `{name, quota, count}`（quota 为整数额度单位）；**响应 `data` 直接返回码值数组**；name 限长 20 字符（源码校验），存 reference 短哈希，对账以码值关联                        |
+| 兑换加额         | 用户       | `POST /api/user/topup`                     | ✅body `{key}`；返回 `data:<加额数>`；**一码一兑实测成立**，重复兑换报错                                                                                                           |
+| 手动调额（兜底） | 管理员     | `PUT /api/user/` 全量更新 quota            | 读改写有竞态，只作降级方案且需串行化                                                                                                                                               |
 
 响应包络统一为 `{ success: boolean, message: string, data: ... }`；`success=false` 一律按错误处理，不看 HTTP 200。
 
@@ -101,15 +101,15 @@ New-Api-User: <该令牌所属用户的 ID>
 
 ## 7. 错误映射与重试（沿用旧契约，微调）
 
-| HTTP/运行时结果 | 桥接错误码 | UI 行为 |
-|---|---|---|
-| 桥接未启用/缺配置 | `not_configured` | 显示服务暂不可用 |
-| 401 | `unauthorized` | 失败，需运营检查令牌 |
-| 403 | `forbidden` | 失败，需运营检查权限 |
-| 429 | `rate_limited` | 可重试失败 |
-| 超时（默认 15s） | `timeout` | 可重试失败 |
-| 非 2xx 或 `success=false` | `remote_error` | 可重试或失败 |
-| JSON 形状不符 | `malformed_response` | 失败，本地状态保守 |
+| HTTP/运行时结果           | 桥接错误码           | UI 行为              |
+| ------------------------- | -------------------- | -------------------- |
+| 桥接未启用/缺配置         | `not_configured`     | 显示服务暂不可用     |
+| 401                       | `unauthorized`       | 失败，需运营检查令牌 |
+| 403                       | `forbidden`          | 失败，需运营检查权限 |
+| 429                       | `rate_limited`       | 可重试失败           |
+| 超时（默认 15s）          | `timeout`            | 可重试失败           |
+| 非 2xx 或 `success=false` | `remote_error`       | 可重试或失败         |
+| JSON 形状不符             | `malformed_response` | 失败，本地状态保守   |
 
 ## 8. 本地状态规则（沿用旧契约，不变）
 

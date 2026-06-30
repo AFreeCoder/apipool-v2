@@ -15,11 +15,15 @@
 
 ## 0.5 域名迁移期 DNS
 
-- `apipool.dev`：排空期继续归老站。
-- `api.apipool.dev`：排空期继续归老站；正式 cutover 后才作为 APIPool 正牌 API Endpoint，且不固化 `/v1`。
-- `app.apipool.dev`：v2 门户与控制台。
-- `api2.apipool.dev`：v2 用户 API Endpoint，不包含 OpenAI、Anthropic 等具体协议路径；调用方按协议追加 `/v1/...`。
-- `newapi.apipool.dev`：New API 运营管理面，仅运营访问。
+排空期 v2 只接管新增用户入口，不接管老站契约域名：
+
+- `app.apipool.dev`：指向 v2 VPS，承载站点、登录、控制台、支付回调和 OAuth 回调。
+- `api2.apipool.dev`：指向 v2 VPS，承载 v2 用户 API 调用。
+- `newapi.apipool.dev`：指向 v2 VPS，仅运营访问，继续 noindex。
+- `apipool.dev`：排空期继续指向老站，保留品牌与 SEO；cutover 后回收给 v2 营销站。
+- `api.apipool.dev`：排空期继续指向老站，保证老用户无需改代码；cutover 后回收给 v2 正牌 API，`api2.apipool.dev` 永久保留为别名。
+
+Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool.dev` 或 `api.apipool.dev` 提前切到 v2 的操作，都会打断老用户或制造迁移风险。
 
 ## 1. 必需环境变量
 
@@ -27,7 +31,7 @@
 
 - `DATABASE_PROVIDER` / `DATABASE_URL`
 - `AUTH_SECRET` / `AUTH_URL` —— **容器 entrypoint fail-fast：`AUTH_SECRET` 必须非空且 ≥16 字符**（空值会让 Better Auth 回退已知默认签名密钥），否则拒绝启动。用 `openssl rand -base64 32` 生成。
-- `NEXT_PUBLIC_APP_URL=https://app.apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效；与 Caddy 门户域名保持一致）
+- `NEXT_PUBLIC_APP_URL=https://app.apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效；排空期与 Caddy 门户域名保持一致）
 
 ### New API 桥接（见 04-newapi-contract.md）
 
@@ -36,7 +40,7 @@
 - `NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID`
 - `NEWAPI_QUOTA_PER_UNIT`（与实例核对）
 - `APIPOOL_KEY_CREATION_ENABLED=true`
-- `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev`（公开 API Endpoint，不含具体协议路径）
+- `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev`（排空期 v2 用户公开 endpoint，不含协议路径；`api.apipool.dev` 暂归老站，cutover 后回收给 v2 并保留 `api2` 作为永久别名）
 - `APIPOOL_CREDENTIALS_SECRET`（AES-256-GCM 凭据加密密钥；与 `AUTH_SECRET` 同样被 entrypoint fail-fast 校验非空 ≥16 字符）
 - 集成开启时（默认开），`NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID` 必填，否则 entrypoint 拒绝启动（避免绑定/建 Key 拖到用户操作时才失败）
 - **凭据隔离**：仅引导脚本用的 `NEWAPI_ROOT_USER` / `NEWAPI_ROOT_PASS` 不进门户容器（compose 用 `environment:` allowlist 而非 `env_file:`）
@@ -168,8 +172,8 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 `server-bootstrap.sh` 同时安装 Caddy 并生成反代配置：
 
 - `app.apipool.dev` → 门户 `127.0.0.1:3000`
-- `api2.apipool.dev` → New API `127.0.0.1:3001`
-- `newapi.apipool.dev` → New API `127.0.0.1:3001`
+- `api2.apipool.dev` → New API 用户 API `127.0.0.1:3001`
+- `newapi.apipool.dev` → New API 管理面 `127.0.0.1:3001`
 
 New API 管理面直接对公网开放登录页，并加 `X-Robots-Tag: noindex, nofollow`。上线后需确保 New API root 密码和后台账号权限已设置妥当。
 

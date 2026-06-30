@@ -31,13 +31,14 @@ APIPool v2 定位为多模型 API 门户和商业控制台，而不是统一运�
 - 门户站负责品牌展示、市场、文档、登录、支付充值、API Key 管理和统计展示。
 - New API 负责真实 API Key、模型路由、渠道接入、余额/额度扣减和调用日志。
 - sub2api/APIPool 作为 New API 的首批下游渠道之一，继续承接现有反代和账号池能力。
-- 用户只看到 APIPool 门户、APIPool 控制台和公开 API Endpoint，不需要知道后台服务名称或进入后台网关控制台。
+- 用户只看到 APIPool 门户、APIPool 控制台和公开 API Base URL，不需要知道后台服务名称或进入后台网关控制台。
 
-排空期默认域名：
+默认域名：
 
-- 用户 API Endpoint：`https://api2.apipool.dev`（不含 OpenAI、Anthropic 等具体协议路径；调用方按协议追加 `/v1/...`）
-- 门户站：`https://app.apipool.dev`
-- `apipool.dev` / `api.apipool.dev`：排空期继续归老站，直到正式 cutover。
+- 排空期用户 API Endpoint：`https://api2.apipool.dev`；OpenAI 兼容路径、Anthropic 原生路径等由具体协议附加。
+- 排空期门户站：`https://app.apipool.dev`
+- 品牌根域：`https://apipool.dev` 在老站排空期继续归老站保温 SEO，cutover 后回收给 v2 营销站。
+- 正牌 API 域：`https://api.apipool.dev` 在老站排空期继续服务老用户，cutover 后回收给 v2；`api2.apipool.dev` 永久保留为别名。
 - New API 管理后台：`newapi.apipool.dev`，仅运营人员访问
 
 ## 4. 商业账本边界

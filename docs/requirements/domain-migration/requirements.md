@@ -1,48 +1,90 @@
 # APIPool 域名迁移 · 需求文档
 
-日期：2026-06-30
+> 文档类型：需求（requirements）
+> Feature：domain-migration
+> 日期：2026-06-30
 
-## 背景
+## 1. 背景
 
-APIPool v2 需要在不影响老站流量和既有 API 调用的前提下启用新的门户与 API 入口。排空期内，新系统先使用独立子域，待业务与 DNS 条件成熟后再切换根域和正式 API 域。
+- 老站（`apipool.dev` / `api.apipool.dev`）已上线运营：约 1000+ 注册用户、日活几十；用户的集成代码里**写死了 `api.apipool.dev` 端点**，账户内有**预充余额**。
+- 新站 v2 尚未上线，目标是承接 apipool 品牌，长期使用 `apipool.dev` 主域名与 `api.apipool.dev` API 端点。
+- 老站与 v2 架构不兼容，**用户账号 / API Key / 余额无法迁移**到 v2。
+- 结论：不能做一次性切换，只能**新老并行、自然排空、末期回收域名**。
 
-## 目标
+## 2. 业务目标
 
-- 启用 v2 门户域名 `app.apipool.dev`。
-- 启用 v2 用户 API Endpoint `api2.apipool.dev`。
-- 保持 New API 运营管理面 `newapi.apipool.dev`，并继续标记为不索引。
-- 保持 `apipool.dev` 与 `api.apipool.dev` 在排空期归老站，避免误切正式流量。
-- 公开 API Endpoint 不固化 OpenAI、Anthropic 等 provider 的协议路径；协议路径由具体 SDK 或调用示例追加。
-- 同步更新项目文档、示例、测试与 DNS/Caddy 配置脚本。
+1. 把 `apipool.dev` 品牌与 SEO 资产平滑转移到 v2。
+2. 新增用户从某一时点起全部进入 v2。
+3. 老站用户在**不被打断**的前提下自愿迁移到 v2，老站最终清退。
 
-## 域名矩阵
+## 3. 硬约束（底线，不可破）
 
-| 域名                 | 排空期归属           | 用途                         |
-| -------------------- | -------------------- | ---------------------------- |
-| `apipool.dev`        | 老站                 | 老站入口，暂不切 v2          |
-| `api.apipool.dev`    | 老站                 | 老 API 入口，暂不切 v2       |
-| `app.apipool.dev`    | APIPool v2           | 门户、登录、控制台、支付回调 |
-| `api2.apipool.dev`   | APIPool v2           | 用户 API Endpoint            |
-| `newapi.apipool.dev` | APIPool v2 / New API | 运营管理面，仅运营访问       |
+| 编号 | 约束 | 说明 |
+|---|---|---|
+| C1 | 不打断老用户 | 老用户的 `api.apipool.dev` 端点与已充余额**全程可用，无需改任何代码** |
+| C2 | 不制造「跑路」感知 | 全程**停充值但不停服务**；公告透明，明确时间线与余额去向；域名回收前留足公告期 |
+| C3 | 保住品牌与 SEO | `apipool.dev` 根域名权重在排空期由老站保温，末期才换 v2，**零重建** |
 
-## API Endpoint 规则
+## 4. 域名归属（约束下的结论）
 
-- `NEXT_PUBLIC_APIPOOL_API_BASE_URL` 只保存裸 endpoint：`https://api2.apipool.dev`。
-- OpenAI-compatible 调用示例在调用处追加 `/v1/chat/completions`、`/v1/models` 等协议路径。
-- Anthropic native 调用按其协议要求追加路径或配置 SDK baseURL，不把 `/v1` 写死进 APIPool 公开 endpoint。
-- 文档中需要解释 endpoint 与 provider 协议 base URL 的差异，避免用户误以为 APIPool endpoint 自身带版本号。
+| 域名 | 归属 | 启用时机 |
+|---|---|---|
+| `apipool.dev`（根） | 排空期归老站（保 SEO）→ 末期回收给 v2 营销 | cutover |
+| `api.apipool.dev`（API 正牌） | 排空期归老站（老用户契约线）→ 末期回收给 v2 端点 | cutover |
+| `app.apipool.dev` | v2：站点 + 登录 + 支付 | **现在，永久不动** |
+| `api2.apipool.dev` | v2：API 端点（过渡）→ 末期降为永久别名 | **现在，永不下线** |
 
-## DNS 与反代要求
+要点：
+- `app.` / `api2.` 让 v2 **立即独立起跑**，不必等老站让位。
+- OAuth / 支付回调固定在 `app.apipool.dev`，**配一次永不变**（含 Stripe，主域名非必需）。
+- `api.apipool.dev` 末期回收为正牌端点，`api2.apipool.dev` **永久保留为别名**，确保过渡期写死 api2 的新用户永不断裂。
 
-- Caddy 门户站点块：`app.apipool.dev` → `127.0.0.1:3000`。
-- Caddy API 站点块：`api2.apipool.dev` → `127.0.0.1:3001`。
-- Caddy New API 管理站点块：`newapi.apipool.dev` → `127.0.0.1:3001`，保留 `X-Robots-Tag: noindex, nofollow`。
-- 支付 webhook 回调地址使用 `https://app.apipool.dev/api/payment/notify/<provider>`。
+## 5. 详细需求（带验收标准）
 
-## 验收标准
+**R1 新站承接**
+- v2 在 `app.apipool.dev` + `api2.apipool.dev` 独立上线运行。
+- 验收：新用户可在 v2 完成注册 / 登录 / 充值 / 调用 API。
 
-- 环境变量、Docker build args、生产 env 模板都指向 `app.apipool.dev` 与 `api2.apipool.dev`。
-- 用户可见文档和 quickstart 不再把 `/v1` 固化进公开 API Endpoint。
-- smoke、目录 quickstart 和首页示例仍能正确构造 OpenAI-compatible 调用路径。
-- 部署手册和运维手册包含排空期域名矩阵、健康检查和回滚边界。
-- 自动化测试覆盖 workflow 域名、Caddy 反代、公开配置和 quickstart curl。
+**R2 老用户连续性（对应 C1）**
+- 启动迁移后，老站 `api.apipool.dev` 持续正常服务，老用户余额可正常消耗。
+- 验收：迁移全程老用户调用无中断、无需改端点。
+
+**R3 增量切断**
+- 老站关闭新注册，新用户只能进 v2。
+- 验收：老站注册入口关闭，并引导至 `app.apipool.dev`。
+
+**R4 停充值 + 排空**
+- 经缓冲公告后，老站关闭充值；老用户只能消耗存量余额。
+- 验收：老站充值入口关闭；老用户仍可正常用 API 消耗余额。
+
+**R5 迁移激励**
+- 提供迁移激励（赠送 / 折扣等），引导老用户主动迁到 v2。
+- 验收：v2 有可领取的迁移优惠；老站有清晰的迁移引导。
+
+**R6 余额尾巴处理（对应 C2）**
+- 公告明确的**老站服务截止日**及到期余额处理规则（退款 / 折算迁移）。
+- 验收：公告含截止日与余额政策；到期有兜底处理流程，不留无限长尾。
+
+**R7 域名回收（对应 C2 / C3）**
+- 老站排空 / 到截止日后停服；`apipool.dev` 根 → v2 营销，`api.apipool.dev` → v2 端点，`api2` 保留别名。
+- 验收：cutover 后 `apipool.dev` 打开 v2、`api.apipool.dev` 正常服务 v2、api2 老用户不断；回收前已留足公告期。
+
+## 6. 执行计划概述（简）
+
+1. **新站起跑**：v2 上线 `app.apipool.dev` + `api2.apipool.dev`，开始承接全部新用户。
+2. **老站关闸**：停注册（立即）→ 缓冲公告 → 停充值；挂迁移公告 + 激励 + 截止日。
+3. **排空回收**：老站余额耗尽 / 到截止日后停服，把 `apipool.dev` 根与 `api.apipool.dev` 指向 v2（`api2` 留作永久别名）。
+
+## 7. 成功判定
+
+- 新增用户 100% 进入 v2。
+- 迁移全程无老用户服务中断、无「跑路」舆情。
+- cutover 后 `apipool.dev` / `api.apipool.dev` 正常服务 v2，SEO 排名无显著下滑，老 api2 用户无断裂。
+
+## 8. 待确认事项
+
+- [ ] v2 上线后观察期时长（建议 2–4 周）后再进入关闸阶段。
+- [ ] 停注册到停充值的缓冲期（建议 1–2 周）。
+- [ ] 老站服务截止日（停充值后 N 周）与余额处理规则（退款 / 折算）。
+- [ ] 迁移激励力度。
+- [ ] 支付商（Stripe 为主）开户 KYC 所需的公开业务页（定价 / 条款 / 退款 / 联系）是否就绪。
