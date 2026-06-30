@@ -7,6 +7,7 @@ import {
   buildCreateKeyRequest,
   buildGroupSelectOptions,
 } from '@/features/api-console/lib/key-request';
+import { getApipoolCopy } from '@/features/apipool-ui/copy';
 
 test('buildCreateKeyRequest sends a public group slug without model or internal fields', () => {
   const body = buildCreateKeyRequest('  Smoke key  ', ' official ');
@@ -123,4 +124,36 @@ test('API key manager renders high-priority visual treatment for errors', async 
     source,
     /<p className="text-muted-foreground mt-3 text-sm">\{[^}]+message[^}]*\}<\/p>/
   );
+});
+
+test('API key manager falls back to safe status labels', async () => {
+  const source = await readFile(
+    join(
+      process.cwd(),
+      'src/features/api-console/components/api-key-manager.tsx'
+    ),
+    'utf8'
+  );
+
+  assert.match(source, /KEY_STATUS_FALLBACK_LABELS/);
+  assert.match(source, /failed_retriable:\s*'失败，可重试'/);
+  assert.match(source, /label=\{localizeKeyStatus\(key\.status,\s*t\)\}/);
+  assert.doesNotMatch(source, /label=\{t\(`status\.\$\{key\.status\}`\)\}/);
+});
+
+test('legacy API key copy includes all failure status labels', () => {
+  const expectedStatuses = [
+    'failed_retriable',
+    'failed_terminal',
+    'remote_created_binding_failed',
+  ] as const;
+
+  for (const locale of ['zh-CN', 'zh-TW', 'en'] as const) {
+    const labels = getApipoolCopy(locale).apiKeyManager.statusLabels;
+
+    for (const status of expectedStatuses) {
+      assert.equal(typeof labels[status], 'string');
+      assert.notEqual(labels[status], status.replace(/_/g, ' '));
+    }
+  }
 });

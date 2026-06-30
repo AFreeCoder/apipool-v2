@@ -114,8 +114,7 @@ New-Api-User: <该令牌所属用户的 ID>
 ## 8. 本地状态规则（沿用旧契约，不变）
 
 - Key 创建仅在远端成功 + 本地绑定成功后写 `active`；远端成功本地失败进入 `remote_created_binding_failed`，人工补偿。
-- 禁用先写 `disable_pending`，New API 确认后置 `disabled`；删除先写 `delete_pending`，New API 确认后物理删除本地 Key 绑定记录。
-- 历史软删除数据由 SQLite 迁移 `0003_delete_soft_deleted_newapi_keys` 清理；运行时列表同步也会兜底移除 `status='deleted'` 或 `deleted_at IS NOT NULL` 的旧绑定。
+- 禁用/删除先写 `disable_pending`/`delete_pending`，New API 确认后才完成。
 - 远端写失败保持 `failed_retriable`/`failed_terminal`，永不静默显示成功。
 - 调额先写 pending 账本行，远端确认后置 `applied`；失败保持 `failed`，不计入展示余额。
 

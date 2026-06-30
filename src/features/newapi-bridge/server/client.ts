@@ -194,10 +194,16 @@ function maskKey(key: string) {
   return `${key.slice(0, 4)}${'*'.repeat(10)}${key.slice(-4)}`;
 }
 
+function ensureApiKeyPrefix(key: string) {
+  return key.startsWith('sk-') ? key : `sk-${key}`;
+}
+
 function maskRemoteTokenListKey(key: unknown) {
   if (typeof key !== 'string' || key.length === 0) return '';
-  if (key.includes('*')) return key;
-  if (key.startsWith('sk-') || key.length > 8) return maskKey(key);
+  if (key.includes('*')) return ensureApiKeyPrefix(key);
+  if (key.startsWith('sk-') || key.length > 8) {
+    return maskKey(ensureApiKeyPrefix(key));
+  }
   return key;
 }
 
@@ -497,7 +503,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         message: 'New API did not return the full token key',
       });
     }
-    return key.startsWith('sk-') ? key : `sk-${key}`;
+    return ensureApiKeyPrefix(key);
   }
 
   function rangeToTimestamps(range: '7d' | '30d' | 'month') {

@@ -63,20 +63,24 @@ export async function generateMetadata({
     typeof slug === 'string' ? slug : (slug as string[]).join('.') || '';
 
   const messageKey = `pages.${dynamicPageSlug}`;
-  const t = await getTranslations({ locale, namespace: messageKey });
+  try {
+    const t = await getTranslations({ locale, namespace: messageKey });
 
-  // return dynamic page metadata
-  if (t.has('metadata')) {
-    title = t.raw('metadata.title');
-    description = t.raw('metadata.description');
+    // return dynamic page metadata
+    if (t.has('metadata')) {
+      title = t.raw('metadata.title');
+      description = t.raw('metadata.description');
 
-    return {
-      title,
-      description,
-      alternates: {
-        canonical: canonicalUrl,
-      },
-    };
+      return {
+        title,
+        description,
+        alternates: {
+          canonical: canonicalUrl,
+        },
+      };
+    }
+  } catch {
+    // Missing dynamic-page messages should fall back to common metadata.
   }
 
   // 3. return common metadata

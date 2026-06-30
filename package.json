@@ -12,7 +12,7 @@
     "multi-model-api"
   ],
   "scripts": {
-    "dev": "tsx scripts/run-with-env.ts DATABASE_PROVIDER=sqlite DATABASE_URL=file:data/local.db DB_SCHEMA_FILE=./src/config/db/schema.sqlite.ts DB_MIGRATIONS_OUT=./src/config/db/migrations_sqlite DB_SINGLETON_ENABLED=true -- next dev --turbopack",
+    "dev": "tsx scripts/run-with-env.ts DATABASE_PROVIDER=sqlite DATABASE_URL=file:data/local.db DB_SCHEMA_FILE=./src/config/db/schema.sqlite.ts DB_MIGRATIONS_OUT=./src/config/db/migrations_sqlite DB_SINGLETON_ENABLED=true -- next dev --turbopack --port 3000",
     "build": "next build",
     "build:fast": "tsx scripts/run-with-env.ts NODE_OPTIONS=--max-old-space-size=4096 -- next build",
     "start": "next start",

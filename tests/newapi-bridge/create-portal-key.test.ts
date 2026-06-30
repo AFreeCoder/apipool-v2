@@ -18,6 +18,8 @@ async function setupDb() {
   process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
   process.env.DB_SINGLETON_ENABLED = 'false';
   process.env.APIPOOL_CREDENTIALS_SECRET = 'create-portal-key-test-secret';
+  delete process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED;
+  delete process.env.NEWAPI_BASE_URL;
 
   const client = createClient({ url: `file:${dbPath}` });
   const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
@@ -141,6 +143,20 @@ async function getKeyBinding(id: string) {
     .from(modules.schema.newApiKeyBinding)
     .where(eq(modules.schema.newApiKeyBinding.id, id));
   return row;
+}
+
+async function withLocalKeyFallback<T>(callback: () => Promise<T>) {
+  const previous = process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED;
+  process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED = 'true';
+  try {
+    return await callback();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED;
+    } else {
+      process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED = previous;
+    }
+  }
 }
 
 test.before(setupDb);
@@ -300,6 +316,112 @@ test('createPortalApiKey rejects duplicate key names before calling the remote c
   );
   assert.equal(createKeyInputs.length, 1);
 });
+
+test('createPortalApiKey creates a local fallback key when user binding cannot reach New API', async () =>
+  withLocalKeyFallback(async () => {
+    const portalUser = await insertUser(
+      'create_key_local_fallback_bind_user',
+      'create-key-local-fallback-bind@example.com'
+    );
+    let createKeyCalls = 0;
+    let deleteKeyCalls = 0;
+    const offlineClient = {
+      provisionUser: async () => {
+        throw new Error('connect ECONNREFUSED 127.0.0.1:3001');
+      },
+      createKey: async () => {
+        createKeyCalls += 1;
+        throw new Error('createKey should not be called');
+      },
+      deleteKey: async () => {
+        deleteKeyCalls += 1;
+        throw new Error('deleteKey should not be called');
+      },
+    } as any;
+
+    const result = await modules.portal.createPortalApiKey(
+      portalUser,
+      { name: 'Local fallback bind key', groupSlug: 'official' },
+      offlineClient
+    );
+
+    assert.equal(createKeyCalls, 0);
+    assert.equal(result.binding.status, 'active');
+    assert.match(result.plainKey, /^sk-local-/);
+
+    const row = await getKeyBinding(result.binding.id);
+    assert.match(row.newapiKeyId, /^local:/);
+    assert.equal(row.newapiUserId, `local:${portalUser.id}`);
+    assert.match(row.lastRemoteError, /ECONNREFUSED/);
+
+    const deleted = await modules.portal.deletePortalApiKey(
+      portalUser.id,
+      result.binding.id,
+      offlineClient
+    );
+    assert.equal(deleted.status, 'deleted');
+    assert.equal(deleteKeyCalls, 0);
+  }));
+
+test('createPortalApiKey falls back locally when remote token creation fails', async () =>
+  withLocalKeyFallback(async () => {
+    const portalUser = await insertUser(
+      'create_key_local_fallback_token_user',
+      'create-key-local-fallback-token@example.com'
+    );
+    let createKeyCalls = 0;
+    let disableKeyCalls = 0;
+    let deleteKeyCalls = 0;
+    const failingClient = {
+      provisionUser: async (input: { username: string }) => ({
+        newapiUserId: `remote_${input.username}`,
+        accessToken: 'test-access-token',
+      }),
+      createKey: async () => {
+        createKeyCalls += 1;
+        throw new Error('remote create failed');
+      },
+      disableKey: async () => {
+        disableKeyCalls += 1;
+        throw new Error('disableKey should not be called');
+      },
+      deleteKey: async () => {
+        deleteKeyCalls += 1;
+        throw new Error('deleteKey should not be called');
+      },
+    } as any;
+
+    const result = await modules.portal.createPortalApiKey(
+      portalUser,
+      { name: 'Local fallback token key', groupSlug: 'official' },
+      failingClient
+    );
+
+    assert.equal(createKeyCalls, 1);
+    assert.equal(result.binding.status, 'active');
+    assert.match(result.plainKey, /^sk-local-/);
+
+    const row = await getKeyBinding(result.binding.id);
+    assert.match(row.newapiKeyId, /^local:/);
+    assert.match(row.newapiUserId, /^remote_/);
+    assert.match(row.lastRemoteError, /remote create failed/);
+
+    const disabled = await modules.portal.disablePortalApiKey(
+      portalUser.id,
+      result.binding.id,
+      failingClient
+    );
+    assert.equal(disabled.status, 'disabled');
+    assert.equal(disableKeyCalls, 0);
+
+    const deleted = await modules.portal.deletePortalApiKey(
+      portalUser.id,
+      result.binding.id,
+      failingClient
+    );
+    assert.equal(deleted.status, 'deleted');
+    assert.equal(deleteKeyCalls, 0);
+  }));
 
 test('deletePortalApiKey cleans up failed/stuck keys locally without requiring remote', async () => {
   const portalUser = await insertUser(

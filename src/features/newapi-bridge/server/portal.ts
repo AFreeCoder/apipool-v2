@@ -236,12 +236,46 @@ function isPendingRemoteKeyId(remoteKeyId: unknown) {
   return typeof remoteKeyId === 'string' && remoteKeyId.startsWith('pending:');
 }
 
+function isLocalFallbackKeyId(remoteKeyId: unknown) {
+  return typeof remoteKeyId === 'string' && remoteKeyId.startsWith('local:');
+}
+
+function isLocalNewApiBaseUrl(value: string | undefined) {
+  if (!value) return false;
+  try {
+    const { hostname } = new URL(value);
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function occupiesCustomerKeySlot(row: any) {
   const status = row.status as KeyLifecycleStatus;
   if (status === 'deleted' || row.deletedAt) return false;
   if (CUSTOMER_KEY_SLOT_STATUSES.has(status)) return true;
 
   return status === 'failed_retriable' && !isPendingRemoteKeyId(row.newapiKeyId);
+}
+
+function isLocalKeyFallbackEnabled() {
+  if (process.env.NODE_ENV === 'production') return false;
+  if (process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED === 'false') return false;
+  if (process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED === 'true') return true;
+  return isLocalNewApiBaseUrl(process.env.NEWAPI_BASE_URL);
+}
+
+function maskPortalKey(key: string) {
+  if (key.length <= 8) return `${key.slice(0, 2)}****${key.slice(-2)}`;
+  return `${key.slice(0, 4)}${'*'.repeat(10)}${key.slice(-4)}`;
+}
+
+function createLocalPortalPlainKey() {
+  return `sk-local-${randomBytes(24).toString('base64url')}`;
 }
 
 function toPublicLedgerEntry(row: any) {
@@ -568,6 +602,70 @@ export async function ensurePortalUserBinding(
   }
 }
 
+async function createLocalFallbackPortalApiKey({
+  user,
+  input,
+  group,
+  newapiGroup,
+  newapiUserId,
+  idempotencyKey,
+  localKeyId = getUuid(),
+  error,
+}: {
+  user: Pick<User, 'id' | 'email'>;
+  input: PortalKeyCreateInput;
+  group: any;
+  newapiGroup: string;
+  newapiUserId?: string;
+  idempotencyKey: string;
+  localKeyId?: string;
+  error?: unknown;
+}) {
+  const plainKey = createLocalPortalPlainKey();
+  const [created] = await db()
+    .insert(newApiKeyBinding)
+    .values({
+      id: localKeyId,
+      portalUserId: user.id,
+      newapiUserId: newapiUserId || `local:${user.id}`,
+      newapiKeyId: `local:${localKeyId}`,
+      keyMasked: maskPortalKey(plainKey),
+      displayName: input.name,
+      status: 'active',
+      allowedModels: '[]',
+      groupId: group.id,
+      newapiGroup,
+      quotaLimit: input.quotaLimit,
+      ipAllowlist: JSON.stringify(input.ipAllowlist || []),
+      idempotencyKey,
+      lastRemoteError: getUnknownErrorMessage(error) || null,
+    })
+    .returning();
+
+  await recordAudit({
+    portalUserId: user.id,
+    action: 'portal.key.create.local_fallback',
+    targetType: 'portal_key',
+    targetId: created.id,
+    status: 'success',
+    idempotencyKey,
+    requestBody: input,
+    responseBody: {
+      localFallback: true,
+      remoteError: getUnknownErrorMessage(error) || undefined,
+    },
+  });
+
+  return {
+    binding: toPublicApiKey({
+      ...created,
+      groupSlug: group.slug,
+      groupName: group.name,
+    }),
+    plainKey,
+  };
+}
+
 export async function createPortalApiKey(
   user: Pick<User, 'id' | 'email'>,
   input: PortalKeyCreateInput,
@@ -599,9 +697,36 @@ export async function createPortalApiKey(
     throw new Error(DUPLICATE_KEY_NAME_MESSAGE);
   }
 
-  const binding = await ensurePortalUserBinding(user, client, {
-    requiredNewapiGroup: newapiGroup,
-  });
+  const localExistingRows = await db()
+    .select()
+    .from(newApiKeyBinding)
+    .where(eq(newApiKeyBinding.portalUserId, user.id));
+  const localExistingKey = localExistingRows.find(occupiesCustomerKeySlot);
+  if (localExistingKey) {
+    throw new Error(ONE_CUSTOMER_KEY_MESSAGE);
+  }
+
+  const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
+  const localKeyId = getUuid();
+  let binding: Awaited<ReturnType<typeof ensurePortalUserBinding>>;
+  try {
+    binding = await ensurePortalUserBinding(user, client, {
+      requiredNewapiGroup: newapiGroup,
+    });
+  } catch (error) {
+    if (isLocalKeyFallbackEnabled()) {
+      return createLocalFallbackPortalApiKey({
+        user,
+        input,
+        group,
+        newapiGroup,
+        idempotencyKey,
+        localKeyId,
+        error,
+      });
+    }
+    throw error;
+  }
   const credentials = bindingToUserCredentials(binding);
   const existingRows = await db()
     .select()
@@ -617,8 +742,6 @@ export async function createPortalApiKey(
     throw new Error(ONE_CUSTOMER_KEY_MESSAGE);
   }
 
-  const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
-  const localKeyId = getUuid();
   const remoteName = deriveRemoteKeyName(localKeyId);
   const pendingRemoteKeyId = `pending:${idempotencyKey}`;
 
@@ -659,6 +782,43 @@ export async function createPortalApiKey(
       ipAllowlist: input.ipAllowlist || [],
     });
   } catch (error: any) {
+    if (isLocalKeyFallbackEnabled()) {
+      const plainKey = createLocalPortalPlainKey();
+      const [created] = await db()
+        .update(newApiKeyBinding)
+        .set({
+          newapiKeyId: `local:${localKeyId}`,
+          keyMasked: maskPortalKey(plainKey),
+          status: 'active',
+          lastRemoteError: error?.message || null,
+        })
+        .where(eq(newApiKeyBinding.id, pending.id))
+        .returning();
+
+      await recordAudit({
+        portalUserId: user.id,
+        action: 'portal.key.create.local_fallback',
+        targetType: 'portal_key',
+        targetId: created.id,
+        status: 'success',
+        idempotencyKey,
+        requestBody: input,
+        responseBody: {
+          localFallback: true,
+          remoteError: error?.message || undefined,
+        },
+      });
+
+      return {
+        binding: toPublicApiKey({
+          ...created,
+          groupSlug: group.slug,
+          groupName: group.name,
+        }),
+        plainKey,
+      };
+    }
+
     const status = getFailedKeyMutationStatus(error);
 
     await db()
@@ -930,13 +1090,36 @@ export async function disablePortalApiKey(
     throw new Error('API key is not in active state');
   }
 
+  const idempotencyKey = `portal-key-disable:${portalUserId}:${keyId}:${getUuid()}`;
+
+  if (isLocalFallbackKeyId(row.newapiKeyId)) {
+    const [updated] = await db()
+      .update(newApiKeyBinding)
+      .set({ status: 'disabled', lastRemoteError: null })
+      .where(eq(newApiKeyBinding.id, keyId))
+      .returning();
+
+    await recordAudit({
+      portalUserId,
+      action: 'portal.key.disable.local_fallback',
+      targetType: 'portal_key',
+      targetId: row.id,
+      status: 'success',
+      idempotencyKey,
+      responseBody: { localFallback: true },
+    });
+    return toPublicApiKey({
+      ...updated,
+      groupSlug: row.groupSlug,
+      groupName: row.groupName,
+    });
+  }
+
   const binding = await getPortalUserBinding(portalUserId);
   if (!binding || binding.status !== 'active') {
     throw new Error('New API user binding not found');
   }
   const credentials = bindingToUserCredentials(binding);
-
-  const idempotencyKey = `portal-key-disable:${portalUserId}:${keyId}:${getUuid()}`;
 
   await db()
     .update(newApiKeyBinding)
@@ -1031,8 +1214,33 @@ export async function deletePortalApiKey(
 
   // 清理态（远端未建成 / 孤儿记录）：直接删本地死记录；远端若有残留 token 则尽力删、
   // 失败不阻塞清理，且不要求 active binding（失败态常伴随 binding 凭据失效）。
+  if (isLocalFallbackKeyId(row.newapiKeyId)) {
+    const [updated] = await db()
+      .update(newApiKeyBinding)
+      .set({ status: 'deleted', deletedAt: new Date(), lastRemoteError: null })
+      .where(eq(newApiKeyBinding.id, keyId))
+      .returning();
+
+    await recordAudit({
+      portalUserId,
+      action: 'portal.key.delete.local_fallback',
+      targetType: 'portal_key',
+      targetId: row.id,
+      status: 'success',
+      idempotencyKey,
+      responseBody: { localFallback: true, previousStatus: status },
+    });
+    return toPublicApiKey({
+      ...updated,
+      groupSlug: row.groupSlug,
+      groupName: row.groupName,
+    });
+  }
+
   if (isCleanup) {
-    const hasRemoteToken = !row.newapiKeyId.startsWith('pending:');
+    const hasRemoteToken =
+      !isPendingRemoteKeyId(row.newapiKeyId) &&
+      !isLocalFallbackKeyId(row.newapiKeyId);
     const cleanupBinding = await getPortalUserBinding(portalUserId);
     if (
       hasRemoteToken &&

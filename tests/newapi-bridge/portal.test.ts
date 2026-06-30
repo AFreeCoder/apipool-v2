@@ -19,6 +19,8 @@ async function setupPortalDb() {
   process.env.DB_MIGRATIONS_OUT = './src/config/db/migrations_sqlite';
   process.env.DB_SINGLETON_ENABLED = 'false';
   process.env.APIPOOL_CREDENTIALS_SECRET = 'portal-test-secret';
+  delete process.env.APIPOOL_LOCAL_KEY_FALLBACK_ENABLED;
+  delete process.env.NEWAPI_BASE_URL;
 
   const client = createClient({ url: `file:${dbPath}` });
   const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
@@ -495,6 +497,50 @@ test('listPortalApiKeys syncs remote key status without exposing remote ids', as
     .where(eq(modules.newApiKeyBinding.id, created.binding.id));
   assert.equal(rows[0].status, 'disabled');
   assert.equal(rows[0].keyMasked, 'sk-...remote-disabled');
+});
+
+test('listPortalApiKeys heals a retriable create state when the remote key is active', async () => {
+  const portalUser = await insertUser(
+    'portal_user_key_retriable_heal',
+    'key-retriable-heal@example.com'
+  );
+  const remote = createSuccessfulRemoteClient() as any;
+  const created = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Retriable heal key'),
+    remote
+  );
+
+  await modules
+    .db()
+    .update(modules.newApiKeyBinding)
+    .set({
+      status: 'failed_retriable',
+      lastRemoteError: 'temporary list failure',
+    })
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+
+  remote.listKeys = async () => [
+    {
+      id: `remote_key_${remoteKeySeq}`,
+      maskedKey: 'sk-...remote-active',
+      status: 'active',
+    },
+  ];
+
+  const listed = await modules.portal.listPortalApiKeys(portalUser.id, remote);
+
+  assert.equal(listed[0].id, created.binding.id);
+  assert.equal(listed[0].status, 'active');
+  assert.equal(listed[0].keyMasked, 'sk-...remote-active');
+
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
+  assert.equal(row.status, 'active');
+  assert.equal(row.lastRemoteError, null);
 });
 
 test('listPortalApiKeys keeps delete pending until remote revocation is visible', async () => {

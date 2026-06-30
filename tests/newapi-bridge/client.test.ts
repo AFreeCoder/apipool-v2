@@ -358,10 +358,30 @@ test('listKeys masks any full key returned by the remote token list', async () =
   const keys = await client.listKeys(USER);
 
   assert.equal(keys[0].maskedKey, 'sk-l**********2001');
-  assert.equal(keys[1].maskedKey, 'live**********2002');
+  assert.equal(keys[1].maskedKey, 'sk-l**********2002');
   assert.equal(keys[2].maskedKey, 'mask-c');
   assert.notEqual(keys[0].maskedKey, 'sk-live-secret-2001');
   assert.notEqual(keys[1].maskedKey, 'live-secret-2002');
+});
+
+test('listKeys preserves the sk- prefix when the remote list returns a masked raw token', async () => {
+  const { client } = createMockedClient({
+    'GET /api/token/': () =>
+      ok({
+        items: [
+          {
+            id: 1,
+            name: 'a',
+            key: 'e4JV**********LAZR',
+            status: 1,
+          },
+        ],
+      }),
+  });
+
+  const keys = await client.listKeys(USER);
+
+  assert.equal(keys[0].maskedKey, 'sk-e4JV**********LAZR');
 });
 
 test('disableKey uses status_only update with numeric id', async () => {
@@ -387,7 +407,7 @@ test('disableKey masks any full key returned by the remote update response', asy
 
   const result = await client.disableKey(USER, '31');
 
-  assert.equal(result.maskedKey, 'live**********2001');
+  assert.equal(result.maskedKey, 'sk-l**********2001');
   assert.notEqual(result.maskedKey, 'live-secret-2001');
 });
 

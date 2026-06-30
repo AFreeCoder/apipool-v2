@@ -109,16 +109,21 @@
     }
   ],
   "bottom_nav": {
-    "items": []
+    "items": [
+      {
+        "title": "User Dashboard",
+        "url": "/dashboard",
+        "icon": "Gauge"
+      }
+    ]
   },
   "user": {
     "nav": {
       "items": [
         {
-          "title": "Dashboard",
+          "title": "User Dashboard",
           "url": "/dashboard",
-          "icon": "Gauge",
-          "target": "_blank"
+          "icon": "Gauge"
         }
       ]
     },

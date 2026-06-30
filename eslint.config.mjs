@@ -7,6 +7,8 @@ const eslintConfig = [
       '.next/**',
       '.claude/**',
       '.source/**',
+      '.tmp/**',
+      'tmp/**',
       '.worktrees/**',
       'node_modules/**',
       'src/config/db/migrations/**',

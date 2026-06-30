@@ -66,11 +66,39 @@ type NoticeState = {
   text: string;
 };
 
+const KEY_STATUS_FALLBACK_LABELS = {
+  active: '启用',
+  disabled: '已停用',
+  deleted: '已删除',
+  creating_remote: '创建中…',
+  disable_pending: '停用中…',
+  delete_pending: '删除中…',
+  failed_retriable: '失败，可重试',
+  failed_terminal: '失败',
+  remote_created_binding_failed: '远端 Key 需清理',
+} satisfies Record<KeyLifecycleStatus, string>;
+
 function localizeApiKeyRowGroupName(
   messages: GroupMessages,
   key: Pick<ApiKeyRow, 'groupSlug' | 'groupName'>
 ) {
   return (key.groupSlug ? messages[key.groupSlug] : undefined) ?? key.groupName;
+}
+
+function localizeKeyStatus(
+  status: KeyLifecycleStatus,
+  translate: (key: string) => string
+) {
+  try {
+    const label = translate(`status.${status}`);
+    if (label && label !== `status.${status}` && label !== status) {
+      return label;
+    }
+  } catch {
+    // Fall back to safe product copy instead of exposing internal state names.
+  }
+
+  return KEY_STATUS_FALLBACK_LABELS[status];
 }
 
 function occupiesCustomerKeySlot(key: ApiKeyRow) {
@@ -522,7 +550,7 @@ export function ApiKeyManager({
                     <TableCell>
                       <StatusBadge
                         status={key.status}
-                        label={t(`status.${key.status}`)}
+                        label={localizeKeyStatus(key.status, t)}
                       />
                     </TableCell>
                     <TableCell>

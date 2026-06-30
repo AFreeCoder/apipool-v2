@@ -87,6 +87,27 @@ test('usage sync state marks stale and failed windows', () => {
   );
 });
 
+test('usage sync state treats exact freshness boundaries as still usable', () => {
+  const now = new Date('2026-05-24T12:00:00.000Z');
+
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T11:55:00.000Z'), now),
+    'ready'
+  );
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T11:54:59.999Z'), now),
+    'stale'
+  );
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T10:00:00.000Z'), now),
+    'stale'
+  );
+  assert.equal(
+    getUsageSyncState(new Date('2026-05-24T09:59:59.999Z'), now),
+    'failed'
+  );
+});
+
 test('usage sync descriptions are readable for non-ready states', () => {
   assert.equal(
     getUsageSyncDescription({ status: 'empty' }),

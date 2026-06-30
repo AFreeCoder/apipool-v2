@@ -19,6 +19,8 @@ pnpm dev
 ```
 
 The default local URL is `http://localhost:3000`.
+`pnpm dev` pins Next.js to port 3000 so it cannot silently fall back to the
+local New API port 3001; stop the process using 3000 before starting the portal.
 The local commands use SQLite at `file:data/local.db` by default when
 `.env.development` does not define database variables. Override
 `DATABASE_PROVIDER`, `DATABASE_URL`, `DB_SCHEMA_FILE`, or `DB_MIGRATIONS_OUT`

@@ -50,16 +50,21 @@
     }
   ],
   "bottom_nav": {
-    "items": []
+    "items": [
+      {
+        "title": "用户后台",
+        "url": "/dashboard",
+        "icon": "Gauge"
+      }
+    ]
   },
   "user": {
     "nav": {
       "items": [
         {
-          "title": "控制台",
+          "title": "用户后台",
           "url": "/dashboard",
-          "icon": "Gauge",
-          "target": "_blank"
+          "icon": "Gauge"
         }
       ]
     },

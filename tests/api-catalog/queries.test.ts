@@ -511,6 +511,41 @@ test('getPublicListings applies vendor, group, capability, and status filters', 
   );
 });
 
+test('same model id can be sold independently in different groups', async () => {
+  const listings = await modules.queries.getPublicListingsUncached({
+    status: 'available',
+  });
+  const gptListings = listings.filter(
+    (listing: { modelId: string }) => listing.modelId === 'gpt-4o-mini'
+  );
+  const byGroup = new Map<string, any>(
+    gptListings.map((listing: any) => [listing.groupSlug, listing])
+  );
+
+  assert.equal(gptListings.length, 2);
+  assert.ok(byGroup.has('official'));
+  assert.ok(byGroup.has('partner'));
+  assert.equal(byGroup.get('official').inputMicroUsd, 150000);
+  assert.equal(byGroup.get('official').outputMicroUsd, 600000);
+  assert.equal(byGroup.get('partner').inputMicroUsd, 90000);
+  assert.equal(byGroup.get('partner').outputMicroUsd, 180000);
+  assert.equal(byGroup.get('partner').discountNote, 'Partner price');
+});
+
+test('unknown public filters return empty lists instead of falling back to all models', async () => {
+  const filters = [
+    { vendor: 'unknown-vendor' },
+    { group: 'unknown-group' },
+    { category: 'unknown-category' },
+    { capability: 'unknown-capability' },
+    { status: 'unknown-status' },
+  ];
+
+  for (const filter of filters) {
+    assert.deepEqual(await modules.queries.getPublicListingsUncached(filter), []);
+  }
+});
+
 test('getPublicListings excludes listings attached to disabled catalog dimensions', async () => {
   const listings = await modules.queries.getPublicListingsUncached({});
   const modelIds = listings.map(
