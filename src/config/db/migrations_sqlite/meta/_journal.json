@@ -50,6 +50,13 @@
       "when": 1782629603000,
       "tag": "0006_official_newapi_group",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1782855264829,
+      "tag": "0007_model_catalog_admin_prices",
+      "breakpoints": true
     }
   ]
 }
