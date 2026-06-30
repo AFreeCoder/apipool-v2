@@ -11,10 +11,9 @@ export const envConfigs: ConfigMap = {
   app_description:
     process.env.NEXT_PUBLIC_APP_DESCRIPTION ??
     'A developer API portal for unified access to OpenAI, Anthropic, and more.',
-  app_logo: process.env.NEXT_PUBLIC_APP_LOGO ?? '/logo.png',
-  app_favicon: process.env.NEXT_PUBLIC_APP_FAVICON ?? '/favicon.ico',
-  app_preview_image:
-    process.env.NEXT_PUBLIC_APP_PREVIEW_IMAGE ?? '/preview.png',
+  app_logo: process.env.NEXT_PUBLIC_APP_LOGO ?? '',
+  app_favicon: process.env.NEXT_PUBLIC_APP_FAVICON ?? '',
+  app_preview_image: process.env.NEXT_PUBLIC_APP_PREVIEW_IMAGE ?? '',
   theme: process.env.NEXT_PUBLIC_THEME ?? 'default',
   appearance: process.env.NEXT_PUBLIC_APPEARANCE ?? 'system',
   locale: process.env.NEXT_PUBLIC_DEFAULT_LOCALE ?? 'en',

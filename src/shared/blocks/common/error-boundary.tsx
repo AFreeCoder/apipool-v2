@@ -43,12 +43,14 @@ export class ErrorBoundary extends Component<Props, State> {
       }
       return (
         <div className="flex h-screen flex-col items-center justify-center gap-4">
-          <Image
-            src={envConfigs.app_logo}
-            alt={envConfigs.app_name}
-            width={80}
-            height={80}
-          />
+          {envConfigs.app_logo ? (
+            <Image
+              src={envConfigs.app_logo}
+              alt={envConfigs.app_name}
+              width={80}
+              height={80}
+            />
+          ) : null}
           <h1 className="text-2xl font-normal">Something went wrong</h1>
           <p className="text-muted-foreground">
             Please try refreshing the page or contact support if the problem

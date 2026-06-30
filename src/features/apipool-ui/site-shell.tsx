@@ -1,5 +1,4 @@
 import { ReactNode } from 'react';
-import Image from 'next/image';
 import { ArrowRight, Mail } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 
@@ -32,16 +31,6 @@ export async function SiteShell({ children }: { children: ReactNode }) {
             href="/"
             className="inline-flex shrink-0 items-center gap-2 text-base font-semibold"
           >
-            <span className="relative size-6 overflow-hidden rounded-md">
-              <Image
-                src="/logo.png"
-                alt={APIPOOL_CONFIG.brandName}
-                width={24}
-                height={24}
-                className="object-contain"
-                priority
-              />
-            </span>
             <span>{APIPOOL_CONFIG.brandName}</span>
           </Link>
           <nav className="hidden items-center gap-1 text-sm lg:flex">
@@ -80,13 +69,6 @@ export async function SiteShell({ children }: { children: ReactNode }) {
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 text-sm sm:px-6 md:grid-cols-[1.6fr_0.7fr_0.7fr] lg:px-8">
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-base font-semibold">
-              <Image
-                src="/logo.png"
-                alt={APIPOOL_CONFIG.brandName}
-                width={22}
-                height={22}
-                className="object-contain"
-              />
               <span>{APIPOOL_CONFIG.brandName}</span>
             </div>
             <p className="text-muted-foreground max-w-sm leading-6">

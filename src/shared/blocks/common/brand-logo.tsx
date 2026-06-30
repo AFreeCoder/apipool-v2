@@ -10,7 +10,7 @@ export function BrandLogo({ brand }: { brand: BrandType }) {
       target={brand.target || '_self'}
       className={`flex items-center space-x-3 ${brand.className}`}
     >
-      {brand.logo && (
+      {brand.logo?.src && (
         <Image
           src={brand.logo.src}
           alt={brand.title ? '' : brand.logo.alt || ''}

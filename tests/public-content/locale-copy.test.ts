@@ -13,6 +13,7 @@ const PUBLIC_LOCALE_ROOTS = [
 ];
 
 const FORBIDDEN_JSON_COPY = [
+  new RegExp('ship' + 'any', 'i'),
   /boilerplate/i,
   /demo site/i,
   /template/i,
@@ -54,7 +55,9 @@ async function collectPublicCopyFiles(path: string): Promise<string[]> {
 }
 
 test('public locale seeds do not expose template, AI demo, or payment copy', async () => {
-  const files = (await Promise.all(PUBLIC_LOCALE_ROOTS.map(collectPublicCopyFiles)))
+  const files = (
+    await Promise.all(PUBLIC_LOCALE_ROOTS.map(collectPublicCopyFiles))
+  )
     .flat()
     .sort();
 

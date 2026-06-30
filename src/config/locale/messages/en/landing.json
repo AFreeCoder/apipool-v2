@@ -3,12 +3,6 @@
     "id": "header",
     "brand": {
       "title": "APIPool",
-      "logo": {
-        "src": "/logo.png",
-        "alt": "APIPool",
-        "width": 100,
-        "height": 100
-      },
       "url": "/"
     },
     "nav": {
@@ -62,12 +56,6 @@
     "brand": {
       "title": "APIPool",
       "description": "A multi-model API portal with one Base URL, API key management, quota visibility, and usage logs.",
-      "logo": {
-        "src": "/logo.png",
-        "alt": "APIPool",
-        "width": 100,
-        "height": 100
-      },
       "url": "/"
     },
     "nav": {

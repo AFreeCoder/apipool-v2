@@ -61,10 +61,10 @@ export function getMetadata(
 
     // image url
     let imageUrl = options.imageUrl || envConfigs.app_preview_image;
-    if (imageUrl.startsWith('http')) {
-      imageUrl = imageUrl;
-    } else {
-      imageUrl = `${envConfigs.app_url}${imageUrl}`;
+    if (imageUrl) {
+      imageUrl = imageUrl.startsWith('http')
+        ? imageUrl
+        : `${envConfigs.app_url}${imageUrl}`;
     }
 
     // app name
@@ -97,14 +97,14 @@ export function getMetadata(
         title,
         description,
         siteName: appName,
-        images: [imageUrl.toString()],
+        ...(imageUrl ? { images: [imageUrl] } : {}),
       },
 
       twitter: {
-        card: 'summary_large_image',
+        card: imageUrl ? 'summary_large_image' : 'summary',
         title,
         description,
-        images: [imageUrl.toString()],
+        ...(imageUrl ? { images: [imageUrl] } : {}),
         site: envConfigs.app_url,
       },
 

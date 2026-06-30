@@ -3,10 +3,6 @@
     "header": {
       "brand": {
         "title": "APIPool Chat",
-        "logo": {
-          "src": "/logo.png",
-          "alt": "APIPool Chat"
-        },
         "url": "/chat"
       },
       "show_trigger": false

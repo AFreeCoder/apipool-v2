@@ -58,7 +58,7 @@ const legacySettingsRedirects = [
   },
 ];
 
-test('legacy ShipAny settings pages redirect into the APIPool dashboard surface', async () => {
+test('legacy template settings pages redirect into the APIPool dashboard surface', async () => {
   for (const item of legacySettingsRedirects) {
     const source = await readFile(item.file, 'utf8');
 

@@ -7,7 +7,7 @@ const legacyCreditApiFiles = [
   'src/app/api/user/get-user-credits/route.ts',
 ];
 
-test('browser user APIs do not expose legacy ShipAny credits as APIPool quota', async () => {
+test('browser user APIs do not expose legacy template credits as APIPool quota', async () => {
   const violations: string[] = [];
 
   for (const file of legacyCreditApiFiles) {

@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1240" viewBox="0 0 1600 1240" role="img" aria-labelledby="title desc">
+  <title id="title">APIPool pool-first logo concept options</title>
+  <desc id="desc">Six alternative APIPool logo directions focused on Pool semantics: reservoir, ripple, basin, liquid monogram, capacity pool, and wordmark pools.</desc>
+  <defs>
+    <style>
+      .page { fill: #fafafa; }
+      .panel { fill: #ffffff; stroke: #dedede; stroke-width: 1.4; }
+      .title { fill: #0a0a0a; font: 750 42px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .intro { fill: #6f6f6f; font: 400 18px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .kicker { fill: #216d51; font: 750 14px "JetBrains Mono", "Fira Code", ui-monospace, monospace; letter-spacing: 0; }
+      .option { fill: #0a0a0a; font: 750 25px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .note { fill: #6f6f6f; font: 400 15px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .word-api { fill: #0a0a0a; font: 800 42px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .word-pool { fill: #216d51; font: 800 42px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .mono { fill: #6f6f6f; font: 500 14px "JetBrains Mono", "Fira Code", ui-monospace, monospace; letter-spacing: 0; }
+      .dark { fill: #0a0a0a; }
+      .muted { fill: #6f6f6f; }
+      .green { fill: #216d51; }
+      .deep { fill: #075449; }
+      .mint { fill: #bdebd9; }
+      .pale { fill: #effaf5; }
+      .line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .s-green { stroke: #216d51; }
+      .s-deep { stroke: #075449; }
+      .s-mint { stroke: #bdebd9; }
+      .s-dark { stroke: #0a0a0a; }
+      .s-soft { stroke: #d8eadf; }
+      .signal { fill: #f99c00; }
+      .s-signal { stroke: #f99c00; }
+    </style>
+
+    <linearGradient id="poolDepth" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2e8269" />
+      <stop offset="1" stop-color="#075449" />
+    </linearGradient>
+    <linearGradient id="poolLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5fff9" />
+      <stop offset="1" stop-color="#d9f3e8" />
+    </linearGradient>
+    <linearGradient id="poolSurface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9fe8cc" />
+      <stop offset="1" stop-color="#216d51" />
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-12%" width="120%" height="132%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0a0a0a" flood-opacity="0.08" />
+    </filter>
+  </defs>
+
+  <rect class="page" width="1600" height="1240" />
+
+  <g transform="translate(60 52)">
+    <text class="title" x="0" y="0" dominant-baseline="hanging">APIPool Logo 方向探索 V2</text>
+    <text class="intro" x="0" y="66">这一轮把 Pool 作为主视觉：水位、容器、涟漪、汇流、容量池和字标中的双 Pool。API 语义只做第二层，不抢主体。</text>
+  </g>
+
+  <!-- G / Reservoir P -->
+  <g transform="translate(60 164)" filter="url(#softShadow)">
+    <rect class="panel" width="700" height="300" rx="24" />
+    <g transform="translate(40 40)">
+      <text class="kicker" x="0" y="0">G / RESERVOIR P</text>
+      <text class="option" x="0" y="36">水库 P</text>
+      <text class="note" x="0" y="66">用一个 P 形水库承载 Pool，斜线暗示 API path。</text>
+    </g>
+    <g transform="translate(48 123)">
+      <rect width="104" height="104" rx="28" fill="url(#poolLight)" stroke="#c7eadc" stroke-width="2" />
+      <path d="M34 78 V26 H61 C78 26 88 36 88 51 C88 66 78 76 61 76 H49 V54 H60 C68 54 72 50 72 45 C72 40 68 36 60 36 H46 V78 Z" fill="url(#poolDepth)" />
+      <path class="line" d="M42 62 C51 69 68 69 78 61" stroke="#ffffff" stroke-width="7" />
+      <path class="line s-signal" d="M70 30 L46 82" stroke-width="5" />
+    </g>
+    <g transform="translate(185 146)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="mono" x="2" y="60">shared pool, single path</text>
+    </g>
+    <g transform="translate(610 142) scale(0.44)">
+      <rect width="104" height="104" rx="28" fill="url(#poolLight)" stroke="#c7eadc" stroke-width="2" />
+      <path d="M34 78 V26 H61 C78 26 88 36 88 51 C88 66 78 76 61 76 H49 V54 H60 C68 54 72 50 72 45 C72 40 68 36 60 36 H46 V78 Z" fill="url(#poolDepth)" />
+      <path class="line" d="M42 62 C51 69 68 69 78 61" stroke="#ffffff" stroke-width="7" />
+      <path class="line s-signal" d="M70 30 L46 82" stroke-width="5" />
+    </g>
+  </g>
+
+  <!-- H / Ripple Endpoint -->
+  <g transform="translate(840 164)" filter="url(#softShadow)">
+    <rect class="panel" width="700" height="300" rx="24" />
+    <g transform="translate(40 40)">
+      <text class="kicker" x="0" y="0">H / RIPPLE ENDPOINT</text>
+      <text class="option" x="0" y="36">端点涟漪</text>
+      <text class="note" x="0" y="66">一个请求落入池中，涟漪代表模型、价格和用量展开。</text>
+    </g>
+    <g transform="translate(48 123)">
+      <rect width="104" height="104" rx="28" fill="#ffffff" stroke="#d8eadf" stroke-width="2" />
+      <ellipse cx="52" cy="58" rx="37" ry="21" fill="#f4fbf8" stroke="#bdebd9" stroke-width="6" />
+      <ellipse cx="52" cy="58" rx="25" ry="13" fill="none" stroke="#216d51" stroke-width="6" />
+      <ellipse cx="52" cy="58" rx="10" ry="5" fill="#075449" />
+      <circle class="signal" cx="52" cy="33" r="8" />
+      <path class="line s-signal" d="M52 33 V50" stroke-width="5" />
+    </g>
+    <g transform="translate(185 146)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="mono" x="2" y="60">one request, visible usage</text>
+    </g>
+    <g transform="translate(610 142) scale(0.44)">
+      <rect width="104" height="104" rx="28" fill="#ffffff" stroke="#d8eadf" stroke-width="2" />
+      <ellipse cx="52" cy="58" rx="37" ry="21" fill="#f4fbf8" stroke="#bdebd9" stroke-width="6" />
+      <ellipse cx="52" cy="58" rx="25" ry="13" fill="none" stroke="#216d51" stroke-width="6" />
+      <ellipse cx="52" cy="58" rx="10" ry="5" fill="#075449" />
+      <circle class="signal" cx="52" cy="33" r="8" />
+      <path class="line s-signal" d="M52 33 V50" stroke-width="5" />
+    </g>
+  </g>
+
+  <!-- I / Confluence Basin -->
+  <g transform="translate(60 505)" filter="url(#softShadow)">
+    <rect class="panel" width="700" height="300" rx="24" />
+    <g transform="translate(40 40)">
+      <text class="kicker" x="0" y="0">I / CONFLUENCE BASIN</text>
+      <text class="option" x="0" y="36">汇流池</text>
+      <text class="note" x="0" y="66">多条供应商通道汇入一个池，再从同一出口调用。</text>
+    </g>
+    <g transform="translate(48 123)">
+      <rect width="104" height="104" rx="28" fill="#f8fbf9" stroke="#d8eadf" stroke-width="2" />
+      <path class="line s-green" d="M22 24 C38 34 42 43 52 52" stroke-width="8" />
+      <path class="line s-deep" d="M82 24 C66 34 62 43 52 52" stroke-width="8" />
+      <path class="line s-mint" d="M52 17 C52 34 52 42 52 52" stroke-width="8" />
+      <path d="M23 58 C31 81 73 81 81 58 C68 66 36 66 23 58Z" fill="url(#poolDepth)" />
+      <path class="line" d="M29 59 C40 66 64 66 76 59" stroke="#ffffff" stroke-width="5" />
+      <circle class="signal" cx="52" cy="52" r="6" />
+    </g>
+    <g transform="translate(185 146)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="mono" x="2" y="60">providers in, one API out</text>
+    </g>
+    <g transform="translate(610 142) scale(0.44)">
+      <rect width="104" height="104" rx="28" fill="#f8fbf9" stroke="#d8eadf" stroke-width="2" />
+      <path class="line s-green" d="M22 24 C38 34 42 43 52 52" stroke-width="8" />
+      <path class="line s-deep" d="M82 24 C66 34 62 43 52 52" stroke-width="8" />
+      <path class="line s-mint" d="M52 17 C52 34 52 42 52 52" stroke-width="8" />
+      <path d="M23 58 C31 81 73 81 81 58 C68 66 36 66 23 58Z" fill="url(#poolDepth)" />
+      <path class="line" d="M29 59 C40 66 64 66 76 59" stroke="#ffffff" stroke-width="5" />
+      <circle class="signal" cx="52" cy="52" r="6" />
+    </g>
+  </g>
+
+  <!-- J / Liquid Brackets -->
+  <g transform="translate(840 505)" filter="url(#softShadow)">
+    <rect class="panel" width="700" height="300" rx="24" />
+    <g transform="translate(40 40)">
+      <text class="kicker" x="0" y="0">J / LIQUID BRACKETS</text>
+      <text class="option" x="0" y="36">液态括号池</text>
+      <text class="note" x="0" y="66">把开发者常见的 { } 容器做成一只抽象水池。</text>
+    </g>
+    <g transform="translate(48 123)">
+      <rect width="104" height="104" rx="28" fill="#0a0a0a" />
+      <path class="line" d="M38 27 C29 27 29 39 36 42 C26 46 27 61 38 61" stroke="#7ee787" stroke-width="7" />
+      <path class="line" d="M66 27 C75 27 75 39 68 42 C78 46 77 61 66 61" stroke="#7ee787" stroke-width="7" />
+      <path d="M28 66 C39 78 65 78 76 66 C66 91 38 91 28 66Z" fill="#216d51" />
+      <path class="line" d="M34 67 C44 73 60 73 70 67" stroke="#bdebd9" stroke-width="5" />
+      <circle class="signal" cx="52" cy="46" r="5" />
+    </g>
+    <g transform="translate(185 146)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="mono" x="2" y="60">{ unified: true }</text>
+    </g>
+    <g transform="translate(610 142) scale(0.44)">
+      <rect width="104" height="104" rx="28" fill="#0a0a0a" />
+      <path class="line" d="M38 27 C29 27 29 39 36 42 C26 46 27 61 38 61" stroke="#7ee787" stroke-width="7" />
+      <path class="line" d="M66 27 C75 27 75 39 68 42 C78 46 77 61 66 61" stroke="#7ee787" stroke-width="7" />
+      <path d="M28 66 C39 78 65 78 76 66 C66 91 38 91 28 66Z" fill="#216d51" />
+      <path class="line" d="M34 67 C44 73 60 73 70 67" stroke="#bdebd9" stroke-width="5" />
+      <circle class="signal" cx="52" cy="46" r="5" />
+    </g>
+  </g>
+
+  <!-- K / Capacity Pool -->
+  <g transform="translate(60 846)" filter="url(#softShadow)">
+    <rect class="panel" width="700" height="300" rx="24" />
+    <g transform="translate(40 40)">
+      <text class="kicker" x="0" y="0">K / CAPACITY POOL</text>
+      <text class="option" x="0" y="36">容量水位</text>
+      <text class="note" x="0" y="66">余额、价格、用量被抽象成一个可见水位池。</text>
+    </g>
+    <g transform="translate(48 123)">
+      <rect width="104" height="104" rx="28" fill="#ffffff" stroke="#d8eadf" stroke-width="2" />
+      <path d="M27 27 H77 V77 C77 84 71 88 52 88 C33 88 27 84 27 77Z" fill="#f4fbf8" stroke="#216d51" stroke-width="6" />
+      <path d="M32 61 C42 53 49 68 58 60 C65 54 70 58 72 60 V76 C72 80 67 82 52 82 C37 82 32 80 32 76Z" fill="url(#poolSurface)" />
+      <path class="line s-signal" d="M35 36 H55" stroke-width="5" />
+      <circle class="signal" cx="69" cy="36" r="5" />
+    </g>
+    <g transform="translate(185 146)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="mono" x="2" y="60">balance and usage at a glance</text>
+    </g>
+    <g transform="translate(610 142) scale(0.44)">
+      <rect width="104" height="104" rx="28" fill="#ffffff" stroke="#d8eadf" stroke-width="2" />
+      <path d="M27 27 H77 V77 C77 84 71 88 52 88 C33 88 27 84 27 77Z" fill="#f4fbf8" stroke="#216d51" stroke-width="6" />
+      <path d="M32 61 C42 53 49 68 58 60 C65 54 70 58 72 60 V76 C72 80 67 82 52 82 C37 82 32 80 32 76Z" fill="url(#poolSurface)" />
+      <path class="line s-signal" d="M35 36 H55" stroke-width="5" />
+      <circle class="signal" cx="69" cy="36" r="5" />
+    </g>
+  </g>
+
+  <!-- L / Double O Pools -->
+  <g transform="translate(840 846)" filter="url(#softShadow)">
+    <rect class="panel" width="700" height="300" rx="24" />
+    <g transform="translate(40 40)">
+      <text class="kicker" x="0" y="0">L / DOUBLE O POOLS</text>
+      <text class="option" x="0" y="36">双 O 池字标</text>
+      <text class="note" x="0" y="66">直接把 Pool 的两个 o 做成池面，减少额外图标依赖。</text>
+    </g>
+    <g transform="translate(48 123)">
+      <rect width="104" height="104" rx="28" fill="#f8fbf9" stroke="#d8eadf" stroke-width="2" />
+      <circle cx="38" cy="54" r="19" fill="#ffffff" stroke="#216d51" stroke-width="8" />
+      <circle cx="66" cy="54" r="19" fill="#ffffff" stroke="#075449" stroke-width="8" />
+      <path class="line s-mint" d="M27 55 C33 61 43 61 49 55 M55 55 C61 61 71 61 77 55" stroke-width="5" />
+      <circle class="signal" cx="52" cy="32" r="6" />
+    </g>
+    <g transform="translate(185 142)">
+      <text class="word-api" x="0" y="0" dominant-baseline="hanging">API</text>
+      <text class="word-pool" x="76" y="0" dominant-baseline="hanging">P</text>
+      <g transform="translate(106 10)">
+        <circle cx="18" cy="18" r="16" fill="#ffffff" stroke="#216d51" stroke-width="7" />
+        <path class="line s-mint" d="M7 20 C13 26 23 26 29 20" stroke-width="4" />
+      </g>
+      <g transform="translate(143 10)">
+        <circle cx="18" cy="18" r="16" fill="#ffffff" stroke="#075449" stroke-width="7" />
+        <path class="line s-mint" d="M7 20 C13 26 23 26 29 20" stroke-width="4" />
+      </g>
+      <text class="word-pool" x="180" y="0" dominant-baseline="hanging">l</text>
+      <text class="mono" x="2" y="64">the pool is in the name</text>
+    </g>
+    <g transform="translate(610 142) scale(0.44)">
+      <rect width="104" height="104" rx="28" fill="#f8fbf9" stroke="#d8eadf" stroke-width="2" />
+      <circle cx="38" cy="54" r="19" fill="#ffffff" stroke="#216d51" stroke-width="8" />
+      <circle cx="66" cy="54" r="19" fill="#ffffff" stroke="#075449" stroke-width="8" />
+      <path class="line s-mint" d="M27 55 C33 61 43 61 49 55 M55 55 C61 61 71 61 77 55" stroke-width="5" />
+      <circle class="signal" cx="52" cy="32" r="6" />
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,259 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1220" viewBox="0 0 1600 1220" role="img" aria-labelledby="title desc">
+  <title id="title">APIPool logo concept options</title>
+  <desc id="desc">Six vector logo directions for APIPool using the current green, black, white, and orange visual system.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fafafa; }
+      .card { fill: #ffffff; stroke: #e5e5e5; stroke-width: 1.5; }
+      .title { fill: #0a0a0a; font: 700 42px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .subtitle { fill: #6f6f6f; font: 400 18px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .label { fill: #216d51; font: 700 14px "JetBrains Mono", "Fira Code", ui-monospace, monospace; letter-spacing: 0.08em; }
+      .option-title { fill: #0a0a0a; font: 700 24px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .body { fill: #6f6f6f; font: 400 15px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .word-api { fill: #0a0a0a; font: 800 40px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.01em; }
+      .word-pool { fill: #216d51; font: 800 40px Geist, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.01em; }
+      .tagline { fill: #6f6f6f; font: 500 14px "JetBrains Mono", "Fira Code", ui-monospace, monospace; letter-spacing: 0; }
+      .mono { fill: #0a0a0a; font: 600 16px "JetBrains Mono", "Fira Code", ui-monospace, monospace; letter-spacing: 0; }
+      .chip { fill: #f5f5f5; stroke: #e5e5e5; }
+      .green { fill: #216d51; }
+      .green2 { fill: #075449; }
+      .green3 { fill: #2e8269; }
+      .soft { fill: #e4f5ee; }
+      .accent { fill: #f99c00; }
+      .dark { fill: #0a0a0a; }
+      .muted { fill: #6f6f6f; }
+      .stroke-green { stroke: #216d51; }
+      .stroke-green2 { stroke: #075449; }
+      .stroke-accent { stroke: #f99c00; }
+      .stroke-dark { stroke: #0a0a0a; }
+      .stroke-muted { stroke: #d4d4d4; }
+      .thin { stroke-width: 2; }
+      .line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <linearGradient id="g-primary" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2e8269" />
+      <stop offset="1" stop-color="#075449" />
+    </linearGradient>
+    <linearGradient id="g-soft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ecfff7" />
+      <stop offset="1" stop-color="#d6f3e8" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-12%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0a0a0a" flood-opacity="0.08" />
+    </filter>
+  </defs>
+
+  <rect class="bg" width="1600" height="1220" />
+
+  <g transform="translate(60 54)">
+    <text class="title" x="0" y="0" dominant-baseline="hanging">APIPool Logo 方向探索</text>
+    <text class="subtitle" x="0" y="64">基于当前站点：白底、近黑文字、主色 #216d51、深色终端块、橙色高亮，以及“统一 Base URL / API Key / 用量可见”的开发者门户定位。</text>
+    <g transform="translate(1120 6)">
+      <rect x="0" y="0" width="34" height="34" rx="8" fill="#216d51" />
+      <text class="body" x="46" y="23">Primary</text>
+      <rect x="140" y="0" width="34" height="34" rx="8" fill="#0a0a0a" />
+      <text class="body" x="186" y="23">Ink</text>
+      <rect x="258" y="0" width="34" height="34" rx="8" fill="#f99c00" />
+      <text class="body" x="304" y="23">Signal</text>
+    </g>
+  </g>
+
+  <!-- Option A -->
+  <g transform="translate(60 170)" filter="url(#shadow)">
+    <rect class="card" width="700" height="295" rx="24" />
+    <g transform="translate(40 42)">
+      <text class="label" x="0" y="0">A / ENDPOINT POOL</text>
+      <text class="option-title" x="0" y="38">端点池化</text>
+      <text class="body" x="0" y="66">多个模型供应商汇入一个统一入口，适合首页、favicon、控制台。</text>
+    </g>
+    <g transform="translate(44 124)">
+      <rect width="96" height="96" rx="22" fill="url(#g-soft)" stroke="#c8eadc" />
+      <path class="line stroke-muted thin" d="M27 30 L48 48 L69 30 M27 66 L48 48 L69 66" />
+      <circle cx="48" cy="48" r="20" fill="#ffffff" stroke="#216d51" stroke-width="8" />
+      <circle class="green2" cx="24" cy="28" r="7" />
+      <circle class="green3" cx="72" cy="28" r="7" />
+      <circle class="green" cx="24" cy="68" r="7" />
+      <circle class="accent" cx="72" cy="68" r="7" />
+      <circle cx="48" cy="48" r="5" fill="#0a0a0a" />
+    </g>
+    <g transform="translate(168 142)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="tagline" x="2" y="58">one endpoint for every model</text>
+    </g>
+    <g transform="translate(590 140)">
+      <rect class="chip" x="-18" y="-18" width="70" height="70" rx="18" />
+      <g transform="scale(0.45)">
+        <rect width="96" height="96" rx="22" fill="url(#g-soft)" stroke="#c8eadc" />
+        <path class="line stroke-muted thin" d="M27 30 L48 48 L69 30 M27 66 L48 48 L69 66" />
+        <circle cx="48" cy="48" r="20" fill="#ffffff" stroke="#216d51" stroke-width="8" />
+        <circle class="green2" cx="24" cy="28" r="7" />
+        <circle class="green3" cx="72" cy="28" r="7" />
+        <circle class="green" cx="24" cy="68" r="7" />
+        <circle class="accent" cx="72" cy="68" r="7" />
+        <circle cx="48" cy="48" r="5" fill="#0a0a0a" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Option B -->
+  <g transform="translate(840 170)" filter="url(#shadow)">
+    <rect class="card" width="700" height="295" rx="24" />
+    <g transform="translate(40 42)">
+      <text class="label" x="0" y="0">B / ROUTE SLASH</text>
+      <text class="option-title" x="0" y="38">路由斜杠</text>
+      <text class="body" x="0" y="66">把 API 路径、斜杠和 A 形路由合并，最像开发者工具。</text>
+    </g>
+    <g transform="translate(44 124)">
+      <rect width="96" height="96" rx="22" fill="#ffffff" stroke="#d8eadf" />
+      <path class="line stroke-green" stroke-width="10" d="M24 70 L43 27 L58 70" />
+      <path class="line stroke-green2" stroke-width="10" d="M70 24 L52 74" />
+      <path class="line stroke-dark" stroke-width="6" d="M26 76 H75" />
+      <circle class="accent" cx="70" cy="24" r="8" />
+    </g>
+    <g transform="translate(168 142)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="tagline" x="2" y="58">/v1/chat/completions</text>
+    </g>
+    <g transform="translate(590 140)">
+      <rect class="chip" x="-18" y="-18" width="70" height="70" rx="18" />
+      <g transform="scale(0.45)">
+        <rect width="96" height="96" rx="22" fill="#ffffff" stroke="#d8eadf" />
+        <path class="line stroke-green" stroke-width="10" d="M24 70 L43 27 L58 70" />
+        <path class="line stroke-green2" stroke-width="10" d="M70 24 L52 74" />
+        <path class="line stroke-dark" stroke-width="6" d="M26 76 H75" />
+        <circle class="accent" cx="70" cy="24" r="8" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Option C -->
+  <g transform="translate(60 505)" filter="url(#shadow)">
+    <rect class="card" width="700" height="295" rx="24" />
+    <g transform="translate(40 42)">
+      <text class="label" x="0" y="0">C / KEY POOL</text>
+      <text class="option-title" x="0" y="38">Key 与额度池</text>
+      <text class="body" x="0" y="66">强调 API Key、余额和可控访问，偏控制台与账户信任感。</text>
+    </g>
+    <g transform="translate(44 124)">
+      <rect width="96" height="96" rx="22" fill="#f8fbf9" stroke="#d8eadf" />
+      <circle cx="35" cy="42" r="18" fill="#ffffff" stroke="#216d51" stroke-width="9" />
+      <path class="line stroke-green2" stroke-width="9" d="M51 42 H78" />
+      <path class="line stroke-green2" stroke-width="7" d="M70 42 V55 M80 42 V52" />
+      <path class="line stroke-accent" stroke-width="5" d="M22 68 C37 78 59 78 74 68" />
+      <path class="line stroke-muted thin" d="M25 74 C39 82 57 82 71 74" />
+    </g>
+    <g transform="translate(168 142)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="tagline" x="2" y="58">keys, balance, usage</text>
+    </g>
+    <g transform="translate(590 140)">
+      <rect class="chip" x="-18" y="-18" width="70" height="70" rx="18" />
+      <g transform="scale(0.45)">
+        <rect width="96" height="96" rx="22" fill="#f8fbf9" stroke="#d8eadf" />
+        <circle cx="35" cy="42" r="18" fill="#ffffff" stroke="#216d51" stroke-width="9" />
+        <path class="line stroke-green2" stroke-width="9" d="M51 42 H78" />
+        <path class="line stroke-green2" stroke-width="7" d="M70 42 V55 M80 42 V52" />
+        <path class="line stroke-accent" stroke-width="5" d="M22 68 C37 78 59 78 74 68" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Option D -->
+  <g transform="translate(840 505)" filter="url(#shadow)">
+    <rect class="card" width="700" height="295" rx="24" />
+    <g transform="translate(40 42)">
+      <text class="label" x="0" y="0">D / TERMINAL GATEWAY</text>
+      <text class="option-title" x="0" y="38">终端网关</text>
+      <text class="body" x="0" y="66">把首屏代码块转成品牌资产，适合文档、SDK、CLI 场景。</text>
+    </g>
+    <g transform="translate(44 124)">
+      <rect width="96" height="96" rx="22" fill="#0a0a0a" />
+      <circle cx="24" cy="24" r="4.5" fill="#ff5f56" />
+      <circle cx="39" cy="24" r="4.5" fill="#ffbd2e" />
+      <circle cx="54" cy="24" r="4.5" fill="#27c93f" />
+      <path class="line" stroke="#7ee787" stroke-width="5" d="M22 49 L35 57 L22 65" />
+      <path class="line" stroke="#79c0ff" stroke-width="5" d="M43 62 H74" />
+      <path class="line stroke-accent" stroke-width="4" d="M48 78 H70" />
+    </g>
+    <g transform="translate(168 142)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="tagline" x="2" y="58">curl https://api2.apipool.dev</text>
+    </g>
+    <g transform="translate(590 140)">
+      <rect class="chip" x="-18" y="-18" width="70" height="70" rx="18" />
+      <g transform="scale(0.45)">
+        <rect width="96" height="96" rx="22" fill="#0a0a0a" />
+        <circle cx="24" cy="24" r="4.5" fill="#ff5f56" />
+        <circle cx="39" cy="24" r="4.5" fill="#ffbd2e" />
+        <circle cx="54" cy="24" r="4.5" fill="#27c93f" />
+        <path class="line" stroke="#7ee787" stroke-width="5" d="M22 49 L35 57 L22 65" />
+        <path class="line" stroke="#79c0ff" stroke-width="5" d="M43 62 H74" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Option E -->
+  <g transform="translate(60 840)" filter="url(#shadow)">
+    <rect class="card" width="700" height="295" rx="24" />
+    <g transform="translate(40 42)">
+      <text class="label" x="0" y="0">E / MODEL MATRIX</text>
+      <text class="option-title" x="0" y="38">模型矩阵</text>
+      <text class="body" x="0" y="66">突出“模型与价格”页的可浏览目录感，适合产品主站。</text>
+    </g>
+    <g transform="translate(44 124)">
+      <rect width="96" height="96" rx="22" fill="#ffffff" stroke="#d8eadf" />
+      <rect x="22" y="20" width="24" height="24" rx="7" fill="#9ee4c8" />
+      <rect x="52" y="20" width="24" height="24" rx="7" fill="#216d51" />
+      <rect x="22" y="51" width="24" height="24" rx="7" fill="#2e8269" />
+      <rect x="52" y="51" width="24" height="24" rx="7" fill="#f99c00" />
+      <path class="line stroke-dark" stroke-width="4" d="M34 32 H64 V63 H34 Z" opacity="0.18" />
+    </g>
+    <g transform="translate(168 142)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="tagline" x="2" y="58">models, prices, capability filters</text>
+    </g>
+    <g transform="translate(590 140)">
+      <rect class="chip" x="-18" y="-18" width="70" height="70" rx="18" />
+      <g transform="scale(0.45)">
+        <rect width="96" height="96" rx="22" fill="#ffffff" stroke="#d8eadf" />
+        <rect x="22" y="20" width="24" height="24" rx="7" fill="#9ee4c8" />
+        <rect x="52" y="20" width="24" height="24" rx="7" fill="#216d51" />
+        <rect x="22" y="51" width="24" height="24" rx="7" fill="#2e8269" />
+        <rect x="52" y="51" width="24" height="24" rx="7" fill="#f99c00" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Option F -->
+  <g transform="translate(840 840)" filter="url(#shadow)">
+    <rect class="card" width="700" height="295" rx="24" />
+    <g transform="translate(40 42)">
+      <text class="label" x="0" y="0">F / POOL CURRENT</text>
+      <text class="option-title" x="0" y="38">池流演进</text>
+      <text class="body" x="0" y="66">保留“Pool”的水面语义，但去掉旧船形和紫色模板痕迹。</text>
+    </g>
+    <g transform="translate(44 124)">
+      <rect width="96" height="96" rx="22" fill="#f8fbf9" stroke="#d8eadf" />
+      <path class="line stroke-green" stroke-width="8" d="M21 58 C35 75 61 75 75 58" />
+      <path class="line stroke-green2" stroke-width="8" d="M24 68 C38 81 58 81 72 68" />
+      <path class="line stroke-green" stroke-width="7" d="M48 24 V58" />
+      <path class="line stroke-green" stroke-width="7" d="M31 51 L48 25 L65 51" />
+      <circle class="accent" cx="48" cy="24" r="6" />
+    </g>
+    <g transform="translate(168 142)">
+      <text x="0" y="0" dominant-baseline="hanging"><tspan class="word-api">API</tspan><tspan class="word-pool">Pool</tspan></text>
+      <text class="tagline" x="2" y="58">route into a shared pool</text>
+    </g>
+    <g transform="translate(590 140)">
+      <rect class="chip" x="-18" y="-18" width="70" height="70" rx="18" />
+      <g transform="scale(0.45)">
+        <rect width="96" height="96" rx="22" fill="#f8fbf9" stroke="#d8eadf" />
+        <path class="line stroke-green" stroke-width="8" d="M21 58 C35 75 61 75 75 58" />
+        <path class="line stroke-green2" stroke-width="8" d="M24 68 C38 81 58 81 72 68" />
+        <path class="line stroke-green" stroke-width="7" d="M48 24 V58" />
+        <path class="line stroke-green" stroke-width="7" d="M31 51 L48 25 L65 51" />
+        <circle class="accent" cx="48" cy="24" r="6" />
+      </g>
+    </g>
+  </g>
+</svg>

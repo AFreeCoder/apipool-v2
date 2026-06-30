@@ -2,10 +2,6 @@
   "header": {
     "brand": {
       "title": "APIPool",
-      "logo": {
-        "src": "/logo.png",
-        "alt": "APIPool"
-      },
       "url": "/admin"
     },
     "show_trigger": false

@@ -30,15 +30,26 @@ export default async function AdminLayout({
   const sidebar: SidebarType = t.raw('sidebar');
 
   const configs = await getAllConfigs();
-  if (configs.app_name) {
-    sidebar.header!.brand!.title = configs.app_name;
-    sidebar.header!.brand!.logo!.alt = configs.app_name;
+  const brand = sidebar.header?.brand;
+  if (configs.app_name && brand) {
+    brand.title = configs.app_name;
+    if (brand.logo) {
+      brand.logo.alt = configs.app_name;
+    }
   }
   if (configs.app_description) {
     sidebar.header!.brand!.description = configs.app_description;
   }
-  if (configs.app_logo) {
-    sidebar.header!.brand!.logo!.src = configs.app_logo;
+  if (brand) {
+    if (configs.app_logo) {
+      brand.logo = {
+        ...brand.logo,
+        src: configs.app_logo,
+        alt: brand.logo?.alt || brand.title || configs.app_name,
+      };
+    } else {
+      delete brand.logo;
+    }
   }
   if (configs.version) {
     sidebar.header!.version = configs.version;

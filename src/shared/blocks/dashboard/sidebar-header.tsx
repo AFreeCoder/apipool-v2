@@ -26,7 +26,7 @@ export function SidebarHeader({ header }: { header: SidebarHeaderType }) {
                   href={header.brand.url || ''}
                   className="flex min-w-0 items-center gap-2"
                 >
-                  {header.brand.logo && (
+                  {header.brand.logo?.src && (
                     <img
                       src={header.brand.logo.src}
                       alt={header.brand.logo.alt || ''}

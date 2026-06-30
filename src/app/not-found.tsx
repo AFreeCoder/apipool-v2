@@ -8,12 +8,14 @@ import { Button } from '@/shared/components/ui/button';
 export default function NotFoundPage() {
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-4">
-      <Image
-        src={envConfigs.app_logo}
-        alt={envConfigs.app_name}
-        width={80}
-        height={80}
-      />
+      {envConfigs.app_logo ? (
+        <Image
+          src={envConfigs.app_logo}
+          alt={envConfigs.app_name}
+          width={80}
+          height={80}
+        />
+      ) : null}
       <h1 className="text-2xl font-normal">Page not found</h1>
       <Button asChild>
         <Link href="/" className="mt-4">

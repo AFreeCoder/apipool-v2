@@ -56,5 +56,8 @@
     "title": "检测到你的浏览器语言是{locale}。是否切换？",
     "switch_to": "切换到{locale}",
     "close": "关闭语言提示"
+  },
+  "no_permission": {
+    "access_denied": "无权访问"
   }
 }

@@ -1,24 +1,19 @@
-import Image from 'next/image';
 import { Star } from 'lucide-react';
 
 import { Avatar } from '@/shared/components/ui/avatar';
 
-const userImgUrls = [
-  '/imgs/avatars/1.png',
-  '/imgs/avatars/2.png',
-  '/imgs/avatars/3.png',
-  '/imgs/avatars/4.png',
-  '/imgs/avatars/5.png',
-  '/imgs/avatars/6.png',
-];
+const avatarInitials = ['A', 'P', 'I', 'K', 'U', 'M'];
 
 export function SocialAvatars({ tip }: { tip: string }) {
   return (
     <div className="mx-auto mt-8 flex w-fit flex-col items-center gap-2 sm:flex-row">
       <span className="mx-4 inline-flex items-center -space-x-2">
-        {userImgUrls.map((url, index) => (
-          <Avatar className="size-10 border" key={index}>
-            <Image width={40} height={40} src={url} alt="placeholder" />
+        {avatarInitials.map((initial, index) => (
+          <Avatar
+            className="bg-background text-primary flex size-10 items-center justify-center border text-xs font-semibold"
+            key={`${initial}-${index}`}
+          >
+            {initial}
           </Avatar>
         ))}
       </span>
