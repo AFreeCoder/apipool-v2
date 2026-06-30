@@ -18,12 +18,16 @@
     "vendor": "Vendor",
     "group": "Group",
     "category": "Category",
+    "categories": "Categories",
     "contextWindow": "Context Window",
     "capabilities": "Capabilities",
     "inputMicroUsd": "Input Price (USD / 1M)",
     "outputMicroUsd": "Output Price (USD / 1M)",
+    "imageInputMicroUsd": "Image Input Price (USD / 1M)",
+    "imageOutputMicroUsd": "Image Output Price (USD / 1M)",
     "listInputMicroUsd": "List Input Price (USD / 1M)",
     "listOutputMicroUsd": "List Output Price (USD / 1M)",
+    "discountRate": "Discount",
     "discountNote": "Discount Note",
     "description": "Description",
     "smokeTested": "Smoke Tested",
@@ -203,6 +207,14 @@
       "buttons": {
         "submit": "Update"
       }
+    },
+    "form": {
+      "saving": "Saving",
+      "searchPlaceholder": "Search model ID",
+      "searching": "Searching",
+      "noCandidates": "No candidate models",
+      "fixedPrice": "Fixed price",
+      "discountPreview": "Discount preview"
     },
     "capabilities": {
       "title": "Model Capabilities",

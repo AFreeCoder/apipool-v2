@@ -1,0 +1,438 @@
+'use client';
+
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Loader2, Search, Save } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { useRouter } from '@/core/i18n/navigation';
+import { Button } from '@/shared/components/ui/button';
+import { Input } from '@/shared/components/ui/input';
+import { Textarea } from '@/shared/components/ui/textarea';
+
+export type ModelAdminFormOption = {
+  value: string;
+  title: string;
+};
+
+export type ModelAdminFormInitial = {
+  modelId: string;
+  displayName: string;
+  vendorId: string;
+  groupId: string;
+  statusId: string;
+  categoryIds: string[];
+  capabilityIds: string[];
+  inputMicroUsd: string;
+  outputMicroUsd: string;
+  imageInputMicroUsd: string;
+  imageOutputMicroUsd: string;
+  discountFold: string;
+  discountNote: string;
+  description: string;
+};
+
+export type ModelAdminFormActionResult = {
+  status?: 'success' | 'error';
+  message?: string;
+  redirect_url?: string;
+};
+
+export type ModelAdminFormMessages = {
+  submit: string;
+  saving: string;
+  searchPlaceholder: string;
+  searching: string;
+  noCandidates: string;
+  fixedPrice: string;
+  discountPreview: string;
+};
+
+export type ModelAdminFormLabels = {
+  modelId: string;
+  displayName: string;
+  vendor: string;
+  group: string;
+  categories: string;
+  capabilities: string;
+  inputMicroUsd: string;
+  outputMicroUsd: string;
+  imageInputMicroUsd: string;
+  imageOutputMicroUsd: string;
+  discountRate: string;
+  discountNote: string;
+  description: string;
+};
+
+type Candidate = {
+  modelId: string;
+  displayName: string;
+  source: 'ratio' | 'fixed-price';
+  inputMicroUsd: number | null;
+  outputMicroUsd: number | null;
+  imageInputMicroUsd: number | null;
+  imageOutputMicroUsd: number | null;
+  supportedEndpointTypes: string[];
+};
+
+type Props = {
+  initial: ModelAdminFormInitial;
+  vendors: ModelAdminFormOption[];
+  groups: ModelAdminFormOption[];
+  categories: ModelAdminFormOption[];
+  capabilities: ModelAdminFormOption[];
+  labels: ModelAdminFormLabels;
+  messages: ModelAdminFormMessages;
+  action: (data: FormData) => Promise<ModelAdminFormActionResult | void>;
+};
+
+function microUsdToDollars(value: number | null | undefined) {
+  if (value === null || value === undefined) return '';
+  return String(value / 1_000_000);
+}
+
+function parseMultiSelect(element: HTMLSelectElement) {
+  return Array.from(element.selectedOptions).map((option) => option.value);
+}
+
+export function ModelAdminForm({
+  initial,
+  vendors,
+  groups,
+  categories,
+  capabilities,
+  labels,
+  messages,
+  action,
+}: Props) {
+  const router = useRouter();
+  const [modelId, setModelId] = useState(initial.modelId);
+  const [displayName, setDisplayName] = useState(initial.displayName);
+  const [vendorId, setVendorId] = useState(initial.vendorId);
+  const [groupId, setGroupId] = useState(initial.groupId);
+  const [statusId] = useState(initial.statusId);
+  const [categoryIds, setCategoryIds] = useState(initial.categoryIds);
+  const [capabilityIds, setCapabilityIds] = useState(initial.capabilityIds);
+  const [inputMicroUsd, setInputMicroUsd] = useState(initial.inputMicroUsd);
+  const [outputMicroUsd, setOutputMicroUsd] = useState(initial.outputMicroUsd);
+  const [imageInputMicroUsd, setImageInputMicroUsd] = useState(
+    initial.imageInputMicroUsd
+  );
+  const [imageOutputMicroUsd, setImageOutputMicroUsd] = useState(
+    initial.imageOutputMicroUsd
+  );
+  const [discountFold, setDiscountFold] = useState(initial.discountFold);
+  const [discountNote, setDiscountNote] = useState(initial.discountNote);
+  const [description, setDescription] = useState(initial.description);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const discountPreview = useMemo(() => {
+    const amount = Number(discountFold);
+    if (!Number.isFinite(amount) || amount <= 0) return '';
+    return `${messages.discountPreview}: ${amount} (${amount * 10}%)`;
+  }, [discountFold, messages.discountPreview]);
+
+  useEffect(() => {
+    const keyword = modelId.trim();
+    if (!vendorId || keyword.length < 2) {
+      setCandidates([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const params = new URLSearchParams({ vendorId, keyword });
+        const response = await fetch(
+          `/api/apipool/admin/catalog/models/search?${params.toString()}`,
+          { signal: controller.signal }
+        );
+        const payload = await response.json();
+        if (payload.code !== 0) throw new Error(payload.message);
+        setCandidates(payload.data?.models ?? []);
+      } catch (error: any) {
+        if (error?.name !== 'AbortError') {
+          setCandidates([]);
+        }
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [modelId, vendorId]);
+
+  function selectCandidate(candidate: Candidate) {
+    setModelId(candidate.modelId);
+    setDisplayName(candidate.displayName);
+    setInputMicroUsd(microUsdToDollars(candidate.inputMicroUsd));
+    setOutputMicroUsd(microUsdToDollars(candidate.outputMicroUsd));
+    setImageInputMicroUsd(microUsdToDollars(candidate.imageInputMicroUsd));
+    setImageOutputMicroUsd(microUsdToDollars(candidate.imageOutputMicroUsd));
+    setCandidates([]);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+
+    const formData = new FormData(event.currentTarget);
+    formData.set('categoryIds', JSON.stringify(categoryIds));
+    formData.set('capabilityIds', JSON.stringify(capabilityIds));
+
+    setSubmitting(true);
+    try {
+      const result = await action(formData);
+      if (!result) throw new Error('No response received from server');
+
+      if (result.message) {
+        if (result.status === 'success') toast.success(result.message);
+        else toast.error(result.message);
+      }
+
+      if (result.redirect_url) {
+        router.push(result.redirect_url as any);
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Submit failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="bg-card max-w-4xl rounded-lg border p-5"
+    >
+      <div className="grid gap-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2 text-sm">
+            {labels.vendor}
+            <select
+              name="vendorId"
+              value={vendorId}
+              onChange={(event) => {
+                setVendorId(event.target.value);
+                setCandidates([]);
+              }}
+              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              required
+            >
+              {vendors.map((vendor) => (
+                <option key={vendor.value} value={vendor.value}>
+                  {vendor.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="relative grid gap-2 text-sm">
+            {labels.modelId}
+            <div className="relative">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Input
+                name="modelId"
+                value={modelId}
+                onChange={(event) => setModelId(event.target.value)}
+                className="pl-9 font-mono"
+                placeholder={messages.searchPlaceholder}
+                required
+              />
+            </div>
+            {(searching || candidates.length > 0) && (
+              <div className="bg-popover absolute top-full z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border p-1 shadow-md">
+                {searching && (
+                  <div className="text-muted-foreground px-3 py-2 text-sm">
+                    {messages.searching}
+                  </div>
+                )}
+                {!searching &&
+                  candidates.map((candidate) => (
+                    <button
+                      key={candidate.modelId}
+                      type="button"
+                      onClick={() => selectCandidate(candidate)}
+                      className="hover:bg-accent grid w-full gap-1 rounded-sm px-3 py-2 text-left text-sm"
+                    >
+                      <span className="font-mono">{candidate.modelId}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {candidate.source === 'fixed-price'
+                          ? messages.fixedPrice
+                          : candidate.supportedEndpointTypes.join(', ')}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            {labels.displayName}
+            <Input
+              name="displayName"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              required
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2 text-sm">
+            {labels.group}
+            <select
+              name="groupId"
+              value={groupId}
+              onChange={(event) => setGroupId(event.target.value)}
+              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              required
+            >
+              {groups.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            {labels.discountRate}
+            <Input
+              name="discountFold"
+              inputMode="decimal"
+              min="0.01"
+              max="10"
+              step="0.01"
+              value={discountFold}
+              onChange={(event) => setDiscountFold(event.target.value)}
+            />
+            {discountPreview && (
+              <span className="text-muted-foreground text-xs">
+                {discountPreview}
+              </span>
+            )}
+          </label>
+        </div>
+
+        <label className="grid gap-2 text-sm">
+          {labels.discountNote}
+          <Input
+            name="discountNote"
+            value={discountNote}
+            onChange={(event) => setDiscountNote(event.target.value)}
+          />
+        </label>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2 text-sm">
+            {labels.categories}
+            <select
+              multiple
+              value={categoryIds}
+              onChange={(event) =>
+                setCategoryIds(parseMultiSelect(event.currentTarget))
+              }
+              className="border-input bg-background min-h-28 rounded-md border px-3 py-2 text-sm"
+              required
+            >
+              {categories.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            {labels.capabilities}
+            <select
+              multiple
+              value={capabilityIds}
+              onChange={(event) =>
+                setCapabilityIds(parseMultiSelect(event.currentTarget))
+              }
+              className="border-input bg-background min-h-28 rounded-md border px-3 py-2 text-sm"
+            >
+              {capabilities.map((capability) => (
+                <option key={capability.value} value={capability.value}>
+                  {capability.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <label className="grid gap-2 text-sm">
+            {labels.inputMicroUsd}
+            <Input
+              name="inputMicroUsd"
+              inputMode="decimal"
+              value={inputMicroUsd}
+              onChange={(event) => setInputMicroUsd(event.target.value)}
+              required
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            {labels.outputMicroUsd}
+            <Input
+              name="outputMicroUsd"
+              inputMode="decimal"
+              value={outputMicroUsd}
+              onChange={(event) => setOutputMicroUsd(event.target.value)}
+              required
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            {labels.imageInputMicroUsd}
+            <Input
+              name="imageInputMicroUsd"
+              inputMode="decimal"
+              value={imageInputMicroUsd}
+              onChange={(event) => setImageInputMicroUsd(event.target.value)}
+            />
+          </label>
+          <label className="grid gap-2 text-sm">
+            {labels.imageOutputMicroUsd}
+            <Input
+              name="imageOutputMicroUsd"
+              inputMode="decimal"
+              value={imageOutputMicroUsd}
+              onChange={(event) => setImageOutputMicroUsd(event.target.value)}
+            />
+          </label>
+        </div>
+
+        <label className="grid gap-2 text-sm">
+          {labels.description}
+          <Textarea
+            name="description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+
+        <input type="hidden" name="statusId" value={statusId} />
+        <input type="hidden" name="categoryIds" value={JSON.stringify(categoryIds)} />
+        <input
+          type="hidden"
+          name="capabilityIds"
+          value={JSON.stringify(capabilityIds)}
+        />
+
+        <Button type="submit" className="w-fit" disabled={submitting}>
+          {submitting ? <Loader2 className="size-4 animate-spin" /> : <Save />}
+          {submitting ? messages.saving : messages.submit}
+        </Button>
+      </div>
+    </form>
+  );
+}

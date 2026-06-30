@@ -16,6 +16,7 @@ const CATALOG_EXPORTS = [
   'catalogStatus',
   'catalogGroup',
   'catalogModel',
+  'catalogModelCategory',
   'catalogModelCapability',
   'catalogModelListing',
 ] as const;
@@ -39,6 +40,17 @@ test('catalog tables are exported from the schema barrel', () => {
   for (const name of CATALOG_EXPORTS) {
     assert.ok(schemaExports[name], `${name} should be exported`);
   }
+});
+
+test('catalog model listing exposes image pricing and discount columns', () => {
+  const listing = schemaExports.catalogModelListing as
+    | Record<string, unknown>
+    | undefined;
+
+  assert.ok(listing);
+  assert.ok(listing.imageInputMicroUsd, 'imageInputMicroUsd should exist');
+  assert.ok(listing.imageOutputMicroUsd, 'imageOutputMicroUsd should exist');
+  assert.ok(listing.discountRateBps, 'discountRateBps should exist');
 });
 
 test('newApiKeyBinding exposes the catalog group foreign key column', () => {

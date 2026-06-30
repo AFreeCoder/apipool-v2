@@ -3,6 +3,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
+import { derivePricingFromNewApiPricing } from '@/features/api-catalog/lib/pricing';
 
 export type NewApiBridgeErrorCode =
   | 'not_configured'
@@ -153,6 +154,25 @@ export type RemoteProvisionedUser = {
   accessToken: string;
 };
 
+export type RemotePricingModel = {
+  modelId: string;
+  displayName: string;
+  vendorId: string;
+  vendorName: string;
+  quotaType: number;
+  modelRatio: number;
+  modelPrice: number | null;
+  completionRatio: number;
+  imageRatio: number | null;
+  source: 'ratio' | 'fixed-price';
+  inputMicroUsd: number | null;
+  outputMicroUsd: number | null;
+  imageInputMicroUsd: number | null;
+  imageOutputMicroUsd: number | null;
+  enabledGroups: string[];
+  supportedEndpointTypes: string[];
+};
+
 type AuthContext = { token: string; userId: string } | 'none';
 
 type RequestOptions = {
@@ -203,6 +223,96 @@ function maskRemoteTokenListKey(key: unknown) {
 
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function asNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || '').trim())
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  return [];
+}
+
+function lookupVendorName(vendors: unknown, vendorId: string) {
+  if (!vendorId) return '';
+
+  if (Array.isArray(vendors)) {
+    const match = vendors.find(
+      (vendor: any) =>
+        String(vendor?.id || vendor?.vendor_id || vendor?.value || '') ===
+        vendorId
+    );
+    if (match) {
+      return String(match.name || match.label || match.title || vendorId);
+    }
+  }
+
+  if (vendors && typeof vendors === 'object') {
+    const value = (vendors as Record<string, unknown>)[vendorId];
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+      const objectValue = value as Record<string, unknown>;
+      return String(
+        objectValue.name ||
+          objectValue.label ||
+          objectValue.title ||
+          objectValue.vendor_name ||
+          vendorId
+      );
+    }
+  }
+
+  return vendorId;
+}
+
+function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
+  const modelId = String(item?.model_name || item?.model || item?.id || '');
+  const vendorId = String(item?.vendor_id || item?.vendor || '');
+  const quotaType = asNumber(item?.quota_type);
+  const modelRatio = asNumber(item?.model_ratio);
+  const modelPrice = asNullableNumber(item?.model_price);
+  const completionRatio = asNumber(item?.completion_ratio);
+  const imageRatio = asNullableNumber(item?.image_ratio);
+  const derived = derivePricingFromNewApiPricing({
+    model_name: modelId,
+    quota_type: quotaType,
+    model_ratio: modelRatio,
+    model_price: modelPrice,
+    completion_ratio: completionRatio,
+    image_ratio: imageRatio,
+  });
+
+  return {
+    modelId,
+    displayName: String(item?.display_name || item?.name || modelId),
+    vendorId,
+    vendorName: lookupVendorName(vendors, vendorId),
+    quotaType,
+    modelRatio,
+    modelPrice,
+    completionRatio,
+    imageRatio,
+    source: derived.source,
+    inputMicroUsd: derived.inputMicroUsd,
+    outputMicroUsd: derived.outputMicroUsd,
+    imageInputMicroUsd: derived.imageInputMicroUsd,
+    imageOutputMicroUsd: derived.imageOutputMicroUsd,
+    enabledGroups: asStringArray(item?.enable_groups),
+    supportedEndpointTypes: asStringArray(item?.supported_endpoint_types),
+  };
 }
 
 function mapRemoteTokenStatus(status: unknown): RemoteKey['status'] {
@@ -406,6 +516,14 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     path: string,
     options: RequestOptions = {}
   ): Promise<T> {
+    const payload = await requestEnvelope(path, options);
+    return payload.data as T;
+  }
+
+  async function requestEnvelope(
+    path: string,
+    options: RequestOptions = {}
+  ): Promise<any> {
     const response = await rawRequest(path, options);
 
     let payload: any;
@@ -432,7 +550,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       });
     }
 
-    return payload.data as T;
+    return payload;
   }
 
   async function findUserByUsername(username: string) {
@@ -567,6 +685,14 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         ok: true,
         version: typeof data?.version === 'string' ? data.version : undefined,
       };
+    },
+
+    async listPricingModels(): Promise<RemotePricingModel[]> {
+      const payload = await requestEnvelope('/api/pricing');
+      const items = unwrapListItems(payload.data);
+      return items
+        .map((item) => toRemotePricingModel(item, payload.vendors))
+        .filter((item) => item.modelId.length > 0);
     },
 
     /**

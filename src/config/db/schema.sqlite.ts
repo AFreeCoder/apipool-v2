@@ -551,6 +551,26 @@ export const catalogModelCapability = table(
   ]
 );
 
+export const catalogModelCategory = table(
+  'catalog_model_category',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id')
+      .notNull()
+      .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    categoryId: text('category_id')
+      .notNull()
+      .references(() => catalogCategory.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('uniq_catalog_model_category').on(
+      table.modelId,
+      table.categoryId
+    ),
+    index('idx_cmc_category').on(table.categoryId),
+  ]
+);
+
 export const catalogModelListing = table(
   'catalog_model_listing',
   {
@@ -566,8 +586,11 @@ export const catalogModelListing = table(
       .references(() => catalogStatus.id),
     inputMicroUsd: integer('input_micro_usd').notNull(),
     outputMicroUsd: integer('output_micro_usd').notNull(),
+    imageInputMicroUsd: integer('image_input_micro_usd'),
+    imageOutputMicroUsd: integer('image_output_micro_usd'),
     listInputMicroUsd: integer('list_input_micro_usd'),
     listOutputMicroUsd: integer('list_output_micro_usd'),
+    discountRateBps: integer('discount_rate_bps'),
     discountNote: text('discount_note'),
     description: text('description'),
     smokeTested: integer('smoke_tested', { mode: 'boolean' })

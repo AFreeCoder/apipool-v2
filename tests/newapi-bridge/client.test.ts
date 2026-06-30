@@ -57,6 +57,82 @@ test('health check hits public status endpoint without auth headers', async () =
   assert.equal(requests[0].headers.get('new-api-user'), null);
 });
 
+test('listPricingModels parses pricing ratios, fixed-price models, image prices, and vendors', async () => {
+  const { client, requests } = createMockedClient({
+    'GET /api/pricing': () =>
+      Response.json({
+        success: true,
+        message: '',
+        data: [
+          {
+            model_name: 'gpt-image-1',
+            vendor_id: 'openai',
+            quota_type: 0,
+            model_ratio: 2.5,
+            completion_ratio: 8,
+            image_ratio: 2,
+            enable_groups: ['default', 'official'],
+            supported_endpoint_types: ['chat', 'image'],
+          },
+          {
+            model_name: 'dall-e-3',
+            vendor_id: 'openai',
+            quota_type: 1,
+            model_price: 0.04,
+            completion_ratio: 0,
+            supported_endpoint_types: ['image'],
+          },
+        ],
+        vendors: {
+          openai: 'OpenAI',
+        },
+      }),
+  });
+
+  const models = await client.listPricingModels();
+
+  assert.deepEqual(models, [
+    {
+      modelId: 'gpt-image-1',
+      displayName: 'gpt-image-1',
+      vendorId: 'openai',
+      vendorName: 'OpenAI',
+      quotaType: 0,
+      modelRatio: 2.5,
+      modelPrice: null,
+      completionRatio: 8,
+      imageRatio: 2,
+      source: 'ratio',
+      inputMicroUsd: 5_000_000,
+      outputMicroUsd: 40_000_000,
+      imageInputMicroUsd: 10_000_000,
+      imageOutputMicroUsd: 40_000_000,
+      enabledGroups: ['default', 'official'],
+      supportedEndpointTypes: ['chat', 'image'],
+    },
+    {
+      modelId: 'dall-e-3',
+      displayName: 'dall-e-3',
+      vendorId: 'openai',
+      vendorName: 'OpenAI',
+      quotaType: 1,
+      modelRatio: 0,
+      modelPrice: 0.04,
+      completionRatio: 0,
+      imageRatio: null,
+      source: 'fixed-price',
+      inputMicroUsd: null,
+      outputMicroUsd: null,
+      imageInputMicroUsd: null,
+      imageOutputMicroUsd: null,
+      enabledGroups: [],
+      supportedEndpointTypes: ['image'],
+    },
+  ]);
+  assert.equal(requests[0].headers.get('authorization'), 'Bearer admin-token');
+  assert.equal(requests[0].headers.get('new-api-user'), '1');
+});
+
 test('admin requests carry bearer token and New-Api-User headers', async () => {
   const { client, requests } = createMockedClient({
     'GET /api/user/search': () =>

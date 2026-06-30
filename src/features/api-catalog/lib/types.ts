@@ -9,8 +9,11 @@ export type ListingRow = {
   contextWindow: number | null;
   inputMicroUsd: number;
   outputMicroUsd: number;
+  imageInputMicroUsd?: number;
+  imageOutputMicroUsd?: number;
   listInputMicroUsd?: number;
   listOutputMicroUsd?: number;
+  discountRateBps?: number;
   discountNote?: string;
   description?: string;
   statusSlug: string;

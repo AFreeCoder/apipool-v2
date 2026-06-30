@@ -70,6 +70,15 @@ async function createGroup(slug: string, newapiGroup: string) {
   });
 }
 
+async function createCategory(slug: string) {
+  return modules.service.createCategory({
+    slug,
+    name: `Category ${slug}`,
+    sortOrder: 40,
+    status: 'active',
+  });
+}
+
 async function createModel(slug: string, vendorId: string) {
   return modules.service.createModel({
     modelId: slug,
@@ -237,4 +246,112 @@ test('createListing lets the database reject duplicate model and group pairs', a
 
   await modules.service.createListing(listing);
   await assert.rejects(() => modules.service.createListing(listing));
+});
+
+test('upsertModelAdminConfig creates and updates model, default listing, categories, and capabilities', async () => {
+  const vendor = await createVendor('admin-model-vendor');
+  const status = await createStatus('admin-model-status');
+  const group = await createGroup('admin-model-group', 'admin-model-gateway');
+  const textCategory = await createCategory('admin-model-llm');
+  const imageCategory = await createCategory('admin-model-image');
+  const text = await modules.service.createCapability({
+    slug: 'admin-model-text',
+    name: 'Text',
+    sortOrder: 1,
+    status: 'active',
+  });
+  const vision = await modules.service.createCapability({
+    slug: 'admin-model-vision',
+    name: 'Vision',
+    sortOrder: 2,
+    status: 'active',
+  });
+
+  const created = await modules.service.upsertModelAdminConfig({
+    model: {
+      modelId: 'admin-gpt-image',
+      displayName: 'Admin GPT Image',
+      vendorId: vendor.id,
+      categoryIds: [textCategory.id, imageCategory.id],
+    },
+    listing: {
+      groupId: group.id,
+      statusId: status.id,
+      inputMicroUsd: 5_000_000,
+      outputMicroUsd: 40_000_000,
+      imageInputMicroUsd: 10_000_000,
+      imageOutputMicroUsd: 40_000_000,
+      discountRateBps: 500,
+      discountNote: '0.5 fold launch discount',
+      smokeTested: true,
+      featured: false,
+      sortOrder: 1,
+    },
+    capabilityIds: [text.id, vision.id],
+  });
+
+  assert.equal(created.model.modelId, 'admin-gpt-image');
+  assert.equal(created.model.category, 'admin-model-llm');
+  assert.equal(created.listing.imageInputMicroUsd, 10_000_000);
+  assert.equal(created.listing.imageOutputMicroUsd, 40_000_000);
+  assert.equal(created.listing.discountRateBps, 500);
+  assert.deepEqual(
+    new Set(
+      (await modules.service.getModelCategories(created.model.id)).map(
+        (category: { id: string }) => category.id
+      )
+    ),
+    new Set([textCategory.id, imageCategory.id])
+  );
+  assert.deepEqual(
+    (await modules.service.getModelCapabilities(created.model.id)).map(
+      (capability: { id: string }) => capability.id
+    ),
+    [text.id, vision.id]
+  );
+
+  const updated = await modules.service.upsertModelAdminConfig({
+    modelId: created.model.id,
+    model: {
+      modelId: 'admin-gpt-image-latest',
+      displayName: 'Admin GPT Image Latest',
+      vendorId: vendor.id,
+      categoryIds: [imageCategory.id],
+    },
+    listing: {
+      id: created.listing.id,
+      groupId: group.id,
+      statusId: status.id,
+      inputMicroUsd: 4_000_000,
+      outputMicroUsd: 32_000_000,
+      imageInputMicroUsd: 8_000_000,
+      imageOutputMicroUsd: 32_000_000,
+      discountRateBps: 50,
+      discountNote: '0.05 fold experimental discount',
+      smokeTested: false,
+      featured: true,
+      sortOrder: 2,
+    },
+    capabilityIds: [vision.id],
+  });
+
+  assert.equal(updated.model.id, created.model.id);
+  assert.equal(updated.model.modelId, 'admin-gpt-image-latest');
+  assert.equal(updated.model.category, 'admin-model-image');
+  assert.equal(updated.listing.id, created.listing.id);
+  assert.equal(updated.listing.inputMicroUsd, 4_000_000);
+  assert.equal(updated.listing.imageInputMicroUsd, 8_000_000);
+  assert.equal(updated.listing.discountRateBps, 50);
+  assert.deepEqual(
+    (await modules.service.getModelCategories(created.model.id)).map(
+      (category: { id: string }) => category.id
+    ),
+    [imageCategory.id]
+  );
+  assert.deepEqual(
+    (await modules.service.getModelCapabilities(created.model.id)).map(
+      (capability: { id: string }) => capability.id
+    ),
+    [vision.id]
+  );
 });

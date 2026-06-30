@@ -18,12 +18,16 @@
     "vendor": "供应商",
     "group": "分组",
     "category": "分类",
+    "categories": "分类",
     "contextWindow": "上下文窗口",
     "capabilities": "能力",
     "inputMicroUsd": "输入价格（美元 / 1M）",
     "outputMicroUsd": "输出价格（美元 / 1M）",
+    "imageInputMicroUsd": "图片输入价格（美元 / 1M）",
+    "imageOutputMicroUsd": "图片输出价格（美元 / 1M）",
     "listInputMicroUsd": "划线输入价（美元 / 1M）",
     "listOutputMicroUsd": "划线输出价（美元 / 1M）",
+    "discountRate": "折扣",
     "discountNote": "折扣说明",
     "description": "说明",
     "smokeTested": "已冒烟",
@@ -203,6 +207,14 @@
       "buttons": {
         "submit": "更新"
       }
+    },
+    "form": {
+      "saving": "保存中",
+      "searchPlaceholder": "搜索模型 ID",
+      "searching": "搜索中",
+      "noCandidates": "没有候选模型",
+      "fixedPrice": "固定价格",
+      "discountPreview": "折扣预览"
     },
     "capabilities": {
       "title": "模型能力",

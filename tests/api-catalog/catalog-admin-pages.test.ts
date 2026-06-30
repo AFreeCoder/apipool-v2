@@ -182,7 +182,7 @@ test('catalog group forms expose mapping, key creation, and immutable edit slug'
   );
 });
 
-test('catalog model pages expose CRUD, capability tagging, immutable business id, and listings entry points', async () => {
+test('catalog model pages expose admin catalog fields, candidate form, and listings entry points', async () => {
   const listPage = await readFile(modelPagePath('list'), 'utf8');
   const newPage = await readFile(modelPagePath('new'), 'utf8');
   const editPage = await readFile(modelPagePath('edit'), 'utf8');
@@ -199,8 +199,7 @@ test('catalog model pages expose CRUD, capability tagging, immutable business id
   assert.match(listPage, /getTranslations\(['"]admin\.catalog['"]\)/);
 
   assert.match(listPage, /<TableCard[\s\S]*buttons=/);
-  assert.match(listPage, callPattern('getModels'));
-  assert.match(listPage, callPattern('getVendors'));
+  assert.match(listPage, callPattern('getModelAdminRows'));
   assert.match(listPage, /admin\/catalog\/models\/new/);
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/edit/);
   assert.match(
@@ -208,23 +207,40 @@ test('catalog model pages expose CRUD, capability tagging, immutable business id
     /admin\/catalog\/models\/\$\{item\.id\}\/capabilities/
   );
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/listings/);
+  for (const field of [
+    'vendorName',
+    'groupName',
+    'categoryNames',
+    'capabilityNames',
+    'inputPrice',
+    'outputPrice',
+    'imageInputPrice',
+    'imageOutputPrice',
+    'discountRate',
+  ]) {
+    assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
+  }
+  assert.doesNotMatch(listPage, /contextWindow/);
 
   for (const source of [newPage, editPage]) {
-    assert.match(source, /<FormCard/);
+    assert.match(source, /<ModelAdminForm/);
+    assert.doesNotMatch(source, /<FormCard/);
     assert.match(source, callPattern('getVendors'));
+    assert.match(source, callPattern('getGroups'));
     assert.match(source, callPattern('getCategories'));
-    assert.match(source, typedFieldPattern('modelId', 'text'));
-    assert.match(source, typedFieldPattern('displayName', 'text'));
-    assert.match(source, typedFieldPattern('vendorId', 'select'));
-    assert.match(source, typedFieldPattern('category', 'select'));
-    assert.match(source, typedFieldPattern('contextWindow', 'number'));
+    assert.match(source, callPattern('getCapabilities'));
+    assert.match(source, callPattern('getStatuses'));
+    assert.match(source, callPattern('upsertModelAdminConfig'));
+    assert.match(source, callPattern('optionalDollarsToMicroUsd'));
+    assert.match(source, callPattern('discountFoldToBps'));
+    assert.match(source, /JSON\.parse\(.*categoryIds/);
+    assert.match(source, /JSON\.parse\(.*capabilityIds/);
+    assert.doesNotMatch(source, fieldPattern('contextWindow'));
     assert.match(source, /revalidateCatalog\s*\(/);
   }
-  assert.match(newPage, callPattern('createModel'));
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
-  assert.match(editPage, callPattern('getModelById'));
-  assert.match(editPage, callPattern('updateModel'));
-  assert.match(editPage, disabledFieldPattern('modelId'));
+  assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
+  assert.match(editPage, callPattern('getModelAdminConfig'));
   assert.match(editPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
 
   assert.match(capabilitiesPage, /<FormCard/);
@@ -319,8 +335,8 @@ test('catalog sidebar exposes model catalog group in both locales', async () => 
 
   const expectedUrls = [
     '/admin/catalog/vendors',
-    '/admin/catalog/categories',
     '/admin/catalog/groups',
+    '/admin/catalog/categories',
     '/admin/catalog/capabilities',
     '/admin/catalog/statuses',
     '/admin/catalog/models',
@@ -356,6 +372,23 @@ test('legacy categories admin route redirects to catalog models', async () => {
     categoriesPage,
     /redirect\(\{\s*href:\s*['"]\/admin\/catalog\/models['"],\s*locale\s*\}\)/
   );
+});
+
+test('catalog model search route requires catalog write permission and hides raw New API response', async () => {
+  const source = await readFile(
+    join(
+      root,
+      'src/app/api/apipool/admin/catalog/models/search/route.ts'
+    ),
+    'utf8'
+  );
+
+  assert.match(source, /hasPermission\s*\(/);
+  assert.match(source, /PERMISSIONS\.CATALOG_WRITE/);
+  assert.match(source, /createNewApiClient\s*\(/);
+  assert.match(source, /listPricingModels\s*\(/);
+  assert.match(source, /respData\s*\(\s*\{\s*models/);
+  assert.doesNotMatch(source, /respData\s*\(\s*pricing/);
 });
 
 test('publicModels remains only as a documented test fixture', async () => {

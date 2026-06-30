@@ -75,14 +75,14 @@
               "icon": "Store"
             },
             {
-              "title": "Categories",
-              "url": "/admin/catalog/categories",
-              "icon": "Shapes"
-            },
-            {
               "title": "Groups",
               "url": "/admin/catalog/groups",
               "icon": "Layers"
+            },
+            {
+              "title": "Categories",
+              "url": "/admin/catalog/categories",
+              "icon": "Shapes"
             },
             {
               "title": "Capabilities",

@@ -38,8 +38,11 @@ type ListingBaseRow = {
   contextWindow: number | null;
   inputMicroUsd: number;
   outputMicroUsd: number;
+  imageInputMicroUsd: number | null;
+  imageOutputMicroUsd: number | null;
   listInputMicroUsd: number | null;
   listOutputMicroUsd: number | null;
+  discountRateBps: number | null;
   discountNote: string | null;
   description: string | null;
   statusSlug: string;
@@ -145,8 +148,11 @@ async function queryListingRows({
       contextWindow: catalogModel.contextWindow,
       inputMicroUsd: catalogModelListing.inputMicroUsd,
       outputMicroUsd: catalogModelListing.outputMicroUsd,
+      imageInputMicroUsd: catalogModelListing.imageInputMicroUsd,
+      imageOutputMicroUsd: catalogModelListing.imageOutputMicroUsd,
       listInputMicroUsd: catalogModelListing.listInputMicroUsd,
       listOutputMicroUsd: catalogModelListing.listOutputMicroUsd,
+      discountRateBps: catalogModelListing.discountRateBps,
       discountNote: catalogModelListing.discountNote,
       description: catalogModelListing.description,
       statusSlug: catalogStatus.slug,
@@ -213,8 +219,11 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
       contextWindow: row.contextWindow,
       inputMicroUsd: row.inputMicroUsd,
       outputMicroUsd: row.outputMicroUsd,
+      imageInputMicroUsd: row.imageInputMicroUsd ?? undefined,
+      imageOutputMicroUsd: row.imageOutputMicroUsd ?? undefined,
       listInputMicroUsd: row.listInputMicroUsd ?? undefined,
       listOutputMicroUsd: row.listOutputMicroUsd ?? undefined,
+      discountRateBps: row.discountRateBps ?? undefined,
       discountNote: row.discountNote ?? undefined,
       description: row.description ?? undefined,
       statusSlug: row.statusSlug,

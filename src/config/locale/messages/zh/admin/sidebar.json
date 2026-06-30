@@ -75,14 +75,14 @@
               "icon": "Store"
             },
             {
-              "title": "分类",
-              "url": "/admin/catalog/categories",
-              "icon": "Shapes"
-            },
-            {
               "title": "分组",
               "url": "/admin/catalog/groups",
               "icon": "Layers"
+            },
+            {
+              "title": "分类",
+              "url": "/admin/catalog/categories",
+              "icon": "Shapes"
             },
             {
               "title": "能力",

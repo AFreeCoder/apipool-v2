@@ -1,7 +1,6 @@
 import {
-  getModels,
-  getVendors,
-  Model,
+  getModelAdminRows,
+  ModelAdminRow,
 } from '@/features/api-catalog/server/catalog-service';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
@@ -10,10 +9,6 @@ import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';
 import { Crumb } from '@/shared/types/blocks/common';
 import { type Table } from '@/shared/types/blocks/table';
-
-type ModelRow = Model & {
-  vendorName: string;
-};
 
 export default async function AdminCatalogModelsPage({
   params,
@@ -30,14 +25,7 @@ export default async function AdminCatalogModelsPage({
   });
 
   const t = await getTranslations('admin.catalog');
-  const vendors = await getVendors();
-  const vendorNames = new Map(
-    vendors.map((vendor) => [vendor.id, vendor.name] as const)
-  );
-  const models: ModelRow[] = (await getModels()).map((model) => ({
-    ...model,
-    vendorName: vendorNames.get(model.vendorId) ?? model.vendorId,
-  }));
+  const models = await getModelAdminRows();
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
@@ -55,18 +43,36 @@ export default async function AdminCatalogModelsPage({
       },
       { name: 'displayName', title: t('fields.displayName') },
       { name: 'vendorName', title: t('fields.vendor') },
-      { name: 'category', title: t('fields.category') },
+      { name: 'groupName', title: t('fields.group') },
+      { name: 'categoryNames', title: t('fields.categories') },
+      { name: 'capabilityNames', title: t('fields.capabilities') },
       {
-        name: 'contextWindow',
-        title: t('fields.contextWindow'),
+        name: 'inputPrice',
+        title: t('fields.inputMicroUsd'),
         className: 'font-mono text-xs',
       },
+      {
+        name: 'outputPrice',
+        title: t('fields.outputMicroUsd'),
+        className: 'font-mono text-xs',
+      },
+      {
+        name: 'imageInputPrice',
+        title: t('fields.imageInputMicroUsd'),
+        className: 'font-mono text-xs',
+      },
+      {
+        name: 'imageOutputPrice',
+        title: t('fields.imageOutputMicroUsd'),
+        className: 'font-mono text-xs',
+      },
+      { name: 'discountRate', title: t('fields.discountRate') },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },
       {
         name: 'actions',
         title: t('fields.actions'),
         type: 'dropdown',
-        callback: (item: ModelRow) => [
+        callback: (item: ModelAdminRow) => [
           {
             name: 'edit',
             title: t('actions.edit'),
