@@ -1,5 +1,3 @@
-import { Trash } from 'lucide-react';
-
 import {
   TableBody,
   TableCell,
@@ -141,12 +139,8 @@ export function Table({
         ) : (
           <TableRow className="">
             <TableCell colSpan={columns.length}>
-              <div className="text-muted-foreground flex w-full items-center justify-center py-8">
-                {emptyMessage ? (
-                  <p>{emptyMessage}</p>
-                ) : (
-                  <Trash className="h-10 w-10" />
-                )}
+              <div className="text-muted-foreground flex w-full items-center justify-center py-8 text-sm">
+                <p>{emptyMessage ?? 'No records found.'}</p>
               </div>
             </TableCell>
           </TableRow>

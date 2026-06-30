@@ -1,0 +1,62 @@
+{
+  "title": "API Keys",
+  "description": "Create real keys for the APIPool Base URL. Full keys are shown once.",
+  "creationPaused": "API key creation is temporarily paused. Existing keys remain manageable.",
+  "defaultName": "Default APIPool key",
+  "status": {
+    "active": "Active",
+    "disabled": "Disabled",
+    "deleted": "Deleted",
+    "creating_remote": "Creating…",
+    "disable_pending": "Disabling…",
+    "delete_pending": "Deleting…",
+    "failed_retriable": "Failed, retryable",
+    "failed_terminal": "Failed",
+    "remote_created_binding_failed": "Remote key needs cleanup"
+  },
+  "groups": {
+    "official": "Official"
+  },
+  "notices": {
+    "selectGroup": "Select a group first.",
+    "created": "Key created. The full key is shown once below.",
+    "createFailed": "Create key failed",
+    "disableUnavailable": "This key cannot be disabled in its current state.",
+    "deleteUnavailable": "This key cannot be deleted in its current state.",
+    "disableFailed": "Disable API key failed",
+    "deleteFailed": "Delete API key failed",
+    "copyFailed": "Copy failed. Select and copy the key manually.",
+    "oneKeyLimit": "Each account can create only one API key. Delete the existing key before creating another."
+  },
+  "form": {
+    "title": "Create API Key",
+    "namePlaceholder": "Key name",
+    "groupLabel": "Group",
+    "groupPlaceholder": "Select a group",
+    "creating": "Creating...",
+    "create": "Create key",
+    "callableModels": "Callable models",
+    "noCallableModels": "No callable models",
+    "hint": "Add credit on the Balance tab before making paid calls. The full key is shown once after creation.",
+    "oneKeyLimitHint": "This account already has an API key. Delete the existing key before creating another."
+  },
+  "fullKey": {
+    "title": "Full key. This is shown once.",
+    "copy": "Copy full key"
+  },
+  "table": {
+    "title": "Keys for {baseUrl}",
+    "name": "Name",
+    "maskedKey": "Masked key",
+    "status": "Status",
+    "group": "Group",
+    "actions": "Actions",
+    "empty": "No API keys yet.",
+    "copyMasked": "Copy masked key",
+    "disable": "Disable key",
+    "disableUnavailable": "Key cannot be disabled in this state",
+    "cleanup": "Clean up failed key",
+    "delete": "Delete key",
+    "deleteUnavailable": "Key cannot be deleted in this state"
+  }
+}

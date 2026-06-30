@@ -8,8 +8,15 @@ export function assertPortalApiKeyCreationEnabled(isEnabled: boolean) {
 export function sanitizePortalApiKeyCreateInput(body: any) {
   const rawName = typeof body?.name === 'string' ? body.name : '';
   const name = rawName.trim() || 'Default APIPool key';
+  const rawGroupSlug = typeof body?.groupSlug === 'string' ? body.groupSlug : '';
+  const groupSlug = rawGroupSlug.trim();
+
+  if (!groupSlug) {
+    throw new Error('group is required');
+  }
 
   return {
     name,
+    groupSlug,
   };
 }

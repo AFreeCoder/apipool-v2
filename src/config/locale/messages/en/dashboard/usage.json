@@ -1,0 +1,30 @@
+{
+  "title": "Usage",
+  "lastSynced": "Last 7 days · synced {date}",
+  "stats": {
+    "requests": "Requests",
+    "inputTokens": "Input tokens",
+    "outputTokens": "Output tokens",
+    "spend": "Spend"
+  },
+  "sections": {
+    "modelDistribution": {
+      "title": "Model distribution",
+      "empty": "No model distribution synced yet."
+    },
+    "requestLog": {
+      "title": "Request log",
+      "empty": "No request logs synced yet."
+    }
+  },
+  "columns": {
+    "date": "Date",
+    "key": "Key",
+    "model": "Model",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "spend": "Spend",
+    "input": "In",
+    "output": "Out"
+  }
+}

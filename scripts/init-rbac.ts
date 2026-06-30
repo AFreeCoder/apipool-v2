@@ -10,6 +10,8 @@
  *   npx tsx scripts/init-rbac.ts --admin-email=your@email.com
  */
 
+import { pathToFileURL } from 'node:url';
+
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -30,7 +32,7 @@ async function loadSchemaTables(): Promise<any> {
 }
 
 // Default permissions
-const defaultPermissions = [
+export const defaultPermissions = [
   // Admin access
   {
     code: 'admin.access',
@@ -191,6 +193,23 @@ const defaultPermissions = [
     description: 'Update system settings',
   },
 
+  // Catalog management
+  {
+    code: 'admin.catalog.read',
+    resource: 'catalog',
+    action: 'read',
+    title: 'Read Catalog',
+    description:
+      'View model catalog (vendors/groups/capabilities/statuses/models/listings)',
+  },
+  {
+    code: 'admin.catalog.write',
+    resource: 'catalog',
+    action: 'write',
+    title: 'Write Catalog',
+    description: 'Create/update/delete model catalog entries',
+  },
+
   // Roles & Permissions management
   {
     code: 'admin.roles.read',
@@ -271,7 +290,7 @@ const defaultPermissions = [
 ];
 
 // Default roles and their permissions
-const defaultRoles = [
+export const defaultRoles = [
   {
     name: 'super_admin',
     title: 'Super Admin',
@@ -297,6 +316,7 @@ const defaultRoles = [
       'admin.apipool.*',
       'admin.apikeys.*',
       'admin.settings.read',
+      'admin.catalog.*',
       'admin.ai-tasks.*',
     ],
   },
@@ -512,10 +532,16 @@ async function initializeRBAC() {
   }
 }
 
-// Run the initialization
-initializeRBAC()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+function isMainModule() {
+  const entry = process.argv[1];
+  return !!entry && import.meta.url === pathToFileURL(entry).href;
+}
+
+if (isMainModule()) {
+  initializeRBAC()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+}

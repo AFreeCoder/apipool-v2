@@ -1,0 +1,246 @@
+{
+  "crumbs": {
+    "admin": "Admin",
+    "catalog": "Catalog"
+  },
+  "fields": {
+    "slug": "Slug",
+    "name": "Name",
+    "sortOrder": "Sort Order",
+    "status": "Status",
+    "isCallable": "Callable",
+    "isPublicVisible": "Publicly Visible",
+    "userDescription": "User Description",
+    "newapiGroup": "New API Group",
+    "allowCreateKey": "Allow Key Creation",
+    "modelId": "Model ID",
+    "displayName": "Display Name",
+    "vendor": "Vendor",
+    "group": "Group",
+    "category": "Category",
+    "contextWindow": "Context Window",
+    "capabilities": "Capabilities",
+    "inputMicroUsd": "Input Price (USD / 1M)",
+    "outputMicroUsd": "Output Price (USD / 1M)",
+    "listInputMicroUsd": "List Input Price (USD / 1M)",
+    "listOutputMicroUsd": "List Output Price (USD / 1M)",
+    "discountNote": "Discount Note",
+    "description": "Description",
+    "smokeTested": "Smoke Tested",
+    "createdAt": "Created At",
+    "actions": "Actions"
+  },
+  "actions": {
+    "edit": "Edit",
+    "capabilities": "Capabilities",
+    "listings": "Listings"
+  },
+  "statusOptions": {
+    "active": "Active",
+    "disabled": "Disabled"
+  },
+  "boolean": {
+    "yes": "Yes",
+    "no": "No"
+  },
+  "errors": {
+    "createFailed": "Create failed",
+    "updateFailed": "Update failed",
+    "missingRecord": "Record is missing",
+    "invalidPrice": "Price must be a non-negative finite number"
+  },
+  "vendors": {
+    "list": {
+      "title": "Vendors",
+      "crumb": "Vendors",
+      "buttons": {
+        "new": "New Vendor"
+      }
+    },
+    "new": {
+      "title": "New Vendor",
+      "crumb": "New Vendor",
+      "success": "Vendor created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Vendor",
+      "crumb": "Edit Vendor",
+      "notFound": "Vendor not found",
+      "success": "Vendor updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "categories": {
+    "list": {
+      "title": "Categories",
+      "crumb": "Categories",
+      "buttons": {
+        "new": "New Category"
+      }
+    },
+    "new": {
+      "title": "New Category",
+      "crumb": "New Category",
+      "success": "Category created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Category",
+      "crumb": "Edit Category",
+      "notFound": "Category not found",
+      "success": "Category updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "capabilities": {
+    "list": {
+      "title": "Capabilities",
+      "crumb": "Capabilities",
+      "buttons": {
+        "new": "New Capability"
+      }
+    },
+    "new": {
+      "title": "New Capability",
+      "crumb": "New Capability",
+      "success": "Capability created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Capability",
+      "crumb": "Edit Capability",
+      "notFound": "Capability not found",
+      "success": "Capability updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "statuses": {
+    "list": {
+      "title": "Statuses",
+      "crumb": "Statuses",
+      "buttons": {
+        "new": "New Status"
+      }
+    },
+    "new": {
+      "title": "New Status",
+      "crumb": "New Status",
+      "success": "Status created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Status",
+      "crumb": "Edit Status",
+      "notFound": "Status not found",
+      "success": "Status updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "groups": {
+    "list": {
+      "title": "Groups",
+      "crumb": "Groups",
+      "buttons": {
+        "new": "New Group"
+      }
+    },
+    "new": {
+      "title": "New Group",
+      "crumb": "New Group",
+      "success": "Group created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Group",
+      "crumb": "Edit Group",
+      "notFound": "Group not found",
+      "success": "Group updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  },
+  "models": {
+    "list": {
+      "title": "Models",
+      "crumb": "Models",
+      "buttons": {
+        "new": "New Model"
+      }
+    },
+    "new": {
+      "title": "New Model",
+      "crumb": "New Model",
+      "success": "Model created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Model",
+      "crumb": "Edit Model",
+      "notFound": "Model not found",
+      "success": "Model updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    },
+    "capabilities": {
+      "title": "Model Capabilities",
+      "crumb": "Model Capabilities",
+      "notFound": "Model not found",
+      "invalidSelection": "Invalid capability selection",
+      "success": "Model capabilities updated",
+      "buttons": {
+        "submit": "Update Capabilities"
+      }
+    }
+  },
+  "listings": {
+    "list": {
+      "title": "Model Listings",
+      "crumb": "Listings",
+      "notFound": "Model not found",
+      "buttons": {
+        "new": "New Listing"
+      }
+    },
+    "new": {
+      "title": "New Listing",
+      "crumb": "New Listing",
+      "notFound": "Model not found",
+      "success": "Listing created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Listing",
+      "crumb": "Edit Listing",
+      "notFound": "Listing not found",
+      "success": "Listing updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    }
+  }
+}

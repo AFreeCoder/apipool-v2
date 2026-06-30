@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import {
-  filterModels,
   buildModelFilterHref,
+  filterModels,
   formatModelPrice,
   getCallableModelQuickstartCurl,
   getDefaultCallableModelId,
@@ -13,37 +12,40 @@ import {
   publicModels,
 } from '@/features/api-catalog/lib/catalog';
 
-test('catalog exposes one available smoke-tested model and New API-aligned public groups', () => {
-  const available = publicModels.filter((model) => model.status === 'available');
+test('catalog exposes one available smoke-tested model and hides no provider data', () => {
+  const available = publicModels.filter(
+    (model) => model.status === 'available'
+  );
 
   assert.equal(available.length, 1);
   assert.equal(available[0].smokeTested, true);
-  assert.equal(available[0].provider, 'default');
-  assert.ok(publicModels.some((model) => model.provider === 'discount'));
+  assert.equal(available[0].provider, 'OpenAI');
 });
 
-test('filterModels applies group, capability, and status filters', () => {
+test('filterModels applies provider, capability, and status filters', () => {
   const results = filterModels(publicModels, {
-    provider: 'default',
+    provider: 'Anthropic',
     capability: 'coding',
     status: 'coming_soon',
   });
 
   assert.ok(results.length > 0);
-  assert.ok(results.every((model) => model.provider === 'default'));
+  assert.ok(results.every((model) => model.provider === 'Anthropic'));
   assert.ok(results.every((model) => model.capabilities.includes('coding')));
   assert.ok(results.every((model) => model.status === 'coming_soon'));
 });
 
-test('parseModelFilters accepts only supported public filters', () => {
+test('parseModelFilters keeps slug-based public filters without whitelist validation', () => {
   assert.deepEqual(
     parseModelFilters({
-      provider: 'discount',
+      vendor: 'anthropic',
+      group: 'official',
       capability: 'coding',
       status: 'coming_soon',
     }),
     {
-      provider: 'discount',
+      vendor: 'anthropic',
+      group: 'official',
       capability: 'coding',
       status: 'coming_soon',
     }
@@ -51,33 +53,35 @@ test('parseModelFilters accepts only supported public filters', () => {
 
   assert.deepEqual(
     parseModelFilters({
-      provider: 'New API',
+      vendor: 'unknown-vendor',
+      group: 'unknown-group',
       capability: 'billing',
       status: 'internal',
     }),
     {
-      provider: 'All',
-      capability: 'All',
-      status: 'All',
+      vendor: 'unknown-vendor',
+      group: 'unknown-group',
+      capability: 'billing',
+      status: 'internal',
     }
   );
 });
 
-test('buildModelFilterHref preserves filters and omits All values', () => {
+test('buildModelFilterHref preserves slug filters and removes cleared dimensions', () => {
   assert.equal(
     buildModelFilterHref(
-      { provider: 'default', capability: 'coding', status: 'available' },
-      { provider: 'discount' }
+      { vendor: 'openai', group: 'official', status: 'available' },
+      { capability: 'coding' }
     ),
-    '/models?provider=discount&capability=coding&status=available'
+    '/models?vendor=openai&group=official&capability=coding&status=available'
   );
 
   assert.equal(
     buildModelFilterHref(
-      { provider: 'default', capability: 'coding', status: 'available' },
-      { capability: 'All', status: 'All' }
+      { vendor: 'openai', capability: 'coding', status: 'available' },
+      { capability: '', status: undefined }
     ),
-    '/models?provider=default'
+    '/models?vendor=openai'
   );
 });
 

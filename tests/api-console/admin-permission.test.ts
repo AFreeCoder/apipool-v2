@@ -59,8 +59,36 @@ test('quota adjustment page copy hides backend gateway branding', async () => {
   assert.doesNotMatch(page, /New API|newapi/);
 });
 
+test('quota adjustment submits a request idempotency key once per click flow', async () => {
+  const [form, route] = await Promise.all([
+    readFile(
+      join(
+        process.cwd(),
+        'src/features/api-console/components/admin/quota-adjustment-form.tsx'
+      ),
+      'utf8'
+    ),
+    readFile(
+      join(process.cwd(), 'src/app/api/apipool/admin/adjust-quota/route.ts'),
+      'utf8'
+    ),
+  ]);
+
+  assert.match(form, /submittingRef/);
+  assert.match(form, /requestDraftRef/);
+  assert.match(form, /draftSignature/);
+  assert.match(form, /responseReceived/);
+  assert.match(form, /idempotencyKey/);
+  assert.match(form, /portal-adjustment:\$\{portalUserId\}/);
+  assert.match(route, /idempotencyKey/);
+  assert.match(route, /adjustPortalQuota\([\s\S]*idempotencyKey/);
+});
+
 test('RBAC seed includes a narrow APIPool operator role for manual quota work', async () => {
-  const rbac = await readFile(join(process.cwd(), 'scripts/init-rbac.ts'), 'utf8');
+  const rbac = await readFile(
+    join(process.cwd(), 'scripts/init-rbac.ts'),
+    'utf8'
+  );
   const operatorRole = rbac.match(
     /name:\s*'operator'[\s\S]*?permissions:\s*\[([\s\S]*?)\],/
   );
@@ -68,11 +96,7 @@ test('RBAC seed includes a narrow APIPool operator role for manual quota work', 
   assert.ok(operatorRole, 'operator role should be seeded');
 
   const permissions = operatorRole[1];
-  const required = [
-    'admin.access',
-    'admin.users.read',
-    'admin.apipool.*',
-  ];
+  const required = ['admin.access', 'admin.users.read', 'admin.apipool.*'];
   const forbidden = [
     'admin.posts',
     'admin.categories',
@@ -85,7 +109,10 @@ test('RBAC seed includes a narrow APIPool operator role for manual quota work', 
   ];
 
   for (const permission of required) {
-    assert.match(permissions, new RegExp(`['"]${escapeRegExp(permission)}['"]`));
+    assert.match(
+      permissions,
+      new RegExp(`['"]${escapeRegExp(permission)}['"]`)
+    );
   }
 
   for (const permission of forbidden) {

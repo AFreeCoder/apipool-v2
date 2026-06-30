@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
+import { getSmokeTestedCallableModelIdsByGroupUncached } from '@/features/api-catalog/server/queries';
+import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 import {
   adjustPortalQuota,
   createPortalApiKey,
   disablePortalApiKey,
   getPortalUsage,
 } from '@/features/newapi-bridge/server/portal';
-import { createNewApiClient } from '@/features/newapi-bridge/server/client';
-import {
-  getDefaultCallableModelId,
-  isModelCallable,
-  publicModels,
-} from '@/features/api-catalog/lib/catalog';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { findUserById } from '@/shared/models/user';
@@ -22,6 +18,8 @@ type SmokeStep = {
   ok: boolean;
   detail?: string;
 };
+
+type CleanupState = 'disabled' | 'disable_failed';
 
 const steps: SmokeStep[] = [];
 const PERMISSIONS = {
@@ -114,25 +112,66 @@ export function parseLaunchModelAssistantText(body: string) {
 
 export function resolveSmokeLaunchModel(
   requestedModel?: string,
+  smokeTestedCallableModelIds: string[] = [],
   configuredDefault = APIPOOL_CONFIG.defaultLaunchModel
 ) {
-  if (!requestedModel) {
-    return getDefaultCallableModelId(configuredDefault);
-  }
-
-  const requested = publicModels.find(
-    (model) =>
-      (model.modelId === requestedModel || model.slug === requestedModel) &&
-      isModelCallable(model)
-  );
-
-  if (!requested) {
+  if (smokeTestedCallableModelIds.length === 0) {
     throw new Error(
-      `APIPOOL_SMOKE_MODEL must be an available smoke-tested model: ${requestedModel}`
+      'No smoke-tested callable model is configured for MVP smoke'
     );
   }
 
-  return requested.modelId;
+  if (!requestedModel) {
+    return smokeTestedCallableModelIds.includes(configuredDefault)
+      ? configuredDefault
+      : smokeTestedCallableModelIds[0];
+  }
+
+  if (!smokeTestedCallableModelIds.includes(requestedModel)) {
+    throw new Error(
+      `APIPOOL_SMOKE_MODEL must be a smoke-tested callable model: ${requestedModel}`
+    );
+  }
+
+  return requestedModel;
+}
+
+export function assertHealthyNewApi(health: {
+  ok: boolean;
+  status?: number | string;
+  version?: string;
+}) {
+  if (health.ok) {
+    return;
+  }
+
+  throw new Error(
+    `New API health check failed: ${
+      [health.status, health.version].filter(Boolean).join(' ') || 'unhealthy'
+    }`
+  );
+}
+
+export function buildCleanupStateDetail({
+  keyId,
+  state,
+  errorMessage,
+}: {
+  keyId: string;
+  state: CleanupState;
+  errorMessage?: string;
+}) {
+  if (state === 'disabled') {
+    return `key ${keyId} is disabled and can be deleted from the dashboard if a fully clean state is required`;
+  }
+
+  return [
+    `key ${keyId} could not be disabled automatically`,
+    'manual cleanup required',
+    errorMessage,
+  ]
+    .filter(Boolean)
+    .join('; ');
 }
 
 async function waitForUsageVisibility(
@@ -216,7 +255,13 @@ async function main() {
   const portalUserId = getEnv('APIPOOL_SMOKE_PORTAL_USER_ID')!;
   const operatorUserId = getEnv('APIPOOL_SMOKE_OPERATOR_USER_ID')!;
   const amountUsd = Number(getEnv('APIPOOL_SMOKE_QUOTA_USD') || '1');
-  const model = resolveSmokeLaunchModel(getEnv('APIPOOL_SMOKE_MODEL'));
+  const smokeGroupSlug = 'official';
+  const smokeTestedModelIds =
+    await getSmokeTestedCallableModelIdsByGroupUncached(smokeGroupSlug);
+  const model = resolveSmokeLaunchModel(
+    getEnv('APIPOOL_SMOKE_MODEL'),
+    smokeTestedModelIds
+  );
 
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
     throw new Error('APIPOOL_SMOKE_QUOTA_USD must be a positive number');
@@ -228,6 +273,7 @@ async function main() {
     health.ok,
     [health.status, health.version].filter(Boolean).join(' ') || 'ready'
   );
+  assertHealthyNewApi(health);
 
   const user = await findUserById(portalUserId);
   if (!user) {
@@ -254,9 +300,11 @@ async function main() {
   let plainKey: string | undefined;
 
   try {
+    // groupSlug='official' maps to the seed group; live New API smoke must align
+    // that group's newapiGroup with the external New API group per DESIGN §9.1.
     const created = await createPortalApiKey(user, {
       name: `MVP smoke ${new Date().toISOString()}`,
-      allowedModels: [model],
+      groupSlug: smokeGroupSlug,
     });
     keyId = created.binding.id;
     plainKey = created.plainKey;
@@ -321,16 +369,29 @@ async function main() {
     if (!disabledRejected) {
       throw new Error('Disabled key still succeeded');
     }
+    record(
+      'cleanup state',
+      true,
+      buildCleanupStateDetail({ keyId, state: 'disabled' })
+    );
   } catch (error) {
     if (keyId) {
       try {
         await disablePortalApiKey(user.id, keyId);
-        record('cleanup disable API key', true);
+        record(
+          'cleanup state',
+          true,
+          buildCleanupStateDetail({ keyId, state: 'disabled' })
+        );
       } catch (cleanupError: any) {
         record(
-          'cleanup disable API key',
+          'cleanup state',
           false,
-          cleanupError?.message || 'cleanup failed'
+          buildCleanupStateDetail({
+            keyId,
+            state: 'disable_failed',
+            errorMessage: cleanupError?.message || 'cleanup failed',
+          })
         );
       }
     }

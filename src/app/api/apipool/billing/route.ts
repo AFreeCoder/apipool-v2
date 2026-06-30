@@ -2,7 +2,7 @@ import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
 import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
   getPortalUsage,
-  listLedgerEntries,
+  listBillingLedgerEntries,
 } from '@/features/newapi-bridge/server/portal';
 
 import { withNoStore } from '@/shared/lib/http-cache';
@@ -18,7 +18,7 @@ export async function GET() {
 
     const [usage, ledger] = await Promise.all([
       getPortalUsage(user as any, '7d'),
-      listLedgerEntries(user.id),
+      listBillingLedgerEntries(user.id),
     ]);
 
     return withNoStore(

@@ -67,10 +67,7 @@ test('admin requests carry bearer token and New-Api-User headers', async () => {
     client.provisionUser({ username: 'missing_user', password: 'pw' })
   );
 
-  assert.equal(
-    requests[0].headers.get('authorization'),
-    'Bearer admin-token'
-  );
+  assert.equal(requests[0].headers.get('authorization'), 'Bearer admin-token');
   assert.equal(requests[0].headers.get('new-api-user'), '1');
 });
 
@@ -153,7 +150,117 @@ test('provisionUser reuses an existing remote user without re-creating it', asyn
   );
 });
 
-test('createKey creates an auto-group token without model limits', async () => {
+test('provisionUser assigns the requested New API user group before issuing an access token', async () => {
+  let created = false;
+  const { client, requests } = createMockedClient({
+    'GET /api/user/search': () =>
+      created
+        ? ok({
+            items: [
+              {
+                id: 9,
+                username: 'pu_grouped',
+                display_name: 'PU Grouped',
+                group: 'default',
+                role: 1,
+                remark: '',
+                quota: 0,
+              },
+            ],
+          })
+        : ok({ items: [] }),
+    'POST /api/user/': () => {
+      created = true;
+      return ok(null);
+    },
+    'PUT /api/user/': async (req) => {
+      assert.deepEqual(await req.json(), {
+        id: 9,
+        username: 'pu_grouped',
+        display_name: 'PU Grouped',
+        group: 'official',
+        role: 1,
+        remark: '',
+      });
+      return ok(null);
+    },
+    'POST /api/user/login': () =>
+      new Response(JSON.stringify({ success: true, data: { id: 9 } }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'set-cookie': 'session=grouped',
+        },
+      }),
+    'GET /api/user/token': () => ok('grouped-access-token'),
+  });
+
+  const result = await client.provisionUser({
+    username: 'pu_grouped',
+    password: 'strong-password',
+    displayName: 'PU Grouped',
+    group: 'official',
+  });
+
+  assert.deepEqual(result, {
+    newapiUserId: '9',
+    accessToken: 'grouped-access-token',
+  });
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    [
+      'GET /api/user/search',
+      'POST /api/user/',
+      'GET /api/user/search',
+      'PUT /api/user/',
+      'POST /api/user/login',
+      'GET /api/user/token',
+    ]
+  );
+});
+
+test('ensureUserGroup updates an existing New API user group without regenerating the access token', async () => {
+  const { client, requests } = createMockedClient({
+    'GET /api/user/search': () =>
+      ok({
+        items: [
+          {
+            id: 5,
+            username: 'pu_existing',
+            display_name: 'PU Existing',
+            group: 'default',
+            role: 1,
+            remark: '',
+            quota: 0,
+          },
+        ],
+      }),
+    'PUT /api/user/': async (req) => {
+      assert.deepEqual(await req.json(), {
+        id: 5,
+        username: 'pu_existing',
+        display_name: 'PU Existing',
+        group: 'official',
+        role: 1,
+        remark: '',
+      });
+      return ok(null);
+    },
+  });
+
+  await client.ensureUserGroup({
+    newapiUserId: '5',
+    username: 'pu_existing',
+    group: 'official',
+  });
+
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    ['GET /api/user/search', 'PUT /api/user/']
+  );
+});
+
+test('createKey creates a remote token and fetches the full key with sk- prefix', async () => {
   let createdToken: any;
   const { client, requests } = createMockedClient({
     'GET /api/token/': () => ok({ items: createdToken ? [createdToken] : [] }),
@@ -173,6 +280,8 @@ test('createKey creates an auto-group token without model limits', async () => {
   const result = await client.createKey({
     user: USER,
     remoteName: 'pk_abc123',
+    group: 'ng-official',
+    allowedModels: ['gpt-4o-mini'],
   });
 
   assert.equal(result.id, '31');
@@ -186,45 +295,12 @@ test('createKey creates an auto-group token without model limits', async () => {
   );
   const body = await createReq!.json();
   assert.equal(body.name, 'pk_abc123');
-  assert.equal(body.model_limits_enabled, false);
-  assert.equal(body.model_limits, '');
+  assert.equal(body.model_limits_enabled, true);
+  assert.equal(body.model_limits, 'gpt-4o-mini');
   assert.equal(body.unlimited_quota, true);
-  assert.equal(body.group, 'auto');
-  assert.equal(body.cross_group_retry, true);
+  assert.equal(body.group, 'ng-official');
   assert.equal(createReq!.headers.get('authorization'), 'Bearer user-token');
   assert.equal(createReq!.headers.get('new-api-user'), '2');
-});
-
-test('createKey can target an explicit New API group', async () => {
-  let createdToken: any;
-  const { client, requests } = createMockedClient({
-    'GET /api/token/': () => ok({ items: createdToken ? [createdToken] : [] }),
-    'POST /api/token/': async (req) => {
-      const body = await req.clone().json();
-      createdToken = {
-        id: 32,
-        name: body.name,
-        key: 'x7UW****group',
-        status: 1,
-      };
-      return ok(null);
-    },
-    'POST /api/token/32/key': () => ok({ key: 'groupkey1234' }),
-  });
-
-  await client.createKey({
-    user: USER,
-    remoteName: 'pk_group',
-    group: 'discount',
-  });
-
-  const createReq = requests.find(
-    (req) =>
-      req.method === 'POST' && new URL(req.url).pathname === '/api/token/'
-  );
-  const body = await createReq!.json();
-  assert.equal(body.group, 'discount');
-  assert.equal(body.cross_group_retry, true);
 });
 
 test('createKey reuses an existing remote token with the same name (portal-side idempotency)', async () => {
@@ -267,6 +343,27 @@ test('listKeys maps remote token status to bridge statuses', async () => {
   ]);
 });
 
+test('listKeys masks any full key returned by the remote token list', async () => {
+  const { client } = createMockedClient({
+    'GET /api/token/': () =>
+      ok({
+        items: [
+          { id: 1, name: 'a', key: 'sk-live-secret-2001', status: 1 },
+          { id: 2, name: 'b', key: 'live-secret-2002', status: 1 },
+          { id: 3, name: 'c', key: 'mask-c', status: 1 },
+        ],
+      }),
+  });
+
+  const keys = await client.listKeys(USER);
+
+  assert.equal(keys[0].maskedKey, 'sk-l**********2001');
+  assert.equal(keys[1].maskedKey, 'live**********2002');
+  assert.equal(keys[2].maskedKey, 'mask-c');
+  assert.notEqual(keys[0].maskedKey, 'sk-live-secret-2001');
+  assert.notEqual(keys[1].maskedKey, 'live-secret-2002');
+});
+
 test('disableKey uses status_only update with numeric id', async () => {
   const { client, requests } = createMockedClient({
     'PUT /api/token/': (req) => {
@@ -282,26 +379,27 @@ test('disableKey uses status_only update with numeric id', async () => {
   assert.deepEqual(await requests[0].json(), { id: 31, status: 2 });
 });
 
+test('disableKey masks any full key returned by the remote update response', async () => {
+  const { client } = createMockedClient({
+    'PUT /api/token/': () =>
+      ok({ id: 31, name: 'pk_abc', key: 'live-secret-2001', status: 2 }),
+  });
+
+  const result = await client.disableKey(USER, '31');
+
+  assert.equal(result.maskedKey, 'live**********2001');
+  assert.notEqual(result.maskedKey, 'live-secret-2001');
+});
+
 test('getQuota converts integer quota into USD balance', async () => {
   const { client } = createMockedClient({
-    'GET /api/user/self': () =>
-      ok({
-        id: 2,
-        quota: 1_250_000,
-        used_quota: 500_000,
-        request_count: 42,
-        group: 'discount',
-      }),
+    'GET /api/user/self': () => ok({ id: 2, quota: 1_250_000 }),
   });
 
   const quota = await client.getQuota(USER);
 
   assert.equal(quota.quotaRemaining, 1_250_000);
   assert.equal(quota.balanceUsd, 2.5);
-  assert.equal(quota.usedQuota, 500_000);
-  assert.equal(quota.usedUsd, 1);
-  assert.equal(quota.allTimeRequestCount, 42);
-  assert.equal(quota.group, 'discount');
 });
 
 test('getUsageSummary aggregates dashboard rows and splits tokens from logs', async () => {
@@ -331,7 +429,6 @@ test('getUsageSummary aggregates dashboard rows and splits tokens from logs', as
             prompt_tokens: 700,
             completion_tokens: 300,
             quota: 750_000,
-            use_time: 1200,
             created_at: 1_781_252_611,
           },
         ],
@@ -344,7 +441,6 @@ test('getUsageSummary aggregates dashboard rows and splits tokens from logs', as
   assert.equal(summary.spendUsd, 1.5);
   assert.equal(summary.inputTokens, 700);
   assert.equal(summary.outputTokens, 300);
-  assert.equal(summary.averageLatencyMs, 1200);
   assert.deepEqual(summary.byModel, [
     { modelId: 'gpt-4o-mini', requests: 4, tokens: 1000, spendUsd: 1.5 },
   ]);
@@ -390,10 +486,6 @@ test('listUsageLogs maps consumption logs with USD spend', async () => {
             prompt_tokens: 12,
             completion_tokens: 34,
             quota: 250_000,
-            group: 'discount',
-            channel_name: 'promo-channel',
-            use_time: 890,
-            request_id: 'req_abc',
             created_at: 1_781_252_611,
           },
         ],
@@ -408,10 +500,6 @@ test('listUsageLogs maps consumption logs with USD spend', async () => {
   assert.equal(logs[0].inputTokens, 12);
   assert.equal(logs[0].outputTokens, 34);
   assert.equal(logs[0].spendUsd, 0.5);
-  assert.equal(logs[0].group, 'discount');
-  assert.equal(logs[0].channelName, 'promo-channel');
-  assert.equal(logs[0].latencyMs, 890);
-  assert.equal(logs[0].requestId, 'req_abc');
   const url = new URL(requests[0].url);
   assert.equal(url.searchParams.get('type'), '2');
 });
@@ -445,6 +533,128 @@ test('adjustQuota issues a short-named redemption code and redeems it as the use
   assert.ok(
     redemptionBody.name.length <= 20,
     `redemption name must fit the 20-char limit: ${redemptionBody.name}`
+  );
+});
+
+test('adjustQuota decreases quota through an admin user quota update', async () => {
+  let selfCalls = 0;
+  let updateBody: any;
+  const { client, requests } = createMockedClient({
+    'GET /api/user/self': (req) => {
+      selfCalls += 1;
+      assert.equal(req.headers.get('authorization'), 'Bearer user-token');
+      return ok({ id: 2, quota: selfCalls === 1 ? 500_000 : 250_000 });
+    },
+    'PUT /api/user/': async (req) => {
+      updateBody = await req.json();
+      assert.equal(req.headers.get('authorization'), 'Bearer admin-token');
+      assert.equal(req.headers.get('new-api-user'), '1');
+      return ok({ id: 2, quota: 250_000 });
+    },
+  });
+
+  const result = await client.adjustQuota({
+    user: USER,
+    amountUsd: -0.5,
+    reason: 'manual decrease',
+    reference: 'portal-adjustment:user:decrease',
+  });
+
+  assert.deepEqual(updateBody, { id: 2, quota: 250_000 });
+  assert.equal(result.changeId, 'portal-adjustment:user:decrease');
+  assert.equal(result.balanceUsd, 0.5);
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    ['GET /api/user/self', 'PUT /api/user/', 'GET /api/user/self']
+  );
+});
+
+test('adjustQuota serializes quota adjustments for the same New API user', async () => {
+  let quota = 1_000_000;
+  let firstPutCanFinish!: () => void;
+  const firstPutBlocked = new Promise<void>((resolve) => {
+    firstPutCanFinish = resolve;
+  });
+  const events: string[] = [];
+  const { client } = createMockedClient({
+    'GET /api/user/self': () => {
+      events.push(`GET:${quota}`);
+      return ok({ id: 2, quota });
+    },
+    'PUT /api/user/': async (req) => {
+      const body = await req.json();
+      events.push(`PUT:${body.quota}`);
+      if (events.filter((event) => event.startsWith('PUT:')).length === 1) {
+        await firstPutBlocked;
+      }
+      quota = body.quota;
+      return ok({ id: 2, quota });
+    },
+    'POST /api/redemption/': () => {
+      events.push('REDEMPTION');
+      return ok(['code-positive']);
+    },
+    'POST /api/user/topup': () => {
+      events.push('TOPUP');
+      quota += 500_000;
+      return ok(500_000);
+    },
+  });
+
+  const decrease = client.adjustQuota({
+    user: USER,
+    amountUsd: -0.5,
+    reason: 'manual decrease',
+    reference: 'portal-adjustment:user:decrease-serialized',
+  });
+  const increase = client.adjustQuota({
+    user: USER,
+    amountUsd: 1,
+    reason: 'manual increase',
+    reference: 'portal-adjustment:user:increase-serialized',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  firstPutCanFinish();
+  await Promise.all([decrease, increase]);
+
+  assert.deepEqual(events, [
+    'GET:1000000',
+    'PUT:750000',
+    'GET:750000',
+    'REDEMPTION',
+    'TOPUP',
+    'GET:1250000',
+  ]);
+});
+
+test('adjustQuota marks negative quota confirmation failures for reconciliation', async () => {
+  let selfCalls = 0;
+  const { client } = createMockedClient({
+    'GET /api/user/self': () => {
+      selfCalls += 1;
+      return selfCalls === 1
+        ? ok({ id: 2, quota: 500_000 })
+        : new Response('timeout', { status: 504 });
+    },
+    'PUT /api/user/': () => ok({ id: 2, quota: 250_000 }),
+  });
+
+  await assert.rejects(
+    () =>
+      client.adjustQuota({
+        user: USER,
+        amountUsd: -0.5,
+        reason: 'manual decrease',
+        reference: 'portal-adjustment:user:confirm-failed',
+      }),
+    (error: any) => {
+      const candidate = error as any;
+      return (
+        error instanceof NewApiBridgeError &&
+        candidate.reconciliationRequired === true &&
+        candidate.changeId === 'portal-adjustment:user:confirm-failed'
+      );
+    }
   );
 });
 

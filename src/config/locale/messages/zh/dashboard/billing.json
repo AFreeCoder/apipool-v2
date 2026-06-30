@@ -1,0 +1,44 @@
+{
+  "title": "余额",
+  "description": "按 token 用量计费，余额永不过期。",
+  "currentBalance": "当前余额",
+  "addCredit": "充值",
+  "topUp": {
+    "popular": "推荐",
+    "add": "充值 {price}",
+    "checkoutError": "暂时无法发起支付"
+  },
+  "paymentStatus": {
+    "paid": "已支付",
+    "created": "待支付",
+    "failed": "支付失败"
+  },
+  "creditStatus": {
+    "applied": "已到账",
+    "pending": "到账处理中",
+    "processing": "到账处理中",
+    "failed": "到账失败，请联系客服",
+    "reconciliation_required": "到账失败，请联系客服"
+  },
+  "creditHistory": {
+    "title": "充值记录",
+    "empty": "暂无充值记录。可先在上方充值。",
+    "columns": {
+      "orderTime": "下单时间",
+      "amount": "金额",
+      "paymentStatus": "支付状态",
+      "creditStatus": "到账状态"
+    }
+  },
+  "usageCharges": {
+    "title": "用量扣费",
+    "empty": "暂无已同步花费的用量扣费。",
+    "columns": {
+      "date": "日期",
+      "key": "Key",
+      "model": "模型",
+      "tokens": "Tokens",
+      "spend": "花费"
+    }
+  }
+}

@@ -12,10 +12,17 @@ APIPool v2 is the MVP portal for a real API key lifecycle:
 
 ```bash
 pnpm install
+pnpm db:migrate
+pnpm rbac:init
+pnpm catalog:init
 pnpm dev
 ```
 
 The default local URL is `http://localhost:3000`.
+The local commands use SQLite at `file:data/local.db` by default when
+`.env.development` does not define database variables. Override
+`DATABASE_PROVIDER`, `DATABASE_URL`, `DB_SCHEMA_FILE`, or `DB_MIGRATIONS_OUT`
+in `.env.development` when you need a different database.
 
 ## Environment
 

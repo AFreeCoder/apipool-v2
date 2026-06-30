@@ -1,0 +1,30 @@
+{
+  "verdict": "approve",
+  "summary": "Step 10（groups 后台 CRUD）正确仿照 Step 9 vendors/statuses 范式：list 用 requirePermission(CATALOG_READ)+TableCard+New 按钮，new/edit 用 requirePermission(CATALOG_WRITE)+FormCard+'use server' 调 createGroup/updateGroup+revalidateCatalog()+redirect_url='/admin/catalog/groups'。allowCreateKey switch 转布尔链路端到端正确（boolean 默认值→String(value)→handler ==='true'，与 Step9 isCallable 同链）。edit 页 slug 经 attributes:{disabled:true} 锁定且 handler 用 passby.group.slug 兜底，防改 seeded slug，稳健。newapiGroup 仅出现在 admin groups 页（合法）+catalog-service+schema+newapi-bridge 服务端，公共投影 getGroupsForKeyCreation 仅返回 {slug,name,userDescription}，且 api/apipool/keys/route.ts:47 显式剔除 newapiGroup——无泄漏。字段集与 DESIGN §6.1（slug/name/userDescription/newapiGroup/allowCreateKey/sortOrder/status）完全一致。i18n 全走 getTranslations 无硬编码、en/zh 键集一致、groups 页零中文字面。F5 字段齐全可配，F24 下线（status=disabled）由 getGroupsForKeyCreation 的 active∧allowCreateKey 过滤覆盖、本 step 未破坏。测试新增 group 表单 newapiGroup+allowCreateKey+disabled-slug 断言，真实有效，范围仅 groups 无越界。未发现 blocker/major。",
+  "findings": [
+    {
+      "id": "S10-001",
+      "severity": "minor",
+      "category": "design-fidelity",
+      "title": "edit slug 锁定与 vendors 不一致",
+      "detail": "groups edit 页对 slug 加了 attributes:{disabled:true}（[id]/edit/page.tsx:54），但 Step 9 的 vendors edit 页（catalog/vendors/[id]/edit/page.tsx:49-54）与 statuses edit 页均未锁 slug。本 step 的锁定方向更安全（slug 是公共稳定标识/seeded 键，DESIGN D5/§4 强调 slug 为门户侧稳定标识不应随意改），且与提示词审查要点③一致，故判定为正向偏离、不阻塞。仅提示：catalog 各字典实体 edit 页对 slug 是否可改应统一策略——要么全部锁定（推荐，与「slug 稳定标识」语义一致），要么在 DESIGN 中明确「仅 group slug 因被 binding/listing 引用而须锁、其余可改」。本条为改进建议，非必须修复。",
+      "anchor": "src/app/[locale]/(admin)/admin/catalog/groups/[id]/edit/page.tsx:49-55",
+      "confidence": 0.55,
+      "recommendation": "在后续 step 或收尾时统一 catalog 各实体 edit 页的 slug 可变策略；若决定 group 特殊则在 DESIGN §6.1/D5 补一句说明。当前实现可保留。"
+    },
+    {
+      "id": "S10-002",
+      "severity": "minor",
+      "category": "correctness",
+      "title": "sortOrder 空输入可能 NaN",
+      "detail": "new/edit handler 用 Number(data.get('sortOrder') ?? 0)（new/page.tsx:106、edit/page.tsx:118）。因 sortOrder 字段 validation:{required:true}，正常路径有值；但若客户端校验被绕过传入空字符串，Number('') 得 0（安全），而传入非数字字符串得 NaN，将写入 DB integer 列。此风险与 Step 9 vendors（new/page.tsx:84 同写法）完全一致，属继承范式而非本 step 新引入，且 required 校验已兜住正常 UI 路径。列为 minor 仅作记录，非本 step 必须修复（应在范式层统一处理）。",
+      "anchor": "src/app/[locale]/(admin)/admin/catalog/groups/new/page.tsx:106",
+      "confidence": 0.4,
+      "recommendation": "可选：在范式层（统一所有 catalog new/edit）用 Number.isFinite 兜底，如 const n=Number(...); sortOrder: Number.isFinite(n)?n:0。非本 step 阻塞项。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": [
+    "确认 catalog 各字典实体 edit 页 slug 可变策略是否需要统一（见 S10-001）；本 step 选择锁定 group slug，方向正确，仅需团队层面对齐范式。"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "verdict": "approve",
+  "summary": "Step 13 新增只读投影 listBillingLedgerEntries（left join order on ledger.orderNo=order.orderNo）并将 billing 充值记录表扩为 订单时间/金额/支付状态/到账状态 四列（含 Processing）。F2 单位严格正确：amountUsd 直接取 ledger.amountUsd、直接 formatUsdAmount，绝无 ×100/÷100；测试断言 amountUsd=5→\"$5.000000\" 且 !=\"$500.000000\"。未改 toPublicLedgerEntry（消费页 /api/apipool/billing 仍走 listLedgerEntries，契约保持），未触碰 recharge/checkout/webhook 核心（diff 仅 3 文件）。无 orderNo 的手工调额条目 left join 后 orderStatus/paymentProvider/paidAt 均为 null、不报错、支付状态列显「—」，有专门测试覆盖。支付/到账映射全分支正确。本地复跑（必须带 NODE_OPTIONS='--conditions react-server'）：目标 4 pass/0 fail、全量 169 pass/0 fail，与 Orchestrator 一致。无 blocker/major。",
+  "findings": [
+    {
+      "id": "S13-F1",
+      "severity": "minor",
+      "category": "maintainability",
+      "title": "投影含未用字段",
+      "detail": "listBillingLedgerEntries 返回 paymentProvider、paidAt 两字段（DESIGN §6.2 列入返回形状，正确），但 billing/page.tsx 当前四列只用到 createdAt/amountUsd/orderStatus/ledgerStatus，paymentProvider 与 paidAt 未渲染。这不是缺陷——投影作为可复用只读读模型保留这两字段合理，且设计要求的四列（订单时间/金额/支付状态/到账状态）已全部展示。仅提示：若后续无展示计划可考虑精简，或在 page 增「支付方式/到账时间」列以物尽其用。非必须。",
+      "anchor": "src/features/newapi-bridge/server/portal.ts:1041-1068 (listBillingLedgerEntries 返回 paymentProvider/paidAt) 对照 src/app/[locale]/(landing)/dashboard/billing/page.tsx:110-164 (表格仅 4 列未用此二字段)",
+      "confidence": 0.7,
+      "recommendation": "保持现状即可；如需充分利用可在 billing 表补「Method/Paid at」列，或在投影注释标注「paymentProvider/paidAt 预留给未来展示」。"
+    },
+    {
+      "id": "S13-F2",
+      "severity": "minor",
+      "category": "design-fidelity",
+      "title": "订单时间取ledger时间",
+      "detail": "「Order time」列取 entry.createdAt，即 ledger.createdAt（加额记录创建时间），而非 order.createdAt（下单时间）。这与 DESIGN §6.2「orderTime = createdAt」字面一致、属设计明确选择，故不算偏离。但语义上「订单时间」用 ledger 时间对有关联 order 的充值条目可能与真实下单时刻略有出入（recharge 流程中 ledger 由 webhook/draft 创建，通常紧随订单），且 order.createdAt 并未纳入投影。属可接受的设计取舍，记录以备产品确认。非必须。",
+      "anchor": "src/app/[locale]/(landing)/dashboard/billing/page.tsx:113-135 (\"Order time\" th + {new Date(entry.createdAt).toLocaleString()}) 对照 DESIGN §6.2 第 590 行 orderTime = createdAt",
+      "confidence": 0.55,
+      "recommendation": "若产品期望「订单时间」严格等于下单时刻，可在投影增 order.createdAt 并改用之；否则保持现状（符合冻结设计）。"
+    }
+  ],
+  "prior_findings_status": [],
+  "open_questions": [
+    "支付状态英文标签 created→\"Pending\" 与到账状态 pending→\"Processing\" 区分清晰，符合 billing 英文基线；但产品是否希望 created 显示为更明确的 \"Awaiting payment\" 而非 \"Pending\"（与 Credit 列 Processing 概念上更易混）？属文案优化，不阻断。"
+  ]
+}

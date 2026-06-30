@@ -26,7 +26,11 @@ test('portal API key creation has a rollback kill switch', async () => {
     /creationEnabled=\{APIPOOL_CONFIG\.isPortalKeyCreationEnabled\}/
   );
   assert.match(files.component, /creationEnabled/);
-  assert.match(files.component, /disabled=\{loading\s*\|\|\s*!creationEnabled\}/);
+  assert.match(files.component, /selectedGroupSlug/);
+  assert.match(
+    files.component,
+    /disabled=\{[\s\S]*!creationEnabled[\s\S]*!selectedGroupSlug[\s\S]*\}/
+  );
   assert.match(files.envExample, /APIPOOL_KEY_CREATION_ENABLED\s*=\s*"true"/);
   assert.match(files.readme, /APIPOOL_KEY_CREATION_ENABLED=false/);
 });

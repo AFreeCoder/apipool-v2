@@ -1,0 +1,257 @@
+import assert from 'node:assert/strict';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import test from 'node:test';
+import { createClient } from '@libsql/client';
+
+let modules: any;
+
+async function setupDb() {
+  const dbPath = join(process.cwd(), '.tmp', 'billing-ledger.db');
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
+  await rm(dbPath, { force: true });
+
+  process.env.DATABASE_PROVIDER = 'sqlite';
+  process.env.DATABASE_URL = `file:${dbPath}`;
+  process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
+  process.env.DB_SINGLETON_ENABLED = 'false';
+  process.env.APIPOOL_CREDENTIALS_SECRET = 'billing-ledger-test-secret';
+
+  const client = createClient({ url: `file:${dbPath}` });
+  const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  for (const file of (await readdir(migrationsDir))
+    .filter((name) => name.endsWith('.sql'))
+    .sort()) {
+    await client.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
+  }
+
+  const schema = await import('@/config/db/schema');
+  const { db } = await import('@/core/db');
+  const portal = await import('@/features/newapi-bridge/server/portal');
+  const money = await import('@/features/api-console/lib/money');
+
+  modules = { db, money, portal, schema };
+}
+
+async function insertUser(id: string, email: string) {
+  await modules.db().insert(modules.schema.user).values({
+    id,
+    name: id,
+    email,
+  });
+  return { id, name: id, email };
+}
+
+async function insertOrder(input: {
+  id: string;
+  orderNo: string;
+  userId: string;
+  userEmail: string;
+  status: string;
+  amount: number;
+  paymentProvider: string;
+  paidAt?: Date | null;
+}) {
+  await modules
+    .db()
+    .insert(modules.schema.order)
+    .values({
+      id: input.id,
+      orderNo: input.orderNo,
+      userId: input.userId,
+      userEmail: input.userEmail,
+      status: input.status,
+      amount: input.amount,
+      currency: 'USD',
+      paymentProvider: input.paymentProvider,
+      checkoutInfo: '',
+      paidAt: input.paidAt ?? null,
+    });
+}
+
+async function insertLedger(input: {
+  id: string;
+  portalUserId: string;
+  orderNo?: string | null;
+  amountUsd: number;
+  status: string;
+  source?: string;
+  createdAt?: Date;
+}) {
+  await modules
+    .db()
+    .insert(modules.schema.apipoolLedgerEntry)
+    .values({
+      id: input.id,
+      portalUserId: input.portalUserId,
+      operatorUserId: input.portalUserId,
+      newapiUserId: `remote_${input.portalUserId}`,
+      orderNo: input.orderNo ?? null,
+      amountUsd: input.amountUsd,
+      source: input.source ?? 'recharge',
+      status: input.status,
+      executor: 'newapi',
+      reason: `ledger ${input.id}`,
+      rollbackStatus: 'not_required',
+      createdAt: input.createdAt,
+    });
+}
+
+test.before(setupDb);
+
+test('listBillingLedgerEntries joins order payment fields for recharge ledgers', async () => {
+  assert.equal(typeof modules.portal.listBillingLedgerEntries, 'function');
+  const user = await insertUser(
+    'billing_join_user',
+    'billing-join@example.com'
+  );
+  const orderNo = 'billing_order_paid';
+  const paidAt = new Date('2026-06-24T10:20:30.000Z');
+  const ledgerCreatedAt = new Date('2026-06-24T10:21:30.000Z');
+
+  await insertOrder({
+    id: 'order_billing_join',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    paymentProvider: 'stripe',
+    paidAt,
+  });
+  await insertLedger({
+    id: 'ledger_billing_join',
+    portalUserId: user.id,
+    orderNo,
+    amountUsd: 5,
+    status: 'applied',
+    createdAt: ledgerCreatedAt,
+  });
+
+  const entries = await modules.portal.listBillingLedgerEntries(user.id);
+
+  assert.deepEqual(entries, [
+    {
+      orderNo,
+      amountUsd: 5,
+      ledgerStatus: 'applied',
+      orderStatus: 'paid',
+      paymentProvider: 'stripe',
+      paidAt: paidAt.getTime(),
+      createdAt: ledgerCreatedAt.getTime(),
+    },
+  ]);
+});
+
+test('billing amounts format ledger dollars without cent conversion while preserving usage precision', async () => {
+  assert.equal(modules.money.formatBalanceUsdAmount(5), '$5.00');
+  assert.equal(modules.money.formatBalanceUsdAmount(5.5), '$5.50');
+  assert.equal(modules.money.formatLedgerUsdAmount(5), '$5.00');
+  assert.equal(modules.money.formatLedgerUsdAmount(5.5), '$5.50');
+  assert.notEqual(modules.money.formatLedgerUsdAmount(5), '$500.000000');
+  assert.notEqual(modules.money.formatLedgerUsdAmount(5), '$5.000000');
+  assert.equal(modules.money.formatUsdAmount(0.004), '$0.004000');
+});
+
+test('listBillingLedgerEntries keeps ledger entries without orderNo with nullable order fields', async () => {
+  assert.equal(typeof modules.portal.listBillingLedgerEntries, 'function');
+  const user = await insertUser(
+    'billing_manual_user',
+    'billing-manual@example.com'
+  );
+  const ledgerCreatedAt = new Date('2026-06-24T11:00:00.000Z');
+
+  await insertLedger({
+    id: 'ledger_manual_no_order',
+    portalUserId: user.id,
+    orderNo: null,
+    amountUsd: 12,
+    status: 'pending',
+    source: 'manual_adjustment',
+    createdAt: ledgerCreatedAt,
+  });
+
+  const entries = await modules.portal.listBillingLedgerEntries(user.id);
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].orderNo, null);
+  assert.equal(entries[0].orderStatus, null);
+  assert.equal(entries[0].paymentProvider, null);
+  assert.equal(entries[0].paidAt, null);
+  assert.equal(entries[0].ledgerStatus, 'pending');
+  assert.equal(entries[0].amountUsd, 12);
+  assert.equal(entries[0].createdAt, ledgerCreatedAt.getTime());
+});
+
+test('listBillingLedgerEntries keeps paid orders distinct from pending credit application', async () => {
+  const user = await insertUser(
+    'billing_paid_pending_user',
+    'billing-paid-pending@example.com'
+  );
+  const orderNo = 'billing_order_paid_pending';
+  const paidAt = new Date('2026-06-24T12:00:00.000Z');
+
+  await insertOrder({
+    id: 'order_paid_pending',
+    orderNo,
+    userId: user.id,
+    userEmail: user.email,
+    status: 'paid',
+    amount: 500,
+    paymentProvider: 'stripe',
+    paidAt,
+  });
+  await insertLedger({
+    id: 'ledger_paid_pending',
+    portalUserId: user.id,
+    orderNo,
+    amountUsd: 5,
+    status: 'pending',
+  });
+
+  const entries = await modules.portal.listBillingLedgerEntries(user.id);
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].orderNo, orderNo);
+  assert.equal(entries[0].orderStatus, 'paid');
+  assert.equal(entries[0].ledgerStatus, 'pending');
+  assert.equal(entries[0].paidAt, paidAt.getTime());
+});
+
+test('billing status labels are localized by locale', async () => {
+  const billingPage = await import(
+    '@/app/[locale]/(landing)/dashboard/billing/page'
+  );
+
+  assert.equal(typeof billingPage.mapPayStatus, 'function');
+  assert.equal(typeof billingPage.mapApplyStatus, 'function');
+
+  assert.equal(billingPage.mapPayStatus('en', 'paid'), 'Paid');
+  assert.equal(billingPage.mapPayStatus('en', 'created'), 'Pending');
+  assert.equal(billingPage.mapPayStatus('en', 'failed'), 'Failed');
+  assert.equal(billingPage.mapPayStatus('en', null), '—');
+
+  assert.equal(billingPage.mapApplyStatus('en', 'applied'), 'Applied');
+  assert.equal(billingPage.mapApplyStatus('en', 'pending'), 'Processing');
+  assert.equal(billingPage.mapApplyStatus('en', 'processing'), 'Processing');
+  assert.equal(
+    billingPage.mapApplyStatus('en', 'failed'),
+    'Credit failed. Contact support.'
+  );
+  assert.equal(
+    billingPage.mapApplyStatus('en', 'reconciliation_required'),
+    'Credit failed. Contact support.'
+  );
+
+  assert.equal(billingPage.mapPayStatus('zh', 'paid'), '已支付');
+  assert.equal(billingPage.mapPayStatus('zh', 'created'), '待支付');
+  assert.equal(billingPage.mapPayStatus('zh', 'failed'), '支付失败');
+  assert.equal(billingPage.mapApplyStatus('zh', 'applied'), '已到账');
+  assert.equal(billingPage.mapApplyStatus('zh', 'pending'), '到账处理中');
+  assert.equal(
+    billingPage.mapApplyStatus('zh', 'failed'),
+    '到账失败，请联系客服'
+  );
+});

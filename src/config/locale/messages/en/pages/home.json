@@ -1,0 +1,94 @@
+{
+  "hero": {
+    "eyebrow": "// unified llm api",
+    "titleLine1": "One endpoint.",
+    "titleLine2": "Every frontier model.",
+    "description": "Call OpenAI, Anthropic, and more through a single API. Transparent per-token pricing, balance you control, usage you can see.",
+    "start": "Start building",
+    "docs": "Read the docs",
+    "bullets": ["OpenAI-compatible", "No subscription", "Balance never expires"]
+  },
+  "providers": {
+    "label": "Providers"
+  },
+  "scenarios": {
+    "title": "From agents to images",
+    "description": "One balance and one key behind whatever you are building.",
+    "modelsLink": "Models & pricing",
+    "items": [
+      {
+        "title": "Coding agents",
+        "description": "Long-running agents and dev tools that plan, edit, and test with frontier models.",
+        "vignetteLine1": "▸ agent run · fix-build",
+        "vignetteLine2": "plan → edit → test",
+        "vignetteLine3": "✓ 14 files changed",
+        "vignetteLine4": "✓ tests passed in 42s"
+      },
+      {
+        "title": "Chat & copilots",
+        "description": "Production assistants with streaming responses and per-conversation cost control.",
+        "vignetteUser": "Summarize this PR for review",
+        "vignetteAssistant": "3 changes: auth middleware, retry logic, tests…"
+      },
+      {
+        "title": "Image & media generation",
+        "description": "Multimodal pipelines for product art, thumbnails, and creative tooling."
+      },
+      {
+        "title": "Batch & data pipelines",
+        "description": "Large-scale extraction, classification, and evals with predictable spend.",
+        "vignetteLine1": "processing 12,408 docs…",
+        "vignetteFile": "batch-07.jsonl"
+      }
+    ]
+  },
+  "steps": {
+    "title": "Up and running in minutes",
+    "items": [
+      {
+        "index": "01",
+        "title": "Create an account",
+        "description": "Sign up and add credit to your balance. Usage is billed per token — no subscription, balance never expires."
+      },
+      {
+        "index": "02",
+        "title": "Create an API key",
+        "description": "Generate a key in the console. The plaintext key is shown once — keep it safe."
+      },
+      {
+        "index": "03",
+        "title": "Call any model",
+        "description": "Use your favorite SDK with one key. Switch models by name — that is the whole migration."
+      }
+    ]
+  },
+  "features": {
+    "items": [
+      {
+        "title": "Transparent pricing",
+        "description": "Per-token prices listed next to official rates. What you see is what you pay."
+      },
+      {
+        "title": "Pay as you go",
+        "description": "Top up in dollars, spend by the token. No plans, no lock-in, no expiry."
+      },
+      {
+        "title": "OpenAI-compatible",
+        "description": "Works with the official SDKs and most tools by changing one base URL."
+      },
+      {
+        "title": "Real usage data",
+        "description": "Requests, tokens, and spend per model — live in your console."
+      }
+    ]
+  },
+  "cta": {
+    "title": "Ship with one API today",
+    "description": "Create a key, add credit, and make your first call in under five minutes.",
+    "console": "Open the console",
+    "models": "Browse models"
+  },
+  "terminal": {
+    "response": "Hello! How can I help you today?"
+  }
+}

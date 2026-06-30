@@ -2,7 +2,7 @@
 
 > 本手册是 MVP 上线的发布门禁，覆盖完整闭环：注册 → 充值 → 建 Key → 真实调用 → 用量可见 → 禁用 Key 被拒。
 
-> **容器化部署件（2026-06）**：仓库已提供本地/服务器两用的 `docker-compose.yml`（门户 `apipool-v2` + `new-api` 两服务）、门户 `Dockerfile`（构建期注入 `NEXT_PUBLIC_*`、esbuild 打包迁移、entrypoint 启动时自动建表并 fail-fast 校验密钥）、`.env.deploy.example` 与一次性引导手册 [`deploy/bootstrap.md`](../deploy/bootstrap.md)。具体起服务步骤以 `deploy/bootstrap.md` 为准；本手册聚焦发布门禁、安全与回滚。已本地实跑闭环验证（详见 `docs/superpowers/plans/2026-06-13-minimal-deployment.md` 的「验证记录」与「待 Linux 容器复验」清单）。
+> **容器化部署件（2026-06）**：仓库已提供本地/服务器两用的 `docker-compose.yml`（门户 `apipool-v2` + `new-api` 两服务）、门户 `Dockerfile`（构建期注入 `NEXT_PUBLIC_*`、esbuild 打包迁移、entrypoint 启动时自动建表并 fail-fast 校验密钥）、`.env.deploy.example` 与一次性引导手册 [`deploy/bootstrap.md`](../deploy/bootstrap.md)。具体起服务步骤以 `deploy/bootstrap.md` 为准；本手册聚焦发布门禁、安全与回滚。门户与 New API 已完成本地及服务器实跑验证，当前生产形态（腾讯云 VPS + Caddy + GitHub Actions CI/CD）见下文各节。
 
 ## 0. 当前 VPS
 
@@ -19,7 +19,7 @@
 
 - `DATABASE_PROVIDER` / `DATABASE_URL`
 - `AUTH_SECRET` / `AUTH_URL` —— **容器 entrypoint fail-fast：`AUTH_SECRET` 必须非空且 ≥16 字符**（空值会让 Better Auth 回退已知默认签名密钥），否则拒绝启动。用 `openssl rand -base64 32` 生成。
-- `NEXT_PUBLIC_APP_URL=https://apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效）
+- `NEXT_PUBLIC_APP_URL=https://new.apipool.dev`（`NEXT_PUBLIC_*` 为构建期注入，容器需在 build 时经 build arg 传入，运行期改值不生效；正式切换主域名前与 Caddy 门户域名保持一致）
 
 ### New API 桥接（见 04-newapi-contract.md）
 
@@ -42,6 +42,10 @@
 ### 冒烟
 
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
+- `APIPOOL_SMOKE_MODEL`（可选；默认使用配置里的 smoke-tested launch model）
+- `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
+- `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
+- `APIPOOL_SMOKE_REQUIRE_LIVE=true`：缺少 live smoke 必需配置时让 smoke 失败，而不是跳过。
 
 ## 1.5 New API 实例初始化（每个新实例一次性，✅已实测）
 
@@ -80,6 +84,32 @@
 
 GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密钥配置后用 `workflow_dispatch` 跑真实冒烟门禁。
 
+### 3.1 自动化 MVP smoke
+
+发布前先确认本地或发布环境数据库已迁移，且目录种子已写入至少一个 provider/group/model/listing：
+
+```bash
+npm run catalog:init
+```
+
+`official` 分组必须在后台维护好 `newapiGroup`，并与 New API 侧真实可调用 group 对齐；不能让 `official.newapiGroup` 为空落入 New API 默认分组。New API 侧也必须启用同名或指定分组：`GroupRatio` 包含该 group，相关 channel 的 group 包含该 group，并通过 New API 后台保存渠道或重建 abilities 使选路表生效。门户创建 Key 时会把 New API 用户 group 补齐到本次 `newapiGroup`，否则 New API 会以无权访问该分组拒绝 `/v1` 调用。
+
+冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。`APIPOOL_SMOKE_MODEL` 指向一个可调用且 smoke-tested 的模型；不设置时使用默认 launch model。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
+
+普通本地验证允许缺少 live smoke 必需配置时跳过：
+
+```bash
+npm run smoke:mvp
+```
+
+发布若依赖真实或等价 New API 证据，必须使用强制 live 门禁：
+
+```bash
+APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp
+```
+
+该脚本会创建 `official` 分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
+
 ## 3.5 自动化部署流程
 
 生产部署由 GitHub Actions 构建镜像、VPS 拉取指定镜像、部署脚本先备份后切换容器三段组成。
@@ -91,7 +121,7 @@ GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密�
 - 触发：push 到 `main` / `dev`、PR、手动 `workflow_dispatch`
 - tag：`sha-<完整 commit>`、分支名、tag 名；默认分支额外推 `latest`
 - 构建期生产参数：
-  - `NEXT_PUBLIC_APP_URL=https://apipool.dev`
+  - `NEXT_PUBLIC_APP_URL=https://new.apipool.dev`
   - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api.apipool.dev/v1`
   - `NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini`
 

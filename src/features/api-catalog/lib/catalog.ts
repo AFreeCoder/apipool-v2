@@ -1,8 +1,6 @@
 import { APIPOOL_CONFIG, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 
-// Kept as `provider` for public URL compatibility, but values intentionally
-// mirror New API group slugs. Groups distinguish channel routes and discounts.
-export type ApiModelProvider = 'default' | 'discount';
+export type ApiModelProvider = 'OpenAI' | 'Anthropic';
 export type ApiModelCapability = 'text' | 'vision' | 'reasoning' | 'coding';
 export type ApiModelStatus = 'available' | 'coming_soon';
 
@@ -40,9 +38,11 @@ export function isDealModel(model: ApiModel) {
 }
 
 export type ModelFilters = {
-  provider?: ApiModelProvider | 'All';
-  capability?: ApiModelCapability | 'All';
-  status?: ApiModelStatus | 'All';
+  vendor?: string;
+  group?: string;
+  category?: string;
+  capability?: string;
+  status?: string;
 };
 
 export type ModelFilterSearchParams = Record<
@@ -50,7 +50,7 @@ export type ModelFilterSearchParams = Record<
   string | string[] | undefined
 >;
 
-export const MODEL_PROVIDER_FILTERS = ['All', 'default', 'discount'] as const;
+export const MODEL_PROVIDER_FILTERS = ['All', 'OpenAI', 'Anthropic'] as const;
 export const MODEL_CAPABILITY_FILTERS = [
   'All',
   'text',
@@ -68,54 +68,74 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function pickAllowed<T extends string>(
-  value: string | string[] | undefined,
-  allowed: readonly T[],
-  fallback: T
-) {
-  const normalized = firstParam(value);
-  return normalized && allowed.includes(normalized as T)
-    ? (normalized as T)
-    : fallback;
-}
-
 export function parseModelFilters(
   params: ModelFilterSearchParams | ModelFilters = {}
-): Required<ModelFilters> {
-  return {
-    provider: pickAllowed(params.provider, MODEL_PROVIDER_FILTERS, 'All'),
-    capability: pickAllowed(
-      params.capability,
-      MODEL_CAPABILITY_FILTERS,
-      'All'
-    ),
-    status: pickAllowed(params.status, MODEL_STATUS_FILTERS, 'All'),
-  };
+): ModelFilters {
+  const filters: ModelFilters = {};
+
+  for (const key of [
+    'vendor',
+    'group',
+    'category',
+    'capability',
+    'status',
+  ] as const) {
+    const value = firstParam(params[key]);
+    if (value) filters[key] = value;
+  }
+
+  return filters;
 }
 
 export function buildModelFilterHref(
   current: ModelFilters,
   patch: ModelFilters
 ) {
-  const filters = parseModelFilters({ ...current, ...patch });
+  const filters: ModelFilters = { ...current };
+  for (const key of [
+    'vendor',
+    'group',
+    'category',
+    'capability',
+    'status',
+  ] as const) {
+    if (!(key in patch)) continue;
+
+    const value = patch[key];
+    if (value === undefined || value === '') {
+      delete filters[key];
+    } else {
+      filters[key] = value;
+    }
+  }
+
   const params = new URLSearchParams();
 
-  if (filters.provider !== 'All') params.set('provider', filters.provider);
-  if (filters.capability !== 'All') {
-    params.set('capability', filters.capability);
+  for (const key of [
+    'vendor',
+    'group',
+    'category',
+    'capability',
+    'status',
+  ] as const) {
+    if (filters[key]) params.set(key, filters[key]);
   }
-  if (filters.status !== 'All') params.set('status', filters.status);
 
   const query = params.toString();
   return query ? `/models?${query}` : '/models';
 }
 
+export function formatMicroUsdPerMillion(micro: number): string {
+  return `$${(micro / 1_000_000).toFixed(2)}`;
+}
+
 export const publicModels: ApiModel[] = [
+  // test fixture only; runtime catalog reads DB-backed queries.ts.
   {
     slug: 'gpt-4o-mini',
     modelId: 'gpt-4o-mini',
     displayName: 'GPT-4o mini',
-    provider: 'default',
+    provider: 'OpenAI',
     category: 'llm',
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Fast multimodal model for production API workflows.',
@@ -140,7 +160,7 @@ export const publicModels: ApiModel[] = [
     slug: 'gpt-4o-mini-deal',
     modelId: 'gpt-4o-mini',
     displayName: 'GPT-4o mini',
-    provider: 'discount',
+    provider: 'OpenAI',
     category: 'llm',
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Limited-time discounted route for GPT-4o mini.',
@@ -159,14 +179,14 @@ export const publicModels: ApiModel[] = [
       officialInputPerMillionUsd: 0.15,
       officialOutputPerMillionUsd: 0.6,
       source: 'manual',
-      note: 'Discount group placeholder. Replace with the live channel price before launch.',
+      note: 'Demo deal entry. Replace with a real short-term channel before launch.',
     },
   },
   {
     slug: 'gpt-4o',
     modelId: 'gpt-4o',
     displayName: 'GPT-4o',
-    provider: 'default',
+    provider: 'OpenAI',
     category: 'llm',
     capabilities: ['text', 'vision', 'reasoning'],
     shortDescription: 'General purpose multimodal model.',
@@ -187,7 +207,7 @@ export const publicModels: ApiModel[] = [
     slug: 'gpt-4-1-mini',
     modelId: 'gpt-4.1-mini',
     displayName: 'GPT-4.1 mini',
-    provider: 'default',
+    provider: 'OpenAI',
     category: 'llm',
     capabilities: ['text', 'coding', 'reasoning'],
     shortDescription: 'Efficient model for coding and structured tasks.',
@@ -208,7 +228,7 @@ export const publicModels: ApiModel[] = [
     slug: 'claude-sonnet-4',
     modelId: 'claude-sonnet-4',
     displayName: 'Claude Sonnet 4',
-    provider: 'default',
+    provider: 'Anthropic',
     category: 'llm',
     capabilities: ['text', 'coding', 'reasoning'],
     shortDescription: 'Strong coding and agentic workflow model.',
@@ -229,7 +249,7 @@ export const publicModels: ApiModel[] = [
     slug: 'claude-3-5-sonnet',
     modelId: 'claude-3.5-sonnet',
     displayName: 'Claude 3.5 Sonnet',
-    provider: 'default',
+    provider: 'Anthropic',
     category: 'llm',
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Balanced Anthropic model for developer workloads.',
@@ -250,7 +270,7 @@ export const publicModels: ApiModel[] = [
     slug: 'claude-haiku',
     modelId: 'claude-haiku',
     displayName: 'Claude Haiku',
-    provider: 'default',
+    provider: 'Anthropic',
     category: 'llm',
     capabilities: ['text', 'coding'],
     shortDescription: 'Low-latency Anthropic candidate model.',
@@ -269,9 +289,19 @@ export const publicModels: ApiModel[] = [
   },
 ];
 
-export function filterModels(models: ApiModel[], filters: ModelFilters = {}) {
+type LegacyModelFilters = ModelFilters & {
+  provider?: ApiModelProvider | 'All';
+};
+
+export function filterModels(
+  models: ApiModel[],
+  filters: LegacyModelFilters = {}
+) {
   return models
     .filter((model) => {
+      if (filters.vendor) {
+        return model.provider.toLowerCase() === filters.vendor.toLowerCase();
+      }
       if (filters.provider && filters.provider !== 'All') {
         return model.provider === filters.provider;
       }
@@ -279,7 +309,9 @@ export function filterModels(models: ApiModel[], filters: ModelFilters = {}) {
     })
     .filter((model) => {
       if (filters.capability && filters.capability !== 'All') {
-        return model.capabilities.includes(filters.capability);
+        return model.capabilities.includes(
+          filters.capability as ApiModelCapability
+        );
       }
       return true;
     })

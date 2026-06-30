@@ -44,23 +44,29 @@ sed -i '' "s|^NEWAPI_ADMIN_TOKEN=.*|NEWAPI_ADMIN_TOKEN=$TOKEN|" .env.deploy
 - 类型:OpenAI
 - 名称:apipool-upstream
 - 代理/BaseURL:`https://apipool.dev`
-- 模型:`gpt-5.4-mini`
+- 模型:`gpt-5.4-mini,gpt-4o-mini`
+- 分组:`official`
 - 密钥:你的测试 key
 
 或用 API(`$TOKEN` 为上一步 token)。**注意 New API rc.10 建渠道要 `{"mode":"single","channel":{…}}` 包装**(裸 channel 对象会触发服务端 panic):
 ```bash
-# 1) 建渠道（rc.10 格式）
+# 1) 启用门户 official 对应的 New API 分组
+curl -s -X PUT http://localhost:3001/api/option/ \
+  -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
+  -d '{"key":"GroupRatio","value":"{\"default\":1,\"official\":1}"}'
+
+# 2) 建渠道（rc.10 格式）。group 必须包含 official，否则门户 official Key 会创建成功但 /v1 调用无路由。
 curl -s -X POST http://localhost:3001/api/channel/ \
   -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
-  -d '{"mode":"single","channel":{"name":"apipool-upstream","type":1,"base_url":"https://apipool.dev","models":"gpt-5.4-mini","key":"<你的测试 key>","group":"default"}}'
+  -d '{"mode":"single","channel":{"name":"apipool-upstream","type":1,"base_url":"https://apipool.dev","models":"gpt-5.4-mini,gpt-4o-mini","key":"<你的测试 key>","group":"official"}}'
 
-# 2) 开自用模式：否则模型未配价时调用会被拒（model_price_error）
+# 3) 开自用模式：否则模型未配价时调用会被拒（model_price_error）
 curl -s -X PUT http://localhost:3001/api/option/ \
   -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
   -d '{"key":"SelfUseModeEnabled","value":"true"}'
 ```
 
-> 验证渠道:`curl -s -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' "http://localhost:3001/api/channel/test/<渠道id>?model=gpt-5.4-mini"` 返回 `success:true` 即上游可用。
+> 验证渠道:`curl -s -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' "http://localhost:3001/api/channel/test/<渠道id>?model=gpt-5.4-mini"` 返回 `success:true` 即上游可用。若修改已有渠道，需要通过 New API 后台保存渠道或重建 abilities，让 `official` 选路表生效。
 
 ## 4. 构建并起门户
 

@@ -15,25 +15,24 @@ export async function loadMessages(
   locale: string = defaultLocale
 ) {
   const normalizedLocale = normalizeLocale(locale);
+  const fallbackLocales = [
+    normalizedLocale,
+    ...(normalizedLocale.startsWith('zh') ? ['zh'] : []),
+    defaultLocale,
+  ].filter((item, index, items) => item && items.indexOf(item) === index);
 
-  try {
-    // try to load locale messages
-    const messages = await import(
-      `@/config/locale/messages/${normalizedLocale}/${path}.json`
-    );
-    return messages.default;
-  } catch (e) {
+  for (const fallbackLocale of fallbackLocales) {
     try {
-      // try to load default locale messages
       const messages = await import(
-        `@/config/locale/messages/${defaultLocale}/${path}.json`
+        `@/config/locale/messages/${fallbackLocale}/${path}.json`
       );
       return messages.default;
-    } catch (err) {
-      // if default locale is not found, return empty object
-      return {};
+    } catch {
+      continue;
     }
   }
+
+  return {};
 }
 
 export default getRequestConfig(async ({ requestLocale }) => {

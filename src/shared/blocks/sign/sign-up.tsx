@@ -22,6 +22,7 @@ import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 
 import { LegalNotice } from './legal-notice';
+import { PasswordInput } from './password-input';
 import { SocialProviders } from './social-providers';
 
 export function SignUp({
@@ -200,7 +201,7 @@ export function SignUp({
                   value={email}
                 />
                 {emailVerificationEnabled && (
-                  <p className="text-amber-600 text-xs">
+                  <p className="text-muted-foreground text-xs">
                     {t('email_verification_hint')}
                   </p>
                 )}
@@ -208,11 +209,10 @@ export function SignUp({
 
               <div className="grid gap-2">
                 <Label htmlFor="password">{t('password_title')}</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder={t('password_placeholder')}
-                  autoComplete="password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -241,12 +241,13 @@ export function SignUp({
       {isEmailAuthEnabled && (
         <CardFooter>
           <div className="flex w-full justify-center border-t py-4">
-            <p className="text-center text-xs text-neutral-500">
-              {t('already_have_account')}
-              <Link href="/sign-in" className="underline">
-                <span className="cursor-pointer dark:text-white/70">
-                  {t('sign_in_title')}
-                </span>
+            <p className="text-muted-foreground text-center text-xs">
+              {t('already_have_account')}{' '}
+              <Link
+                href="/sign-in"
+                className="text-foreground hover:text-primary cursor-pointer underline underline-offset-2 transition-colors"
+              >
+                {t('sign_in_title')}
               </Link>
             </p>
           </div>

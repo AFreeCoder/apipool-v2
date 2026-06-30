@@ -1,0 +1,44 @@
+{
+  "eyebrow": "// 模型与价格",
+  "title": "模型与价格",
+  "description": "所有价格均按每 100 万 token 展示，并按实际用量计费。一个 Key 可调用下方所有模型。",
+  "filters": {
+    "provider": "供应商",
+    "group": "分组",
+    "category": "分类",
+    "capability": "能力",
+    "status": "状态",
+    "all": "全部"
+  },
+  "dimensions": {
+    "groups": {
+      "official": "官方"
+    },
+    "categories": {
+      "llm": "大语言模型"
+    },
+    "capabilities": {
+      "text": "文本",
+      "vision": "视觉"
+    },
+    "statuses": {
+      "available": "可用"
+    }
+  },
+  "empty": {
+    "title": "没有符合筛选条件的模型。",
+    "clear": "清除筛选"
+  },
+  "table": {
+    "mobileHint": "横向滚动查看上下文、价格和状态 →",
+    "model": "模型",
+    "provider": "供应商",
+    "group": "分组",
+    "category": "分类",
+    "capabilities": "能力",
+    "context": "上下文",
+    "input": "输入·1M",
+    "output": "输出·1M",
+    "status": "状态"
+  }
+}

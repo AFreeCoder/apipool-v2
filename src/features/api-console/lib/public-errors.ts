@@ -9,6 +9,15 @@ const INTERNAL_ERROR_PATTERNS = [
   /\badmin token\b/i,
   /\binternal service\b/i,
   /\bauthorization:\s*bearer\b/i,
+  /\bfailed query\b/i,
+  /\bsqlite(?:_|error| constraint)?\b/i,
+  /\bconstraint\b/i,
+  /\bduplicate key\b/i,
+  /\bforeign key\b/i,
+  /\bnewapi_key_binding\b/i,
+  /\bapipool_ledger_entry\b/i,
+  /\busage_snapshot\b/i,
+  /\busage_log_snapshot\b/i,
 ];
 
 function getErrorMessage(error: unknown) {

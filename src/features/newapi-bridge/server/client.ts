@@ -33,6 +33,31 @@ export class NewApiBridgeError extends Error {
   }
 }
 
+export class NewApiQuotaAdjustmentReconciliationError extends NewApiBridgeError {
+  changeId: string;
+  reconciliationRequired = true;
+
+  constructor({ changeId, message }: { changeId: string; message: string }) {
+    super({ code: 'remote_error', message });
+    this.name = 'NewApiQuotaAdjustmentReconciliationError';
+    this.changeId = changeId;
+  }
+}
+
+export function isQuotaAdjustmentReconciliationError(
+  error: unknown
+): error is NewApiQuotaAdjustmentReconciliationError {
+  return (
+    error instanceof NewApiQuotaAdjustmentReconciliationError ||
+    Boolean(
+      error &&
+        typeof error === 'object' &&
+        (error as any).reconciliationRequired === true &&
+        typeof (error as any).changeId === 'string'
+    )
+  );
+}
+
 export type NewApiClientOptions = {
   baseUrl?: string;
   adminToken?: string;
@@ -44,6 +69,31 @@ export type NewApiClientOptions = {
   retryDelayMs?: number;
   fetcher?: typeof fetch;
 };
+
+const quotaAdjustmentLocks = new Map<string, Promise<void>>();
+
+async function withQuotaAdjustmentLock<T>(
+  newapiUserId: string,
+  task: () => Promise<T>
+) {
+  const previous = quotaAdjustmentLocks.get(newapiUserId) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => next);
+  quotaAdjustmentLocks.set(newapiUserId, tail);
+
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (quotaAdjustmentLocks.get(newapiUserId) === tail) {
+      quotaAdjustmentLocks.delete(newapiUserId);
+    }
+  }
+}
 
 // New API 的 token 归属用户：所有 Key/用量/兑换操作必须携带该用户自己的
 // access token 与用户 ID（双 header），管理员令牌无法代替。
@@ -66,10 +116,6 @@ export type RemoteCreatedKey = RemoteKey & {
 export type RemoteQuota = {
   balanceUsd?: number;
   quotaRemaining?: number;
-  usedQuota?: number;
-  usedUsd?: number;
-  allTimeRequestCount?: number;
-  group?: string;
 };
 
 export type RemoteHealth = {
@@ -83,7 +129,6 @@ export type RemoteUsageSummary = {
   inputTokens: number;
   outputTokens: number;
   spendUsd?: number;
-  averageLatencyMs?: number;
   byModel: Array<{
     modelId: string;
     requests: number;
@@ -100,10 +145,6 @@ export type RemoteUsageLog = {
   inputTokens: number;
   outputTokens: number;
   spendUsd?: number;
-  group?: string;
-  channelName?: string;
-  latencyMs?: number;
-  requestId?: string;
   createdAt: string;
 };
 
@@ -153,18 +194,15 @@ function maskKey(key: string) {
   return `${key.slice(0, 4)}${'*'.repeat(10)}${key.slice(-4)}`;
 }
 
+function maskRemoteTokenListKey(key: unknown) {
+  if (typeof key !== 'string' || key.length === 0) return '';
+  if (key.includes('*')) return key;
+  if (key.startsWith('sk-') || key.length > 8) return maskKey(key);
+  return key;
+}
+
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function asOptionalNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function mapRemoteTokenStatus(status: unknown): RemoteKey['status'] {
@@ -174,7 +212,7 @@ function mapRemoteTokenStatus(status: unknown): RemoteKey['status'] {
 function toRemoteKey(item: any): RemoteKey {
   return {
     id: String(item.id),
-    maskedKey: typeof item.key === 'string' ? item.key : '',
+    maskedKey: maskRemoteTokenListKey(item.key),
     status: mapRemoteTokenStatus(item.status),
   };
 }
@@ -240,6 +278,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
 
   function quotaToUsd(quota: number) {
     return quota / quotaPerUnit;
+  }
+
+  function toRemoteUserId(value: string) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : value;
   }
 
   function canRetryRequest(options: RequestOptions) {
@@ -400,15 +443,45 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       (item: any) => item?.username === username
     );
     return match
-      ? { id: String(match.id), quota: asNumber(match.quota) }
+      ? {
+          id: String(match.id),
+          username: String(match.username || username),
+          displayName:
+            typeof match.display_name === 'string'
+              ? match.display_name
+              : String(match.username || username),
+          group: typeof match.group === 'string' ? match.group : '',
+          role: typeof match.role === 'number' ? match.role : 1,
+          remark: typeof match.remark === 'string' ? match.remark : '',
+          quota: asNumber(match.quota),
+        }
       : undefined;
   }
 
+  async function ensureRemoteUserGroup(
+    user: Awaited<ReturnType<typeof findUserByUsername>>,
+    group?: string
+  ) {
+    const targetGroup = group?.trim();
+    if (!user || !targetGroup || user.group === targetGroup) return;
+
+    await request('/api/user/', {
+      method: 'PUT',
+      body: {
+        id: toRemoteUserId(user.id),
+        username: user.username,
+        display_name: user.displayName || user.username,
+        group: targetGroup,
+        role: user.role || 1,
+        remark: user.remark || '',
+      },
+    });
+  }
+
   async function findTokenByName(user: NewApiUserCredentials, name: string) {
-    const data = await request<any>(
-      `/api/token/?p=1&size=${LIST_PAGE_SIZE}`,
-      { auth: userAuth(user) }
-    );
+    const data = await request<any>(`/api/token/?p=1&size=${LIST_PAGE_SIZE}`, {
+      auth: userAuth(user),
+    });
     return unwrapListItems(data).find((item: any) => item?.name === name);
   }
 
@@ -447,10 +520,6 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       inputTokens: asNumber(item.prompt_tokens),
       outputTokens: asNumber(item.completion_tokens),
       spendUsd: quotaToUsd(asNumber(item.quota)),
-      group: asOptionalString(item.group),
-      channelName: asOptionalString(item.channel_name),
-      latencyMs: asOptionalNumber(item.use_time),
-      requestId: asOptionalString(item.request_id),
       createdAt: new Date(asNumber(item.created_at) * 1000).toISOString(),
     };
   }
@@ -485,13 +554,6 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return {
       quotaRemaining: data.quota,
       balanceUsd: quotaToUsd(data.quota),
-      usedQuota: asOptionalNumber(data.used_quota),
-      usedUsd:
-        typeof data.used_quota === 'number'
-          ? quotaToUsd(data.used_quota)
-          : undefined,
-      allTimeRequestCount: asOptionalNumber(data.request_count),
-      group: asOptionalString(data.group),
     };
   }
 
@@ -516,6 +578,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       username: string;
       password: string;
       displayName?: string;
+      group?: string;
     }): Promise<RemoteProvisionedUser> {
       const existing = await findUserByUsername(input.username);
       if (!existing) {
@@ -536,6 +599,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
           message: `New API user not found after creation: ${input.username}`,
         });
       }
+      await ensureRemoteUserGroup(found, input.group);
 
       const loginResponse = await rawRequest('/api/user/login', {
         method: 'POST',
@@ -571,6 +635,27 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       return { newapiUserId: found.id, accessToken };
     },
 
+    async ensureUserGroup(input: {
+      newapiUserId: string;
+      username: string;
+      group: string;
+    }): Promise<void> {
+      const found = await findUserByUsername(input.username);
+      if (!found) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API user not found for group update: ${input.username}`,
+        });
+      }
+      if (found.id !== input.newapiUserId) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API user id mismatch for group update: ${input.username}`,
+        });
+      }
+      await ensureRemoteUserGroup(found, input.group);
+    },
+
     /**
      * 建 Key：remoteName 必须全局唯一（portal 用本地 keyId），借此实现
      * 门户侧幂等——先查同名 token，存在即复用，避免远端重复创建。
@@ -578,10 +663,10 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     async createKey(input: {
       user: NewApiUserCredentials;
       remoteName: string;
+      group?: string;
       allowedModels?: string[];
       quotaLimitUsd?: number;
       ipAllowlist?: string[];
-      group?: string;
       crossGroupRetry?: boolean;
     }): Promise<RemoteCreatedKey> {
       let item = await findTokenByName(input.user, input.remoteName);
@@ -601,9 +686,10 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
             model_limits_enabled: Boolean(input.allowedModels?.length),
             model_limits: (input.allowedModels || []).join(','),
             allow_ips: (input.ipAllowlist || []).join(','),
-            group: input.group || APIPOOL_CONFIG.newApiDefaultTokenGroup,
-            cross_group_retry:
-              input.crossGroupRetry ?? APIPOOL_CONFIG.newApiTokenCrossGroupRetry,
+            group: input.group ?? '',
+            ...(typeof input.crossGroupRetry === 'boolean'
+              ? { cross_group_retry: input.crossGroupRetry }
+              : {}),
           },
         });
         item = await findTokenByName(input.user, input.remoteName);
@@ -705,15 +791,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
 
       const logs = await listUsageLogsInRange(user, LIST_PAGE_SIZE, window);
       const inputTokens = logs.reduce((sum, log) => sum + log.inputTokens, 0);
-      const outputTokens = logs.reduce(
-        (sum, log) => sum + log.outputTokens,
-        0
-      );
-      const latencySamples = logs
-        .map((log) => log.latencyMs)
-        .filter(
-          (latencyMs): latencyMs is number => typeof latencyMs === 'number'
-        );
+      const outputTokens = logs.reduce((sum, log) => sum + log.outputTokens, 0);
 
       // /api/data/self 由 New API 周期性聚合，刚发生的调用尚未入仓；
       // 聚合为空而日志非空时，用同窗口的消费日志推导汇总，保证近实时
@@ -749,13 +827,6 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         inputTokens,
         outputTokens,
         spendUsd: quotaToUsd(spendQuota),
-        averageLatencyMs:
-          latencySamples.length > 0
-            ? Math.round(
-                latencySamples.reduce((sum, value) => sum + value, 0) /
-                  latencySamples.length
-              )
-            : undefined,
         byModel,
       };
     },
@@ -777,43 +848,85 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       reason: string;
       reference: string;
     }): Promise<{ changeId: string; balanceUsd?: number }> {
-      if (input.amountUsd <= 0) {
-        throw new NewApiBridgeError({
-          code: 'remote_error',
-          message: 'Quota adjustment amount must be positive',
+      return withQuotaAdjustmentLock(input.user.newapiUserId, async () => {
+        if (input.amountUsd === 0) {
+          throw new NewApiBridgeError({
+            code: 'remote_error',
+            message: 'Quota adjustment amount must be non-zero',
+          });
+        }
+        if (input.amountUsd < 0) {
+          const current = await getQuotaForUser(input.user);
+          if (current.quotaRemaining === undefined) {
+            throw new NewApiBridgeError({
+              code: 'malformed_response',
+              message: 'New API quota response missing remaining quota',
+            });
+          }
+          const nextQuota =
+            current.quotaRemaining + usdToQuota(input.amountUsd);
+          if (nextQuota < 0) {
+            throw new NewApiBridgeError({
+              code: 'remote_error',
+              message: 'Quota adjustment would make the balance negative',
+            });
+          }
+
+          await request('/api/user/', {
+            method: 'PUT',
+            body: {
+              id: toRemoteUserId(input.user.newapiUserId),
+              quota: nextQuota,
+            },
+          });
+          try {
+            const quota = await getQuotaForUser(input.user);
+            return { changeId: input.reference, balanceUsd: quota.balanceUsd };
+          } catch (error: any) {
+            throw new NewApiQuotaAdjustmentReconciliationError({
+              changeId: input.reference,
+              message: error?.message || 'Quota adjustment confirmation failed',
+            });
+          }
+        }
+
+        // 兑换码名称限长 20 字符，存 reference 的短哈希；
+        // 对账以兑换码值（changeId）与 ledger/审计中的 reference 关联
+        const redemptionName = `r${createHash('sha256')
+          .update(input.reference)
+          .digest('hex')
+          .slice(0, 18)}`;
+        const codes = await request<any>('/api/redemption/', {
+          method: 'POST',
+          body: {
+            name: redemptionName,
+            quota: usdToQuota(input.amountUsd),
+            count: 1,
+          },
         });
-      }
+        const code = Array.isArray(codes) ? codes[0] : undefined;
+        if (typeof code !== 'string' || code.length === 0) {
+          throw new NewApiBridgeError({
+            code: 'malformed_response',
+            message: 'New API did not return a redemption code',
+          });
+        }
 
-      // 兑换码名称限长 20 字符，存 reference 的短哈希；
-      // 对账以兑换码值（changeId）与 ledger/审计中的 reference 关联
-      const redemptionName = `r${createHash('sha256')
-        .update(input.reference)
-        .digest('hex')
-        .slice(0, 18)}`;
-      const codes = await request<any>('/api/redemption/', {
-        method: 'POST',
-        body: {
-          name: redemptionName,
-          quota: usdToQuota(input.amountUsd),
-          count: 1,
-        },
-      });
-      const code = Array.isArray(codes) ? codes[0] : undefined;
-      if (typeof code !== 'string' || code.length === 0) {
-        throw new NewApiBridgeError({
-          code: 'malformed_response',
-          message: 'New API did not return a redemption code',
+        await request('/api/user/topup', {
+          method: 'POST',
+          auth: userAuth(input.user),
+          body: { key: code },
         });
-      }
-
-      await request('/api/user/topup', {
-        method: 'POST',
-        auth: userAuth(input.user),
-        body: { key: code },
+        try {
+          const quota = await getQuotaForUser(input.user);
+          return { changeId: code, balanceUsd: quota.balanceUsd };
+        } catch (error: any) {
+          throw new NewApiQuotaAdjustmentReconciliationError({
+            changeId: code,
+            message: error?.message || 'Quota adjustment confirmation failed',
+          });
+        }
       });
-
-      const quota = await getQuotaForUser(input.user);
-      return { changeId: code, balanceUsd: quota.balanceUsd };
     },
   };
 }

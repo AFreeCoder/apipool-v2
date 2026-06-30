@@ -26,6 +26,34 @@
     {
       "idx": 3,
       "version": "6",
+      "when": 1782402842051,
+      "tag": "0003_jazzy_namora",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1782467109042,
+      "tag": "0004_bouncy_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1782556624969,
+      "tag": "0005_elite_prowler",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1782629603000,
+      "tag": "0006_official_newapi_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
       "when": 1782125511963,
       "tag": "0003_delete_soft_deleted_newapi_keys",
       "breakpoints": true

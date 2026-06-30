@@ -1,23 +1,25 @@
+import { BalanceWarning } from '@/features/api-console/components/balance-warning';
+import { StatCard } from '@/features/api-console/components/stat-card';
 import {
-  Activity,
-  BarChart3,
-  DollarSign,
-  KeyRound,
-  Wallet,
-} from 'lucide-react';
-import { setRequestLocale } from 'next-intl/server';
-
-import { APIPOOL_CONFIG } from '@/config/apipool';
+  formatBalanceUsdAmount,
+  formatUsdAmount,
+} from '@/features/api-console/lib/money';
+import {
+  getUsageLogRowKey,
+  getUsageSyncDescription,
+} from '@/features/api-console/lib/status';
 import {
   getPortalUsage,
+  listPortalApiKeys,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
-import { StatCard } from '@/features/api-console/components/stat-card';
-import { formatUsdAmount } from '@/features/api-console/lib/money';
-import { getApipoolCopy } from '@/features/apipool-ui/copy';
+import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
 import { Link } from '@/core/i18n/navigation';
-import { getUserInfo } from '@/shared/models/user';
+import { APIPOOL_CONFIG } from '@/config/apipool';
 import { Button } from '@/shared/components/ui/button';
+import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
   summary: {
@@ -30,10 +32,6 @@ const EMPTY_USAGE: PortalUsageView = {
   logs: [],
 };
 
-function formatOptionalNumber(value?: number) {
-  return typeof value === 'number' ? value.toLocaleString() : '—';
-}
-
 export default async function DashboardPage({
   params,
 }: {
@@ -41,106 +39,114 @@ export default async function DashboardPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const copy = getApipoolCopy(locale).dashboardPage;
+  const [t, common] = await Promise.all([
+    getTranslations({ locale, namespace: 'dashboard.overview' }),
+    getTranslations({ locale, namespace: 'dashboard.common' }),
+  ]);
   const user = await getUserInfo();
-  const usage = user ? await getPortalUsage(user as any, '7d') : EMPTY_USAGE;
+  const [usage, keys]: [
+    PortalUsageView,
+    Awaited<ReturnType<typeof listPortalApiKeys>>,
+  ] = user
+    ? await Promise.all([
+        getPortalUsage(user as any, '7d'),
+        listPortalApiKeys(user.id),
+      ])
+    : [EMPTY_USAGE, []];
+  const usageSyncDescription = getUsageSyncDescription(
+    usage.summary,
+    common.raw('usageSync')
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {copy.title}
+            {t('title')}
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {copy.description}
+            {t('description')}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/dashboard/billing">{copy.addCredit}</Link>
+          <Button asChild variant="outline">
+            <Link href="/dashboard/billing">{t('actions.addCredit')}</Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild>
             <Link href="/dashboard/api-keys">
               <KeyRound className="size-4" />
-              {copy.createKey}
+              {t('actions.createKey')}
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="bg-background flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
+      <div className="bg-card flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
         <span className="text-muted-foreground text-xs tracking-wide uppercase">
-          {copy.baseUrl}
+          {t('baseUrl')}
         </span>
         <code className="bg-muted overflow-x-auto rounded-md border px-2.5 py-1 font-mono text-xs">
           {APIPOOL_CONFIG.apiBaseUrl}
         </code>
-        <span className="text-muted-foreground text-xs tracking-wide uppercase">
-          {copy.gatewayGroup}
-        </span>
-        <code className="bg-muted rounded-md border px-2.5 py-1 font-mono text-xs">
-          {usage.summary.group || APIPOOL_CONFIG.newApiDefaultTokenGroup}
-        </code>
         <Link href="/docs" className="text-primary ml-auto text-sm font-medium">
-          {copy.quickstart}
+          {t('actions.quickstart')}
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label={copy.balance}
-          value={formatUsdAmount(usage.summary.balanceUsd)}
-          help={copy.sourceGateway}
+          label={t('stats.balance')}
+          value={formatBalanceUsdAmount(usage.summary.balanceUsd)}
+          help={t('stats.balanceHelp')}
           icon={<Wallet className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label={copy.spend7d}
-          value={formatUsdAmount(usage.summary.spendUsd)}
-          help={copy.last7Days}
-          icon={<DollarSign className="text-muted-foreground size-4" />}
-        />
-        <StatCard
-          label={copy.requests7d}
+          label={t('stats.requests')}
           value={usage.summary.requestCount.toLocaleString()}
-          help={`${copy.sync}: ${usage.summary.status}`}
+          help={usageSyncDescription}
           icon={<Activity className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label={copy.tokens7d}
+          label={t('stats.tokens')}
           value={(
             usage.summary.inputTokens + usage.summary.outputTokens
           ).toLocaleString()}
-          help={copy.inputOutput}
+          help={t('stats.tokensHelp', {
+            input: usage.summary.inputTokens.toLocaleString(),
+            output: usage.summary.outputTokens.toLocaleString(),
+          })}
           icon={<BarChart3 className="text-muted-foreground size-4" />}
         />
         <StatCard
-          label={copy.allTimeRequests}
-          value={formatOptionalNumber(usage.summary.allTimeRequestCount)}
-          help={copy.sourceGateway}
-          icon={<Activity className="text-muted-foreground size-4" />}
-        />
-        <StatCard
-          label={copy.totalSpend}
-          value={formatUsdAmount(usage.summary.usedUsd)}
-          help={copy.sourceGateway}
-          icon={<DollarSign className="text-muted-foreground size-4" />}
+          label={t('stats.apiKeys')}
+          value={keys.length}
+          help={t('stats.apiKeysHelp')}
+          icon={<KeyRound className="text-muted-foreground size-4" />}
         />
       </div>
 
-      <div className="bg-background overflow-hidden rounded-xl border">
+      <BalanceWarning balanceUsd={usage.summary.balanceUsd} />
+
+      <div className="bg-card overflow-hidden rounded-xl border">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="font-medium">{copy.recentRequests}</h2>
+          <h2 className="font-medium">{t('recentRequests.title')}</h2>
           <Link
             href="/dashboard/usage"
             className="text-primary text-sm font-medium"
           >
-            {copy.viewUsage}
+            {t('actions.viewUsage')}
           </Link>
         </div>
         {usage.logs.length === 0 ? (
-          <div className="text-muted-foreground p-8 text-center text-sm">
-            {copy.emptyRecent}
+          <div className="text-muted-foreground flex flex-col items-center gap-3 p-8 text-center text-sm">
+            <span>{t('recentRequests.empty')}</span>
+            <Button asChild variant="outline">
+              <Link href="/dashboard/api-keys">
+                <KeyRound className="size-4" />
+                {t('actions.createKey')}
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -148,36 +154,39 @@ export default async function DashboardPage({
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
                   <th className="px-4 py-2.5 text-left font-medium">
-                    {copy.table.date}
+                    {t('recentRequests.columns.date')}
                   </th>
                   <th className="px-4 py-2.5 text-left font-medium">
-                    {copy.table.model}
-                  </th>
-                  <th className="px-4 py-2.5 text-left font-medium">
-                    {copy.table.group}
+                    {t('recentRequests.columns.model')}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
-                    {copy.table.tokens}
+                    {t('recentRequests.columns.input')}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
-                    {copy.table.spend}
+                    {t('recentRequests.columns.output')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('recentRequests.columns.spend')}
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {usage.logs.slice(0, 8).map((log) => (
-                  <tr key={log.id} className="border-b last:border-b-0">
+                {usage.logs.slice(0, 8).map((log, index) => (
+                  <tr
+                    key={getUsageLogRowKey(log, index)}
+                    className="border-b last:border-b-0"
+                  >
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {log.createdAt.toLocaleString(locale)}
+                      {log.createdAt.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {log.modelId}
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-xs">
-                      {log.group || usage.summary.group || '-'}
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {log.inputTokens.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {(log.inputTokens + log.outputTokens).toLocaleString()}
+                      {log.outputTokens.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(log.spendUsd)}

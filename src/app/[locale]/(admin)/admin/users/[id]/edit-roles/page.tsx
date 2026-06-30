@@ -3,7 +3,6 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import {
   PERMISSIONS,
   requireAllPermissions,
-  requirePermission,
 } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
@@ -85,6 +84,10 @@ export default async function UserEditRolesPage({
       },
       handler: async (data, passby) => {
         'use server';
+
+        await requireAllPermissions({
+          codes: [PERMISSIONS.USERS_WRITE, PERMISSIONS.ROLES_WRITE],
+        });
 
         const { user } = passby;
 

@@ -35,6 +35,23 @@
               "icon": "ShieldCheck"
             }
           ]
+        },
+        {
+          "title": "设置",
+          "icon": "Settings",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "认证",
+              "url": "/admin/settings/auth",
+              "icon": "KeyRound"
+            },
+            {
+              "title": "邮箱",
+              "url": "/admin/settings/email",
+              "icon": "Mail"
+            }
+          ]
         }
       ]
     },
@@ -45,6 +62,48 @@
           "title": "APIPool 调额",
           "url": "/admin/apipool-adjustments",
           "icon": "Gauge"
+        }
+      ]
+    },
+    {
+      "title": "模型目录",
+      "items": [
+        {
+          "title": "模型目录",
+          "icon": "Boxes",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "供应商",
+              "url": "/admin/catalog/vendors",
+              "icon": "Store"
+            },
+            {
+              "title": "分类",
+              "url": "/admin/catalog/categories",
+              "icon": "Shapes"
+            },
+            {
+              "title": "分组",
+              "url": "/admin/catalog/groups",
+              "icon": "Layers"
+            },
+            {
+              "title": "能力",
+              "url": "/admin/catalog/capabilities",
+              "icon": "Tags"
+            },
+            {
+              "title": "状态",
+              "url": "/admin/catalog/statuses",
+              "icon": "BadgeCheck"
+            },
+            {
+              "title": "模型",
+              "url": "/admin/catalog/models",
+              "icon": "Bot"
+            }
+          ]
         }
       ]
     }
@@ -96,7 +155,7 @@
         }
       ]
     },
-    "show_theme": true,
+    "show_theme": false,
     "show_locale": false
   },
   "variant": "sidebar"

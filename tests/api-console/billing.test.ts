@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-
 import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
 
 test('billing usage charges only include synced logs with real spend', () => {
@@ -40,4 +40,11 @@ test('billing usage charges only include synced logs with real spend', () => {
     },
   ]);
   assert.equal(Object.hasOwn(rows[0], 'newapiRequestId'), false);
+});
+
+test('billing API route uses the narrow customer billing ledger DTO', async () => {
+  const source = await readFile('src/app/api/apipool/billing/route.ts', 'utf8');
+
+  assert.match(source, /listBillingLedgerEntries/);
+  assert.doesNotMatch(source, /listLedgerEntries/);
 });

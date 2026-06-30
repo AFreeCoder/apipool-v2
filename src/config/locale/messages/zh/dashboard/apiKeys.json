@@ -1,0 +1,62 @@
+{
+  "title": "API 密钥",
+  "description": "为 APIPool Base URL 创建真实 Key。完整 Key 只展示一次。",
+  "creationPaused": "API Key 创建暂时暂停，现有 Key 仍可管理。",
+  "defaultName": "默认 APIPool Key",
+  "status": {
+    "active": "启用",
+    "disabled": "已停用",
+    "deleted": "已删除",
+    "creating_remote": "创建中…",
+    "disable_pending": "停用中…",
+    "delete_pending": "删除中…",
+    "failed_retriable": "失败，可重试",
+    "failed_terminal": "失败",
+    "remote_created_binding_failed": "远端 Key 需清理"
+  },
+  "groups": {
+    "official": "官方"
+  },
+  "notices": {
+    "selectGroup": "请先选择分组。",
+    "created": "Key 已创建。完整 Key 仅在下方展示一次。",
+    "createFailed": "创建 Key 失败",
+    "disableUnavailable": "当前状态下无法停用此 Key。",
+    "deleteUnavailable": "当前状态下无法删除此 Key。",
+    "disableFailed": "停用 Key 失败",
+    "deleteFailed": "删除 Key 失败",
+    "copyFailed": "复制失败，请手动选择并复制 Key。",
+    "oneKeyLimit": "每个账户只能创建一个 API Key。请删除现有 Key 后再创建。"
+  },
+  "form": {
+    "title": "创建 API Key",
+    "namePlaceholder": "Key 名称",
+    "groupLabel": "分组",
+    "groupPlaceholder": "选择分组",
+    "creating": "创建中...",
+    "create": "创建 Key",
+    "callableModels": "可调用模型",
+    "noCallableModels": "暂无可调用模型",
+    "hint": "发起付费调用前，请先在余额页充值。创建后完整 Key 只展示一次。",
+    "oneKeyLimitHint": "当前账户已有 API Key。请删除现有 Key 后再创建。"
+  },
+  "fullKey": {
+    "title": "完整 Key。仅展示一次。",
+    "copy": "复制完整 Key"
+  },
+  "table": {
+    "title": "{baseUrl} 的 Key",
+    "name": "名称",
+    "maskedKey": "脱敏 Key",
+    "status": "状态",
+    "group": "分组",
+    "actions": "操作",
+    "empty": "暂无 API Key。",
+    "copyMasked": "复制脱敏 Key",
+    "disable": "停用 Key",
+    "disableUnavailable": "当前状态无法停用 Key",
+    "cleanup": "清理失败 Key",
+    "delete": "删除 Key",
+    "deleteUnavailable": "当前状态无法删除 Key"
+  }
+}

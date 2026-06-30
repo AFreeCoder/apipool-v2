@@ -5,7 +5,9 @@ const eslintConfig = [
   {
     ignores: [
       '.next/**',
+      '.claude/**',
       '.source/**',
+      '.worktrees/**',
       'node_modules/**',
       'src/config/db/migrations/**',
       'src/shared/types/cloudflare.d.ts',

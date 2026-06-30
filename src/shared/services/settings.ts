@@ -381,9 +381,9 @@ export async function getSettings() {
       title: 'Email Verification Required',
       type: 'switch',
       value: 'false',
-      group: 'email_auth',
-      tab: 'auth',
-      tip: 'Require users to verify their email before they can sign in. Requires a configured email provider (e.g. Resend).',
+      group: 'resend',
+      tab: 'email',
+      tip: 'Require users to verify their email before they can sign in. Requires Resend; after saving, check delivery by sending a verification link from the sign-up or verify-email flow.',
     },
     {
       name: 'google_auth_enabled',

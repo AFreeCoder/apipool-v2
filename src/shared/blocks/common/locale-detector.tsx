@@ -1,13 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
-import { useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
+import { X } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
 
-import { usePathname, useRouter } from '@/core/i18n/navigation';
+import { usePathname } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
-import { localeNames, locales, matchSupportedLocale } from '@/config/locale';
+import {
+  AppLocale,
+  localeNames,
+  locales,
+  matchSupportedLocale,
+  normalizeLocale,
+} from '@/config/locale';
+import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { Button } from '@/shared/components/ui/button';
 import { cacheGet, cacheSet } from '@/shared/lib/cache';
 import { getTimestamp } from '@/shared/lib/time';
@@ -21,8 +28,8 @@ export function LocaleDetector() {
     return null;
   }
 
-  const currentLocale = useLocale();
-  const router = useRouter();
+  const currentLocale = normalizeLocale(useLocale());
+  const t = useTranslations('common');
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showBanner, setShowBanner] = useState(false);
@@ -35,14 +42,7 @@ export function LocaleDetector() {
     if (typeof window === 'undefined') return null;
 
     const browserLang = navigator.language || (navigator as any).userLanguage;
-    const langCode = matchSupportedLocale(browserLang);
-
-    // Check if the detected language is in our supported locales
-    if (langCode && locales.includes(langCode)) {
-      return langCode;
-    }
-
-    return null;
+    return matchSupportedLocale(browserLang);
   };
 
   const isDismissed = (): boolean => {
@@ -60,12 +60,14 @@ export function LocaleDetector() {
   const switchToLocale = useCallback(
     (locale: string) => {
       const query = searchParams?.toString?.() ?? '';
-      const href = query ? `${pathname}?${query}` : pathname;
-      router.replace(href, { locale });
+      const href = query
+        ? `${pathname}?${query}`
+        : pathname;
+      window.location.replace(localizePathForLocale(href, locale));
       cacheSet(PREFERRED_LOCALE_KEY, locale);
       setShowBanner(false);
     },
-    [router, pathname, searchParams]
+    [pathname, searchParams]
   );
 
   useEffect(() => {
@@ -85,12 +87,13 @@ export function LocaleDetector() {
     const preferredLocale = cacheGet(PREFERRED_LOCALE_KEY);
 
     // If user has previously clicked to switch locale, auto-switch to that preference
+    const normalizedPreferredLocale = matchSupportedLocale(preferredLocale);
     if (
-      preferredLocale &&
-      preferredLocale !== currentLocale &&
-      locales.includes(preferredLocale as any)
+      normalizedPreferredLocale &&
+      normalizedPreferredLocale !== currentLocale &&
+      locales.includes(normalizedPreferredLocale)
     ) {
-      switchToLocale(preferredLocale);
+      switchToLocale(normalizedPreferredLocale);
       return;
     }
 
@@ -227,7 +230,7 @@ export function LocaleDetector() {
   };
 
   const targetLocaleName =
-    localeNames[browserLocale as keyof typeof localeNames] || browserLocale;
+    localeNames[browserLocale as AppLocale] || browserLocale || '';
 
   if (!showBanner || !browserLocale) {
     return null;
@@ -243,9 +246,7 @@ export function LocaleDetector() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-1 items-center gap-3">
               <span className="text-sm">
-                {browserLocale.startsWith('zh')
-                  ? `检测到浏览器语言是: ${targetLocaleName}，是否切换？`
-                  : `We detected your browser language is ${targetLocaleName}. Switch to it?`}
+                {t('locale_detector.title', { locale: targetLocaleName })}
               </span>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
@@ -255,12 +256,12 @@ export function LocaleDetector() {
                 size="sm"
                 className="bg-background text-xs"
               >
-                {browserLocale.startsWith('zh') ? '切换到中文' : 'Switch'}
+                {t('locale_detector.switch_to', { locale: targetLocaleName })}
               </Button>
               <button
                 onClick={handleDismiss}
                 className="bg-primary/10 flex-shrink-0 rounded p-1 transition-colors"
-                aria-label="Close"
+                aria-label={t('locale_detector.close')}
               >
                 <X className="h-4 w-4" />
               </button>

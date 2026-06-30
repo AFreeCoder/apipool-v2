@@ -5,8 +5,9 @@ import { Check, Globe, Languages } from 'lucide-react';
 import { useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 
-import { usePathname, useRouter } from '@/core/i18n/navigation';
+import { usePathname } from '@/core/i18n/navigation';
 import { AppLocale, localeNames, normalizeLocale } from '@/config/locale';
+import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { Button } from '@/shared/components/ui/button';
 import {
   DropdownMenu,
@@ -22,7 +23,6 @@ export function LocaleSelector({
   type?: 'icon' | 'button';
 }) {
   const currentLocale = normalizeLocale(useLocale());
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
@@ -36,10 +36,10 @@ export function LocaleSelector({
       // Update localStorage to sync with locale detector
       cacheSet('locale', value);
       const query = searchParams?.toString?.() ?? '';
-      const href = query ? `${pathname}?${query}` : pathname;
-      router.push(href, {
-        locale: value,
-      });
+      const href = query
+        ? `${pathname}?${query}`
+        : pathname;
+      window.location.assign(localizePathForLocale(href, value));
     }
   };
 
@@ -59,7 +59,7 @@ export function LocaleSelector({
         ) : (
           <>
             <Globe size={16} />
-              {localeNames[currentLocale]}
+            {localeNames[currentLocale]}
           </>
         )}
       </Button>

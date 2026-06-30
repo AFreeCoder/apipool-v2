@@ -35,6 +35,23 @@
               "icon": "ShieldCheck"
             }
           ]
+        },
+        {
+          "title": "Settings",
+          "icon": "Settings",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "Auth",
+              "url": "/admin/settings/auth",
+              "icon": "KeyRound"
+            },
+            {
+              "title": "Email",
+              "url": "/admin/settings/email",
+              "icon": "Mail"
+            }
+          ]
         }
       ]
     },
@@ -45,6 +62,48 @@
           "title": "APIPool Quota",
           "url": "/admin/apipool-adjustments",
           "icon": "Gauge"
+        }
+      ]
+    },
+    {
+      "title": "Model Catalog",
+      "items": [
+        {
+          "title": "Model Catalog",
+          "icon": "Boxes",
+          "is_expand": true,
+          "children": [
+            {
+              "title": "Vendors",
+              "url": "/admin/catalog/vendors",
+              "icon": "Store"
+            },
+            {
+              "title": "Categories",
+              "url": "/admin/catalog/categories",
+              "icon": "Shapes"
+            },
+            {
+              "title": "Groups",
+              "url": "/admin/catalog/groups",
+              "icon": "Layers"
+            },
+            {
+              "title": "Capabilities",
+              "url": "/admin/catalog/capabilities",
+              "icon": "Tags"
+            },
+            {
+              "title": "Statuses",
+              "url": "/admin/catalog/statuses",
+              "icon": "BadgeCheck"
+            },
+            {
+              "title": "Models",
+              "url": "/admin/catalog/models",
+              "icon": "Bot"
+            }
+          ]
         }
       ]
     }
@@ -96,7 +155,7 @@
         }
       ]
     },
-    "show_theme": true,
+    "show_theme": false,
     "show_locale": false
   },
   "variant": "sidebar"

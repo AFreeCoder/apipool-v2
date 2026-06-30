@@ -1,0 +1,44 @@
+{
+  "title": "Balance",
+  "description": "Usage is billed per token. Balance never expires.",
+  "currentBalance": "Current balance",
+  "addCredit": "Add credit",
+  "topUp": {
+    "popular": "Popular",
+    "add": "Add {price}",
+    "checkoutError": "Checkout could not start"
+  },
+  "paymentStatus": {
+    "paid": "Paid",
+    "created": "Pending",
+    "failed": "Failed"
+  },
+  "creditStatus": {
+    "applied": "Applied",
+    "pending": "Processing",
+    "processing": "Processing",
+    "failed": "Credit failed. Contact support.",
+    "reconciliation_required": "Credit failed. Contact support."
+  },
+  "creditHistory": {
+    "title": "Credit history",
+    "empty": "No credit activity yet. Add credit above to get started.",
+    "columns": {
+      "orderTime": "Order time",
+      "amount": "Amount",
+      "paymentStatus": "Payment status",
+      "creditStatus": "Credit status"
+    }
+  },
+  "usageCharges": {
+    "title": "Usage charges",
+    "empty": "No usage charges with synced spend yet.",
+    "columns": {
+      "date": "Date",
+      "key": "Key",
+      "model": "Model",
+      "tokens": "Tokens",
+      "spend": "Spend"
+    }
+  }
+}

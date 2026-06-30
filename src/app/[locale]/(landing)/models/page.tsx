@@ -1,34 +1,40 @@
 import {
   buildModelFilterHref,
-  filterModels,
-  isDealModel,
-  MODEL_CAPABILITY_FILTERS,
-  MODEL_PROVIDER_FILTERS,
-  MODEL_STATUS_FILTERS,
+  formatMicroUsdPerMillion,
   parseModelFilters,
-  publicModels,
 } from '@/features/api-catalog/lib/catalog';
-import { setRequestLocale } from 'next-intl/server';
+import type { ListingRow } from '@/features/api-catalog/lib/types';
+import {
+  getFilterDimensions,
+  getPublicListings,
+} from '@/features/api-catalog/server/queries';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
-import { getApipoolCopy, type ApipoolCopy } from '@/features/apipool-ui/copy';
+import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 
-function formatContextWindow(tokens: number) {
+function formatContextWindow(tokens: number | null) {
+  if (!tokens) return '—';
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
   if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
   return String(tokens);
 }
 
-function formatFilterOption(
-  option: string,
-  labels: ApipoolCopy['modelsPage']['options']
+type CatalogDimension = 'groups' | 'categories' | 'capabilities' | 'statuses';
+
+type CatalogDimensionMessages = Partial<
+  Record<CatalogDimension, Record<string, string>>
+>;
+
+function localizeCatalogDimension(
+  messages: CatalogDimensionMessages,
+  dimension: CatalogDimension,
+  slug: string,
+  fallback: string
 ) {
-  return (
-    labels[option as keyof typeof labels] ||
-    option.charAt(0).toUpperCase() + option.slice(1)
-  );
+  return messages[dimension]?.[slug] ?? fallback;
 }
 
 export default async function ModelsPage({
@@ -40,23 +46,88 @@ export default async function ModelsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const copy = getApipoolCopy(locale).modelsPage;
+  const t = await getTranslations({ locale, namespace: 'pages.models' });
   const filters = parseModelFilters(await searchParams);
-  const models = filterModels(publicModels, filters);
-  const standardModels = models.filter((model) => !isDealModel(model));
-  const dealModels = models.filter(isDealModel);
+  const [listings, dimensions] = await Promise.all([
+    getPublicListings(filters),
+    getFilterDimensions(),
+  ]);
+  const dimensionMessages = t.raw('dimensions') as CatalogDimensionMessages;
+  const localizeOption = (
+    dimension: CatalogDimension,
+    option: { slug: string; name: string }
+  ) => ({
+    ...option,
+    name: localizeCatalogDimension(
+      dimensionMessages,
+      dimension,
+      option.slug,
+      option.name
+    ),
+  });
+  const localizedListings = listings.map((listing) => ({
+    ...listing,
+    groupName: localizeCatalogDimension(
+      dimensionMessages,
+      'groups',
+      listing.groupSlug,
+      listing.groupName
+    ),
+    category: localizeCatalogDimension(
+      dimensionMessages,
+      'categories',
+      listing.category,
+      listing.category
+    ),
+    capabilities: listing.capabilities.map((capability) =>
+      localizeCatalogDimension(
+        dimensionMessages,
+        'capabilities',
+        capability,
+        capability
+      )
+    ),
+    statusName: localizeCatalogDimension(
+      dimensionMessages,
+      'statuses',
+      listing.statusSlug,
+      listing.statusName
+    ),
+  }));
   const filterGroups = [
     {
-      label: copy.filters.provider,
-      key: 'provider',
-      options: MODEL_PROVIDER_FILTERS,
+      label: t('filters.provider'),
+      key: 'vendor',
+      options: dimensions.vendors,
     },
     {
-      label: copy.filters.capability,
-      key: 'capability',
-      options: MODEL_CAPABILITY_FILTERS,
+      label: t('filters.group'),
+      key: 'group',
+      options: dimensions.groups.map((option) =>
+        localizeOption('groups', option)
+      ),
     },
-    { label: copy.filters.status, key: 'status', options: MODEL_STATUS_FILTERS },
+    {
+      label: t('filters.category'),
+      key: 'category',
+      options: dimensions.categories.map((option) =>
+        localizeOption('categories', option)
+      ),
+    },
+    {
+      label: t('filters.capability'),
+      key: 'capability',
+      options: dimensions.capabilities.map((option) =>
+        localizeOption('capabilities', option)
+      ),
+    },
+    {
+      label: t('filters.status'),
+      key: 'status',
+      options: dimensions.statuses.map((option) =>
+        localizeOption('statuses', option)
+      ),
+    },
   ] as const;
 
   return (
@@ -65,37 +136,44 @@ export default async function ModelsPage({
       <section className="border-border border-b">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="text-primary font-mono text-xs tracking-widest uppercase">
-            {copy.eyebrow}
+            {t('eyebrow')}
           </div>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            {copy.title}
+            {t('title')}
           </h1>
           <p className="text-muted-foreground mt-3 max-w-2xl leading-7">
-            {copy.description}
+            {t('description')}
           </p>
 
           <div className="mt-8 space-y-2">
             {filterGroups.map((group) => (
-              <div key={group.key} className="flex flex-wrap items-center gap-1.5">
+              <div
+                key={group.key}
+                className="flex flex-wrap items-center gap-1.5"
+              >
                 <span className="text-muted-foreground w-20 shrink-0 text-xs tracking-wide uppercase">
                   {group.label}
                 </span>
+                <FilterLink
+                  active={!filters[group.key]}
+                  href={buildModelFilterHref(filters, {
+                    [group.key]: undefined,
+                  })}
+                >
+                  {t('filters.all')}
+                </FilterLink>
                 {group.options.map((option) => {
-                  const active = filters[group.key] === option;
+                  const active = filters[group.key] === option.slug;
                   return (
-                    <Link
-                      key={option}
+                    <FilterLink
+                      key={option.slug}
+                      active={active}
                       href={buildModelFilterHref(filters, {
-                        [group.key]: option,
+                        [group.key]: option.slug,
                       })}
-                      className={
-                        active
-                          ? 'bg-primary text-primary-foreground focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none'
-                      }
                     >
-                      {formatFilterOption(option, copy.options)}
-                    </Link>
+                      {option.name}
+                    </FilterLink>
                   );
                 })}
               </div>
@@ -106,160 +184,182 @@ export default async function ModelsPage({
 
       <section className="space-y-10 py-10 sm:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {standardModels.length === 0 && dealModels.length === 0 ? (
+          {listings.length === 0 ? (
             <div className="rounded-xl border p-10 text-center">
-              <div className="font-medium">{copy.noMatch}</div>
+              <div className="font-medium">{t('empty.title')}</div>
               <Button asChild variant="outline" className="mt-4 rounded-md">
-                <Link href="/models">{copy.clearFilters}</Link>
+                <Link href="/models">{t('empty.clear')}</Link>
               </Button>
             </div>
           ) : (
-            <ModelsTable models={standardModels} copy={copy} />
+            <ModelsTable listings={localizedListings} labels={t.raw('table')} />
           )}
-          <p className="text-muted-foreground mt-3 text-xs">{copy.disclaimer}</p>
+          <p className="text-muted-foreground mt-3 text-xs">
+            {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
+          </p>
         </div>
-
-        {dealModels.length > 0 && (
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="text-xl font-semibold tracking-tight">
-                {copy.dealsTitle}
-              </h2>
-              <p className="text-muted-foreground text-sm">
-                {copy.dealsDescription}
-              </p>
-            </div>
-            <ModelsTable models={dealModels} deal copy={copy} />
-          </div>
-        )}
       </section>
     </div>
   );
 }
 
-function ModelsTable({
-  models,
-  copy,
-  deal = false,
+function FilterLink({
+  active,
+  href,
+  children,
 }: {
-  models: ReturnType<typeof filterModels>;
-  copy: ApipoolCopy['modelsPage'];
-  deal?: boolean;
+  active: boolean;
+  href: string;
+  children: React.ReactNode;
 }) {
-  if (models.length === 0) return null;
+  const base =
+    'focus-visible:ring-ring inline-flex min-h-8 items-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none sm:min-h-0';
 
   return (
-    <div className="overflow-x-auto rounded-xl border">
-      <table className="w-full min-w-[760px] text-sm">
-        <thead>
-          <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-            <th className="px-4 py-3 text-left font-medium">
-              {copy.table.model}
-            </th>
-            <th className="px-4 py-3 text-left font-medium">
-              {copy.table.provider}
-            </th>
-            <th className="px-4 py-3 text-left font-medium">
-              {copy.table.capabilities}
-            </th>
-            <th className="px-4 py-3 text-right font-medium">
-              {copy.table.context}
-            </th>
-            <th className="px-4 py-3 text-right font-medium">
-              {copy.table.input}
-            </th>
-            <th className="px-4 py-3 text-right font-medium">
-              {copy.table.output}
-            </th>
-            <th className="px-4 py-3 text-right font-medium">
-              {copy.table.status}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((model) => {
-            const officialInput = model.pricing.officialInputPerMillionUsd;
-            const officialOutput = model.pricing.officialOutputPerMillionUsd;
-            return (
-              <tr
-                key={model.slug}
-                className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
-              >
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 font-medium">
-                    {model.displayName}
-                    {deal && (
-                      <span className="bg-chart-3/15 text-chart-3 rounded-md px-1.5 py-0.5 text-xs font-medium">
-                        {copy.dealBadge}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-muted-foreground font-mono text-xs">
-                    {model.modelId}
-                  </div>
-                  {deal && model.dealNote && (
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {model.dealNote}
-                    </div>
-                  )}
-                </td>
-                <td className="text-muted-foreground px-4 py-3 font-mono text-xs">
-                  {model.provider}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {model.capabilities.map((capability) => (
-                      <span
-                        key={capability}
-                        className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
-                      >
-                        {formatFilterOption(capability, copy.options)}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="text-muted-foreground px-4 py-3 text-right font-mono">
-                  {formatContextWindow(model.contextWindow)}
-                </td>
-                <td className="px-4 py-3 text-right font-mono">
-                  ${model.pricing.inputPerMillionUsd.toFixed(2)}
-                  {officialInput !== undefined &&
-                    officialInput > model.pricing.inputPerMillionUsd && (
-                      <div className="text-muted-foreground text-xs line-through">
-                        ${officialInput.toFixed(2)}
-                      </div>
-                    )}
-                </td>
-                <td className="px-4 py-3 text-right font-mono">
-                  ${model.pricing.outputPerMillionUsd.toFixed(2)}
-                  {officialOutput !== undefined &&
-                    officialOutput > model.pricing.outputPerMillionUsd && (
-                      <div className="text-muted-foreground text-xs line-through">
-                        ${officialOutput.toFixed(2)}
-                      </div>
-                    )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Badge
-                    variant={
-                      model.status === 'available' ? 'default' : 'secondary'
-                    }
-                    className={
-                      model.status === 'available'
-                        ? 'bg-primary/10 text-primary border-transparent'
-                        : ''
-                    }
-                  >
-                    {model.status === 'available'
-                      ? copy.options.available
-                      : copy.options.coming_soon}
-                  </Badge>
-                </td>
+    <Link
+      href={href}
+      className={
+        active
+          ? `${base} bg-primary text-primary-foreground font-medium`
+          : `${base} text-muted-foreground hover:text-foreground hover:bg-muted border`
+      }
+    >
+      {children}
+    </Link>
+  );
+}
+
+function ModelsTable({
+  listings,
+  labels,
+}: {
+  listings: ListingRow[];
+  labels: Record<string, string>;
+}) {
+  if (listings.length === 0) return null;
+
+  return (
+    <>
+      <p className="text-muted-foreground mb-2 text-xs min-[960px]:hidden">
+        {labels.mobileHint}
+      </p>
+      <div className="relative">
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead>
+              <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.model}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.provider}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.group}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.category}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {labels.capabilities}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.context}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.input}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.output}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {labels.status}
+                </th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            </thead>
+            <tbody>
+              {listings.map((listing) => {
+                return (
+                  <tr
+                    key={`${listing.modelId}:${listing.groupSlug}`}
+                    className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{listing.displayName}</div>
+                      <div className="text-muted-foreground font-mono text-xs">
+                        {listing.modelId}
+                      </div>
+                      {listing.description && (
+                        <div className="text-muted-foreground mt-1 text-xs">
+                          {listing.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3">
+                      {listing.vendorName}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3">
+                      {listing.groupName}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3">
+                      {listing.category}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {listing.capabilities.map((capability) => (
+                          <span
+                            key={capability}
+                            className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
+                          >
+                            {capability}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="text-muted-foreground px-4 py-3 text-right font-mono">
+                      {formatContextWindow(listing.contextWindow)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatMicroUsdPerMillion(listing.inputMicroUsd)}
+                      {listing.listInputMicroUsd !== undefined && (
+                        <div className="text-muted-foreground text-xs line-through">
+                          {formatMicroUsdPerMillion(listing.listInputMicroUsd)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatMicroUsdPerMillion(listing.outputMicroUsd)}
+                      {listing.listOutputMicroUsd !== undefined && (
+                        <div className="text-muted-foreground text-xs line-through">
+                          {formatMicroUsdPerMillion(listing.listOutputMicroUsd)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Badge
+                        variant={listing.isCallable ? 'default' : 'secondary'}
+                        className={
+                          listing.isCallable
+                            ? 'bg-primary/10 text-primary border-transparent'
+                            : ''
+                        }
+                      >
+                        {listing.statusName}
+                      </Badge>
+                      {listing.discountNote && (
+                        <div className="text-muted-foreground mt-1 text-xs">
+                          {listing.discountNote}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="from-background pointer-events-none absolute inset-y-0 right-0 w-12 rounded-r-xl bg-gradient-to-l to-transparent min-[960px]:hidden" />
+      </div>
+    </>
   );
 }

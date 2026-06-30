@@ -75,7 +75,15 @@ export const localeMessagesRootPath = '@/config/locale/messages';
 
 export const localeMessagesPaths = [
   'common',
+  'site',
+  'pages/home',
+  'pages/models',
   'pages/pricing',
+  'dashboard/common',
+  'dashboard/overview',
+  'dashboard/billing',
+  'dashboard/usage',
+  'dashboard/apiKeys',
   'settings/sidebar',
   'settings/profile',
   'settings/security',
@@ -84,4 +92,6 @@ export const localeMessagesPaths = [
   'admin/roles',
   'admin/permissions',
   'admin/apikeys',
+  'admin/catalog',
+  'admin/settings',
 ];

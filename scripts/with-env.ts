@@ -2,7 +2,7 @@
 /**
  * Environment-aware script wrapper
  *
- * Determines the env file to use and executes a command with dotenv-cli
+ * Determines the env file to use and executes a command with the loaded env
  *
  * Usage:
  *   tsx scripts/with-env.ts <command> [args...]
@@ -15,7 +15,20 @@
  *
  * Priority: --env argument > ENV_FILE env var > .env.{NODE_ENV} > .env.development (default)
  */
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename } from 'node:path';
+
+import { parse } from 'dotenv';
+
+const localSqliteDefaults: Record<string, string> = {
+  DATABASE_PROVIDER: 'sqlite',
+  DATABASE_URL: 'file:data/local.db',
+  DB_SCHEMA_FILE: './src/config/db/schema.sqlite.ts',
+  DB_MIGRATIONS_OUT: './src/config/db/migrations_sqlite',
+  DB_SINGLETON_ENABLED: 'true',
+  DB_MAX_CONNECTIONS: '1',
+};
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -69,14 +82,50 @@ if (args.length === 0) {
 
 const command = args.join(' ');
 
+const parsedEnv = existsSync(envFile)
+  ? parse(readFileSync(envFile))
+  : {};
+const childEnv: NodeJS.ProcessEnv = { ...parsedEnv, ...process.env };
+
+if (basename(envFile) === '.env.development') {
+  const provider = childEnv.DATABASE_PROVIDER ?? '';
+
+  if (provider === '' || provider === 'sqlite') {
+    const appliedDefaults: string[] = [];
+
+    for (const [key, value] of Object.entries(localSqliteDefaults)) {
+      if (!childEnv[key]) {
+        childEnv[key] = value;
+        appliedDefaults.push(key);
+      }
+    }
+
+    if (appliedDefaults.length > 0) {
+      console.log(
+        `Using local SQLite defaults for missing env: ${appliedDefaults.join(', ')}`
+      );
+    }
+  }
+}
+
 console.log(`📄 Loading environment from: ${envFile}`);
 console.log(`▶️  Executing: ${command}\n`);
 
 try {
-  execSync(`dotenv -e ${envFile} -- ${command}`, {
+  const [commandBin, ...commandArgs] = args;
+  const result = spawnSync(commandBin, commandArgs, {
     stdio: 'inherit',
     cwd: process.cwd(),
+    env: childEnv,
+    shell: true,
   });
+
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+
+  process.exit(result.status ?? 1);
 } catch (error) {
   process.exit(1);
 }

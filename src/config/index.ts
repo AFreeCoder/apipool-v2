@@ -45,5 +45,5 @@ export const envConfigs: ConfigMap = {
   newapi_integration_enabled: process.env.NEWAPI_INTEGRATION_ENABLED ?? 'true',
   version: packageJson.version,
   locale_detect_enabled:
-    process.env.NEXT_PUBLIC_LOCALE_DETECT_ENABLED ?? 'false',
+    process.env.NEXT_PUBLIC_LOCALE_DETECT_ENABLED ?? 'true',
 };

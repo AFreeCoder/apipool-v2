@@ -23,6 +23,7 @@
       "add": "添加用户",
       "edit": "编辑用户",
       "view": "查看用户",
+      "view_detail": "查看详情",
       "delete": "删除用户",
       "edit_roles": "编辑角色",
       "grant_credits": "授予积分",
@@ -44,6 +45,117 @@
     },
     "buttons": {
       "submit": "更新"
+    }
+  },
+  "detail": {
+    "title": "用户详情",
+    "crumbs": {
+      "admin": "管理后台",
+      "users": "用户",
+      "detail": "详情"
+    },
+    "buttons": {
+      "adjust_quota": "调整额度"
+    },
+    "empty": {
+      "value": "-",
+      "not_initialized": "未初始化",
+      "never_synced": "从未同步",
+      "usage_logs": "暂无用量日志",
+      "keys": "暂无 API Key",
+      "ledger": "暂无调额记录"
+    },
+    "errors": {
+      "usage": "用量数据暂时不可用。",
+      "keys": "API Key 数据暂时不可用。",
+      "ledger": "调额历史暂时不可用。"
+    },
+    "balance": {
+      "title": "余额与额度",
+      "description": "该用户的只读 APIPool 余额快照。",
+      "fields": {
+        "balance": "余额",
+        "quota_remaining": "剩余额度",
+        "status": "同步状态"
+      }
+    },
+    "usage": {
+      "title": "最近用量",
+      "description": "缓存的近期请求汇总与日志。",
+      "fields": {
+        "requests": "请求数",
+        "input_tokens": "输入 Tokens",
+        "output_tokens": "输出 Tokens",
+        "spend": "消费"
+      },
+      "logs": {
+        "columns": {
+          "created_at": "时间",
+          "key": "Key",
+          "model": "模型",
+          "status": "状态",
+          "input_tokens": "输入 Tokens",
+          "output_tokens": "输出 Tokens",
+          "spend": "消费"
+        }
+      }
+    },
+    "keys": {
+      "title": "API Key 列表",
+      "description": "该门户用户的本地 Key 绑定。",
+      "columns": {
+        "name": "名称",
+        "key": "脱敏 Key",
+        "group": "分组",
+        "status": "状态",
+        "created_at": "创建时间",
+        "last_used_at": "最后使用"
+      }
+    },
+    "ledger": {
+      "title": "调额历史",
+      "description": "仅展示管理员手动调额记录。",
+      "columns": {
+        "created_at": "时间",
+        "amount": "金额",
+        "status": "状态",
+        "reason": "原因",
+        "newapi_change": "New API 变更",
+        "audit": "审计",
+        "operator": "操作人"
+      }
+    },
+    "status": {
+      "usage": {
+        "ready": "已就绪",
+        "empty": "未初始化",
+        "syncing": "同步中",
+        "stale": "可能过期",
+        "failed": "失败"
+      },
+      "key": {
+        "creating_remote": "创建中",
+        "active": "启用",
+        "remote_created_binding_failed": "绑定失败",
+        "disable_pending": "禁用中",
+        "delete_pending": "删除中",
+        "failed_retriable": "待重试",
+        "failed_terminal": "失败",
+        "disabled": "已禁用",
+        "deleted": "已删除"
+      },
+      "ledger": {
+        "pending": "待处理",
+        "processing": "处理中",
+        "applied": "已生效",
+        "failed": "失败",
+        "reconciliation_required": "需要人工核对"
+      },
+      "request": {
+        "success": "成功",
+        "failed": "失败",
+        "error": "错误"
+      }
     }
   },
   "edit_roles": {

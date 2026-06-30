@@ -3,6 +3,7 @@
 .vscode
 .wrangler
 data
+.tmp
 debug
 node_modules
 .env*

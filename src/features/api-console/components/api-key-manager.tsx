@@ -1,17 +1,34 @@
 'use client';
 
-import { useState } from 'react';
-import { Copy, KeyRound, Plus, Trash2, Ban } from 'lucide-react';
-
-import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
+import { useEffect, useState } from 'react';
 import {
+  canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
   type KeyLifecycleStatus,
 } from '@/features/api-console/lib/status';
-import type { ApiKeyManagerCopy } from '@/features/apipool-ui/copy';
+import {
+  AlertCircle,
+  Ban,
+  CheckCircle2,
+  Copy,
+  Info,
+  KeyRound,
+  Plus,
+  Trash2,
+} from 'lucide-react';
+import { useTranslations } from 'next-intl';
+
+import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select';
 import {
   Table,
   TableBody,
@@ -21,35 +38,45 @@ import {
   TableRow,
 } from '@/shared/components/ui/table';
 
+import {
+  applyApiKeyMutationResult,
+  buildCreateKeyRequest,
+  buildGroupSelectOptions,
+  type ApiKeyGroup,
+} from '../lib/key-request';
+
 type ApiKeyRow = {
   id: string;
   displayName: string;
   keyMasked: string;
   status: KeyLifecycleStatus;
-  allowedModels: string[];
+  allowedModels?: string[];
+  groupSlug?: string | null;
+  groupName?: string | null;
   createdAt: string | Date;
+  deletedAt?: string | Date | null;
 };
 
+type NoticeTone = 'error' | 'info' | 'success';
+type GroupMessages = Record<string, string>;
 type KeyMutationAction = 'disable' | 'delete';
+
+type NoticeState = {
+  tone: NoticeTone;
+  text: string;
+};
+
+function localizeApiKeyRowGroupName(
+  messages: GroupMessages,
+  key: Pick<ApiKeyRow, 'groupSlug' | 'groupName'>
+) {
+  return (key.groupSlug ? messages[key.groupSlug] : undefined) ?? key.groupName;
+}
 
 function occupiesCustomerKeySlot(key: ApiKeyRow) {
   return !['deleted', 'failed_retriable', 'failed_terminal'].includes(
     key.status
   );
-}
-
-async function readPortalPayload(response: Response) {
-  const payload = await response.json().catch(() => null);
-
-  if (!payload) {
-    throw new Error(
-      response.ok
-        ? 'Invalid API response'
-        : `API request failed (${response.status})`
-    );
-  }
-
-  return payload;
 }
 
 async function copyToClipboard(text: string) {
@@ -89,87 +116,146 @@ async function copyToClipboard(text: string) {
 
 function StatusBadge({
   status,
-  copy,
+  label,
 }: {
   status: KeyLifecycleStatus;
-  copy: ApiKeyManagerCopy;
+  label: string;
 }) {
   const className =
     status === 'active'
       ? 'bg-primary/10 text-primary'
-      : status.startsWith('failed') || status === 'remote_created_binding_failed'
+      : status.startsWith('failed') ||
+          status === 'remote_created_binding_failed'
         ? 'bg-destructive/10 text-destructive'
         : 'bg-muted text-muted-foreground';
   return (
     <span
       className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${className}`}
     >
-      {(copy.statusLabels as Record<string, string>)[status] ||
-        status.replaceAll('_', ' ')}
+      {label}
     </span>
+  );
+}
+
+function ApiKeyNotice({ notice }: { notice: NoticeState }) {
+  const toneConfig = {
+    error: {
+      icon: AlertCircle,
+      className:
+        'border-destructive/30 bg-destructive/10 text-destructive shadow-xs',
+      iconClassName: 'text-destructive',
+    },
+    info: {
+      icon: Info,
+      className: 'border-border bg-muted/50 text-muted-foreground',
+      iconClassName: 'text-muted-foreground',
+    },
+    success: {
+      icon: CheckCircle2,
+      className: 'border-primary/20 bg-primary/10 text-primary',
+      iconClassName: 'text-primary',
+    },
+  } satisfies Record<
+    NoticeTone,
+    {
+      icon: typeof AlertCircle;
+      className: string;
+      iconClassName: string;
+    }
+  >;
+  const config = toneConfig[notice.tone];
+  const Icon = config.icon;
+
+  return (
+    <div
+      role={notice.tone === 'error' ? 'alert' : 'status'}
+      aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
+      className={`mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${config.className}`}
+    >
+      <Icon className={`mt-0.5 size-4 shrink-0 ${config.iconClassName}`} />
+      <p className="min-w-0 leading-5">{notice.text}</p>
+    </div>
   );
 }
 
 export function ApiKeyManager({
   initialKeys,
+  groups,
+  callableByGroup,
   creationEnabled = true,
-  copy,
 }: {
   initialKeys: ApiKeyRow[];
+  groups: ApiKeyGroup[];
+  callableByGroup: Record<string, string[]>;
   creationEnabled?: boolean;
-  copy: ApiKeyManagerCopy;
 }) {
+  const t = useTranslations('dashboard.apiKeys');
+  const groupMessages = t.raw('groups') as GroupMessages;
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
-  const [name, setName] = useState<string>(copy.defaultName);
+  const [name, setName] = useState(t('defaultName'));
+  const [selectedGroupSlug, setSelectedGroupSlug] = useState(
+    groups[0]?.slug ?? ''
+  );
   const [plainKey, setPlainKey] = useState('');
   const [plainKeysById, setPlainKeysById] = useState<Record<string, string>>(
     {}
   );
-  const [message, setMessage] = useState('');
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [pendingKeyAction, setPendingKeyAction] = useState<{
     id: string;
     action: KeyMutationAction;
   } | null>(null);
   const isMutatingKey = pendingKeyAction !== null;
   const hasExistingCustomerKey = keys.some(occupiesCustomerKeySlot);
+  const groupOptions = buildGroupSelectOptions(groups);
+  const selectedGroupLabel =
+    groupOptions.find((group) => group.value === selectedGroupSlug)?.label ??
+    t('form.groupPlaceholder');
+  const selectedGroupModels = selectedGroupSlug
+    ? (callableByGroup[selectedGroupSlug] ?? [])
+    : [];
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function refreshKeys() {
-    try {
-      const response = await fetch('/api/apipool/keys');
-      const payload = await readPortalPayload(response);
-      if (payload.code === 0) {
-        setKeys(payload.data.keys || []);
-      }
-    } catch {
-      return;
+    const response = await fetch('/api/apipool/keys');
+    const payload = await response.json();
+    if (payload.code === 0) {
+      setKeys(payload.data.keys || []);
     }
   }
 
   async function createKey() {
     if (!creationEnabled) {
       setPlainKey('');
-      setMessage(copy.keyCreationPaused);
+      setNotice({ tone: 'info', text: t('creationPaused') });
       return;
     }
     if (hasExistingCustomerKey) {
       setPlainKey('');
-      setMessage(copy.oneKeyLimit);
+      setNotice({ tone: 'info', text: t('notices.oneKeyLimit') });
+      return;
+    }
+    if (!selectedGroupSlug) {
+      setPlainKey('');
+      setNotice({ tone: 'error', text: t('notices.selectGroup') });
       return;
     }
 
     setLoading(true);
-    setMessage('');
+    setNotice(null);
     setPlainKey('');
     try {
       const response = await fetch('/api/apipool/keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name,
-        }),
+        body: JSON.stringify(buildCreateKeyRequest(name, selectedGroupSlug)),
       });
-      const payload = await readPortalPayload(response);
+      const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
       const createdKey = payload.data.key;
       const createdPlainKey = payload.data.plainKey || '';
@@ -181,9 +267,15 @@ export function ApiKeyManager({
         }));
       }
       setKeys((prev) => [createdKey, ...prev]);
-      setMessage(copy.keyCreated);
+      setNotice({
+        tone: 'success',
+        text: t('notices.created'),
+      });
     } catch (error: any) {
-      setMessage(error?.message || copy.createFailed);
+      setNotice({
+        tone: 'error',
+        text: error?.message || t('notices.createFailed'),
+      });
       await refreshKeys();
     } finally {
       setLoading(false);
@@ -191,32 +283,33 @@ export function ApiKeyManager({
   }
 
   async function disableKey(id: string) {
-    setMessage('');
-    setPlainKey('');
+    setNotice(null);
     const target = keys.find((key) => key.id === id);
     if (!target || !canDisableKeyStatus(target.status)) {
-      setMessage(copy.disableNotAllowed);
+      setNotice({
+        tone: 'error',
+        text: t('notices.disableUnavailable'),
+      });
       return;
     }
 
     setPendingKeyAction({ id, action: 'disable' });
-    setKeys((prev) =>
-      prev.map((key) =>
-        key.id === id ? { ...key, status: 'disable_pending' } : key
-      )
-    );
-
     try {
       const response = await fetch(`/api/apipool/keys/${id}/disable`, {
         method: 'POST',
       });
-      const payload = await readPortalPayload(response);
-      if (payload.code !== 0) throw new Error(payload.message);
-      setKeys((prev) =>
-        prev.map((key) => (key.id === id ? payload.data.key : key))
-      );
+      const payload = await response.json();
+      if (payload.code !== 0) {
+        setNotice({ tone: 'error', text: payload.message });
+        await refreshKeys();
+        return;
+      }
+      setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
     } catch (error: any) {
-      setMessage(error?.message || 'Disable API key failed');
+      setNotice({
+        tone: 'error',
+        text: error?.message || t('notices.disableFailed'),
+      });
       await refreshKeys();
     } finally {
       setPendingKeyAction(null);
@@ -224,35 +317,42 @@ export function ApiKeyManager({
   }
 
   async function deleteKey(id: string) {
-    setMessage('');
-    setPlainKey('');
+    setNotice(null);
     const target = keys.find((key) => key.id === id);
-    if (!target || !canDeleteKeyStatus(target.status)) {
-      setMessage(copy.deleteNotAllowed);
+    if (
+      !target ||
+      (!canDeleteKeyStatus(target.status) &&
+        !canCleanupKeyStatus(target.status))
+    ) {
+      setNotice({
+        tone: 'error',
+        text: t('notices.deleteUnavailable'),
+      });
       return;
     }
 
     setPendingKeyAction({ id, action: 'delete' });
-    setKeys((prev) =>
-      prev.map((key) =>
-        key.id === id ? { ...key, status: 'delete_pending' } : key
-      )
-    );
-
     try {
       const response = await fetch(`/api/apipool/keys/${id}`, {
         method: 'DELETE',
       });
-      const payload = await readPortalPayload(response);
-      if (payload.code !== 0) throw new Error(payload.message);
-      setKeys((prev) => prev.filter((key) => key.id !== id));
+      const payload = await response.json();
+      if (payload.code !== 0) {
+        setNotice({ tone: 'error', text: payload.message });
+        await refreshKeys();
+        return;
+      }
+      setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
       setPlainKeysById((prev) => {
         const next = { ...prev };
         delete next[id];
         return next;
       });
     } catch (error: any) {
-      setMessage(error?.message || 'Delete API key failed');
+      setNotice({
+        tone: 'error',
+        text: error?.message || t('notices.deleteFailed'),
+      });
       await refreshKeys();
     } finally {
       setPendingKeyAction(null);
@@ -261,50 +361,100 @@ export function ApiKeyManager({
 
   async function copyText(text: string) {
     const copied = await copyToClipboard(text);
-    if (!copied) setMessage(copy.copyFailed);
+    if (!copied) {
+      setNotice({ tone: 'error', text: t('notices.copyFailed') });
+    }
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border bg-background p-5">
+      <div className="bg-card rounded-xl border p-5">
         <div className="mb-4 flex items-center gap-2 font-medium">
           <KeyRound className="size-4" />
-          {copy.createTitle}
+          {t('form.title')}
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]">
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder={copy.keyNamePlaceholder}
+            placeholder={t('form.namePlaceholder')}
           />
+          {mounted ? (
+            <Select
+              value={selectedGroupSlug || undefined}
+              onValueChange={setSelectedGroupSlug}
+              disabled={loading || groupOptions.length === 0}
+            >
+              <SelectTrigger
+                aria-label={t('form.groupLabel')}
+                className="w-full"
+              >
+                <SelectValue placeholder={t('form.groupPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {groupOptions.map((group) => (
+                  <SelectItem key={group.value} value={group.value}>
+                    {group.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              aria-label={t('form.groupLabel')}
+              className="w-full justify-start"
+            >
+              <span className="truncate">{selectedGroupLabel}</span>
+            </Button>
+          )}
           <Button
-            type="button"
             onClick={createKey}
             disabled={
               loading ||
               isMutatingKey ||
               !creationEnabled ||
+              !selectedGroupSlug ||
               hasExistingCustomerKey
             }
           >
             <Plus className="size-4" />
-            {loading ? copy.creating : copy.createKey}
+            {loading ? t('form.creating') : t('form.create')}
           </Button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {hasExistingCustomerKey ? copy.oneKeyLimitTip : copy.creationTip}
+        <div className="bg-muted/40 mt-4 rounded-md border p-3">
+          <div className="text-sm font-medium">{t('form.callableModels')}</div>
+          {selectedGroupModels.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {selectedGroupModels.map((modelName) => (
+                <span
+                  key={modelName}
+                  className="bg-background text-muted-foreground rounded-md px-2 py-1 text-xs"
+                >
+                  {modelName}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground mt-2 text-xs">
+              {t('form.noCallableModels')}
+            </p>
+          )}
+        </div>
+        <p className="text-muted-foreground mt-3 text-xs">
+          {hasExistingCustomerKey ? t('form.oneKeyLimitHint') : t('form.hint')}
         </p>
         {!creationEnabled && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {copy.keyCreationPaused}
+          <p className="text-muted-foreground mt-2 text-xs">
+            {t('creationPaused')}
           </p>
         )}
-        {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
+        {notice && <ApiKeyNotice notice={notice} />}
         {plainKey && (
-          <div className="mt-4 rounded-md border bg-muted p-4">
-            <div className="mb-2 text-sm font-medium">
-              {copy.fullKeyTitle}
-            </div>
+          <div className="bg-muted mt-4 rounded-md border p-4">
+            <div className="mb-2 text-sm font-medium">{t('fullKey.title')}</div>
             <div className="flex items-center gap-2">
               <code className="min-w-0 flex-1 overflow-x-auto text-sm">
                 {plainKey}
@@ -314,8 +464,8 @@ export function ApiKeyManager({
                 variant="outline"
                 size="icon"
                 onClick={() => copyText(plainKey)}
-                title={copy.copyFullKey}
-                aria-label={copy.copyFullKey}
+                title={t('fullKey.copy')}
+                aria-label={t('fullKey.copy')}
               >
                 <Copy className="size-4" />
               </Button>
@@ -324,28 +474,27 @@ export function ApiKeyManager({
         )}
       </div>
 
-      <div className="rounded-lg border bg-background">
+      <div className="bg-card rounded-xl border">
         <div className="border-b p-5">
           <h2 className="font-medium">
-            {copy.keysTitlePrefix}
-            {APIPOOL_PUBLIC_CONFIG.apiBaseUrl}
+            {t('table.title', { baseUrl: APIPOOL_PUBLIC_CONFIG.apiBaseUrl })}
           </h2>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{copy.table.name}</TableHead>
-              <TableHead>{copy.table.maskedKey}</TableHead>
-              <TableHead>{copy.table.status}</TableHead>
-              <TableHead>{copy.table.models}</TableHead>
-              <TableHead className="text-right">{copy.table.actions}</TableHead>
+              <TableHead>{t('table.name')}</TableHead>
+              <TableHead>{t('table.maskedKey')}</TableHead>
+              <TableHead>{t('table.status')}</TableHead>
+              <TableHead>{t('table.group')}</TableHead>
+              <TableHead className="text-right">{t('table.actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {keys.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center">
-                  {copy.noKeys}
+                  {t('table.empty')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -357,8 +506,10 @@ export function ApiKeyManager({
                     : null;
                 const canDisable =
                   canDisableKeyStatus(key.status) && !isMutatingKey;
+                const canCleanup = canCleanupKeyStatus(key.status);
                 const canDelete =
-                  canDeleteKeyStatus(key.status) && !isMutatingKey;
+                  (canDeleteKeyStatus(key.status) || canCleanup) &&
+                  !isMutatingKey;
 
                 return (
                   <TableRow key={key.id}>
@@ -369,14 +520,16 @@ export function ApiKeyManager({
                       {key.keyMasked}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={key.status} copy={copy} />
+                      <StatusBadge
+                        status={key.status}
+                        label={t(`status.${key.status}`)}
+                      />
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {(key.allowedModels || []).join(', ')}
+                    <TableCell>
+                      {localizeApiKeyRowGroupName(groupMessages, key) ?? '—'}
                     </TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
-                        type="button"
                         variant="outline"
                         size="icon"
                         onClick={() =>
@@ -384,55 +537,49 @@ export function ApiKeyManager({
                         }
                         title={
                           plainKeyForRow
-                            ? copy.copyFullKey
-                            : copy.copyMaskedKey
+                            ? t('fullKey.copy')
+                            : t('table.copyMasked')
                         }
                         aria-label={
                           plainKeyForRow
-                            ? copy.copyFullKey
-                            : copy.copyMaskedKey
+                            ? t('fullKey.copy')
+                            : t('table.copyMasked')
                         }
                       >
                         <Copy className="size-4" />
                       </Button>
                       <Button
-                        type="button"
                         variant="outline"
                         size="icon"
                         onClick={() => disableKey(key.id)}
                         disabled={!canDisable}
                         title={
                           rowPendingAction === 'disable'
-                            ? (copy.statusLabels.disable_pending as string)
+                            ? t('status.disable_pending')
                             : canDisable
-                              ? copy.disableKey
-                              : copy.disableUnavailable
+                            ? t('table.disable')
+                            : t('table.disableUnavailable')
                         }
-                        aria-label={
-                          rowPendingAction === 'disable'
-                            ? (copy.statusLabels.disable_pending as string)
-                            : copy.disableKey
-                        }
+                        aria-label={t('table.disable')}
                       >
                         <Ban className="size-4" />
                       </Button>
                       <Button
-                        type="button"
                         variant="outline"
                         size="icon"
                         onClick={() => deleteKey(key.id)}
                         disabled={!canDelete}
                         title={
                           rowPendingAction === 'delete'
-                            ? (copy.statusLabels.delete_pending as string)
+                            ? t('status.delete_pending')
+                            : canCleanup
+                            ? t('table.cleanup')
                             : canDelete
-                              ? copy.deleteKey
-                              : copy.deleteUnavailable
+                              ? t('table.delete')
+                              : t('table.deleteUnavailable')
                         }
                         aria-label={
-                          rowPendingAction === 'delete'
-                            ? (copy.statusLabels.delete_pending as string)
-                            : copy.deleteKey
+                          canCleanup ? t('table.cleanup') : t('table.delete')
                         }
                       >
                         <Trash2 className="size-4" />

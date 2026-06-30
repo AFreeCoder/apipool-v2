@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import { apipoolLedgerEntry } from '@/config/db/schema';
@@ -19,8 +19,8 @@ import {
 } from './portal';
 
 // 充值加额执行器（docs/06）：订单 paid 且本地 credit 入账后，
-// 通过兑换码把同额 quota 加到 New API。幂等靠 ledger.orderNo 唯一索引；
-// 失败绝不抛出（webhook 必须成功返回），留 pending/failed 待重试。
+// 通过兑换码把同额 quota 加到 New API。幂等靠 ledger.orderNo 唯一索引
+// 和 processing claim；远端已执行但本地无法确认时进入人工核对状态。
 
 export type RechargeOrderInput = {
   orderNo: string;
@@ -48,6 +48,16 @@ const TERMINAL_RECHARGE_ERROR_CODES = new Set<NewApiBridgeErrorCode>([
   'malformed_response',
 ]);
 
+const CLAIMABLE_RECHARGE_STATUSES = ['pending', 'failed'];
+
+async function recordRechargeAudit(input: Parameters<typeof recordAudit>[0]) {
+  try {
+    await recordAudit(input);
+  } catch (error: any) {
+    console.error('failed to record recharge audit', error?.message || error);
+  }
+}
+
 function toAmountUsd(amountCents: number) {
   return amountCents / 100;
 }
@@ -61,12 +71,62 @@ async function findLedgerByOrderNo(orderNo: string) {
   return row;
 }
 
+async function findLedgerById(ledgerId: string) {
+  const [row] = await db()
+    .select()
+    .from(apipoolLedgerEntry)
+    .where(eq(apipoolLedgerEntry.id, ledgerId))
+    .limit(1);
+  return row;
+}
+
+async function claimLedgerForRecharge(ledgerId: string) {
+  const [claimed] = await db()
+    .update(apipoolLedgerEntry)
+    .set({ status: 'processing' })
+    .where(
+      and(
+        eq(apipoolLedgerEntry.id, ledgerId),
+        inArray(apipoolLedgerEntry.status, CLAIMABLE_RECHARGE_STATUSES)
+      )
+    )
+    .returning();
+  return claimed;
+}
+
+async function unclaimedRechargeResult(
+  ledgerId: string
+): Promise<RechargeResult> {
+  const current = await findLedgerById(ledgerId);
+  if (current?.status === 'applied') {
+    return { outcome: 'already_applied', ledgerId };
+  }
+  if (current?.status === 'reconciliation_required') {
+    return {
+      outcome: 'failed',
+      ledgerId,
+      detail: 'manual reconciliation required',
+    };
+  }
+  return {
+    outcome: 'pending_retry',
+    ledgerId,
+    detail: 'concurrent recharge in progress',
+  };
+}
+
 async function executeRecharge(
   ledgerId: string,
   input: RechargeOrderInput,
   client: NewApiClient
 ): Promise<RechargeResult> {
   const amountUsd = toAmountUsd(input.amount);
+  const claimed = await claimLedgerForRecharge(ledgerId);
+  if (!claimed) {
+    return unclaimedRechargeResult(ledgerId);
+  }
+
+  let remoteAdjusted = false;
   try {
     const binding = await ensurePortalUserBinding(
       { id: input.userId, email: input.userEmail || '' },
@@ -78,6 +138,7 @@ async function executeRecharge(
       reason: `recharge order ${input.orderNo}`,
       reference: `recharge:${input.orderNo}`,
     });
+    remoteAdjusted = true;
 
     const [applied] = await db()
       .update(apipoolLedgerEntry)
@@ -89,7 +150,7 @@ async function executeRecharge(
       .where(eq(apipoolLedgerEntry.id, ledgerId))
       .returning();
 
-    await recordAudit({
+    await recordRechargeAudit({
       portalUserId: input.userId,
       action: 'newapi.recharge.apply',
       targetType: 'newapi_user',
@@ -105,13 +166,18 @@ async function executeRecharge(
     const isTerminal =
       error instanceof NewApiBridgeError &&
       TERMINAL_RECHARGE_ERROR_CODES.has(error.code);
+    const nextStatus = remoteAdjusted
+      ? 'reconciliation_required'
+      : isTerminal
+        ? 'failed'
+        : 'pending';
 
     await db()
       .update(apipoolLedgerEntry)
-      .set({ status: isTerminal ? 'failed' : 'pending' })
+      .set({ status: nextStatus })
       .where(eq(apipoolLedgerEntry.id, ledgerId));
 
-    await recordAudit({
+    await recordRechargeAudit({
       portalUserId: input.userId,
       action: 'newapi.recharge.apply',
       targetType: 'newapi_user',
@@ -122,7 +188,7 @@ async function executeRecharge(
     });
 
     return {
-      outcome: isTerminal ? 'failed' : 'pending_retry',
+      outcome: nextStatus === 'pending' ? 'pending_retry' : 'failed',
       ledgerId,
       detail: error?.message,
     };
@@ -131,7 +197,7 @@ async function executeRecharge(
 
 /**
  * 支付成功后调用（payment.ts 钩子与 admin 重试共用）。
- * 可重复调用：已 applied 直接短路；pending/failed 恢复执行。
+ * 可重复调用：已 applied 直接短路；pending/failed 先 claim 再执行。
  */
 export async function applyRechargeForOrder(
   input: RechargeOrderInput,
@@ -141,7 +207,10 @@ export async function applyRechargeForOrder(
     return { outcome: 'skipped', detail: 'missing order identity' };
   }
   if (input.currency?.toLowerCase() !== 'usd') {
-    return { outcome: 'skipped', detail: `unsupported currency ${input.currency}` };
+    return {
+      outcome: 'skipped',
+      detail: `unsupported currency ${input.currency}`,
+    };
   }
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     return { outcome: 'skipped', detail: 'non-positive amount' };
@@ -152,8 +221,6 @@ export async function applyRechargeForOrder(
     if (existing.status === 'applied') {
       return { outcome: 'already_applied', ledgerId: existing.id };
     }
-    // pending/failed：恢复执行（兑换码一码一兑，重试不会重复加额；
-    // 中途失败可能留下未兑换的孤儿码，由 New API 的 DeleteInvalidRedemption 清理）
     return executeRecharge(existing.id, input, client);
   }
 

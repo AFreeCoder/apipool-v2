@@ -1,0 +1,246 @@
+{
+  "crumbs": {
+    "admin": "管理后台",
+    "catalog": "模型目录"
+  },
+  "fields": {
+    "slug": "标识",
+    "name": "名称",
+    "sortOrder": "排序",
+    "status": "状态",
+    "isCallable": "可调用",
+    "isPublicVisible": "前台可见",
+    "userDescription": "用户可见说明",
+    "newapiGroup": "New API 分组",
+    "allowCreateKey": "允许创建 Key",
+    "modelId": "模型 ID",
+    "displayName": "展示名称",
+    "vendor": "供应商",
+    "group": "分组",
+    "category": "分类",
+    "contextWindow": "上下文窗口",
+    "capabilities": "能力",
+    "inputMicroUsd": "输入价格（美元 / 1M）",
+    "outputMicroUsd": "输出价格（美元 / 1M）",
+    "listInputMicroUsd": "划线输入价（美元 / 1M）",
+    "listOutputMicroUsd": "划线输出价（美元 / 1M）",
+    "discountNote": "折扣说明",
+    "description": "说明",
+    "smokeTested": "已冒烟",
+    "createdAt": "创建时间",
+    "actions": "操作"
+  },
+  "actions": {
+    "edit": "编辑",
+    "capabilities": "能力",
+    "listings": "售卖项"
+  },
+  "statusOptions": {
+    "active": "启用",
+    "disabled": "禁用"
+  },
+  "boolean": {
+    "yes": "是",
+    "no": "否"
+  },
+  "errors": {
+    "createFailed": "创建失败",
+    "updateFailed": "更新失败",
+    "missingRecord": "记录不存在",
+    "invalidPrice": "价格必须是非负有限数字"
+  },
+  "vendors": {
+    "list": {
+      "title": "供应商",
+      "crumb": "供应商",
+      "buttons": {
+        "new": "新增供应商"
+      }
+    },
+    "new": {
+      "title": "新增供应商",
+      "crumb": "新增供应商",
+      "success": "供应商已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑供应商",
+      "crumb": "编辑供应商",
+      "notFound": "供应商不存在",
+      "success": "供应商已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "categories": {
+    "list": {
+      "title": "分类",
+      "crumb": "分类",
+      "buttons": {
+        "new": "新增分类"
+      }
+    },
+    "new": {
+      "title": "新增分类",
+      "crumb": "新增分类",
+      "success": "分类已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑分类",
+      "crumb": "编辑分类",
+      "notFound": "分类不存在",
+      "success": "分类已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "capabilities": {
+    "list": {
+      "title": "能力",
+      "crumb": "能力",
+      "buttons": {
+        "new": "新增能力"
+      }
+    },
+    "new": {
+      "title": "新增能力",
+      "crumb": "新增能力",
+      "success": "能力已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑能力",
+      "crumb": "编辑能力",
+      "notFound": "能力不存在",
+      "success": "能力已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "statuses": {
+    "list": {
+      "title": "状态",
+      "crumb": "状态",
+      "buttons": {
+        "new": "新增状态"
+      }
+    },
+    "new": {
+      "title": "新增状态",
+      "crumb": "新增状态",
+      "success": "状态已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑状态",
+      "crumb": "编辑状态",
+      "notFound": "状态不存在",
+      "success": "状态已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "groups": {
+    "list": {
+      "title": "分组",
+      "crumb": "分组",
+      "buttons": {
+        "new": "新增分组"
+      }
+    },
+    "new": {
+      "title": "新增分组",
+      "crumb": "新增分组",
+      "success": "分组已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑分组",
+      "crumb": "编辑分组",
+      "notFound": "分组不存在",
+      "success": "分组已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  },
+  "models": {
+    "list": {
+      "title": "模型",
+      "crumb": "模型",
+      "buttons": {
+        "new": "新增模型"
+      }
+    },
+    "new": {
+      "title": "新增模型",
+      "crumb": "新增模型",
+      "success": "模型已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑模型",
+      "crumb": "编辑模型",
+      "notFound": "模型不存在",
+      "success": "模型已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    },
+    "capabilities": {
+      "title": "模型能力",
+      "crumb": "模型能力",
+      "notFound": "模型不存在",
+      "invalidSelection": "能力选择无效",
+      "success": "模型能力已更新",
+      "buttons": {
+        "submit": "更新能力"
+      }
+    }
+  },
+  "listings": {
+    "list": {
+      "title": "模型售卖项",
+      "crumb": "售卖项",
+      "notFound": "模型不存在",
+      "buttons": {
+        "new": "新增售卖项"
+      }
+    },
+    "new": {
+      "title": "新增售卖项",
+      "crumb": "新增售卖项",
+      "notFound": "模型不存在",
+      "success": "售卖项已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑售卖项",
+      "crumb": "编辑售卖项",
+      "notFound": "售卖项不存在",
+      "success": "售卖项已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    }
+  }
+}

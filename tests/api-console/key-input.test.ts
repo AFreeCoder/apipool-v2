@@ -7,9 +7,25 @@ import {
   sanitizePortalApiKeyCreateInput,
 } from '@/features/api-console/lib/key-input';
 
-test('customer key creation input ignores model, quota, and network controls', () => {
+test('customer key creation input requires a non-empty group slug', () => {
+  assert.throws(
+    () => sanitizePortalApiKeyCreateInput({ name: 'Missing group' }),
+    /group is required/
+  );
+  assert.throws(
+    () =>
+      sanitizePortalApiKeyCreateInput({
+        name: 'Blank group',
+        groupSlug: '   ',
+      }),
+    /group is required/
+  );
+});
+
+test('customer key creation input keeps only the public name and group slug', () => {
   const input = sanitizePortalApiKeyCreateInput({
     name: '  Smoke key  ',
+    groupSlug: ' official ',
     allowedModels: ['unverified-model'],
     quotaLimit: 999,
     ipAllowlist: ['0.0.0.0/0'],
@@ -17,6 +33,7 @@ test('customer key creation input ignores model, quota, and network controls', (
 
   assert.deepEqual(input, {
     name: 'Smoke key',
+    groupSlug: 'official',
   });
   assert.equal(Object.hasOwn(input, 'allowedModels'), false);
   assert.equal(Object.hasOwn(input, 'quotaLimit'), false);
@@ -24,10 +41,13 @@ test('customer key creation input ignores model, quota, and network controls', (
 });
 
 test('customer key creation input uses a stable default name', () => {
-  const input = sanitizePortalApiKeyCreateInput({ name: '   ' });
+  const input = sanitizePortalApiKeyCreateInput({
+    name: '   ',
+    groupSlug: 'official',
+  });
 
   assert.equal(input.name, 'Default APIPool key');
-  assert.equal(Object.hasOwn(input, 'allowedModels'), false);
+  assert.equal(input.groupSlug, 'official');
 });
 
 test('portal key creation guard can pause rollback entrypoint', () => {

@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import {
+  canCleanupKeyStatus,
   canDeleteKeyStatus,
   canDisableKeyStatus,
   canRetryKeyStatus,
   getNextKeyStatus,
+  getUsageLogRowKey,
+  getUsageSyncDescription,
   getUsageSyncState,
 } from '@/features/api-console/lib/status';
 
@@ -54,6 +56,19 @@ test('key mutation actions are available only for remotely actionable statuses',
   assert.equal(canDeleteKeyStatus('remote_created_binding_failed'), false);
 });
 
+test('failed/stuck statuses are cleanable so users can clear dead keys', () => {
+  // 失败 / 卡死态可清理删除（让用户能清空被失败 Key 淹没的列表）
+  assert.equal(canCleanupKeyStatus('creating_remote'), true);
+  assert.equal(canCleanupKeyStatus('failed_retriable'), true);
+  assert.equal(canCleanupKeyStatus('failed_terminal'), true);
+  assert.equal(canCleanupKeyStatus('remote_created_binding_failed'), true);
+  // 正常态不走清理（走标准 delete，需远端确认）；已删除 / 进行中不可再清理
+  assert.equal(canCleanupKeyStatus('active'), false);
+  assert.equal(canCleanupKeyStatus('disabled'), false);
+  assert.equal(canCleanupKeyStatus('deleted'), false);
+  assert.equal(canCleanupKeyStatus('delete_pending'), false);
+});
+
 test('usage sync state marks stale and failed windows', () => {
   const now = new Date('2026-05-24T12:00:00.000Z');
 
@@ -70,4 +85,65 @@ test('usage sync state marks stale and failed windows', () => {
     getUsageSyncState(new Date('2026-05-24T09:30:00.000Z'), now),
     'failed'
   );
+});
+
+test('usage sync descriptions are readable for non-ready states', () => {
+  assert.equal(
+    getUsageSyncDescription({ status: 'empty' }),
+    'No usage in the last 7 days yet.'
+  );
+  assert.match(
+    getUsageSyncDescription({ status: 'syncing' }),
+    /Syncing usage/i
+  );
+  assert.equal(
+    getUsageSyncDescription({
+      status: 'stale',
+      errorMessage:
+        'Usage sync is temporarily unavailable. Showing the latest available portal data.',
+    }),
+    'Usage sync is temporarily unavailable. Showing the latest available portal data.'
+  );
+  assert.match(
+    getUsageSyncDescription({ status: 'failed' }),
+    /temporarily unavailable/i
+  );
+});
+
+test('usage sync descriptions can be localized by callers', () => {
+  assert.equal(
+    getUsageSyncDescription(
+      { status: 'empty' },
+      {
+        empty: '最近 7 天暂无用量。',
+        syncing: '正在同步用量。',
+        stale: '用量同步有延迟。',
+        failed: '用量同步暂不可用。',
+        ready: '用量数据已是最新。',
+      }
+    ),
+    '最近 7 天暂无用量。'
+  );
+});
+
+test('usage log row keys remain unique when New API repeats request ids', () => {
+  const first = getUsageLogRowKey(
+    {
+      id: 'remote_request_duplicate',
+      modelId: 'gpt-4o-mini',
+      createdAt: new Date('2026-05-24T10:00:00.000Z'),
+    },
+    0
+  );
+  const second = getUsageLogRowKey(
+    {
+      id: 'remote_request_duplicate',
+      modelId: 'gpt-4o-mini',
+      createdAt: new Date('2026-05-24T10:00:00.000Z'),
+    },
+    1
+  );
+
+  assert.notEqual(first, second);
+  assert.match(first, /remote_request_duplicate/);
 });

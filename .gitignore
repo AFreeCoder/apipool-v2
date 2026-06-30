@@ -76,3 +76,12 @@ src/config/db/migrations_mysql/
 
 # local personal assistant guidance
 docs/proffitteoy/
+.ui-review/
+
+# gstack skill install (third-party, per-developer; not project source)
+.agents/
+skills-lock.json
+.claude/skills/gstack
+.claude/launch.json
+.context/
+.gstack/
