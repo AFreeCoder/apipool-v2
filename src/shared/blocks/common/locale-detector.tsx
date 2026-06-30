@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { X } from 'lucide-react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useLocale } from 'next-intl';
 
 import { usePathname } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { localeNames, locales } from '@/config/locale';
-import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
+import { getLocaleDetectorCopy } from '@/shared/blocks/common/locale-detector-copy';
 import { Button } from '@/shared/components/ui/button';
 import { cacheGet, cacheSet } from '@/shared/lib/cache';
 import { getTimestamp } from '@/shared/lib/time';
@@ -23,7 +24,6 @@ export function LocaleDetector() {
   }
 
   const currentLocale = useLocale();
-  const t = useTranslations('common');
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showBanner, setShowBanner] = useState(false);
@@ -61,9 +61,7 @@ export function LocaleDetector() {
   const switchToLocale = useCallback(
     (locale: string) => {
       const query = searchParams?.toString?.() ?? '';
-      const href = query
-        ? `${pathname}?${query}`
-        : pathname;
+      const href = query ? `${pathname}?${query}` : pathname;
       window.location.replace(localizePathForLocale(href, locale));
       cacheSet(PREFERRED_LOCALE_KEY, locale);
       setShowBanner(false);
@@ -229,12 +227,13 @@ export function LocaleDetector() {
     }
   };
 
-  const targetLocaleName =
-    localeNames[browserLocale as keyof typeof localeNames] || browserLocale;
-
   if (!showBanner || !browserLocale) {
     return null;
   }
+
+  const targetLocaleName =
+    localeNames[browserLocale as keyof typeof localeNames] || browserLocale;
+  const bannerCopy = getLocaleDetectorCopy(browserLocale, targetLocaleName);
 
   return (
     <>
@@ -245,9 +244,7 @@ export function LocaleDetector() {
         <div className="container py-2.5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-1 items-center gap-3">
-              <span className="text-sm">
-                {t('locale_detector.title', { locale: targetLocaleName })}
-              </span>
+              <span className="text-sm">{bannerCopy.title}</span>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
               <Button
@@ -256,12 +253,12 @@ export function LocaleDetector() {
                 size="sm"
                 className="bg-background text-xs"
               >
-                {t('locale_detector.switch_to', { locale: targetLocaleName })}
+                {bannerCopy.switchTo}
               </Button>
               <button
                 onClick={handleDismiss}
                 className="bg-primary/10 flex-shrink-0 rounded p-1 transition-colors"
-                aria-label={t('locale_detector.close')}
+                aria-label={bannerCopy.close}
               >
                 <X className="h-4 w-4" />
               </button>

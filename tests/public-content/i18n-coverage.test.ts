@@ -148,13 +148,20 @@ test('locale detector is enabled by default and mounted once for all localized r
   assert.doesNotMatch(adminLayout, /LocaleDetector/);
 });
 
-test('locale detector banner copy comes from the common locale namespace', async () => {
-  const detectorSource = await readFile(
-    'src/shared/blocks/common/locale-detector.tsx',
-    'utf8'
-  );
+test('locale detector banner copy comes from the target common locale namespace', async () => {
+  const [detectorSource, copySource] = await Promise.all([
+    readFile('src/shared/blocks/common/locale-detector.tsx', 'utf8'),
+    readFile('src/shared/blocks/common/locale-detector-copy.ts', 'utf8'),
+  ]);
 
-  assert.match(detectorSource, /useTranslations\('common'\)/);
+  assert.match(
+    detectorSource,
+    /getLocaleDetectorCopy\(browserLocale, targetLocaleName\)/
+  );
+  assert.match(copySource, /messages\/en\/common\.json/);
+  assert.match(copySource, /messages\/zh\/common\.json/);
+  assert.match(copySource, /locale_detector/);
+  assert.doesNotMatch(detectorSource, /useTranslations\('common'\)/);
   assert.doesNotMatch(detectorSource, /We detected your browser language is/);
   assert.doesNotMatch(detectorSource, /检测到浏览器语言是:/);
   assert.doesNotMatch(detectorSource, /切换到中文/);
