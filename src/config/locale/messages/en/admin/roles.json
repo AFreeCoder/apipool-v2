@@ -24,6 +24,9 @@
       "delete": "Delete Role"
     }
   },
+  "empty": {
+    "not_found": "Role not found"
+  },
   "edit": {
     "title": "Edit Role",
     "crumbs": {

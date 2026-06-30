@@ -47,16 +47,36 @@ test('quota adjustment uses a dedicated APIPool operator permission', async () =
 });
 
 test('quota adjustment page copy hides backend gateway branding', async () => {
-  const page = await readFile(
-    join(
-      process.cwd(),
-      'src/app/[locale]/(admin)/admin/apipool-adjustments/page.tsx'
+  const [page, enMessages, zhMessages] = await Promise.all([
+    readFile(
+      join(
+        process.cwd(),
+        'src/app/[locale]/(admin)/admin/apipool-adjustments/page.tsx'
+      ),
+      'utf8'
     ),
-    'utf8'
-  );
+    readFile(
+      join(
+        process.cwd(),
+        'src/config/locale/messages/en/admin/apipoolAdjustments.json'
+      ),
+      'utf8'
+    ),
+    readFile(
+      join(
+        process.cwd(),
+        'src/config/locale/messages/zh/admin/apipoolAdjustments.json'
+      ),
+      'utf8'
+    ),
+  ]);
 
-  assert.match(page, /internal quota executor/i);
-  assert.doesNotMatch(page, /New API|newapi/);
+  assert.match(page, /getTranslations\('admin\.apipoolAdjustments'\)/);
+  assert.match(enMessages, /internal quota executor/i);
+  assert.doesNotMatch(
+    `${page}\n${enMessages}\n${zhMessages}`,
+    /New API|newapi/
+  );
 });
 
 test('quota adjustment submits a request idempotency key once per click flow', async () => {

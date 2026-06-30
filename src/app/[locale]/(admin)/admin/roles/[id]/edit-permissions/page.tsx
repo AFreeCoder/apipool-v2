@@ -28,12 +28,11 @@ export default async function RoleEditPermissionsPage({
     locale,
   });
 
+  const t = await getTranslations('admin.roles');
   const role = await getRoleById(id);
   if (!role) {
-    return <Empty message="Role not found" />;
+    return <Empty message={t('empty.not_found')} />;
   }
-
-  const t = await getTranslations('admin.roles');
 
   const crumbs: Crumb[] = [
     { title: t('edit_permissions.crumbs.admin'), url: '/admin' },

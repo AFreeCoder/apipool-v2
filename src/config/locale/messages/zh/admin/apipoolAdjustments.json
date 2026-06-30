@@ -1,0 +1,42 @@
+{
+  "page": {
+    "title": "APIPool 额度调整",
+    "description": "MVP 阶段的运维操作流程。每次调整都会写入 APIPool ledger v0，然后调用内部额度执行器。",
+    "crumbs": {
+      "admin": "管理后台",
+      "current": "额度调整"
+    }
+  },
+  "form": {
+    "defaultReason": "MVP 手动额度调整",
+    "fields": {
+      "email": "按邮箱查找用户",
+      "portalUserId": "门户用户 ID",
+      "operation": "操作",
+      "amountUsd": "美元金额",
+      "reason": "原因"
+    },
+    "placeholders": {
+      "email": "user@example.com",
+      "portalUserId": "可通过邮箱查询，也可以直接粘贴 ID",
+      "amountUsd": "请输入正数"
+    },
+    "operations": {
+      "increase": "增加 (+)",
+      "decrease": "扣减 (-)"
+    },
+    "buttons": {
+      "find": "查找",
+      "finding": "查找中...",
+      "applying": "应用中...",
+      "applyIncrease": "应用增加",
+      "applyDecrease": "应用扣减"
+    },
+    "messages": {
+      "noUserFound": "未找到邮箱为 {email} 的用户",
+      "lookupFailed": "查询失败",
+      "adjustmentFailed": "调整失败",
+      "ledgerStatus": "账本记录 {id} 当前状态为 {status}。"
+    }
+  }
+}

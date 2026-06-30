@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { lookupPortalUserByEmail } from '@/features/api-console/server/quota-admin-actions';
 import { Search, Send } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -20,6 +21,7 @@ export function QuotaAdjustmentForm({
 }: {
   initialPortalUserId?: string;
 }) {
+  const t = useTranslations('admin.apipoolAdjustments.form');
   const [email, setEmail] = useState('');
   const [portalUserId, setPortalUserId] = useState(initialPortalUserId);
   const [resolvedUser, setResolvedUser] = useState('');
@@ -27,7 +29,7 @@ export function QuotaAdjustmentForm({
     'increase'
   );
   const [amountUsd, setAmountUsd] = useState('10');
-  const [reason, setReason] = useState('Manual MVP quota adjustment');
+  const [reason, setReason] = useState(t('defaultReason'));
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -54,13 +56,13 @@ export function QuotaAdjustmentForm({
     try {
       const user = await lookupPortalUserByEmail(email);
       if (!user) {
-        setMessage(`No user found for ${email}`);
+        setMessage(t('messages.noUserFound', { email }));
         return;
       }
       setPortalUserId(user.id);
       setResolvedUser(`${user.name} (${user.email})`);
     } catch (error: any) {
-      setMessage(error?.message || 'Lookup failed');
+      setMessage(error?.message || t('messages.lookupFailed'));
     } finally {
       setLookupLoading(false);
     }
@@ -95,14 +97,17 @@ export function QuotaAdjustmentForm({
       const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
       setMessage(
-        `Ledger entry ${payload.data.ledger.id} is ${payload.data.ledger.status}.`
+        t('messages.ledgerStatus', {
+          id: payload.data.ledger.id,
+          status: payload.data.ledger.status,
+        })
       );
       requestDraftRef.current = null;
     } catch (error: any) {
       if (responseReceived) {
         requestDraftRef.current = null;
       }
-      setMessage(error?.message || 'Adjustment failed');
+      setMessage(error?.message || t('messages.adjustmentFailed'));
     } finally {
       submittingRef.current = false;
       setLoading(false);
@@ -113,13 +118,13 @@ export function QuotaAdjustmentForm({
     <div className="bg-card max-w-2xl rounded-xl border p-5">
       <div className="grid gap-4">
         <label className="grid gap-2 text-sm">
-          Find user by email
+          {t('fields.email')}
           <div className="flex gap-2">
             <Input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="user@example.com"
+              placeholder={t('placeholders.email')}
             />
             <Button
               type="button"
@@ -128,20 +133,20 @@ export function QuotaAdjustmentForm({
               disabled={lookupLoading || !email.trim()}
             >
               <Search className="size-4" />
-              {lookupLoading ? 'Finding...' : 'Find'}
+              {lookupLoading ? t('buttons.finding') : t('buttons.find')}
             </Button>
           </div>
         </label>
 
         <label className="grid gap-2 text-sm">
-          Portal user ID
+          {t('fields.portalUserId')}
           <Input
             value={portalUserId}
             onChange={(event) => {
               setPortalUserId(event.target.value);
               setResolvedUser('');
             }}
-            placeholder="Looked up from email, or paste an ID"
+            placeholder={t('placeholders.portalUserId')}
           />
           {resolvedUser && (
             <span className="text-primary text-xs">✓ {resolvedUser}</span>
@@ -150,7 +155,7 @@ export function QuotaAdjustmentForm({
 
         <div className="grid gap-2 text-sm sm:grid-cols-2">
           <label className="grid gap-2">
-            Operation
+            {t('fields.operation')}
             <select
               value={direction}
               onChange={(event) =>
@@ -158,23 +163,23 @@ export function QuotaAdjustmentForm({
               }
               className="border-input bg-background h-9 rounded-md border px-3 text-sm"
             >
-              <option value="increase">Increase (+)</option>
-              <option value="decrease">Decrease (−)</option>
+              <option value="increase">{t('operations.increase')}</option>
+              <option value="decrease">{t('operations.decrease')}</option>
             </select>
           </label>
           <label className="grid gap-2">
-            Amount USD
+            {t('fields.amountUsd')}
             <Input
               value={amountUsd}
               onChange={(event) => setAmountUsd(event.target.value)}
               inputMode="decimal"
-              placeholder="positive number"
+              placeholder={t('placeholders.amountUsd')}
             />
           </label>
         </div>
 
         <label className="grid gap-2 text-sm">
-          Reason
+          {t('fields.reason')}
           <Textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
@@ -184,10 +189,10 @@ export function QuotaAdjustmentForm({
         <Button onClick={submit} disabled={loading || !portalUserId.trim()}>
           <Send className="size-4" />
           {loading
-            ? 'Applying...'
+            ? t('buttons.applying')
             : direction === 'decrease'
-              ? 'Apply decrease'
-              : 'Apply increase'}
+              ? t('buttons.applyDecrease')
+              : t('buttons.applyIncrease')}
         </Button>
         {message && <p className="text-muted-foreground text-sm">{message}</p>}
       </div>

@@ -24,6 +24,9 @@
       "delete": "删除角色"
     }
   },
+  "empty": {
+    "not_found": "未找到角色"
+  },
   "edit": {
     "title": "编辑角色",
     "crumbs": {

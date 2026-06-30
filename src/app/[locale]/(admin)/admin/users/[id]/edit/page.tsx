@@ -23,12 +23,11 @@ export default async function UserEditPage({
     locale,
   });
 
+  const t = await getTranslations('admin.users');
   const user = await findUserById(id);
   if (!user) {
-    return <Empty message="User not found" />;
+    return <Empty message={t('empty.not_found')} />;
   }
-
-  const t = await getTranslations('admin.users');
 
   const crumbs: Crumb[] = [
     { title: t('edit.crumbs.admin'), url: '/admin' },

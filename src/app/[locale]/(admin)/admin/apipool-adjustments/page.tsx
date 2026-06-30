@@ -1,7 +1,7 @@
-import { setRequestLocale } from 'next-intl/server';
+import { QuotaAdjustmentForm } from '@/features/api-console/components/admin/quota-adjustment-form';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
-import { QuotaAdjustmentForm } from '@/features/api-console/components/admin/quota-adjustment-form';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { Crumb } from '@/shared/types/blocks/common';
 
@@ -21,9 +21,11 @@ export default async function ApipoolAdjustmentsPage({
     locale,
   });
 
+  const t = await getTranslations('admin.apipoolAdjustments');
+
   const crumbs: Crumb[] = [
-    { title: 'Admin', url: '/admin' },
-    { title: 'Quota adjustments', is_active: true },
+    { title: t('page.crumbs.admin'), url: '/admin' },
+    { title: t('page.crumbs.current'), is_active: true },
   ];
 
   return (
@@ -31,8 +33,8 @@ export default async function ApipoolAdjustmentsPage({
       <Header crumbs={crumbs} />
       <Main>
         <MainHeader
-          title="APIPool quota adjustments"
-          description="MVP-only operator flow. Every adjustment writes APIPool ledger v0 and then calls the internal quota executor."
+          title={t('page.title')}
+          description={t('page.description')}
         />
         <QuotaAdjustmentForm initialPortalUserId={portalUserId} />
       </Main>

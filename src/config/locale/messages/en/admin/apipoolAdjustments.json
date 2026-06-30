@@ -1,0 +1,42 @@
+{
+  "page": {
+    "title": "APIPool quota adjustments",
+    "description": "MVP-only operator flow. Every adjustment writes APIPool ledger v0 and then calls the internal quota executor.",
+    "crumbs": {
+      "admin": "Admin",
+      "current": "Quota adjustments"
+    }
+  },
+  "form": {
+    "defaultReason": "Manual MVP quota adjustment",
+    "fields": {
+      "email": "Find user by email",
+      "portalUserId": "Portal user ID",
+      "operation": "Operation",
+      "amountUsd": "Amount USD",
+      "reason": "Reason"
+    },
+    "placeholders": {
+      "email": "user@example.com",
+      "portalUserId": "Looked up from email, or paste an ID",
+      "amountUsd": "positive number"
+    },
+    "operations": {
+      "increase": "Increase (+)",
+      "decrease": "Decrease (-)"
+    },
+    "buttons": {
+      "find": "Find",
+      "finding": "Finding...",
+      "applying": "Applying...",
+      "applyIncrease": "Apply increase",
+      "applyDecrease": "Apply decrease"
+    },
+    "messages": {
+      "noUserFound": "No user found for {email}",
+      "lookupFailed": "Lookup failed",
+      "adjustmentFailed": "Adjustment failed",
+      "ledgerStatus": "Ledger entry {id} is {status}."
+    }
+  }
+}

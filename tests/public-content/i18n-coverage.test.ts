@@ -11,6 +11,8 @@ const REQUIRED_LOCALE_NAMESPACES = [
   'dashboard/billing',
   'dashboard/usage',
   'dashboard/apiKeys',
+  'admin/common',
+  'admin/apipoolAdjustments',
 ];
 
 const SOURCE_COPY_EXPECTATIONS: Array<{
@@ -122,6 +124,59 @@ const SOURCE_COPY_EXPECTATIONS: Array<{
       'Copy masked key',
       'Disable key',
       'Delete key',
+    ],
+  },
+  {
+    file: 'src/app/[locale]/(admin)/admin/apipool-adjustments/page.tsx',
+    forbidden: [
+      'Quota adjustments',
+      'APIPool quota adjustments',
+      'MVP-only operator flow.',
+    ],
+  },
+  {
+    file: 'src/app/[locale]/(admin)/admin/no-permission/page.tsx',
+    forbidden: ['Access denied'],
+  },
+  {
+    file: 'src/app/[locale]/(auth)/no-permission/page.tsx',
+    forbidden: ['Access denied'],
+  },
+  {
+    file: 'src/app/[locale]/(admin)/admin/users/[id]/edit/page.tsx',
+    forbidden: ['User not found'],
+  },
+  {
+    file: 'src/app/[locale]/(admin)/admin/users/[id]/edit-roles/page.tsx',
+    forbidden: ['User not found'],
+  },
+  {
+    file: 'src/app/[locale]/(admin)/admin/roles/[id]/edit/page.tsx',
+    forbidden: ['Role not found'],
+  },
+  {
+    file: 'src/app/[locale]/(admin)/admin/roles/[id]/edit-permissions/page.tsx',
+    forbidden: ['Role not found'],
+  },
+  {
+    file: 'src/features/api-console/components/admin/quota-adjustment-form.tsx',
+    forbidden: [
+      'Manual MVP quota adjustment',
+      'No user found for',
+      'Lookup failed',
+      'Adjustment failed',
+      'Find user by email',
+      'Finding...',
+      'Portal user ID',
+      'Looked up from email, or paste an ID',
+      'Operation',
+      'Increase (+)',
+      'Decrease (',
+      'Amount USD',
+      'positive number',
+      'Applying...',
+      'Apply decrease',
+      'Apply increase',
     ],
   },
 ];

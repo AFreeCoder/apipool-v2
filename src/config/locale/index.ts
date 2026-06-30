@@ -29,11 +29,13 @@ export const localeMessagesPaths = [
   'settings/sidebar',
   'settings/profile',
   'settings/security',
+  'admin/common',
   'admin/sidebar',
   'admin/users',
   'admin/roles',
   'admin/permissions',
   'admin/apikeys',
+  'admin/apipoolAdjustments',
   'admin/catalog',
   'admin/settings',
 ];

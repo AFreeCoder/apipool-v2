@@ -36,6 +36,9 @@
       }
     }
   },
+  "empty": {
+    "not_found": "未找到用户"
+  },
   "edit": {
     "title": "编辑用户",
     "crumbs": {

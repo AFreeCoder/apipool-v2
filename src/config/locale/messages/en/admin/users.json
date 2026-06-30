@@ -36,6 +36,9 @@
       }
     }
   },
+  "empty": {
+    "not_found": "User not found"
+  },
   "edit": {
     "title": "Edit User",
     "crumbs": {
