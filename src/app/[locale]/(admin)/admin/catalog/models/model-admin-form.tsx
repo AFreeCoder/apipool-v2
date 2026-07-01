@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Save } from 'lucide-react';
+import { Loader2, Save, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useRouter } from '@/core/i18n/navigation';
@@ -124,6 +124,8 @@ export function ModelAdminForm({
   const [discountNote, setDiscountNote] = useState(initial.discountNote);
   const [description, setDescription] = useState(initial.description);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -135,16 +137,21 @@ export function ModelAdminForm({
 
   useEffect(() => {
     const keyword = modelId.trim();
-    if (!vendorId || keyword.length < 2) {
+    if (!vendorId || !groupId || keyword.length < 2) {
       setCandidates([]);
+      setHasSearched(false);
+      setSearchError('');
       return;
     }
 
+    setCandidates([]);
+    setHasSearched(false);
+    setSearchError('');
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const params = new URLSearchParams({ vendorId, keyword });
+        const params = new URLSearchParams({ vendorId, groupId, keyword });
         const response = await fetch(
           `/api/apipool/admin/catalog/models/search?${params.toString()}`,
           { signal: controller.signal }
@@ -152,9 +159,12 @@ export function ModelAdminForm({
         const payload = await response.json();
         if (payload.code !== 0) throw new Error(payload.message);
         setCandidates(payload.data?.models ?? []);
+        setHasSearched(true);
       } catch (error: any) {
         if (error?.name !== 'AbortError') {
           setCandidates([]);
+          setHasSearched(true);
+          setSearchError(error?.message || messages.noCandidates);
         }
       } finally {
         setSearching(false);
@@ -165,7 +175,7 @@ export function ModelAdminForm({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [modelId, vendorId]);
+  }, [groupId, modelId, messages.noCandidates, vendorId]);
 
   function selectCandidate(candidate: Candidate) {
     setModelId(candidate.modelId);
@@ -175,6 +185,8 @@ export function ModelAdminForm({
     setImageInputMicroUsd(microUsdToDollars(candidate.imageInputMicroUsd));
     setImageOutputMicroUsd(microUsdToDollars(candidate.imageOutputMicroUsd));
     setCandidates([]);
+    setHasSearched(false);
+    setSearchError('');
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -206,10 +218,7 @@ export function ModelAdminForm({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="bg-card max-w-4xl rounded-lg border p-5"
-    >
+    <form onSubmit={submit} className="bg-card max-w-4xl rounded-lg border p-5">
       <div className="grid gap-5">
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm">
@@ -220,6 +229,8 @@ export function ModelAdminForm({
               onChange={(event) => {
                 setVendorId(event.target.value);
                 setCandidates([]);
+                setHasSearched(false);
+                setSearchError('');
               }}
               className="border-input bg-background h-9 rounded-md border px-3 text-sm"
               required
@@ -227,6 +238,28 @@ export function ModelAdminForm({
               {vendors.map((vendor) => (
                 <option key={vendor.value} value={vendor.value}>
                   {vendor.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            {labels.group}
+            <select
+              name="groupId"
+              value={groupId}
+              onChange={(event) => {
+                setGroupId(event.target.value);
+                setCandidates([]);
+                setHasSearched(false);
+                setSearchError('');
+              }}
+              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              required
+            >
+              {groups.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.title}
                 </option>
               ))}
             </select>
@@ -247,14 +280,31 @@ export function ModelAdminForm({
                 required
               />
             </div>
-            {(searching || candidates.length > 0) && (
+            {(searching ||
+              hasSearched ||
+              Boolean(searchError) ||
+              candidates.length > 0) && (
               <div className="bg-popover absolute top-full z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border p-1 shadow-md">
                 {searching && (
                   <div className="text-muted-foreground px-3 py-2 text-sm">
                     {messages.searching}
                   </div>
                 )}
+                {!searching && searchError && (
+                  <div className="text-destructive px-3 py-2 text-sm">
+                    {searchError}
+                  </div>
+                )}
                 {!searching &&
+                  !searchError &&
+                  hasSearched &&
+                  candidates.length === 0 && (
+                    <div className="text-muted-foreground px-3 py-2 text-sm">
+                      {messages.noCandidates}
+                    </div>
+                  )}
+                {!searching &&
+                  !searchError &&
                   candidates.map((candidate) => (
                     <button
                       key={candidate.modelId}
@@ -286,23 +336,6 @@ export function ModelAdminForm({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2 text-sm">
-            {labels.group}
-            <select
-              name="groupId"
-              value={groupId}
-              onChange={(event) => setGroupId(event.target.value)}
-              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-              required
-            >
-              {groups.map((group) => (
-                <option key={group.value} value={group.value}>
-                  {group.title}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <label className="grid gap-2 text-sm">
             {labels.discountRate}
             <Input
@@ -421,7 +454,11 @@ export function ModelAdminForm({
         </label>
 
         <input type="hidden" name="statusId" value={statusId} />
-        <input type="hidden" name="categoryIds" value={JSON.stringify(categoryIds)} />
+        <input
+          type="hidden"
+          name="categoryIds"
+          value={JSON.stringify(categoryIds)}
+        />
         <input
           type="hidden"
           name="capabilityIds"

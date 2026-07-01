@@ -387,8 +387,25 @@ test('catalog model search route requires catalog write permission and hides raw
   assert.match(source, /PERMISSIONS\.CATALOG_WRITE/);
   assert.match(source, /createNewApiClient\s*\(/);
   assert.match(source, /listPricingModels\s*\(/);
+  assert.match(source, /getGroupById\s*\(/);
+  assert.match(source, /searchParams\.get\(['"]groupId['"]\)/);
   assert.match(source, /respData\s*\(\s*\{\s*models/);
   assert.doesNotMatch(source, /respData\s*\(\s*pricing/);
+});
+
+test('catalog model candidate form surfaces empty and error states', async () => {
+  const source = await readFile(
+    join(modelsRoot, 'model-admin-form.tsx'),
+    'utf8'
+  );
+
+  assert.match(source, /searchError/);
+  assert.match(
+    source,
+    /new URLSearchParams\(\{\s*vendorId,\s*groupId,\s*keyword\s*\}\)/
+  );
+  assert.match(source, /messages\.noCandidates/);
+  assert.match(source, /setSearchError\s*\(/);
 });
 
 test('publicModels remains only as a documented test fixture', async () => {
