@@ -23,6 +23,8 @@ test('docker image workflow builds production-configured immutable images', asyn
   assert.match(workflow, /IMAGE_TAG:\s*sha-\$\{\{\s*github\.sha\s*\}\}/);
   assert.match(workflow, /docker login ghcr\.io/);
   assert.match(workflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
+  assert.match(workflow, /deploy\/live-smoke\.sh/);
+  assert.match(workflow, /deploy\/setup-smoke-users\.sh/);
 });
 
 test('GitHub workflows use Node 24-compatible actions without changing release semantics', async () => {
@@ -74,7 +76,7 @@ test('GitHub workflows use Node 24-compatible actions without changing release s
   assert.match(dockerWorkflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
   assert.equal(
     [...verifyWorkflow.matchAll(/node-version:\s*['"]22['"]/g)].length,
-    2
+    1
   );
 });
 
@@ -119,6 +121,10 @@ test('backup script has separate pre-deploy and daily retention rules', async ()
   const script = await readFile('deploy/backup.sh', 'utf8');
 
   assert.match(script, /pre-deploy\).*APIPOOL_PRE_DEPLOY_BACKUP_RETAIN:-2/);
+  assert.match(
+    script,
+    /pre-smoke-users\).*APIPOOL_PRE_SMOKE_USERS_BACKUP_RETAIN:-2/
+  );
   assert.match(script, /daily\).*APIPOOL_DAILY_BACKUP_RETAIN_DAYS:-7/);
   assert.match(script, /docker compose .* pause/);
   assert.match(script, /chmod 600 "\$archive"/);

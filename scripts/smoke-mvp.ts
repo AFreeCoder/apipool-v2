@@ -452,7 +452,7 @@ async function callLaunchModel({
   };
 }
 
-async function main() {
+export async function main() {
   const priceReconciliation = getSmokePriceReconciliationConfig();
   const missing = missingRequiredEnv();
   if (missing.length > 0) {

@@ -37,6 +37,13 @@ RUN node_modules/.bin/esbuild deploy/migrate.src.mjs \
       --external:@libsql/client \
       --outfile=deploy/migrate.cjs
 
+# VPS-only live smoke runner. GitHub Actions deliberately avoids production
+# secrets; deploy/live-smoke.sh runs this bundle with server-local env.
+RUN node_modules/.bin/esbuild scripts/smoke-mvp-runner.ts \
+      --bundle --platform=node --format=cjs --conditions=react-server \
+      --external:@libsql/client \
+      --outfile=deploy/smoke-mvp.cjs
+
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
@@ -52,6 +59,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Migration assets (entrypoint runs them only for sqlite/turso providers)
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-mvp.cjs ./smoke-mvp.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/src/config/db/migrations_sqlite ./migrations_sqlite
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh

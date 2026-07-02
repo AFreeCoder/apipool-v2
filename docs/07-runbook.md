@@ -53,7 +53,9 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 
 ### 冒烟
 
+- 生产 live smoke 只在 VPS 本地运行：这些变量保留在 `/opt/apipool-v2/.env.deploy`，不要放进 GitHub Actions secrets。
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
+- `APIPOOL_SMOKE_PORTAL_EMAIL` / `APIPOOL_SMOKE_OPERATOR_EMAIL`（可选；`deploy/setup-smoke-users.sh --apply` 用于创建/复用专用 service identity）
 - `APIPOOL_SMOKE_MODEL`（可选；默认使用配置里的 smoke-tested launch model）
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
 - `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
@@ -96,7 +98,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 7. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
 8. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
-GitHub `APIPool MVP Verify` workflow 在 push/PR 上跑本地验证；生产密钥配置后用 `workflow_dispatch` 跑真实冒烟门禁。
+GitHub `APIPool MVP Verify` workflow 在 push/PR/手动触发时只跑无密钥本地验证。生产真实冒烟门禁必须在 VPS 上执行 `deploy/live-smoke.sh`，使用服务器本地 `.env.deploy`；不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions。
 
 ### 3.1 自动化 MVP smoke
 
@@ -119,18 +121,22 @@ npm run smoke:mvp
 发布若依赖真实或等价 New API 证据，必须使用强制 live 门禁：
 
 ```bash
-APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh --no-price-reconciliation'
 ```
 
 模型目录价格策略发布还必须补跑价格对账门禁：
 
 ```bash
-APIPOOL_SMOKE_REQUIRE_LIVE=true APIPOOL_SMOKE_PRICE_RECONCILIATION=true npm run smoke:mvp
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 ```
 
 价格对账会读取本次调用对应模型和 `official` 分组的 confirmed effective price，并用 usage log 或 quota delta 计算 `expected/actual/delta/tolerance`。若 usage log 没有 token 与 cost/quota，且调用前后 quota delta 也不可用，脚本必须失败；失败不能发布。
 
-该脚本会创建 `official` 分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
+`deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再创建/复用两个不可登录的 production service identity：一个普通 smoke portal user，一个带 `role_operator` 的 smoke operator，并把 user id 写回 `.env.deploy`。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
+
+`deploy/live-smoke.sh` 使用当前 `release.env` 中的门户镜像启动一次性容器，不依赖服务器源码。该脚本会创建 `official` 分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 
 ### 3.2 New API option-map 修复
 
@@ -231,7 +237,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
     ├── backup.sh
     ├── configure-caddy.sh
     ├── deploy.sh
+    ├── live-smoke.sh
     ├── server-bootstrap.sh
+    ├── setup-smoke-users.sh
     └── systemd/
 ```
 

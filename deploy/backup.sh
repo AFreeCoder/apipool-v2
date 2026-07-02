@@ -13,8 +13,9 @@ LOCK_FILE="${APIPOOL_BACKUP_LOCK:-/run/apipool-v2-backup.lock}"
 
 case "$MODE" in
   pre-deploy) RETAIN="${APIPOOL_PRE_DEPLOY_BACKUP_RETAIN:-2}" ;;
+  pre-smoke-users) RETAIN="${APIPOOL_PRE_SMOKE_USERS_BACKUP_RETAIN:-2}" ;;
   daily) RETAIN_DAYS="${APIPOOL_DAILY_BACKUP_RETAIN_DAYS:-7}" ;;
-  *) echo "usage: $0 [pre-deploy|daily]" >&2; exit 64 ;;
+  *) echo "usage: $0 [pre-deploy|pre-smoke-users|daily]" >&2; exit 64 ;;
 esac
 
 mkdir -p "$BACKUP_ROOT"
@@ -68,7 +69,7 @@ fi
 tar -C "$staging" -czf "$archive" .
 chmod 600 "$archive"
 
-if [ "$MODE" = "pre-deploy" ]; then
+if [ "$MODE" = "pre-deploy" ] || [ "$MODE" = "pre-smoke-users" ]; then
   count="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "${MODE}-*.tar.gz" | wc -l | tr -d ' ')"
   if [ "$count" -gt "$RETAIN" ]; then
     find "$BACKUP_ROOT" -maxdepth 1 -type f -name "${MODE}-*.tar.gz" | sort | head -n "$((count - RETAIN))" | xargs -r rm -f

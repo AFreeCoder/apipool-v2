@@ -1,7 +1,13 @@
 .next
+.agents
+.claude
+.gstack
+.superpowers
+.tmp
 .vercel
 .vscode
 .wrangler
+.worktrees
 data
 debug
 node_modules

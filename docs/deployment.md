@@ -67,11 +67,17 @@ pnpm build
 pnpm smoke:mvp
 ```
 
-如果本次发布依赖真实 New API 或真实用户闭环证据，必须使用强制 live smoke：
+GitHub Actions 和本地 CI 只跑无密钥门禁。生产 live smoke 使用 VPS 本地
+`.env.deploy`，不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 放到
+GitHub secrets。部署后按发布类型执行：
 
 ```bash
-APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 ```
+
+非价格策略发布如只需验证建 Key、调用、用量和禁用闭环，可把第二条命令改为
+`./deploy/live-smoke.sh --no-price-reconciliation`。
 
 如果部署、compose、Dockerfile、entrypoint、迁移或 GitHub Actions 发生改动，额外
 验证部署配置：
@@ -97,16 +103,22 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `deploy/deploy.sh`
 - `deploy/backup.sh`
 - `deploy/entrypoint.sh`
+- `deploy/live-smoke.sh`
+- `deploy/setup-smoke-users.sh`
 - `deploy/env.production.example`
 - `deploy/bootstrap.md`
 - `src/config/db/migrations_sqlite/`
 - `scripts/smoke-mvp.ts`
+- `scripts/smoke-mvp-runner.ts`
 
 ## Backup Requirements
 
 - 触发方式：`deploy/deploy.sh` 在切换镜像前执行 `deploy/backup.sh pre-deploy`
+- smoke 用户初始化：`deploy/setup-smoke-users.sh --apply` 在写库前执行
+  `deploy/backup.sh pre-smoke-users`
 - 备份内容：`data/`、`.env.deploy`、`release.env`、compose 文件和 `deploy/`
-- 备份位置：`/opt/apipool-v2/backups/pre-deploy-*.tar.gz`
+- 备份位置：`/opt/apipool-v2/backups/pre-deploy-*.tar.gz` 或
+  `/opt/apipool-v2/backups/pre-smoke-users-*.tar.gz`
 - 权限：备份目录 `700`，归档文件 `600`
 - 保留策略：pre-deploy 备份保留最近 2 次，daily 备份保留最近 7 天
 - sanity check：
@@ -166,9 +178,8 @@ test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIP
 ```
 
 `https://api2.apipool.dev` 是排空期 v2 用户 API endpoint；无 API key 访问
-OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性由
-`APIPOOL_SMOKE_REQUIRE_LIVE=true pnpm smoke:mvp` 或 `APIPool MVP Verify` 的手动
-`workflow_dispatch` live smoke 覆盖。`api.apipool.dev` 在老站排空期继续服务老用户，
+OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性由 VPS 本地
+`./deploy/live-smoke.sh` 覆盖。`api.apipool.dev` 在老站排空期继续服务老用户，
 cutover 后再回收给 v2。
 
 ## Success Criteria

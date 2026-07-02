@@ -366,11 +366,10 @@ test('runbook documents MVP smoke commands, live gate, and prerequisites', async
 
   assert.match(runbook, /npm run catalog:init/);
   assert.match(runbook, /npm run smoke:mvp/);
-  assert.match(runbook, /APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp/);
-  assert.match(
-    runbook,
-    /APIPOOL_SMOKE_REQUIRE_LIVE=true APIPOOL_SMOKE_PRICE_RECONCILIATION=true npm run smoke:mvp/
-  );
+  assert.match(runbook, /deploy\/setup-smoke-users\.sh --apply/);
+  assert.match(runbook, /deploy\/live-smoke\.sh --no-price-reconciliation/);
+  assert.match(runbook, /deploy\/live-smoke\.sh/);
+  assert.match(runbook, /不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions/);
   assert.match(runbook, /usage log 或 quota delta/);
   assert.match(runbook, /失败不能发布/);
   assert.match(runbook, /APIPOOL_SMOKE_MODEL/);
