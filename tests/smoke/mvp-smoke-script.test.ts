@@ -74,12 +74,27 @@ test('MVP smoke only accepts verified launch models', () => {
     'gpt-4o-mini'
   );
   assert.throws(
-    () => resolveSmokeLaunchModel('gpt-4o', ['gpt-4o-mini'], 'gpt-4o-mini'),
-    /must be a smoke-tested callable model/
+    () =>
+      resolveSmokeLaunchModel(
+        'gpt-4o',
+        ['gpt-4o-mini'],
+        'gpt-4o-mini',
+        ['gpt-4o-mini']
+      ),
+    /must be callable in the smoke group/
   );
   assert.equal(
     resolveSmokeLaunchModel('gpt-4o-mini', ['gpt-4o-mini'], 'gpt-4o'),
     'gpt-4o-mini'
+  );
+  assert.equal(
+    resolveSmokeLaunchModel(
+      'gpt-4o',
+      ['gpt-4o-mini'],
+      'gpt-4o-mini',
+      ['gpt-4o', 'gpt-4o-mini']
+    ),
+    'gpt-4o'
   );
 });
 
@@ -147,7 +162,8 @@ test('MVP smoke creates an official group-bound key and records cleanup state', 
     'utf8'
   );
 
-  assert.match(script, /smokeGroupSlug\s*=\s*['"]official['"]/);
+  assert.match(script, /APIPOOL_SMOKE_GROUP_SLUG/);
+  assert.match(script, /\|\|\s*['"]official['"]/);
   assert.match(script, /groupSlug:\s*smokeGroupSlug/);
   assert.match(script, /record\(\s*['"]cleanup state['"]/);
   assert.match(script, /disabled/);
@@ -372,6 +388,7 @@ test('runbook documents MVP smoke commands, live gate, and prerequisites', async
   assert.match(runbook, /不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions/);
   assert.match(runbook, /usage log 或 quota delta/);
   assert.match(runbook, /失败不能发布/);
+  assert.match(runbook, /APIPOOL_SMOKE_GROUP_SLUG/);
   assert.match(runbook, /APIPOOL_SMOKE_MODEL/);
   assert.match(runbook, /APIPOOL_SMOKE_QUOTA_USD/);
   assert.match(runbook, /official/);

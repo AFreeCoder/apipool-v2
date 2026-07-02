@@ -81,7 +81,9 @@ pnpm smoke:mvp
 operator that has `admin.apipool.quota.adjust`, calls the launch model through
 the OpenAI-compatible path under `https://api2.apipool.dev`, disables the key, and checks that the disabled key
 is rejected. It skips when live New API credentials,
-`APIPOOL_SMOKE_PORTAL_USER_ID`, or `APIPOOL_SMOKE_OPERATOR_USER_ID` are missing; set
+`APIPOOL_SMOKE_PORTAL_USER_ID`, or `APIPOOL_SMOKE_OPERATOR_USER_ID` are missing.
+`APIPOOL_SMOKE_GROUP_SLUG` defaults to `official`; set it with
+`APIPOOL_SMOKE_MODEL` to test a specific callable production group/model. Set
 `APIPOOL_SMOKE_REQUIRE_LIVE=true` to make missing live configuration fail.
 GitHub Actions intentionally runs only no-secret gates; production live smoke
 runs on the VPS with server-local environment:

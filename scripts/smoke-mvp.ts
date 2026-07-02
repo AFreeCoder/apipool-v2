@@ -320,27 +320,28 @@ export function parseLaunchModelAssistantText(body: string) {
 export function resolveSmokeLaunchModel(
   requestedModel?: string,
   smokeTestedCallableModelIds: string[] = [],
-  configuredDefault = APIPOOL_CONFIG.defaultLaunchModel
+  configuredDefault = APIPOOL_CONFIG.defaultLaunchModel,
+  callableModelIds: string[] = smokeTestedCallableModelIds
 ) {
+  if (requestedModel) {
+    if (!callableModelIds.includes(requestedModel)) {
+      throw new Error(
+        `APIPOOL_SMOKE_MODEL must be callable in the smoke group: ${requestedModel}`
+      );
+    }
+
+    return requestedModel;
+  }
+
   if (smokeTestedCallableModelIds.length === 0) {
     throw new Error(
       'No smoke-tested callable model is configured for MVP smoke'
     );
   }
 
-  if (!requestedModel) {
-    return smokeTestedCallableModelIds.includes(configuredDefault)
-      ? configuredDefault
-      : smokeTestedCallableModelIds[0];
-  }
-
-  if (!smokeTestedCallableModelIds.includes(requestedModel)) {
-    throw new Error(
-      `APIPOOL_SMOKE_MODEL must be a smoke-tested callable model: ${requestedModel}`
-    );
-  }
-
-  return requestedModel;
+  return smokeTestedCallableModelIds.includes(configuredDefault)
+    ? configuredDefault
+    : smokeTestedCallableModelIds[0];
 }
 
 export function assertHealthyNewApi(health: {
@@ -463,15 +464,22 @@ export async function main() {
   const portalUserId = getEnv('APIPOOL_SMOKE_PORTAL_USER_ID')!;
   const operatorUserId = getEnv('APIPOOL_SMOKE_OPERATOR_USER_ID')!;
   const amountUsd = Number(getEnv('APIPOOL_SMOKE_QUOTA_USD') || '1');
-  const smokeGroupSlug = 'official';
+  const smokeGroupSlug = getEnv('APIPOOL_SMOKE_GROUP_SLUG') || 'official';
   const quotaPerUnit = priceReconciliation.enabled
     ? getSmokeQuotaPerUnit(process.env)
     : DEFAULT_QUOTA_PER_UNIT;
+  const callableListings =
+    await getCallableListingsByGroupUncached(smokeGroupSlug);
+  const callableModelIds = [
+    ...new Set(callableListings.map((listing) => listing.modelId)),
+  ];
   const smokeTestedModelIds =
     await getSmokeTestedCallableModelIdsByGroupUncached(smokeGroupSlug);
   const model = resolveSmokeLaunchModel(
     getEnv('APIPOOL_SMOKE_MODEL'),
-    smokeTestedModelIds
+    smokeTestedModelIds,
+    APIPOOL_CONFIG.defaultLaunchModel,
+    callableModelIds
   );
 
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
@@ -480,7 +488,7 @@ export async function main() {
 
   const smokeEffectivePrice = priceReconciliation.enabled
     ? resolveSmokeConfirmedEffectivePrice(
-        await getCallableListingsByGroupUncached(smokeGroupSlug),
+        callableListings,
         model,
         smokeGroupSlug
       )
@@ -528,8 +536,8 @@ export async function main() {
   let plainKey: string | undefined;
 
   try {
-    // groupSlug='official' maps to the seed group; live New API smoke must align
-    // that group's newapiGroup with the external New API group per DESIGN §9.1.
+    // The smoke group must align its catalog_group.newapiGroup with an external
+    // New API group that has callable channels and abilities.
     const created = await createPortalApiKey(user, {
       name: `MVP smoke ${new Date().toISOString()}`,
       groupSlug: smokeGroupSlug,

@@ -76,6 +76,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 ```
 
+`APIPOOL_SMOKE_GROUP_SLUG` 可在 VPS `.env.deploy` 中指定真实冒烟分组；默认是
+`official`。若指定 `APIPOOL_SMOKE_MODEL`，该模型必须在冒烟分组中可调用。
+
 非价格策略发布如只需验证建 Key、调用、用量和禁用闭环，可把第二条命令改为
 `./deploy/live-smoke.sh --no-price-reconciliation`。
 

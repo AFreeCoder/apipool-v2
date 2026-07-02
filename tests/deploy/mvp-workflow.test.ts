@@ -43,6 +43,7 @@ test('MVP workflow stays no-secret; production live smoke runs on VPS scripts', 
 
   assert.match(liveSmoke, /APIPOOL_SMOKE_REQUIRE_LIVE=true/);
   assert.match(liveSmoke, /APIPOOL_SMOKE_PRICE_RECONCILIATION/);
+  assert.match(liveSmoke, /APIPOOL_SMOKE_GROUP_SLUG/);
   assert.match(liveSmoke, /smoke-mvp\.cjs/);
   assert.match(setupSmokeUsers, /pre-smoke-users/);
   assert.match(setupSmokeUsers, /role_operator/);
