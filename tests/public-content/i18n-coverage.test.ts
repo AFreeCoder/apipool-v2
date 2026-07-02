@@ -313,6 +313,14 @@ test('api key page localizes public group names instead of echoing admin data na
 
   assert.equal(en.groups.official, 'Official');
   assert.equal(zh.groups.official, '官方');
+  assert.equal(en.defaultName, 'Your API key');
+  assert.equal(zh.defaultName, '你的 API 密钥');
+  assert.equal(en.form.namePlaceholder, 'Your API key');
+  assert.equal(zh.form.namePlaceholder, '你的 API 密钥');
+  assert.equal(Object.hasOwn(en.form, 'callableModels'), false);
+  assert.equal(Object.hasOwn(en.form, 'noCallableModels'), false);
+  assert.equal(Object.hasOwn(zh.form, 'callableModels'), false);
+  assert.equal(Object.hasOwn(zh.form, 'noCallableModels'), false);
 });
 
 test('mobile navigation defers Radix sheet rendering until client mount', async () => {

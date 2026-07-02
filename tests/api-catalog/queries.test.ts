@@ -168,6 +168,15 @@ async function seedQueryFixtures() {
     sortOrder: 91,
     status: 'active',
   });
+  await modules.service.createGroup({
+    slug: 'empty-key-group',
+    name: 'Empty Key Group',
+    userDescription: 'Group with no configured models.',
+    newapiGroup: 'newapi-empty-secret',
+    allowCreateKey: true,
+    sortOrder: 16,
+    status: 'active',
+  });
   const hiddenVendor = await modules.service.createVendor({
     slug: 'hidden-vendor',
     name: 'Hidden Vendor',
@@ -567,143 +576,72 @@ test('getPublicListings aggregates capabilities for each model without exposing 
   assert.equal('newapiGroup' in seeded, false);
 });
 
-test('getFilterDimensions returns only options present in public-visible listings, in sort order', async () => {
+test('getFilterDimensions returns all active admin-configured dimensions in sort order', async () => {
   const dimensions = await modules.queries.getFilterDimensionsUncached();
 
-  // Backed by a public-visible listing -> shown (no dead-end filter chips).
-  assert.ok(
-    dimensions.vendors.some(
-      (vendor: { slug: string }) => vendor.slug === 'openai'
-    )
+  assert.deepEqual(
+    dimensions.vendors.map((vendor: { slug: string }) => vendor.slug),
+    [
+      'openai',
+      'anthropic',
+      'google',
+      'capability-only-vendor',
+      'cross-hidden-vendor',
+    ]
   );
-  // 'partner' group has an available (public-visible) listing in the fixture.
-  assert.ok(
-    dimensions.groups.some(
-      (group: { slug: string }) => group.slug === 'partner'
-    )
+  assert.deepEqual(
+    dimensions.groups.map((group: { slug: string }) => group.slug),
+    [
+      'official',
+      'partner',
+      'empty-key-group',
+      'read-only-route',
+      'capability-only-group',
+      'cross-hidden-group',
+    ]
   );
-  assert.ok(
-    dimensions.groups.some(
-      (group: { slug: string }) => group.slug === 'official'
-    )
+  assert.deepEqual(
+    dimensions.categories.map((category: { slug: string }) => category.slug),
+    [
+      'llm',
+      'embedding',
+      'image',
+      'audio',
+      'capability-only-category',
+      'cross-hidden-category',
+    ]
   );
-  assert.ok(
-    dimensions.statuses.some(
-      (status: { slug: string }) => status.slug === 'available'
-    )
-  );
-
-  // Active dictionary entries with NO public-visible listing are hidden so a
-  // chip never dead-ends. 'retired' only has a non-public listing in the fixture.
-  assert.equal(
-    dimensions.statuses.some(
-      (status: { slug: string }) => status.slug === 'retired'
+  assert.deepEqual(
+    dimensions.capabilities.map(
+      (capability: { slug: string }) => capability.slug
     ),
-    false
+    ['text', 'vision', 'video', 'audio', 'cross-hidden-capability']
   );
-  assert.ok(
-    dimensions.categories.some(
-      (category: { slug: string }) => category.slug === 'llm'
-    )
-  );
-  assert.equal(
-    dimensions.vendors.some(
-      (vendor: { slug: string }) => vendor.slug === 'hidden-vendor'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.vendors.some(
-      (vendor: { slug: string }) => vendor.slug === 'cross-hidden-vendor'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.vendors.some(
-      (vendor: { slug: string }) => vendor.slug === 'capability-only-vendor'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.capabilities.some(
-      (capability: { slug: string }) => capability.slug === 'hidden-capability'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.capabilities.some(
-      (capability: { slug: string }) =>
-        capability.slug === 'cross-hidden-capability'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.categories.some(
-      (category: { slug: string }) => category.slug === 'hidden-category'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.categories.some(
-      (category: { slug: string }) => category.slug === 'cross-hidden-category'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.categories.some(
-      (category: { slug: string }) =>
-        category.slug === 'capability-only-category'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.groups.some(
-      (group: { slug: string }) => group.slug === 'disabled-route'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.groups.some(
-      (group: { slug: string }) => group.slug === 'cross-hidden-group'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.groups.some(
-      (group: { slug: string }) => group.slug === 'capability-only-group'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.statuses.some(
-      (status: { slug: string }) => status.slug === 'disabled-status'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.statuses.some(
-      (status: { slug: string }) => status.slug === 'cross_hidden_status'
-    ),
-    false
-  );
-  assert.equal(
-    dimensions.statuses.some(
-      (status: { slug: string }) => status.slug === 'capability_only_status'
-    ),
-    false
+  assert.deepEqual(
+    dimensions.statuses.map((status: { slug: string }) => status.slug),
+    [
+      'available',
+      'coming_soon',
+      'retired',
+      'capability_only_status',
+      'cross_hidden_status',
+    ]
   );
 });
 
-test('getGroupsForKeyCreation returns only active groups that allow key creation and no internal fields', async () => {
+test('getGroupsForKeyCreation returns active key-capable groups regardless of listings and no internal fields', async () => {
   const groups = await modules.queries.getGroupsForKeyCreationUncached();
   const slugs = groups.map((group: { slug: string }) => group.slug);
 
-  assert.ok(slugs.includes('official'));
-  assert.ok(slugs.includes('partner'));
+  assert.deepEqual(slugs, [
+    'official',
+    'partner',
+    'empty-key-group',
+    'capability-only-group',
+    'cross-hidden-group',
+  ]);
   assert.equal(slugs.includes('disabled-route'), false);
   assert.equal(slugs.includes('read-only-route'), false);
-  assert.equal(slugs.includes('cross-hidden-group'), false);
-  assert.equal(slugs.includes('capability-only-group'), false);
 
   for (const group of groups) {
     assert.deepEqual(

@@ -23,7 +23,11 @@ test('buildCreateKeyRequest sends a public group slug without model or internal 
 
 test('buildCreateKeyRequest applies the stable default key name', () => {
   assert.deepEqual(buildCreateKeyRequest('   ', 'official'), {
-    name: 'Default APIPool key',
+    name: 'Your API key',
+    groupSlug: 'official',
+  });
+  assert.deepEqual(buildCreateKeyRequest('   ', 'official', '你的 API 密钥'), {
+    name: '你的 API 密钥',
     groupSlug: 'official',
   });
 });
@@ -123,4 +127,30 @@ test('API key manager renders high-priority visual treatment for errors', async 
     source,
     /<p className="text-muted-foreground mt-3 text-sm">\{[^}]+message[^}]*\}<\/p>/
   );
+});
+
+test('API key page and manager no longer expose callable model lists', async () => {
+  const [pageSource, managerSource] = await Promise.all([
+    readFile(
+      join(
+        process.cwd(),
+        'src/app/[locale]/(landing)/dashboard/api-keys/page.tsx'
+      ),
+      'utf8'
+    ),
+    readFile(
+      join(
+        process.cwd(),
+        'src/features/api-console/components/api-key-manager.tsx'
+      ),
+      'utf8'
+    ),
+  ]);
+
+  assert.doesNotMatch(pageSource, /getCallableListingsByGroup/);
+  assert.doesNotMatch(pageSource, /callableByGroup/);
+  assert.doesNotMatch(managerSource, /callableByGroup/);
+  assert.doesNotMatch(managerSource, /selectedGroupModels/);
+  assert.doesNotMatch(managerSource, /form\.callableModels/);
+  assert.doesNotMatch(managerSource, /form\.noCallableModels/);
 });

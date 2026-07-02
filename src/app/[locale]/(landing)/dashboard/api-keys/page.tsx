@@ -1,7 +1,4 @@
-import {
-  getCallableListingsByGroup,
-  getGroupsForKeyCreation,
-} from '@/features/api-catalog/server/queries';
+import { getGroupsForKeyCreation } from '@/features/api-catalog/server/queries';
 import { ApiKeyManager } from '@/features/api-console/components/api-key-manager';
 import { listPortalApiKeys } from '@/features/newapi-bridge/server/portal';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
@@ -37,17 +34,6 @@ export default async function ApiKeysPage({
     ...group,
     name: localizeApiKeyGroupName(groupMessages, group.slug, group.name),
   }));
-  const callableEntries = await Promise.all(
-    groups.map(async (group) => {
-      const listings = await getCallableListingsByGroup(group.slug);
-      return [
-        group.slug,
-        listings.map((listing) => listing.displayName),
-      ] as const;
-    })
-  );
-  const callableByGroup = Object.fromEntries(callableEntries);
-
   return (
     <div className="space-y-6">
       <div>
@@ -57,7 +43,6 @@ export default async function ApiKeysPage({
       <ApiKeyManager
         initialKeys={JSON.parse(JSON.stringify(keys))}
         groups={localizedGroups}
-        callableByGroup={callableByGroup}
         creationEnabled={APIPOOL_CONFIG.isPortalKeyCreationEnabled}
       />
     </div>

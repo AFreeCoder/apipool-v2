@@ -2,7 +2,7 @@
   "title": "API 密钥",
   "description": "为 APIPool Base URL 创建真实 Key。完整 Key 只展示一次。",
   "creationPaused": "API Key 创建暂时暂停，现有 Key 仍可管理。",
-  "defaultName": "默认 APIPool Key",
+  "defaultName": "你的 API 密钥",
   "status": {
     "active": "启用",
     "disabled": "已停用",
@@ -26,13 +26,11 @@
   },
   "form": {
     "title": "创建 API Key",
-    "namePlaceholder": "Key 名称",
+    "namePlaceholder": "你的 API 密钥",
     "groupLabel": "分组",
     "groupPlaceholder": "选择分组",
     "creating": "创建中...",
     "create": "创建 Key",
-    "callableModels": "可调用模型",
-    "noCallableModels": "暂无可调用模型",
     "hint": "发起付费调用前，请先在余额页充值。创建后完整 Key 只展示一次。"
   },
   "fullKey": {

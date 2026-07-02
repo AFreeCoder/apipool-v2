@@ -139,12 +139,10 @@ function ApiKeyNotice({ notice }: { notice: NoticeState }) {
 export function ApiKeyManager({
   initialKeys,
   groups,
-  callableByGroup,
   creationEnabled = true,
 }: {
   initialKeys: ApiKeyRow[];
   groups: ApiKeyGroup[];
-  callableByGroup: Record<string, string[]>;
   creationEnabled?: boolean;
 }) {
   const t = useTranslations('dashboard.apiKeys');
@@ -162,9 +160,6 @@ export function ApiKeyManager({
   const selectedGroupLabel =
     groupOptions.find((group) => group.value === selectedGroupSlug)?.label ??
     t('form.groupPlaceholder');
-  const selectedGroupModels = selectedGroupSlug
-    ? (callableByGroup[selectedGroupSlug] ?? [])
-    : [];
 
   useEffect(() => {
     setMounted(true);
@@ -197,7 +192,9 @@ export function ApiKeyManager({
       const response = await fetch('/api/apipool/keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(buildCreateKeyRequest(name, selectedGroupSlug)),
+        body: JSON.stringify(
+          buildCreateKeyRequest(name, selectedGroupSlug, t('defaultName'))
+        ),
       });
       const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
@@ -319,25 +316,6 @@ export function ApiKeyManager({
             <Plus className="size-4" />
             {loading ? t('form.creating') : t('form.create')}
           </Button>
-        </div>
-        <div className="bg-muted/40 mt-4 rounded-md border p-3">
-          <div className="text-sm font-medium">{t('form.callableModels')}</div>
-          {selectedGroupModels.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {selectedGroupModels.map((modelName) => (
-                <span
-                  key={modelName}
-                  className="bg-background text-muted-foreground rounded-md px-2 py-1 text-xs"
-                >
-                  {modelName}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground mt-2 text-xs">
-              {t('form.noCallableModels')}
-            </p>
-          )}
         </div>
         <p className="text-muted-foreground mt-3 text-xs">{t('form.hint')}</p>
         {!creationEnabled && (

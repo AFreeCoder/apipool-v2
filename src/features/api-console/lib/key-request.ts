@@ -14,9 +14,13 @@ export type GroupSelectOption = {
   description?: string;
 };
 
-export function buildCreateKeyRequest(name: string, groupSlug: string) {
+export function buildCreateKeyRequest(
+  name: string,
+  groupSlug: string,
+  defaultName = 'Your API key'
+) {
   return {
-    name: name.trim() || 'Default APIPool key',
+    name: name.trim() || defaultName,
     groupSlug: groupSlug.trim(),
   };
 }
@@ -34,10 +38,7 @@ export function buildGroupSelectOptions(
 export function applyApiKeyMutationResult<
   T extends { id: string },
   U extends { id: string; status: string },
->(
-  keys: readonly T[],
-  updatedKey: U
-): Array<T | U> {
+>(keys: readonly T[], updatedKey: U): Array<T | U> {
   if (updatedKey.status === 'deleted') {
     return keys.filter((key) => key.id !== updatedKey.id);
   }

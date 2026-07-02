@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import {
   API_KEY_CREATION_PAUSED_MESSAGE,
   assertPortalApiKeyCreationEnabled,
@@ -46,7 +45,7 @@ test('customer key creation input uses a stable default name', () => {
     groupSlug: 'official',
   });
 
-  assert.equal(input.name, 'Default APIPool key');
+  assert.equal(input.name, 'Your API key');
   assert.equal(input.groupSlug, 'official');
 });
 
