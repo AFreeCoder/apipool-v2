@@ -531,6 +531,8 @@ export async function createPortalApiKey(
     throw new Error(DUPLICATE_KEY_NAME_MESSAGE);
   }
 
+  await client.ensureGroup?.({ group: newapiGroup });
+
   const binding = await ensurePortalUserBinding(user, client, {
     requiredNewapiGroup: newapiGroup,
   });

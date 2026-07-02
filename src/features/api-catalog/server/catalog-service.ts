@@ -106,6 +106,41 @@ export type ModelAdminConfig = {
   capabilities: Capability[];
 };
 
+function normalizeCreateGroupInput(data: NewCatalogGroup): NewCatalogGroup {
+  const slug = data.slug.trim();
+  const allowCreateKey = data.allowCreateKey ?? true;
+  const newapiGroup = (data.newapiGroup ?? '').trim();
+
+  return {
+    ...data,
+    slug,
+    newapiGroup: newapiGroup || (allowCreateKey ? slug : ''),
+  };
+}
+
+async function normalizeUpdateGroupPatch(
+  id: string,
+  patch: UpdateCatalogGroup
+): Promise<UpdateCatalogGroup> {
+  const existing = await getGroupById(id);
+  if (!existing) return patch;
+
+  const nextSlug = (patch.slug ?? existing.slug).trim();
+  const nextAllowCreateKey = patch.allowCreateKey ?? existing.allowCreateKey;
+  const hasNewapiGroup = Object.hasOwn(patch, 'newapiGroup');
+  const nextNewapiGroup = hasNewapiGroup
+    ? (patch.newapiGroup ?? '').trim()
+    : existing.newapiGroup.trim();
+
+  if (!hasNewapiGroup && nextNewapiGroup) return patch;
+
+  return {
+    ...patch,
+    newapiGroup:
+      nextNewapiGroup || (nextAllowCreateKey ? nextSlug : nextNewapiGroup),
+  };
+}
+
 export async function getVendors(): Promise<Vendor[]> {
   return await db()
     .select()
@@ -304,7 +339,7 @@ export async function createGroup(
 ): Promise<CatalogGroup> {
   const [result] = await db()
     .insert(catalogGroup)
-    .values({ ...data, id: getUuid() })
+    .values({ ...normalizeCreateGroupInput(data), id: getUuid() })
     .returning();
   return result;
 }
@@ -313,9 +348,10 @@ export async function updateGroup(
   id: string,
   patch: UpdateCatalogGroup
 ): Promise<CatalogGroup> {
+  const normalizedPatch = await normalizeUpdateGroupPatch(id, patch);
   const [result] = await db()
     .update(catalogGroup)
-    .set(patch)
+    .set(normalizedPatch)
     .where(eq(catalogGroup.id, id))
     .returning();
   return result;

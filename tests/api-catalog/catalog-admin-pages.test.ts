@@ -174,6 +174,7 @@ test('catalog group forms expose mapping, key creation, and immutable edit slug'
   for (const source of [newPage, editPage]) {
     assert.match(source, fieldPattern('newapiGroup'));
     assert.match(source, switchFieldPattern('allowCreateKey'));
+    assert.match(source, /syncCatalogGroupToNewApi\s*\(\s*result\s*\)/);
   }
 
   assert.match(
@@ -376,10 +377,7 @@ test('legacy categories admin route redirects to catalog models', async () => {
 
 test('catalog model search route requires catalog write permission and hides raw New API response', async () => {
   const source = await readFile(
-    join(
-      root,
-      'src/app/api/apipool/admin/catalog/models/search/route.ts'
-    ),
+    join(root, 'src/app/api/apipool/admin/catalog/models/search/route.ts'),
     'utf8'
   );
 

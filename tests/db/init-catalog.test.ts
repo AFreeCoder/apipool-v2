@@ -290,6 +290,46 @@ test('official New API group migration repairs older empty mappings', async () =
   assert.equal(official?.newapiGroup, 'official');
 });
 
+test('key creation group mapping migration repairs custom groups targeting official', async () => {
+  await modules.initCatalog();
+
+  const { catalogGroup } = modules.schema;
+  await modules.db().insert(catalogGroup).values({
+    id: 'legacy_custom_group_official_mapping',
+    slug: 'codex-local-official',
+    name: 'Codex Local Official',
+    userDescription: 'Legacy custom route',
+    newapiGroup: 'official',
+    allowCreateKey: true,
+    sortOrder: 1,
+    status: 'active',
+  });
+
+  const migration = await readFile(
+    join(
+      process.cwd(),
+      'src/config/db/migrations_sqlite/0008_key_creation_group_mapping.sql'
+    ),
+    'utf8'
+  );
+  const client = createClient({ url: process.env.DATABASE_URL! });
+  await client.executeMultiple(migration);
+  await client.executeMultiple(migration);
+
+  const custom = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'codex-local-official'
+  );
+  const official = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'official'
+  );
+  assert.equal(custom?.newapiGroup, 'codex-local-official');
+  assert.equal(official?.newapiGroup, 'official');
+});
+
 test('initCatalog preserves an operator-provided official New API mapping', async () => {
   await modules.initCatalog();
 

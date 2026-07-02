@@ -48,38 +48,41 @@ async function setupDb() {
     })
     .where(eq(modules.schema.catalogGroup.slug, 'official'));
 
-  await modules.db().insert(modules.schema.catalogGroup).values([
-    {
-      id: 'catalog_group_internal_disabled',
-      slug: 'disabled',
-      name: 'Disabled',
-      userDescription: 'Disabled route',
-      newapiGroup: 'ng-disabled',
-      allowCreateKey: true,
-      sortOrder: 2,
-      status: 'disabled',
-    },
-    {
-      id: 'catalog_group_internal_locked',
-      slug: 'locked',
-      name: 'Locked',
-      userDescription: 'Locked route',
-      newapiGroup: 'ng-locked',
-      allowCreateKey: false,
-      sortOrder: 3,
-      status: 'active',
-    },
-    {
-      id: 'catalog_group_internal_unmapped',
-      slug: 'unmapped',
-      name: 'Unmapped',
-      userDescription: 'Missing remote route',
-      newapiGroup: '',
-      allowCreateKey: true,
-      sortOrder: 4,
-      status: 'active',
-    },
-  ]);
+  await modules
+    .db()
+    .insert(modules.schema.catalogGroup)
+    .values([
+      {
+        id: 'catalog_group_internal_disabled',
+        slug: 'disabled',
+        name: 'Disabled',
+        userDescription: 'Disabled route',
+        newapiGroup: 'ng-disabled',
+        allowCreateKey: true,
+        sortOrder: 2,
+        status: 'disabled',
+      },
+      {
+        id: 'catalog_group_internal_locked',
+        slug: 'locked',
+        name: 'Locked',
+        userDescription: 'Locked route',
+        newapiGroup: 'ng-locked',
+        allowCreateKey: false,
+        sortOrder: 3,
+        status: 'active',
+      },
+      {
+        id: 'catalog_group_internal_unmapped',
+        slug: 'unmapped',
+        name: 'Unmapped',
+        userDescription: 'Missing remote route',
+        newapiGroup: '',
+        allowCreateKey: true,
+        sortOrder: 4,
+        status: 'active',
+      },
+    ]);
 
   groupIds = {
     official: 'seed_group_official',
@@ -102,8 +105,13 @@ async function insertUser(id: string, email: string) {
 function createRecordingRemoteClient() {
   const createKeyInputs: any[] = [];
   const provisionUserInputs: any[] = [];
+  const ensureGroupInputs: any[] = [];
   const ensureUserGroupInputs: any[] = [];
   const client = {
+    ensureGroup: async (input: any) => {
+      ensureGroupInputs.push(input);
+      return { group: input.group, changed: true };
+    },
     provisionUser: async (input: { username: string }) => {
       provisionUserInputs.push(input);
       return {
@@ -129,6 +137,7 @@ function createRecordingRemoteClient() {
     client,
     getCreateKeyInputs: () => createKeyInputs,
     getProvisionUserInputs: () => provisionUserInputs,
+    getEnsureGroupInputs: () => ensureGroupInputs,
     getEnsureUserGroupInputs: () => ensureUserGroupInputs,
   };
 }
@@ -159,6 +168,7 @@ test('createPortalApiKey resolves groupSlug server-side and stores only internal
 
   const [createKeyInput] = remote.getCreateKeyInputs();
   const [provisionUserInput] = remote.getProvisionUserInputs();
+  assert.deepEqual(remote.getEnsureGroupInputs(), [{ group: 'ng-official' }]);
   assert.equal(provisionUserInput.group, 'ng-official');
   assert.equal(createKeyInput.group, 'ng-official');
   assert.notEqual(createKeyInput.group, 'official');

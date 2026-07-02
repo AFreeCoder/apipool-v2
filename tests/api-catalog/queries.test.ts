@@ -168,6 +168,15 @@ async function seedQueryFixtures() {
     sortOrder: 91,
     status: 'active',
   });
+  await modules.service.createGroup({
+    slug: 'admin-created-route',
+    name: 'Admin Created Route',
+    userDescription: 'Key-capable route without catalog listings yet.',
+    newapiGroup: '',
+    allowCreateKey: true,
+    sortOrder: 16,
+    status: 'active',
+  });
   const hiddenVendor = await modules.service.createVendor({
     slug: 'hidden-vendor',
     name: 'Hidden Vendor',
@@ -700,10 +709,11 @@ test('getGroupsForKeyCreation returns only active groups that allow key creation
 
   assert.ok(slugs.includes('official'));
   assert.ok(slugs.includes('partner'));
+  assert.ok(slugs.includes('admin-created-route'));
+  assert.ok(slugs.includes('cross-hidden-group'));
+  assert.ok(slugs.includes('capability-only-group'));
   assert.equal(slugs.includes('disabled-route'), false);
   assert.equal(slugs.includes('read-only-route'), false);
-  assert.equal(slugs.includes('cross-hidden-group'), false);
-  assert.equal(slugs.includes('capability-only-group'), false);
 
   for (const group of groups) {
     assert.deepEqual(

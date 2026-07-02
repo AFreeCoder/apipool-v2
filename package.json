@@ -18,6 +18,7 @@
     "start": "next start",
     "test": "NODE_OPTIONS='--conditions react-server' tsx --test tests/**/*.test.ts",
     "smoke:mvp": "NODE_OPTIONS='--conditions react-server' tsx scripts/with-env.ts tsx scripts/smoke-mvp.ts",
+    "mock:upstream": "node scripts/mock-openai-upstream.cjs --port 3003",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

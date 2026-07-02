@@ -38,19 +38,27 @@ echo "admin token = $TOKEN"
 sed -i '' "s|^NEWAPI_ADMIN_TOKEN=.*|NEWAPI_ADMIN_TOKEN=$TOKEN|" .env.deploy
 ```
 
-## 3. 在 New API 配真实上游渠道
+## 3. 在 New API 配上游渠道
+
+本地无真实上游 key 时，先在另一个终端启动 OpenAI-compatible mock：
+
+```bash
+npm run mock:upstream
+```
 
 浏览器开 `http://localhost:3001` 用 root 登录 → 渠道 → 新建:
+
 - 类型:OpenAI
 - 名称:apipool-upstream
-- 代理/BaseURL:`https://apipool.dev`
+- 代理/BaseURL:本地 mock 用 `http://host.docker.internal:3003`；真实上游用实际 OpenAI-compatible Base URL
 - 模型:`gpt-5.4-mini,gpt-4o-mini`
 - 分组:`official`
-- 密钥:你的测试 key
+- 密钥:本地 mock 可填任意非空值；真实上游填你的测试 key
 
 或用 API(`$TOKEN` 为上一步 token)。**注意 New API rc.10 建渠道要 `{"mode":"single","channel":{…}}` 包装**(裸 channel 对象会触发服务端 panic):
+
 ```bash
-# 1) 启用门户 official 对应的 New API 分组
+# 1) 启用门户 official 对应的 New API 分组（门户保存分组/建 Key 时也会幂等补齐 GroupRatio）
 curl -s -X PUT http://localhost:3001/api/option/ \
   -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
   -d '{"key":"GroupRatio","value":"{\"default\":1,\"official\":1}"}'
@@ -58,7 +66,7 @@ curl -s -X PUT http://localhost:3001/api/option/ \
 # 2) 建渠道（rc.10 格式）。group 必须包含 official，否则门户 official Key 会创建成功但 /v1 调用无路由。
 curl -s -X POST http://localhost:3001/api/channel/ \
   -H "Authorization: Bearer $TOKEN" -H 'New-Api-User: 1' -H 'Content-Type: application/json' \
-  -d '{"mode":"single","channel":{"name":"apipool-upstream","type":1,"base_url":"https://apipool.dev","models":"gpt-5.4-mini,gpt-4o-mini","key":"<你的测试 key>","group":"official"}}'
+  -d '{"mode":"single","channel":{"name":"apipool-upstream","type":1,"base_url":"http://host.docker.internal:3003","models":"gpt-5.4-mini,gpt-4o-mini","key":"local-mock-key","group":"official"}}'
 
 # 3) 开自用模式：否则模型未配价时调用会被拒（model_price_error）
 curl -s -X PUT http://localhost:3001/api/option/ \

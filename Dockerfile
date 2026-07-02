@@ -17,9 +17,11 @@ WORKDIR /app
 # NEXT_PUBLIC_* are inlined into the client bundle at build time. Defaults match
 # code defaults so CI builds are unaffected; local compose overrides via build.args.
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_DEFAULT_LOCALE=en
 ARG NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev
 ARG NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-4o-mini
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_DEFAULT_LOCALE=$NEXT_PUBLIC_DEFAULT_LOCALE \
     NEXT_PUBLIC_APIPOOL_API_BASE_URL=$NEXT_PUBLIC_APIPOOL_API_BASE_URL \
     NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=$NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL
 
@@ -54,7 +56,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/src/config/db/migrations_sqlite ./migrations_sqlite
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+RUN sed -i 's/\r$//' ./entrypoint.sh && chmod +x ./entrypoint.sh
 
 USER nextjs
 

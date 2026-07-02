@@ -57,6 +57,13 @@
       "when": 1782855264829,
       "tag": "0007_model_catalog_admin_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1782892800000,
+      "tag": "0008_key_creation_group_mapping",
+      "breakpoints": true
     }
   ]
 }

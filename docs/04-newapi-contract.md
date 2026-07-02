@@ -58,11 +58,14 @@ New-Api-User: <该令牌所属用户的 ID>
 
 额度策略：新建 New API 用户初始额度为 0，余额只能来自门户充值（见 06-payments-ledger.md）或运营调额，两者均落账本与审计。
 
+分组映射规则：`allowCreateKey=true` 且 `status=active` 的目录分组会出现在控制台 Key 创建下拉中；创建/更新分组时如果 `newapiGroup` 留空，会默认使用该分组 `slug`，以保证门户分组与 New API token/user group 一致。配置了 New API 管理凭据时，后台保存分组会自动把该 group 写入 New API `GroupRatio`；用户创建 Key 前也会再次幂等确认，防止脚本导入或历史分组漏同步。
+
 ## 4. 端点矩阵（门户操作 → 真实 New API 接口）
 
 | 门户操作         | 凭据上下文 | 方法与路径                                 | 实测说明                                                                                                                                                                           |
 | ---------------- | ---------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 健康检查         | 无         | `GET /api/status`                          | ✅公开接口，返回 `version`、`quota_per_unit`                                                                                                                                       |
+| 启用分组         | 管理员     | `GET /api/option/` + `PUT /api/option/`    | 读取 `GroupRatio`，缺少门户映射 group 时以比例 `1` 幂等追加；不会自动修改 channel，上游路由仍需 channel 的 `group` 包含该 group                                                    |
 | 创建用户         | 管理员     | `POST /api/user/`                          | ✅body `{username, password, display_name}`；**密码限长 8-20 字符**（超长报 `Password failed on the 'max' tag`）；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查           |
 | 更新用户分组     | 管理员     | `PUT /api/user/`                           | 用于让 New API 用户具备对应 token group 权限；需带 `id`、`username`、`display_name`、`group`、`role`、`remark`，只传 `{id, group}` 会触发 New API 校验/唯一约束问题                |
 | 读取用户额度     | 用户       | `GET /api/user/self`                       | ✅`data.quota` 为整数                                                                                                                                                              |

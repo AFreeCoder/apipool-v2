@@ -1,9 +1,9 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
+import { derivePricingFromNewApiPricing } from '@/features/api-catalog/lib/pricing';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
-import { derivePricingFromNewApiPricing } from '@/features/api-catalog/lib/pricing';
 
 export type NewApiBridgeErrorCode =
   | 'not_configured'
@@ -188,6 +188,7 @@ const DEFAULT_RETRY_DELAY_MS = 250;
 const DEFAULT_QUOTA_PER_UNIT = 500_000;
 const LIST_PAGE_SIZE = 100;
 const USAGE_LOG_TYPE_CONSUME = 2;
+const GROUP_RATIO_OPTION_KEY = 'GroupRatio';
 
 // New API token 状态：1=启用 2=禁用 3=过期 4=耗尽
 const REMOTE_TOKEN_STATUS_ACTIVE = 1;
@@ -355,6 +356,36 @@ function extractSessionCookie(response: Response): string {
     .map((cookie) => cookie.split(';')[0]?.trim())
     .filter(Boolean)
     .join('; ');
+}
+
+function getOptionValue(options: unknown[], key: string): string | undefined {
+  const match = options.find((item: any) => item?.key === key);
+  return typeof (match as any)?.value === 'string'
+    ? (match as any).value
+    : undefined;
+}
+
+function parseGroupRatioOption(value: string | undefined) {
+  if (!value) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new NewApiBridgeError({
+      code: 'malformed_response',
+      message: 'Malformed New API GroupRatio option',
+    });
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new NewApiBridgeError({
+      code: 'malformed_response',
+      message: 'Malformed New API GroupRatio option',
+    });
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 export function createNewApiClient(options: NewApiClientOptions = {}) {
@@ -693,6 +724,43 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       return items
         .map((item) => toRemotePricingModel(item, payload.vendors))
         .filter((item) => item.modelId.length > 0);
+    },
+
+    async ensureGroup(input: {
+      group: string;
+      ratio?: number;
+    }): Promise<{ group: string; changed: boolean }> {
+      const group = input.group.trim();
+      if (!group) {
+        throw new NewApiBridgeError({
+          code: 'malformed_response',
+          message: 'New API group name is required',
+        });
+      }
+
+      const options = unwrapListItems(await request<any>('/api/option/'));
+      const groupRatio = parseGroupRatioOption(
+        getOptionValue(options, GROUP_RATIO_OPTION_KEY)
+      );
+
+      if (Object.hasOwn(groupRatio, group)) {
+        return { group, changed: false };
+      }
+
+      const nextGroupRatio = {
+        ...(Object.keys(groupRatio).length > 0 ? groupRatio : { default: 1 }),
+        [group]: input.ratio ?? 1,
+      };
+
+      await request('/api/option/', {
+        method: 'PUT',
+        body: {
+          key: GROUP_RATIO_OPTION_KEY,
+          value: JSON.stringify(nextGroupRatio),
+        },
+      });
+
+      return { group, changed: true };
     },
 
     /**

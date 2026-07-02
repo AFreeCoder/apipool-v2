@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -494,38 +494,18 @@ export async function getGroupsForKeyCreationUncached(): Promise<
   { slug: string; name: string; userDescription?: string }[]
 > {
   const rows = await db()
-    .selectDistinct({
+    .select({
       slug: catalogGroup.slug,
       name: catalogGroup.name,
       userDescription: catalogGroup.userDescription,
       sortOrder: catalogGroup.sortOrder,
     })
-    .from(catalogModelListing)
-    .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
-    .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
-    .innerJoin(catalogVendor, eq(catalogModel.vendorId, catalogVendor.id))
-    .innerJoin(catalogCategory, eq(catalogModel.category, catalogCategory.slug))
-    .innerJoin(
-      catalogModelCapability,
-      eq(catalogModelCapability.modelId, catalogModel.id)
-    )
-    .innerJoin(
-      catalogCapability,
-      eq(catalogModelCapability.capabilityId, catalogCapability.id)
-    )
-    .innerJoin(
-      catalogStatus,
-      eq(catalogModelListing.statusId, catalogStatus.id)
-    )
+    .from(catalogGroup)
     .where(
       and(
         eq(catalogGroup.status, 'active'),
         eq(catalogGroup.allowCreateKey, true),
-        eq(catalogVendor.status, 'active'),
-        eq(catalogCategory.status, 'active'),
-        eq(catalogCapability.status, 'active'),
-        eq(catalogStatus.status, 'active'),
-        eq(catalogStatus.isCallable, true)
+        sql`trim(${catalogGroup.newapiGroup}) <> ''`
       )
     )
     .orderBy(asc(catalogGroup.sortOrder));

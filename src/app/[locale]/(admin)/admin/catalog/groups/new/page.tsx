@@ -3,6 +3,7 @@ import {
   NewCatalogGroup,
 } from '@/features/api-catalog/server/catalog-service';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
+import { syncCatalogGroupToNewApi } from '@/features/newapi-bridge/server/catalog-groups';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
@@ -115,6 +116,7 @@ export default async function CatalogGroupNewPage({
           throw new Error(createFailedMessage);
         }
 
+        await syncCatalogGroupToNewApi(result);
         revalidateCatalog();
 
         return {

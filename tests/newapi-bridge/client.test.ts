@@ -147,6 +147,42 @@ test('admin requests carry bearer token and New-Api-User headers', async () => {
   assert.equal(requests[0].headers.get('new-api-user'), '1');
 });
 
+test('ensureGroup adds a missing group to the New API GroupRatio option', async () => {
+  const { client, requests } = createMockedClient({
+    'GET /api/option/': () =>
+      ok([{ key: 'GroupRatio', value: '{"default":1,"official":1}' }]),
+    'PUT /api/option/': async (req) => {
+      const body = await req.clone().json();
+      assert.equal(body.key, 'GroupRatio');
+      assert.deepEqual(JSON.parse(body.value), {
+        default: 1,
+        official: 1,
+        partner: 1,
+      });
+      return ok(null);
+    },
+  });
+
+  const result = await client.ensureGroup({ group: 'partner' });
+
+  assert.deepEqual(result, { group: 'partner', changed: true });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].headers.get('authorization'), 'Bearer admin-token');
+  assert.equal(requests[1].headers.get('new-api-user'), '1');
+});
+
+test('ensureGroup is idempotent when GroupRatio already contains the group', async () => {
+  const { client, requests } = createMockedClient({
+    'GET /api/option/': () =>
+      ok([{ key: 'GroupRatio', value: '{"default":1,"partner":1}' }]),
+  });
+
+  const result = await client.ensureGroup({ group: 'partner' });
+
+  assert.deepEqual(result, { group: 'partner', changed: false });
+  assert.equal(requests.length, 1);
+});
+
 test('provisionUser creates, looks up, logs in, and returns the access token', async () => {
   let created = false;
   const { client, requests } = createMockedClient({
