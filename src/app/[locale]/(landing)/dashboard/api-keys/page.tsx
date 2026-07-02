@@ -6,16 +6,6 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { getUserInfo } from '@/shared/models/user';
 
-type ApiKeyGroupMessages = Record<string, string>;
-
-function localizeApiKeyGroupName(
-  messages: ApiKeyGroupMessages,
-  slug: string,
-  fallback: string
-) {
-  return messages[slug] ?? fallback;
-}
-
 export default async function ApiKeysPage({
   params,
 }: {
@@ -29,11 +19,6 @@ export default async function ApiKeysPage({
     user ? listPortalApiKeys(user.id) : Promise.resolve([]),
     getGroupsForKeyCreation(),
   ]);
-  const groupMessages = t.raw('groups') as ApiKeyGroupMessages;
-  const localizedGroups = groups.map((group) => ({
-    ...group,
-    name: localizeApiKeyGroupName(groupMessages, group.slug, group.name),
-  }));
   return (
     <div className="space-y-6">
       <div>
@@ -42,7 +27,7 @@ export default async function ApiKeysPage({
       </div>
       <ApiKeyManager
         initialKeys={JSON.parse(JSON.stringify(keys))}
-        groups={localizedGroups}
+        groups={groups}
         creationEnabled={APIPOOL_CONFIG.isPortalKeyCreationEnabled}
       />
     </div>

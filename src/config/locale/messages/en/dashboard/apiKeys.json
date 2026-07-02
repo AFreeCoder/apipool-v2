@@ -14,9 +14,6 @@
     "failed_terminal": "Failed",
     "remote_created_binding_failed": "Remote key needs cleanup"
   },
-  "groups": {
-    "official": "Official"
-  },
   "notices": {
     "selectGroup": "Select a group first.",
     "created": "Key created. The full key is shown once below.",

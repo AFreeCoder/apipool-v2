@@ -14,9 +14,6 @@
     "failed_terminal": "失败",
     "remote_created_binding_failed": "远端 Key 需清理"
   },
-  "groups": {
-    "official": "官方"
-  },
   "notices": {
     "selectGroup": "请先选择分组。",
     "created": "Key 已创建。完整 Key 仅在下方展示一次。",

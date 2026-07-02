@@ -58,19 +58,11 @@ type ApiKeyRow = {
 };
 
 type NoticeTone = 'error' | 'info' | 'success';
-type GroupMessages = Record<string, string>;
 
 type NoticeState = {
   tone: NoticeTone;
   text: string;
 };
-
-function localizeApiKeyRowGroupName(
-  messages: GroupMessages,
-  key: Pick<ApiKeyRow, 'groupSlug' | 'groupName'>
-) {
-  return (key.groupSlug ? messages[key.groupSlug] : undefined) ?? key.groupName;
-}
 
 function StatusBadge({
   status,
@@ -146,7 +138,6 @@ export function ApiKeyManager({
   creationEnabled?: boolean;
 }) {
   const t = useTranslations('dashboard.apiKeys');
-  const groupMessages = t.raw('groups') as GroupMessages;
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
   const [name, setName] = useState(t('defaultName'));
   const [selectedGroupSlug, setSelectedGroupSlug] = useState(
@@ -389,7 +380,7 @@ export function ApiKeyManager({
                       />
                     </TableCell>
                     <TableCell>
-                      {localizeApiKeyRowGroupName(groupMessages, key) ?? '—'}
+                      {key.groupName ?? '—'}
                     </TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
