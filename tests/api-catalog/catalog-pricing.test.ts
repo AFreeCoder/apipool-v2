@@ -52,6 +52,7 @@ test('New API pricing ratios derive ordinary and image token prices per 1M token
     model_ratio: 2.5,
     completion_ratio: 8,
     image_ratio: 2,
+    supported_endpoint_types: ['chat', 'image'],
   });
 
   assert.deepEqual(derived, {
@@ -60,6 +61,25 @@ test('New API pricing ratios derive ordinary and image token prices per 1M token
     outputMicroUsd: 40000000,
     imageInputMicroUsd: 10000000,
     imageOutputMicroUsd: 40000000,
+  });
+});
+
+test('New API text models do not derive image prices without image support', () => {
+  const derived = derivePricingFromNewApiPricing({
+    model_name: 'gpt-5.5',
+    quota_type: 0,
+    model_ratio: 1.25,
+    completion_ratio: 8,
+    image_ratio: null,
+    supported_endpoint_types: ['responses'],
+  });
+
+  assert.deepEqual(derived, {
+    source: 'ratio',
+    inputMicroUsd: 2500000,
+    outputMicroUsd: 20000000,
+    imageInputMicroUsd: null,
+    imageOutputMicroUsd: null,
   });
 });
 

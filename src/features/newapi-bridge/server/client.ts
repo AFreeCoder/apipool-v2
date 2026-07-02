@@ -1,9 +1,9 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
+import { derivePricingFromNewApiPricing } from '@/features/api-catalog/lib/pricing';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
-import { derivePricingFromNewApiPricing } from '@/features/api-catalog/lib/pricing';
 
 export type NewApiBridgeErrorCode =
   | 'not_configured'
@@ -286,6 +286,7 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
   const modelPrice = asNullableNumber(item?.model_price);
   const completionRatio = asNumber(item?.completion_ratio);
   const imageRatio = asNullableNumber(item?.image_ratio);
+  const supportedEndpointTypes = asStringArray(item?.supported_endpoint_types);
   const derived = derivePricingFromNewApiPricing({
     model_name: modelId,
     quota_type: quotaType,
@@ -293,6 +294,7 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
     model_price: modelPrice,
     completion_ratio: completionRatio,
     image_ratio: imageRatio,
+    supported_endpoint_types: supportedEndpointTypes,
   });
 
   return {
@@ -311,7 +313,7 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
     imageInputMicroUsd: derived.imageInputMicroUsd,
     imageOutputMicroUsd: derived.imageOutputMicroUsd,
     enabledGroups: asStringArray(item?.enable_groups),
-    supportedEndpointTypes: asStringArray(item?.supported_endpoint_types),
+    supportedEndpointTypes,
   };
 }
 

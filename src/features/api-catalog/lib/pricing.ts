@@ -38,6 +38,7 @@ export type NewApiPricingLike = {
   model_price?: number | null;
   completion_ratio?: number | null;
   image_ratio?: number | null;
+  supported_endpoint_types?: string[] | string | null;
 };
 
 export type DerivedNewApiPricing = {
@@ -105,6 +106,9 @@ export function derivePricingFromNewApiPricing(
     pricing.image_ratio === null || pricing.image_ratio === undefined
       ? null
       : baseUsdPerMillion * finiteOrDefault(pricing.image_ratio, 0);
+  const shouldDeriveImagePrices =
+    imageInputUsdPerMillion !== null ||
+    supportsImageEndpoint(pricing.supported_endpoint_types);
 
   return {
     source: 'ratio',
@@ -114,13 +118,23 @@ export function derivePricingFromNewApiPricing(
       imageInputUsdPerMillion === null
         ? null
         : dollarsToMicroUsd(imageInputUsdPerMillion),
-    imageOutputMicroUsd: dollarsToMicroUsd(outputUsdPerMillion),
+    imageOutputMicroUsd: shouldDeriveImagePrices
+      ? dollarsToMicroUsd(outputUsdPerMillion)
+      : null,
   };
 }
 
 function finiteOrDefault(value: number | null | undefined, fallback: number) {
   if (value === null || value === undefined) return fallback;
   return Number.isFinite(value) ? value : fallback;
+}
+
+function supportsImageEndpoint(value: string[] | string | null | undefined) {
+  const endpointTypes = Array.isArray(value) ? value : value ? [value] : [];
+
+  return endpointTypes.some((endpointType) =>
+    endpointType.toLowerCase().includes('image')
+  );
 }
 
 function formatDecimal(value: number): string {
