@@ -7,7 +7,11 @@ import {
   dollarsToMicroUsd,
   formatDiscountRate,
   microUsdToDollars,
+  normalizeDecimalString,
+  normalizeGroupRatio,
   optionalDollarsToMicroUsd,
+  quotaSpendFromEffectivePrice,
+  resolveEffectiveCatalogPrice,
 } from '@/features/api-catalog/lib/pricing';
 
 test('catalog pricing helpers convert dollars per million tokens to micro-USD integers', () => {
@@ -19,6 +23,28 @@ test('catalog pricing helpers convert dollars per million tokens to micro-USD in
 test('catalog pricing helpers reject negative and non-finite dollar values', () => {
   assert.throws(() => dollarsToMicroUsd(-0.01), /non-negative/);
   assert.throws(() => dollarsToMicroUsd('not-a-number'), /finite/);
+  assert.throws(() => dollarsToMicroUsd(Number.NaN), /finite/);
+  assert.throws(() => dollarsToMicroUsd(Number.POSITIVE_INFINITY), /finite/);
+});
+
+test('decimal parser normalizes finite non-negative decimal strings', () => {
+  assert.equal(normalizeDecimalString(' 001.5000 '), '1.5');
+  assert.equal(normalizeDecimalString('+0.500'), '0.5');
+  assert.equal(normalizeDecimalString(1), '1');
+  assert.throws(() => normalizeDecimalString('-0.1'), /non-negative/);
+  assert.throws(() => normalizeDecimalString('NaN'), /finite/);
+  assert.throws(() => normalizeDecimalString('Infinity'), /finite/);
+});
+
+test('New API group ratio parser stores decimal and round-half-up bps', () => {
+  assert.deepEqual(normalizeGroupRatio('1', 'group_ratio'), {
+    raw: '1',
+    decimal: '1',
+    bps: 10000,
+    sourceKey: 'group_ratio',
+  });
+  assert.equal(normalizeGroupRatio('0.5').bps, 5000);
+  assert.equal(normalizeGroupRatio('0.33335').bps, 3334);
 });
 
 test('catalog pricing helpers convert stored micro-USD values back to dollar form input values', () => {
@@ -98,5 +124,81 @@ test('New API fixed-price models do not pretend to have token split prices', () 
     outputMicroUsd: null,
     imageInputMicroUsd: null,
     imageOutputMicroUsd: null,
+    fixedPriceMicroUsd: 40000,
   });
+});
+
+test('effective price inherits matched New API group ratio for public presentation', () => {
+  const effective = resolveEffectiveCatalogPrice({
+    baseInputMicroUsd: 150000,
+    baseOutputMicroUsd: 600000,
+    groupRatioBps: 5000,
+    pricePolicy: 'inherit_group',
+    priceDriftStatus: 'matched',
+    listInputMicroUsd: 150000,
+    listOutputMicroUsd: 600000,
+    discountNote: 'Official group ratio',
+  });
+
+  assert.equal(effective.publicConfirmed, true);
+  assert.equal(effective.effectiveInputMicroUsd, 75000);
+  assert.equal(effective.effectiveOutputMicroUsd, 300000);
+  assert.equal(effective.pricePresentation.showPrice, true);
+  assert.equal(effective.pricePresentation.showStrikethrough, true);
+  assert.equal(effective.pricePresentation.discountLabel, '5 折 (50%)');
+  assert.equal(effective.pricePresentation.note, 'Official group ratio');
+});
+
+test('unmatched listing multiplier remains hidden from public confirmed pricing', () => {
+  const effective = resolveEffectiveCatalogPrice({
+    baseInputMicroUsd: 150000,
+    baseOutputMicroUsd: 600000,
+    pricePolicy: 'listing_multiplier',
+    discountRateBps: 5000,
+    priceDriftStatus: 'needs_live_check',
+    listInputMicroUsd: 150000,
+    listOutputMicroUsd: 600000,
+    discountNote: 'Legacy campaign',
+  });
+
+  assert.equal(effective.publicConfirmed, false);
+  assert.equal(effective.pricePresentation.showPrice, false);
+  assert.equal(effective.pricePresentation.showStrikethrough, false);
+  assert.equal(effective.pricePresentation.discountLabel, undefined);
+  assert.equal(effective.pricePresentation.note, undefined);
+});
+
+test('verified price override still requires matched drift status', () => {
+  const unmatched = resolveEffectiveCatalogPrice({
+    pricePolicy: 'price_override',
+    overrideInputMicroUsd: 1,
+    overrideOutputMicroUsd: 2,
+    overrideStatus: 'verified',
+    priceDriftStatus: 'needs_live_check',
+  });
+  const matched = resolveEffectiveCatalogPrice({
+    pricePolicy: 'price_override',
+    overrideInputMicroUsd: 1,
+    overrideOutputMicroUsd: 2,
+    overrideStatus: 'verified',
+    priceDriftStatus: 'matched',
+  });
+
+  assert.equal(unmatched.publicConfirmed, false);
+  assert.equal(matched.publicConfirmed, true);
+  assert.equal(matched.effectiveInputMicroUsd, 1);
+  assert.equal(matched.effectiveOutputMicroUsd, 2);
+});
+
+test('quota spend uses the same effective micro-USD integers as public pricing', () => {
+  assert.equal(
+    quotaSpendFromEffectivePrice({
+      inputTokens: 1_000_000,
+      outputTokens: 500_000,
+      effectiveInputMicroUsd: 75000,
+      effectiveOutputMicroUsd: 300000,
+      quotaPerUnit: 500_000,
+    }),
+    112500
+  );
 });

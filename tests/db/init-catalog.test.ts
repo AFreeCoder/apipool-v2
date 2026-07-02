@@ -13,6 +13,7 @@ const catalogTableKeys = [
   'catalogStatus',
   'catalogGroup',
   'catalogModel',
+  'catalogModelPrice',
   'catalogModelCapability',
   'catalogModelListing',
 ] as const;
@@ -154,6 +155,7 @@ test('initCatalog seeds the required first catalog data', async () => {
     catalogStatus,
     catalogGroup,
     catalogModel,
+    catalogModelPrice,
     catalogModelCapability,
     catalogModelListing,
   } = modules.schema;
@@ -164,6 +166,7 @@ test('initCatalog seeds the required first catalog data', async () => {
   assert.equal(counts.catalogStatus, 3);
   assert.ok(counts.catalogGroup >= 1);
   assert.ok(counts.catalogModel >= 1);
+  assert.ok(counts.catalogModelPrice >= 1);
   assert.ok(counts.catalogModelCapability >= 2);
   assert.ok(counts.catalogModelListing >= 1);
 
@@ -211,6 +214,17 @@ test('initCatalog seeds the required first catalog data', async () => {
   assert.equal(model?.vendorId, openai.id);
   assert.equal(model?.contextWindow, 128000);
   assert.equal(model?.category, 'llm');
+
+  const [modelPrice] = await modules
+    .db()
+    .select()
+    .from(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, model.id))
+    .limit(1);
+  assert.equal(modelPrice?.pricingMode, 'manual_token');
+  assert.equal(modelPrice?.source, 'migration');
+  assert.equal(modelPrice?.baseInputMicroUsd, 150000);
+  assert.equal(modelPrice?.baseOutputMicroUsd, 600000);
 
   const capabilityRows = await modules
     .db()

@@ -15,6 +15,7 @@ import type {
   catalogGroup as catalogGroupTable,
   catalogModel as catalogModelTable,
   catalogModelCapability as catalogModelCapabilityTable,
+  catalogModelPrice as catalogModelPriceTable,
   catalogModelListing as catalogModelListingTable,
   catalogStatus as catalogStatusTable,
   catalogVendor as catalogVendorTable,
@@ -31,6 +32,7 @@ type CatalogSchemaTables = {
   catalogGroup: typeof catalogGroupTable;
   catalogModel: typeof catalogModelTable;
   catalogModelCapability: typeof catalogModelCapabilityTable;
+  catalogModelPrice: typeof catalogModelPriceTable;
   catalogModelListing: typeof catalogModelListingTable;
 };
 
@@ -123,6 +125,19 @@ const listings = [
   },
 ];
 
+const modelPrices = [
+  {
+    modelId: 'gpt-4o-mini',
+    pricingMode: 'manual_token',
+    source: 'migration',
+    baseInputMicroUsd: 150000,
+    baseOutputMicroUsd: 600000,
+    syncStatus: 'manual',
+    driftStatus: 'unknown',
+    reviewNote: 'Seeded from initial official listing price.',
+  },
+];
+
 async function loadSchemaTables(): Promise<CatalogSchemaTables> {
   if (!['sqlite', 'turso', 'd1'].includes(envConfigs.database_provider)) {
     throw new Error(
@@ -163,6 +178,7 @@ export async function initCatalog() {
     catalogGroup,
     catalogModel,
     catalogModelCapability,
+    catalogModelPrice,
     catalogModelListing,
   } = await loadSchemaTables();
 
@@ -325,6 +341,24 @@ export async function initCatalog() {
         ),
       'modelId'
     );
+
+    await tx
+      .insert(catalogModelPrice)
+      .values(
+        modelPrices.map((price) => ({
+          id: getUuid(),
+          modelId: requireRow(modelByModelId, price.modelId, 'model').id,
+          pricingMode: price.pricingMode,
+          source: price.source,
+          sourceModelId: price.modelId,
+          baseInputMicroUsd: price.baseInputMicroUsd,
+          baseOutputMicroUsd: price.baseOutputMicroUsd,
+          syncStatus: price.syncStatus,
+          driftStatus: price.driftStatus,
+          reviewNote: price.reviewNote,
+        }))
+      )
+      .onConflictDoNothing({ target: catalogModelPrice.modelId });
 
     await tx
       .insert(catalogModelCapability)

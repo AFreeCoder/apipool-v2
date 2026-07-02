@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   createNewApiClient,
@@ -42,6 +44,15 @@ function createMockedClient(
     },
   });
   return { client, requests };
+}
+
+async function loadNewApiFixture(name: string) {
+  return JSON.parse(
+    await readFile(
+      join(process.cwd(), 'tests', 'fixtures', 'newapi', name),
+      'utf8'
+    )
+  );
 }
 
 test('health check hits public status endpoint without auth headers', async () => {
@@ -159,6 +170,43 @@ test('listPricingModels parses pricing ratios, fixed-price models, image prices,
   ]);
   assert.equal(requests[0].headers.get('authorization'), 'Bearer admin-token');
   assert.equal(requests[0].headers.get('new-api-user'), '1');
+});
+
+test('getPricingSnapshot parses fixture group ratios, usable groups, and fingerprint', async () => {
+  const fixture = await loadNewApiFixture('pricing-snapshot.json');
+  const { client } = createMockedClient({
+    'GET /api/pricing': () => Response.json(fixture),
+  });
+
+  const snapshot = await client.getPricingSnapshot();
+
+  assert.equal(snapshot.models.length, 3);
+  assert.equal(snapshot.models[0].modelId, 'gpt-image-1');
+  assert.deepEqual(snapshot.vendors, { openai: 'OpenAI' });
+  assert.deepEqual(snapshot.usableGroups, ['default', 'official']);
+  assert.deepEqual(snapshot.groupRatios.official, {
+    raw: '0.5',
+    decimal: '0.5',
+    bps: 5000,
+    sourceKey: 'group_ratio',
+  });
+  assert.match(snapshot.sourceFingerprint, /^[a-f0-9]{64}$/);
+});
+
+test('getPricingSnapshot ignores invalid group ratios without dropping models', async () => {
+  const fixture = await loadNewApiFixture(
+    'pricing-snapshot.invalid-group-ratio.json'
+  );
+  const { client } = createMockedClient({
+    'GET /api/pricing': () => Response.json(fixture),
+  });
+
+  const snapshot = await client.getPricingSnapshot();
+
+  assert.equal(snapshot.models.length, 1);
+  assert.equal(snapshot.models[0].modelId, 'gpt-4o-mini');
+  assert.deepEqual(snapshot.groupRatios, {});
+  assert.deepEqual(snapshot.usableGroups, ['official']);
 });
 
 test('admin requests carry bearer token and New-Api-User headers', async () => {
@@ -606,6 +654,39 @@ test('listUsageLogs maps consumption logs with USD spend', async () => {
   assert.equal(logs[0].spendUsd, 0.5);
   const url = new URL(requests[0].url);
   assert.equal(url.searchParams.get('type'), '2');
+});
+
+test('listUsageLogs leaves spend unavailable when usage quota is missing or invalid', async () => {
+  const { client } = createMockedClient({
+    'GET /api/log/self': () =>
+      ok({
+        items: [
+          {
+            id: 11,
+            token_name: 'pk_missing',
+            model_name: 'gpt-4o-mini',
+            prompt_tokens: 12,
+            completion_tokens: 34,
+            created_at: 1_781_252_611,
+          },
+          {
+            id: 12,
+            token_name: 'pk_invalid',
+            model_name: 'gpt-4o-mini',
+            prompt_tokens: 3,
+            completion_tokens: 4,
+            quota: 'not-a-number',
+            created_at: 1_781_252_612,
+          },
+        ],
+      }),
+  });
+
+  const logs = await client.listUsageLogs(USER, 20);
+
+  assert.equal(logs.length, 2);
+  assert.equal(logs[0].spendUsd, undefined);
+  assert.equal(logs[1].spendUsd, undefined);
 });
 
 test('adjustQuota issues a short-named redemption code and redeems it as the user', async () => {

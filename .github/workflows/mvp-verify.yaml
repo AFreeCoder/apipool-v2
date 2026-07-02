@@ -52,6 +52,7 @@ jobs:
       - run: pnpm smoke:mvp
         env:
           APIPOOL_SMOKE_REQUIRE_LIVE: 'true'
+          APIPOOL_SMOKE_PRICE_RECONCILIATION: 'true'
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NEWAPI_BASE_URL: ${{ secrets.NEWAPI_BASE_URL }}
           NEWAPI_ADMIN_TOKEN: ${{ secrets.NEWAPI_ADMIN_TOKEN }}

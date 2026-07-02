@@ -11,9 +11,11 @@ import {
   catalogModel,
   catalogModelCapability,
   catalogModelListing,
+  catalogModelPrice,
   catalogStatus,
   catalogVendor,
 } from '@/config/db/schema';
+import { resolveEffectiveCatalogPrice } from '@/features/api-catalog/lib/pricing';
 
 import type { FilterDimensions, ListingRow } from '../lib/types';
 
@@ -45,6 +47,18 @@ type ListingBaseRow = {
   discountRateBps: number | null;
   discountNote: string | null;
   description: string | null;
+  groupRatioBps: number | null;
+  pricePolicy: string;
+  overrideInputMicroUsd: number | null;
+  overrideOutputMicroUsd: number | null;
+  overrideImageInputMicroUsd: number | null;
+  overrideImageOutputMicroUsd: number | null;
+  overrideStatus: string;
+  priceDriftStatus: string;
+  baseInputMicroUsd: number | null;
+  baseOutputMicroUsd: number | null;
+  baseImageInputMicroUsd: number | null;
+  baseImageOutputMicroUsd: number | null;
   statusSlug: string;
   statusName: string;
   isCallable: boolean;
@@ -155,6 +169,18 @@ async function queryListingRows({
       discountRateBps: catalogModelListing.discountRateBps,
       discountNote: catalogModelListing.discountNote,
       description: catalogModelListing.description,
+      groupRatioBps: catalogGroup.newapiGroupRatioBps,
+      pricePolicy: catalogModelListing.pricePolicy,
+      overrideInputMicroUsd: catalogModelListing.overrideInputMicroUsd,
+      overrideOutputMicroUsd: catalogModelListing.overrideOutputMicroUsd,
+      overrideImageInputMicroUsd: catalogModelListing.overrideImageInputMicroUsd,
+      overrideImageOutputMicroUsd: catalogModelListing.overrideImageOutputMicroUsd,
+      overrideStatus: catalogModelListing.overrideStatus,
+      priceDriftStatus: catalogModelListing.priceDriftStatus,
+      baseInputMicroUsd: catalogModelPrice.baseInputMicroUsd,
+      baseOutputMicroUsd: catalogModelPrice.baseOutputMicroUsd,
+      baseImageInputMicroUsd: catalogModelPrice.baseImageInputMicroUsd,
+      baseImageOutputMicroUsd: catalogModelPrice.baseImageOutputMicroUsd,
       statusSlug: catalogStatus.slug,
       statusName: catalogStatus.name,
       isCallable: catalogStatus.isCallable,
@@ -164,6 +190,10 @@ async function queryListingRows({
     .innerJoin(catalogVendor, eq(catalogModel.vendorId, catalogVendor.id))
     .innerJoin(catalogCategory, eq(catalogModel.category, catalogCategory.slug))
     .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
+    .leftJoin(
+      catalogModelPrice,
+      eq(catalogModelPrice.modelId, catalogModel.id)
+    )
     .innerJoin(
       catalogStatus,
       eq(catalogModelListing.statusId, catalogStatus.id)
@@ -208,28 +238,73 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
   const capabilitiesByModelPk = await getCapabilitiesByModelPk(modelPks);
 
   return rows
-    .map((row) => ({
-      modelId: row.modelId,
-      displayName: row.displayName,
-      vendorName: row.vendorName,
-      groupName: row.groupName,
-      groupSlug: row.groupSlug,
-      category: row.category,
-      capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
-      contextWindow: row.contextWindow,
-      inputMicroUsd: row.inputMicroUsd,
-      outputMicroUsd: row.outputMicroUsd,
-      imageInputMicroUsd: row.imageInputMicroUsd ?? undefined,
-      imageOutputMicroUsd: row.imageOutputMicroUsd ?? undefined,
-      listInputMicroUsd: row.listInputMicroUsd ?? undefined,
-      listOutputMicroUsd: row.listOutputMicroUsd ?? undefined,
-      discountRateBps: row.discountRateBps ?? undefined,
-      discountNote: row.discountNote ?? undefined,
-      description: row.description ?? undefined,
-      statusSlug: row.statusSlug,
-      statusName: row.statusName,
-      isCallable: row.isCallable,
-    }))
+    .map((row) => {
+      const effective = resolveEffectiveCatalogPrice({
+        baseInputMicroUsd: row.baseInputMicroUsd,
+        baseOutputMicroUsd: row.baseOutputMicroUsd,
+        baseImageInputMicroUsd: row.baseImageInputMicroUsd,
+        baseImageOutputMicroUsd: row.baseImageOutputMicroUsd,
+        groupRatioBps: row.groupRatioBps,
+        pricePolicy: row.pricePolicy,
+        discountRateBps: row.discountRateBps,
+        overrideInputMicroUsd: row.overrideInputMicroUsd,
+        overrideOutputMicroUsd: row.overrideOutputMicroUsd,
+        overrideImageInputMicroUsd: row.overrideImageInputMicroUsd,
+        overrideImageOutputMicroUsd: row.overrideImageOutputMicroUsd,
+        overrideStatus: row.overrideStatus,
+        priceDriftStatus: row.priceDriftStatus,
+        listInputMicroUsd: row.listInputMicroUsd,
+        listOutputMicroUsd: row.listOutputMicroUsd,
+        discountNote: row.discountNote,
+      });
+
+      return {
+        modelId: row.modelId,
+        displayName: row.displayName,
+        vendorName: row.vendorName,
+        groupName: row.groupName,
+        groupSlug: row.groupSlug,
+        category: row.category,
+        capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
+        contextWindow: row.contextWindow,
+        inputMicroUsd: row.inputMicroUsd,
+        outputMicroUsd: row.outputMicroUsd,
+        imageInputMicroUsd: row.imageInputMicroUsd ?? undefined,
+        imageOutputMicroUsd: row.imageOutputMicroUsd ?? undefined,
+        listInputMicroUsd: effective.publicConfirmed
+          ? (effective.listInputMicroUsd ?? undefined)
+          : undefined,
+        listOutputMicroUsd: effective.publicConfirmed
+          ? (effective.listOutputMicroUsd ?? undefined)
+          : undefined,
+        discountRateBps:
+          effective.publicConfirmed && row.discountRateBps !== null
+            ? row.discountRateBps
+            : undefined,
+        discountNote: effective.publicConfirmed
+          ? (row.discountNote ?? undefined)
+          : undefined,
+        description: row.description ?? undefined,
+        statusSlug: row.statusSlug,
+        statusName: row.statusName,
+        isCallable: row.isCallable,
+        effectiveInputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveInputMicroUsd ?? undefined)
+          : undefined,
+        effectiveOutputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveOutputMicroUsd ?? undefined)
+          : undefined,
+        effectiveImageInputMicroUsd:
+          effective.publicConfirmed
+            ? (effective.effectiveImageInputMicroUsd ?? undefined)
+            : undefined,
+        effectiveImageOutputMicroUsd:
+          effective.publicConfirmed
+            ? (effective.effectiveImageOutputMicroUsd ?? undefined)
+            : undefined,
+        pricePresentation: effective.pricePresentation,
+      };
+    })
     .filter((listing) => listing.capabilities.length > 0);
 }
 

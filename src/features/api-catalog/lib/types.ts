@@ -1,4 +1,6 @@
-export type ListingRow = {
+import type { PricePresentation } from './pricing';
+
+export type PublicCatalogListingDto = {
   modelId: string;
   displayName: string;
   vendorName: string;
@@ -19,6 +21,44 @@ export type ListingRow = {
   statusSlug: string;
   statusName: string;
   isCallable: boolean;
+  effectiveInputMicroUsd?: number;
+  effectiveOutputMicroUsd?: number;
+  effectiveImageInputMicroUsd?: number;
+  effectiveImageOutputMicroUsd?: number;
+  pricePresentation?: PricePresentation;
+};
+
+export type ListingRow = PublicCatalogListingDto;
+
+export type AdminPricingSummaryDto = {
+  modelId: string;
+  displayName: string;
+  basePrice?: {
+    inputMicroUsd?: number | null;
+    outputMicroUsd?: number | null;
+    imageInputMicroUsd?: number | null;
+    imageOutputMicroUsd?: number | null;
+    pricingMode: string;
+    source: string;
+    syncStatus: string;
+    driftStatus: string;
+    sourceSyncedAt?: Date | null;
+  };
+  groupPricing?: {
+    groupSlug: string;
+    newapiGroup: string;
+    ratioDecimal?: string | null;
+    ratioBps?: number | null;
+    syncStatus: string;
+    syncedAt?: Date | null;
+  };
+  listingPolicy?: {
+    pricePolicy: string;
+    overrideStatus: string;
+    priceDriftStatus: string;
+    discountRateBps?: number | null;
+    effectiveFormula?: string | null;
+  };
 };
 
 export type FilterDimensions = {

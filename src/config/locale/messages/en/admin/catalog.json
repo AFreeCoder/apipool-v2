@@ -28,6 +28,7 @@
     "listInputMicroUsd": "List Input Price (USD / 1M)",
     "listOutputMicroUsd": "List Output Price (USD / 1M)",
     "discountRate": "Discount",
+    "pricingStatus": "Pricing Sync Status",
     "discountNote": "Discount Note",
     "description": "Description",
     "smokeTested": "Smoke Tested",
@@ -192,6 +193,16 @@
       "buttons": {
         "new": "New Model"
       }
+    },
+    "pricingSync": {
+      "title": "Pricing Sync",
+      "description": "Sync base prices and group ratios from New API, then inspect the latest drift report.",
+      "sync": "Sync Pricing",
+      "syncing": "Syncing",
+      "drift": "View Drift",
+      "loading": "Loading",
+      "success": "Completed",
+      "error": "Operation Failed"
     },
     "new": {
       "title": "New Model",

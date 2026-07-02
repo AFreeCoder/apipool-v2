@@ -5,9 +5,13 @@ import test from 'node:test';
 
 import {
   assertHealthyNewApi,
+  buildSmokePriceReconciliationReport,
   buildCleanupStateDetail,
+  finishSkipped,
+  getSmokePriceReconciliationConfig,
   isDisabledKeyRejected,
   parseLaunchModelAssistantText,
+  resolveSmokeConfirmedEffectivePrice,
   resolveSmokeLaunchModel,
 } from '../../scripts/smoke-mvp';
 
@@ -169,6 +173,191 @@ test('MVP smoke cleanup state output includes the key id and manual cleanup deta
   assert.match(failedDetail, /remote unavailable/);
 });
 
+test('MVP smoke exposes an opt-in price reconciliation gate', async () => {
+  const script = await readFile(
+    join(process.cwd(), 'scripts/smoke-mvp.ts'),
+    'utf8'
+  );
+
+  assert.deepEqual(getSmokePriceReconciliationConfig({}), {
+    enabled: false,
+    toleranceQuota: 1,
+  });
+  assert.deepEqual(
+    getSmokePriceReconciliationConfig({
+      APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA: 'not-a-number',
+    }),
+    {
+      enabled: false,
+      toleranceQuota: 1,
+    }
+  );
+  assert.deepEqual(
+    getSmokePriceReconciliationConfig({
+      APIPOOL_SMOKE_PRICE_RECONCILIATION: 'true',
+      APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA: '7',
+    }),
+    {
+      enabled: true,
+      toleranceQuota: 7,
+    }
+  );
+  assert.match(script, /APIPOOL_SMOKE_PRICE_RECONCILIATION/);
+  assert.match(script, /APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA/);
+  assert.match(script, /record\(\s*['"]reconcile smoke price['"]/);
+});
+
+test('MVP smoke price reconciliation gate fails instead of skipping when live env is missing', () => {
+  assert.throws(
+    () =>
+      finishSkipped(['DATABASE_URL'], {
+        APIPOOL_SMOKE_PRICE_RECONCILIATION: 'true',
+      }),
+    /APIPOOL_SMOKE_PRICE_RECONCILIATION=true/
+  );
+});
+
+test('MVP smoke price reconciliation reports expected actual delta and tolerance', () => {
+  const report = buildSmokePriceReconciliationReport({
+    model: 'gpt-4o-mini',
+    groupSlug: 'official',
+    effectiveInputMicroUsd: 1_000_000,
+    effectiveOutputMicroUsd: 2_000_000,
+    quotaPerUnit: 500_000,
+    toleranceQuota: 1,
+    beforeUsage: usageView({
+      quotaRemaining: 10_000,
+      logs: [{ id: 'old', modelId: 'gpt-4o-mini' }],
+    }),
+    afterUsage: usageView({
+      quotaRemaining: 9_000,
+      logs: [
+        { id: 'old', modelId: 'gpt-4o-mini' },
+        {
+          id: 'new',
+          modelId: 'gpt-4o-mini',
+          inputTokens: 1_000,
+          outputTokens: 500,
+          spendUsd: 0.002,
+        },
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.match(report.detail, /model=gpt-4o-mini/);
+  assert.match(report.detail, /groupSlug=official/);
+  assert.match(report.detail, /effectiveInputMicroUsd=1000000/);
+  assert.match(report.detail, /effectiveOutputMicroUsd=2000000/);
+  assert.match(report.detail, /inputTokens=1000/);
+  assert.match(report.detail, /outputTokens=500/);
+  assert.match(report.detail, /expectedQuota=1000/);
+  assert.match(report.detail, /actualQuota=1000/);
+  assert.match(report.detail, /deltaQuota=0/);
+  assert.match(report.detail, /toleranceQuota=1/);
+  assert.match(report.detail, /source=usage_log/);
+});
+
+test('MVP smoke price reconciliation falls back to quota delta when log spend is unavailable', () => {
+  const report = buildSmokePriceReconciliationReport({
+    model: 'gpt-4o-mini',
+    groupSlug: 'official',
+    effectiveInputMicroUsd: 1_000_000,
+    effectiveOutputMicroUsd: 2_000_000,
+    quotaPerUnit: 500_000,
+    toleranceQuota: 1,
+    beforeUsage: usageView({
+      quotaRemaining: 10_000,
+      logs: [],
+    }),
+    afterUsage: usageView({
+      quotaRemaining: 9_000,
+      logs: [
+        {
+          id: 'new',
+          modelId: 'gpt-4o-mini',
+          inputTokens: 1_000,
+          outputTokens: 500,
+          spendUsd: null,
+        },
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.match(report.detail, /expectedQuota=1000/);
+  assert.match(report.detail, /actualQuota=1000/);
+  assert.match(report.detail, /actualDelta=1000/);
+  assert.match(report.detail, /source=quota_delta/);
+});
+
+test('MVP smoke price reconciliation fails without usage spend or quota delta', () => {
+  const report = buildSmokePriceReconciliationReport({
+    model: 'gpt-4o-mini',
+    groupSlug: 'official',
+    effectiveInputMicroUsd: 1_000_000,
+    effectiveOutputMicroUsd: 2_000_000,
+    quotaPerUnit: 500_000,
+    toleranceQuota: 1,
+    beforeUsage: usageView({ logs: [] }),
+    afterUsage: usageView({
+      logs: [
+        {
+          id: 'new',
+          modelId: 'gpt-4o-mini',
+          inputTokens: 1_000,
+          outputTokens: 500,
+          spendUsd: null,
+        },
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, false);
+  assert.match(report.detail, /insufficient actual quota data/);
+  assert.match(report.detail, /expectedQuota=1000/);
+  assert.match(report.detail, /actualQuota=unavailable/);
+  assert.match(report.detail, /toleranceQuota=1/);
+});
+
+test('MVP smoke price reconciliation requires confirmed effective catalog price', () => {
+  assert.deepEqual(
+    resolveSmokeConfirmedEffectivePrice(
+      [
+        {
+          modelId: 'gpt-4o-mini',
+          groupSlug: 'official',
+          effectiveInputMicroUsd: 1_000_000,
+          effectiveOutputMicroUsd: 2_000_000,
+          pricePresentation: { showPrice: true, showStrikethrough: false },
+        } as any,
+      ],
+      'gpt-4o-mini',
+      'official'
+    ),
+    {
+      effectiveInputMicroUsd: 1_000_000,
+      effectiveOutputMicroUsd: 2_000_000,
+    }
+  );
+
+  assert.throws(
+    () =>
+      resolveSmokeConfirmedEffectivePrice(
+        [
+          {
+            modelId: 'gpt-4o-mini',
+            groupSlug: 'official',
+            pricePresentation: { showPrice: false, showStrikethrough: false },
+          } as any,
+        ],
+        'gpt-4o-mini',
+        'official'
+      ),
+    /pricing drift\/matched gate not passed/
+  );
+});
+
 test('runbook documents MVP smoke commands, live gate, and prerequisites', async () => {
   const runbook = await readFile(
     join(process.cwd(), 'docs/07-runbook.md'),
@@ -178,6 +367,12 @@ test('runbook documents MVP smoke commands, live gate, and prerequisites', async
   assert.match(runbook, /npm run catalog:init/);
   assert.match(runbook, /npm run smoke:mvp/);
   assert.match(runbook, /APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp/);
+  assert.match(
+    runbook,
+    /APIPOOL_SMOKE_REQUIRE_LIVE=true APIPOOL_SMOKE_PRICE_RECONCILIATION=true npm run smoke:mvp/
+  );
+  assert.match(runbook, /usage log 或 quota delta/);
+  assert.match(runbook, /失败不能发布/);
   assert.match(runbook, /APIPOOL_SMOKE_MODEL/);
   assert.match(runbook, /APIPOOL_SMOKE_QUOTA_USD/);
   assert.match(runbook, /official/);
@@ -192,3 +387,38 @@ test('New API bridge contract documents the health endpoint', async () => {
 
   assert.match(contract, /健康检查[\s\S]*`GET \/api\/status`/);
 });
+
+function usageView({
+  quotaRemaining,
+  logs,
+}: {
+  quotaRemaining?: number;
+  logs: Array<{
+    id: string;
+    modelId: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    spendUsd?: number | null;
+  }>;
+}) {
+  return {
+    summary: {
+      quotaRemaining,
+      requestCount: logs.length,
+      inputTokens: logs.reduce((sum, log) => sum + (log.inputTokens ?? 0), 0),
+      outputTokens: logs.reduce((sum, log) => sum + (log.outputTokens ?? 0), 0),
+      byModel: [],
+      status: logs.length > 0 ? 'ready' : 'empty',
+    },
+    logs: logs.map((log) => ({
+      id: log.id,
+      keyMasked: 'sk-***',
+      modelId: log.modelId,
+      status: 'success',
+      inputTokens: log.inputTokens ?? 0,
+      outputTokens: log.outputTokens ?? 0,
+      spendUsd: log.spendUsd,
+      createdAt: new Date(0),
+    })),
+  } as any;
+}

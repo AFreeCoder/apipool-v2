@@ -28,6 +28,7 @@
     "listInputMicroUsd": "划线输入价（美元 / 1M）",
     "listOutputMicroUsd": "划线输出价（美元 / 1M）",
     "discountRate": "折扣",
+    "pricingStatus": "价格同步状态",
     "discountNote": "折扣说明",
     "description": "说明",
     "smokeTested": "已冒烟",
@@ -192,6 +193,16 @@
       "buttons": {
         "new": "新增模型"
       }
+    },
+    "pricingSync": {
+      "title": "价格同步",
+      "description": "从 New API 同步基准价格与分组倍率，并查看最新漂移报告。",
+      "sync": "同步价格",
+      "syncing": "同步中",
+      "drift": "查看漂移",
+      "loading": "处理中",
+      "success": "已完成",
+      "error": "操作失败"
     },
     "new": {
       "title": "新增模型",

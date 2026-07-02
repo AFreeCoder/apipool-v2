@@ -58,6 +58,8 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
 - `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
 - `APIPOOL_SMOKE_REQUIRE_LIVE=true`：缺少 live smoke 必需配置时让 smoke 失败，而不是跳过。
+- `APIPOOL_SMOKE_PRICE_RECONCILIATION=true`：在 live smoke 调用后强制做展示价与 New API 实际扣费口径对账。
+- `APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA`（可选；默认 `1`）：价格对账允许的 quota 误差。
 
 ## 1.5 New API 实例初始化（每个新实例一次性，✅已实测）
 
@@ -119,6 +121,14 @@ npm run smoke:mvp
 ```bash
 APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp
 ```
+
+模型目录价格策略发布还必须补跑价格对账门禁：
+
+```bash
+APIPOOL_SMOKE_REQUIRE_LIVE=true APIPOOL_SMOKE_PRICE_RECONCILIATION=true npm run smoke:mvp
+```
+
+价格对账会读取本次调用对应模型和 `official` 分组的 confirmed effective price，并用 usage log 或 quota delta 计算 `expected/actual/delta/tolerance`。若 usage log 没有 token 与 cost/quota，且调用前后 quota delta 也不可用，脚本必须失败；失败不能发布。
 
 该脚本会创建 `official` 分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 

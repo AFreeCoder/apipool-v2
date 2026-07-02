@@ -279,6 +279,22 @@ function ModelsTable({
             </thead>
             <tbody>
               {listings.map((listing) => {
+                const showConfirmedPrice =
+                  listing.pricePresentation?.showPrice === true;
+                const showStrikethrough =
+                  showConfirmedPrice &&
+                  listing.pricePresentation?.showStrikethrough === true;
+                const inputPrice =
+                  showConfirmedPrice &&
+                  listing.effectiveInputMicroUsd !== undefined
+                    ? listing.effectiveInputMicroUsd
+                    : listing.inputMicroUsd;
+                const outputPrice =
+                  showConfirmedPrice &&
+                  listing.effectiveOutputMicroUsd !== undefined
+                    ? listing.effectiveOutputMicroUsd
+                    : listing.outputMicroUsd;
+
                 return (
                   <tr
                     key={`${listing.modelId}:${listing.groupSlug}`}
@@ -320,16 +336,18 @@ function ModelsTable({
                       {formatContextWindow(listing.contextWindow)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {formatMicroUsdPerMillion(listing.inputMicroUsd)}
-                      {listing.listInputMicroUsd !== undefined && (
+                      {formatMicroUsdPerMillion(inputPrice)}
+                      {showStrikethrough &&
+                        listing.listInputMicroUsd !== undefined && (
                         <div className="text-muted-foreground text-xs line-through">
                           {formatMicroUsdPerMillion(listing.listInputMicroUsd)}
                         </div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {formatMicroUsdPerMillion(listing.outputMicroUsd)}
-                      {listing.listOutputMicroUsd !== undefined && (
+                      {formatMicroUsdPerMillion(outputPrice)}
+                      {showStrikethrough &&
+                        listing.listOutputMicroUsd !== undefined && (
                         <div className="text-muted-foreground text-xs line-through">
                           {formatMicroUsdPerMillion(listing.listOutputMicroUsd)}
                         </div>
@@ -346,9 +364,14 @@ function ModelsTable({
                       >
                         {listing.statusName}
                       </Badge>
-                      {listing.discountNote && (
+                      {listing.pricePresentation?.discountLabel && (
                         <div className="text-muted-foreground mt-1 text-xs">
-                          {listing.discountNote}
+                          {listing.pricePresentation.discountLabel}
+                        </div>
+                      )}
+                      {listing.pricePresentation?.note && (
+                        <div className="text-muted-foreground mt-1 text-xs">
+                          {listing.pricePresentation.note}
                         </div>
                       )}
                     </td>

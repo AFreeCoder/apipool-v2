@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
-import { getSmokeTestedCallableModelIdsByGroupUncached } from '@/features/api-catalog/server/queries';
-import { createNewApiClient } from '@/features/newapi-bridge/server/client';
+import { quotaSpendFromEffectivePrice } from '@/features/api-catalog/lib/pricing';
+import type { ListingRow } from '@/features/api-catalog/lib/types';
+import {
+  getCallableListingsByGroupUncached,
+  getSmokeTestedCallableModelIdsByGroupUncached,
+} from '@/features/api-catalog/server/queries';
+import {
+  createNewApiClient,
+  DEFAULT_QUOTA_PER_UNIT,
+} from '@/features/newapi-bridge/server/client';
 import {
   adjustPortalQuota,
   createPortalApiKey,
   disablePortalApiKey,
   getPortalUsage,
+  type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
@@ -32,6 +41,17 @@ const USAGE_VISIBILITY_ATTEMPTS = Number(
 const USAGE_VISIBILITY_DELAY_MS = Number(
   getEnv('APIPOOL_SMOKE_USAGE_DELAY_MS') || '5000'
 );
+const DEFAULT_PRICE_TOLERANCE_QUOTA = 1;
+
+type ConfirmedSmokeEffectivePrice = {
+  effectiveInputMicroUsd: number;
+  effectiveOutputMicroUsd: number;
+};
+
+type SmokePriceReconciliationReport = {
+  ok: boolean;
+  detail: string;
+};
 
 function record(name: string, ok: boolean, detail?: string) {
   steps.push({ name, ok, detail });
@@ -42,6 +62,36 @@ function record(name: string, ok: boolean, detail?: string) {
 function getEnv(name: string) {
   const value = process.env[name]?.trim();
   return value && value.length > 0 ? value : undefined;
+}
+
+export function getSmokePriceReconciliationConfig(
+  env: Record<string, string | undefined> = process.env
+) {
+  const enabled = env.APIPOOL_SMOKE_PRICE_RECONCILIATION === 'true';
+  if (!enabled) {
+    return { enabled, toleranceQuota: DEFAULT_PRICE_TOLERANCE_QUOTA };
+  }
+
+  const rawTolerance = env.APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA?.trim();
+  const toleranceQuota = rawTolerance
+    ? Number(rawTolerance)
+    : DEFAULT_PRICE_TOLERANCE_QUOTA;
+
+  if (!Number.isSafeInteger(toleranceQuota) || toleranceQuota < 0) {
+    throw new Error(
+      'APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA must be a non-negative integer'
+    );
+  }
+
+  return { enabled, toleranceQuota };
+}
+
+function getSmokeQuotaPerUnit(env: Record<string, string | undefined>) {
+  const value = Number(env.NEWAPI_QUOTA_PER_UNIT || DEFAULT_QUOTA_PER_UNIT);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error('NEWAPI_QUOTA_PER_UNIT must be a positive number');
+  }
+  return value;
 }
 
 function missingRequiredEnv() {
@@ -55,11 +105,23 @@ function missingRequiredEnv() {
   return required.filter((name) => !getEnv(name));
 }
 
-function finishSkipped(missing: string[]) {
+export function shouldFailSkippedSmoke(
+  env: Record<string, string | undefined> = process.env
+) {
+  return (
+    env.APIPOOL_SMOKE_REQUIRE_LIVE === 'true' ||
+    env.APIPOOL_SMOKE_PRICE_RECONCILIATION === 'true'
+  );
+}
+
+export function finishSkipped(
+  missing: string[],
+  env: Record<string, string | undefined> = process.env
+) {
   const message =
     `SKIPPED: live MVP smoke requires ${missing.join(', ')}. ` +
-    'Set APIPOOL_SMOKE_REQUIRE_LIVE=true to fail instead of skipping.';
-  if (process.env.APIPOOL_SMOKE_REQUIRE_LIVE === 'true') {
+    'Set APIPOOL_SMOKE_REQUIRE_LIVE=true or APIPOOL_SMOKE_PRICE_RECONCILIATION=true to fail instead of skipping.';
+  if (shouldFailSkippedSmoke(env)) {
     throw new Error(message);
   }
   console.log(message);
@@ -75,6 +137,151 @@ function getExpectedModelUsage(
   expectedModel: string
 ) {
   return usage.summary.byModel.find(({ modelId }) => modelId === expectedModel);
+}
+
+export function resolveSmokeConfirmedEffectivePrice(
+  listings: Array<
+    Pick<
+      ListingRow,
+      | 'modelId'
+      | 'groupSlug'
+      | 'effectiveInputMicroUsd'
+      | 'effectiveOutputMicroUsd'
+      | 'pricePresentation'
+    >
+  >,
+  model: string,
+  groupSlug: string
+): ConfirmedSmokeEffectivePrice {
+  const listing = listings.find(
+    (row) => row.modelId === model && row.groupSlug === groupSlug
+  );
+
+  if (
+    !listing?.pricePresentation?.showPrice ||
+    typeof listing.effectiveInputMicroUsd !== 'number' ||
+    typeof listing.effectiveOutputMicroUsd !== 'number'
+  ) {
+    throw new Error(
+      `Confirmed effective price is missing for ${model}/${groupSlug}; ` +
+        'pricing drift/matched gate not passed'
+    );
+  }
+
+  return {
+    effectiveInputMicroUsd: listing.effectiveInputMicroUsd,
+    effectiveOutputMicroUsd: listing.effectiveOutputMicroUsd,
+  };
+}
+
+export function buildSmokePriceReconciliationReport({
+  model,
+  groupSlug,
+  effectiveInputMicroUsd,
+  effectiveOutputMicroUsd,
+  quotaPerUnit,
+  toleranceQuota,
+  beforeUsage,
+  afterUsage,
+}: {
+  model: string;
+  groupSlug: string;
+  effectiveInputMicroUsd: number;
+  effectiveOutputMicroUsd: number;
+  quotaPerUnit: number;
+  toleranceQuota: number;
+  beforeUsage?: PortalUsageView;
+  afterUsage: PortalUsageView;
+}): SmokePriceReconciliationReport {
+  const beforeLogIds = new Set(
+    (beforeUsage?.logs ?? []).map((log) => log.id)
+  );
+  const newLogs = afterUsage.logs.filter(
+    (log) =>
+      log.modelId === model &&
+      log.status === 'success' &&
+      !beforeLogIds.has(log.id)
+  );
+  const loggedInputTokens = newLogs.reduce(
+    (sum, log) => sum + log.inputTokens,
+    0
+  );
+  const loggedOutputTokens = newLogs.reduce(
+    (sum, log) => sum + log.outputTokens,
+    0
+  );
+  const summaryInputDelta = Math.max(
+    0,
+    afterUsage.summary.inputTokens - (beforeUsage?.summary.inputTokens ?? 0)
+  );
+  const summaryOutputDelta = Math.max(
+    0,
+    afterUsage.summary.outputTokens - (beforeUsage?.summary.outputTokens ?? 0)
+  );
+  const inputTokens = loggedInputTokens || summaryInputDelta;
+  const outputTokens = loggedOutputTokens || summaryOutputDelta;
+  const expectedQuota =
+    inputTokens + outputTokens > 0
+      ? quotaSpendFromEffectivePrice({
+          inputTokens,
+          outputTokens,
+          effectiveInputMicroUsd,
+          effectiveOutputMicroUsd,
+          quotaPerUnit,
+        })
+      : undefined;
+
+  const allNewLogsHaveSpend =
+    newLogs.length > 0 &&
+    newLogs.every((log) => Number.isFinite(log.spendUsd));
+  const actualFromUsageLog = allNewLogsHaveSpend
+    ? Math.round(
+        newLogs.reduce((sum, log) => sum + (log.spendUsd ?? 0), 0) *
+          quotaPerUnit
+      )
+    : undefined;
+  const beforeQuota = beforeUsage?.summary.quotaRemaining;
+  const afterQuota = afterUsage.summary.quotaRemaining;
+  const actualFromQuotaDelta =
+    typeof beforeQuota === 'number' && typeof afterQuota === 'number'
+      ? beforeQuota - afterQuota
+      : undefined;
+  const actualQuota = actualFromUsageLog ?? actualFromQuotaDelta;
+  const source = actualFromUsageLog !== undefined ? 'usage_log' : 'quota_delta';
+  const deltaQuota =
+    expectedQuota !== undefined && actualQuota !== undefined
+      ? Math.abs(expectedQuota - actualQuota)
+      : undefined;
+  const ok =
+    expectedQuota !== undefined &&
+    actualQuota !== undefined &&
+    deltaQuota !== undefined &&
+    deltaQuota <= toleranceQuota;
+  const reason =
+    expectedQuota === undefined
+      ? 'insufficient token data'
+      : actualQuota === undefined
+        ? 'insufficient actual quota data'
+        : ok
+          ? 'matched'
+          : 'quota delta exceeds tolerance';
+  const detail = [
+    `model=${model}`,
+    `groupSlug=${groupSlug}`,
+    `effectiveInputMicroUsd=${effectiveInputMicroUsd}`,
+    `effectiveOutputMicroUsd=${effectiveOutputMicroUsd}`,
+    `inputTokens=${inputTokens}`,
+    `outputTokens=${outputTokens}`,
+    `expectedQuota=${expectedQuota ?? 'unavailable'}`,
+    `actualQuota=${actualQuota ?? 'unavailable'}`,
+    `actualDelta=${source === 'quota_delta' ? (actualQuota ?? 'unavailable') : 'n/a'}`,
+    `deltaQuota=${deltaQuota ?? 'unavailable'}`,
+    `toleranceQuota=${toleranceQuota}`,
+    `source=${actualQuota === undefined ? 'unavailable' : source}`,
+    `result=${reason}`,
+  ].join(', ');
+
+  return { ok, detail };
 }
 
 function hasVisibleUsage(
@@ -246,6 +453,7 @@ async function callLaunchModel({
 }
 
 async function main() {
+  const priceReconciliation = getSmokePriceReconciliationConfig();
   const missing = missingRequiredEnv();
   if (missing.length > 0) {
     finishSkipped(missing);
@@ -256,6 +464,9 @@ async function main() {
   const operatorUserId = getEnv('APIPOOL_SMOKE_OPERATOR_USER_ID')!;
   const amountUsd = Number(getEnv('APIPOOL_SMOKE_QUOTA_USD') || '1');
   const smokeGroupSlug = 'official';
+  const quotaPerUnit = priceReconciliation.enabled
+    ? getSmokeQuotaPerUnit(process.env)
+    : DEFAULT_QUOTA_PER_UNIT;
   const smokeTestedModelIds =
     await getSmokeTestedCallableModelIdsByGroupUncached(smokeGroupSlug);
   const model = resolveSmokeLaunchModel(
@@ -265,6 +476,23 @@ async function main() {
 
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
     throw new Error('APIPOOL_SMOKE_QUOTA_USD must be a positive number');
+  }
+
+  const smokeEffectivePrice = priceReconciliation.enabled
+    ? resolveSmokeConfirmedEffectivePrice(
+        await getCallableListingsByGroupUncached(smokeGroupSlug),
+        model,
+        smokeGroupSlug
+      )
+    : undefined;
+  if (smokeEffectivePrice) {
+    record(
+      'load confirmed model price',
+      true,
+      `model=${model}, groupSlug=${smokeGroupSlug}, ` +
+        `effectiveInputMicroUsd=${smokeEffectivePrice.effectiveInputMicroUsd}, ` +
+        `effectiveOutputMicroUsd=${smokeEffectivePrice.effectiveOutputMicroUsd}`
+    );
   }
 
   const health = await createNewApiClient().healthCheck();
@@ -329,6 +557,10 @@ async function main() {
       throw new Error('Quota adjustment was not applied');
     }
 
+    const priceBaselineUsage = priceReconciliation.enabled
+      ? await getPortalUsage(user, '7d')
+      : undefined;
+
     const firstCall = await callLaunchModel({ apiKey: plainKey, model });
     record(
       'call launch model',
@@ -352,6 +584,23 @@ async function main() {
         usage.summary.inputTokens + usage.summary.outputTokens
       } tokens, ${usage.logs.length} logs, ${modelUsage?.modelId} model distribution`
     );
+
+    if (priceReconciliation.enabled && smokeEffectivePrice) {
+      const report = buildSmokePriceReconciliationReport({
+        model,
+        groupSlug: smokeGroupSlug,
+        effectiveInputMicroUsd: smokeEffectivePrice.effectiveInputMicroUsd,
+        effectiveOutputMicroUsd: smokeEffectivePrice.effectiveOutputMicroUsd,
+        quotaPerUnit,
+        toleranceQuota: priceReconciliation.toleranceQuota,
+        beforeUsage: priceBaselineUsage,
+        afterUsage: usage,
+      });
+      record('reconcile smoke price', report.ok, report.detail);
+      if (!report.ok) {
+        throw new Error(`Smoke price reconciliation failed: ${report.detail}`);
+      }
+    }
 
     if (!keyId) {
       throw new Error('Created key id is missing before disable step');

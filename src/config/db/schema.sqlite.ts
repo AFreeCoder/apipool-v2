@@ -493,6 +493,14 @@ export const catalogGroup = table(
     name: text('name').notNull(),
     userDescription: text('user_description'),
     newapiGroup: text('newapi_group').default('').notNull(),
+    newapiGroupRatioDecimal: text('newapi_group_ratio_decimal'),
+    newapiGroupRatioBps: integer('newapi_group_ratio_bps'),
+    newapiGroupRatioRaw: text('newapi_group_ratio_raw'),
+    pricingSyncStatus: text('pricing_sync_status')
+      .default('unknown')
+      .notNull(),
+    pricingSyncedAt: integer('pricing_synced_at', { mode: 'timestamp_ms' }),
+    pricingReviewNote: text('pricing_review_note'),
     allowCreateKey: integer('allow_create_key', { mode: 'boolean' })
       .default(true)
       .notNull(),
@@ -529,6 +537,51 @@ export const catalogModel = table(
       .notNull(),
   },
   (table) => [index('idx_catalog_model_vendor').on(table.vendorId)]
+);
+
+export const catalogModelPrice = table(
+  'catalog_model_price',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id')
+      .notNull()
+      .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    pricingMode: text('pricing_mode').default('unknown').notNull(),
+    source: text('source').default('migration').notNull(),
+    sourceModelId: text('source_model_id'),
+    sourceVendorId: text('source_vendor_id'),
+    sourceQuotaType: integer('source_quota_type'),
+    sourceModelRatio: text('source_model_ratio'),
+    sourceCompletionRatio: text('source_completion_ratio'),
+    sourceImageRatio: text('source_image_ratio'),
+    sourceSupportedEndpointTypes: text('source_supported_endpoint_types'),
+    baseInputMicroUsd: integer('base_input_micro_usd'),
+    baseOutputMicroUsd: integer('base_output_micro_usd'),
+    baseImageInputMicroUsd: integer('base_image_input_micro_usd'),
+    baseImageOutputMicroUsd: integer('base_image_output_micro_usd'),
+    fixedPriceMicroUsd: integer('fixed_price_micro_usd'),
+    fixedPriceUnit: text('fixed_price_unit'),
+    syncStatus: text('sync_status').default('never_synced').notNull(),
+    driftStatus: text('drift_status').default('unknown').notNull(),
+    sourceFingerprint: text('source_fingerprint'),
+    sourceSyncedAt: integer('source_synced_at', { mode: 'timestamp_ms' }),
+    reviewedBy: text('reviewed_by'),
+    reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
+    reviewNote: text('review_note'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_catalog_model_price_model').on(table.modelId),
+    index('idx_catalog_model_price_sync_status').on(table.syncStatus),
+    index('idx_catalog_model_price_drift_status').on(table.driftStatus),
+    index('idx_catalog_model_price_source_model').on(table.sourceModelId),
+  ]
 );
 
 export const catalogModelCapability = table(
@@ -592,6 +645,18 @@ export const catalogModelListing = table(
     listOutputMicroUsd: integer('list_output_micro_usd'),
     discountRateBps: integer('discount_rate_bps'),
     discountNote: text('discount_note'),
+    pricePolicy: text('price_policy').default('inherit_group').notNull(),
+    overrideInputMicroUsd: integer('override_input_micro_usd'),
+    overrideOutputMicroUsd: integer('override_output_micro_usd'),
+    overrideImageInputMicroUsd: integer('override_image_input_micro_usd'),
+    overrideImageOutputMicroUsd: integer('override_image_output_micro_usd'),
+    overrideReason: text('override_reason'),
+    overrideStatus: text('override_status').default('none').notNull(),
+    effectivePriceSyncedAt: integer('effective_price_synced_at', {
+      mode: 'timestamp_ms',
+    }),
+    effectivePriceFormula: text('effective_price_formula'),
+    priceDriftStatus: text('price_drift_status').default('unknown').notNull(),
     description: text('description'),
     smokeTested: integer('smoke_tested', { mode: 'boolean' })
       .default(false)
@@ -610,6 +675,38 @@ export const catalogModelListing = table(
     uniqueIndex('uniq_listing_model_group').on(table.modelId, table.groupId),
     index('idx_listing_group').on(table.groupId),
     index('idx_listing_status').on(table.statusId),
+  ]
+);
+
+export const catalogPriceSyncRun = table(
+  'catalog_price_sync_run',
+  {
+    id: text('id').primaryKey(),
+    operatorUserId: text('operator_user_id'),
+    status: text('status').default('running').notNull(),
+    startedAt: integer('started_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+    remoteModelCount: integer('remote_model_count').default(0).notNull(),
+    matchedModelCount: integer('matched_model_count').default(0).notNull(),
+    driftCount: integer('drift_count').default(0).notNull(),
+    fixedPriceCount: integer('fixed_price_count').default(0).notNull(),
+    missingGroupCount: integer('missing_group_count').default(0).notNull(),
+    sourceFingerprint: text('source_fingerprint'),
+    errorMessage: text('error_message'),
+    reportJson: text('report_json'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_catalog_price_sync_run_status').on(table.status),
+    index('idx_catalog_price_sync_run_started').on(table.startedAt),
   ]
 );
 

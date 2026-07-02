@@ -574,6 +574,99 @@ test('getPublicListings aggregates capabilities for each model without exposing 
   assert.deepEqual(new Set(seeded.capabilities), new Set(['text', 'vision']));
   assert.equal('id' in seeded, false);
   assert.equal('newapiGroup' in seeded, false);
+  assert.equal('sourceFingerprint' in seeded, false);
+  assert.equal('priceDriftStatus' in seeded, false);
+  assert.equal('overrideStatus' in seeded, false);
+});
+
+test('public listings do not expose confirmed discounts before New API group match', async () => {
+  const listings = await modules.queries.getPublicListingsUncached({
+    group: 'partner',
+  });
+  const partner = listings.find(
+    (listing: { modelId: string }) => listing.modelId === 'gpt-4o-mini'
+  );
+
+  assert.ok(partner);
+  assert.equal(partner.inputMicroUsd, 90000);
+  assert.equal(partner.outputMicroUsd, 180000);
+  assert.equal(partner.listInputMicroUsd, undefined);
+  assert.equal(partner.listOutputMicroUsd, undefined);
+  assert.equal(partner.discountNote, undefined);
+  assert.equal(partner.effectiveInputMicroUsd, undefined);
+  assert.equal(partner.pricePresentation.showPrice, false);
+});
+
+test('public listings expose effective price only after matched New API group ratio', async () => {
+  const {
+    catalogGroup,
+    catalogModel,
+    catalogModelListing,
+    catalogModelPrice,
+  } = modules.schema;
+  const official = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'official'
+  );
+  const [model] = await modules
+    .db()
+    .select()
+    .from(catalogModel)
+    .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
+    .limit(1);
+
+  await modules
+    .db()
+    .update(catalogGroup)
+    .set({
+      newapiGroupRatioDecimal: '0.5',
+      newapiGroupRatioBps: 5000,
+      pricingSyncStatus: 'synced',
+    })
+    .where(eq(catalogGroup.id, official.id));
+  await modules
+    .db()
+    .update(catalogModelPrice)
+    .set({
+      baseInputMicroUsd: 150000,
+      baseOutputMicroUsd: 600000,
+      syncStatus: 'synced',
+      driftStatus: 'matched',
+    })
+    .where(eq(catalogModelPrice.modelId, model.id));
+  await modules
+    .db()
+    .update(catalogModelListing)
+    .set({
+      listInputMicroUsd: 150000,
+      listOutputMicroUsd: 600000,
+      discountNote: 'Official ratio',
+      pricePolicy: 'inherit_group',
+      priceDriftStatus: 'matched',
+    })
+    .where(eq(catalogModelListing.modelId, model.id));
+
+  const listings = await modules.queries.getPublicListingsUncached({
+    group: 'official',
+    status: 'available',
+  });
+  const seeded = listings.find(
+    (listing: { modelId: string }) => listing.modelId === 'gpt-4o-mini'
+  );
+
+  assert.ok(seeded);
+  assert.equal(seeded.effectiveInputMicroUsd, 75000);
+  assert.equal(seeded.effectiveOutputMicroUsd, 300000);
+  assert.equal(seeded.listInputMicroUsd, 150000);
+  assert.equal(seeded.listOutputMicroUsd, 600000);
+  assert.equal(seeded.discountNote, 'Official ratio');
+  assert.deepEqual(seeded.pricePresentation, {
+    showPrice: true,
+    showStrikethrough: true,
+    discountLabel: '5 折 (50%)',
+    note: 'Official ratio',
+  });
 });
 
 test('getFilterDimensions returns all active admin-configured dimensions in sort order', async () => {

@@ -187,6 +187,10 @@ test('catalog group forms expose mapping, key creation, and immutable edit slug'
 
 test('catalog model pages expose admin catalog fields, candidate form, and listings entry points', async () => {
   const listPage = await readFile(modelPagePath('list'), 'utf8');
+  const pricingControls = await readFile(
+    join(modelsRoot, 'pricing-sync-controls.tsx'),
+    'utf8'
+  );
   const newPage = await readFile(modelPagePath('new'), 'utf8');
   const editPage = await readFile(modelPagePath('edit'), 'utf8');
   const deletePage = await readFile(modelPagePath('delete'), 'utf8');
@@ -203,6 +207,7 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   assert.match(listPage, /getTranslations\(['"]admin\.catalog['"]\)/);
 
   assert.match(listPage, /<TableCard[\s\S]*buttons=/);
+  assert.match(listPage, /<CatalogPricingSyncControls/);
   assert.match(listPage, callPattern('getModelAdminRows'));
   assert.match(listPage, /admin\/catalog\/models\/new/);
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/edit/);
@@ -222,6 +227,7 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     'imageInputPrice',
     'imageOutputPrice',
     'discountRate',
+    'pricingStatus',
   ]) {
     assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
@@ -256,6 +262,13 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   assert.match(deletePage, /revalidateCatalog\s*\(/);
   assert.match(deletePage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
 
+  assert.match(pricingControls, /\/api\/apipool\/admin\/catalog\/pricing\/sync/);
+  assert.match(pricingControls, /\/api\/apipool\/admin\/catalog\/pricing\/drift/);
+  assert.match(pricingControls, /useState<['"]sync['"] \| ['"]drift['"] \| null>/);
+  assert.match(pricingControls, /labels\.success/);
+  assert.match(pricingControls, /labels\.error/);
+  assert.doesNotMatch(pricingControls, /NEWAPI|NEW_API|admin-token|Bearer|internal|newapiGroup/);
+
   assert.match(capabilitiesPage, /<FormCard/);
   assert.match(capabilitiesPage, callPattern('getModelById'));
   assert.match(capabilitiesPage, callPattern('getCapabilities'));
@@ -264,6 +277,30 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   assert.match(capabilitiesPage, typedFieldPattern('capabilities', 'checkbox'));
   assert.match(capabilitiesPage, /JSON\.parse\(capabilities\)/);
   assert.match(capabilitiesPage, /revalidateCatalog\s*\(/);
+});
+
+test('catalog pricing sync and drift admin routes require permissions and call pricing services', async () => {
+  const syncRoute = await readFile(
+    join(root, 'src/app/api/apipool/admin/catalog/pricing/sync/route.ts'),
+    'utf8'
+  );
+  const driftRoute = await readFile(
+    join(root, 'src/app/api/apipool/admin/catalog/pricing/drift/route.ts'),
+    'utf8'
+  );
+
+  assert.match(syncRoute, /admin\.catalog\.write/);
+  assert.match(syncRoute, /getPricingSnapshot\s*\(/);
+  assert.match(syncRoute, /syncPricing:\s*syncCatalogPricingFromSnapshot/);
+  assert.match(syncRoute, /routeDeps\.syncPricing\s*\(/);
+  assert.match(syncRoute, /revalidate:\s*revalidateCatalog/);
+  assert.match(syncRoute, /routeDeps\.revalidate\s*\(/);
+  assert.doesNotMatch(syncRoute, /newapiGroup/);
+
+  assert.match(driftRoute, /admin\.catalog\.read/);
+  assert.match(driftRoute, /buildReport:\s*buildCatalogPriceDriftReport/);
+  assert.match(driftRoute, /routeDeps\.buildReport\s*\(/);
+  assert.doesNotMatch(driftRoute, /newapiGroup/);
 });
 
 test('catalog listing child pages expose per-model sales item CRUD and immutable edit group', async () => {

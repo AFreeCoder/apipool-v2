@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "items": [
+      {
+        "model_name": "gpt-4o-mini",
+        "vendor_id": "openai",
+        "quota_type": 0,
+        "model_ratio": "0.075",
+        "completion_ratio": "4",
+        "enable_groups": ["official"],
+        "supported_endpoint_types": ["responses"]
+      }
+    ],
+    "vendors": {
+      "openai": {
+        "name": "OpenAI"
+      }
+    },
+    "groupRatio": {
+      "official": "not-a-number"
+    },
+    "usable_groups": ["official"]
+  }
+}

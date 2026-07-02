@@ -13,6 +13,7 @@ import {
   catalogModelCapability,
   catalogModelCategory,
   catalogModelListing,
+  catalogModelPrice,
   catalogStatus,
   catalogVendor,
 } from '@/config/db/schema';
@@ -95,6 +96,7 @@ export type ModelAdminRow = {
   imageInputPrice: string;
   imageOutputPrice: string;
   discountRate: string;
+  pricingStatus: string;
   createdAt: Date;
 };
 
@@ -352,6 +354,14 @@ export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
         getModelCapabilities(model.id),
       ]);
       const listing = listings[0];
+      const [basePrice] = await db()
+        .select()
+        .from(catalogModelPrice)
+        .where(eq(catalogModelPrice.modelId, model.id))
+        .limit(1);
+      const group = listing
+        ? groups.find((candidate) => candidate.id === listing.groupId)
+        : undefined;
 
       return {
         id: model.id,
@@ -379,6 +389,11 @@ export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
         discountRate: listing
           ? formatDiscountRate(listing.discountRateBps)
           : '',
+        pricingStatus: [
+          `base:${basePrice?.source ?? 'missing'}/${basePrice?.syncStatus ?? 'none'}/${basePrice?.driftStatus ?? 'unknown'}`,
+          `group:${group?.pricingSyncStatus ?? 'unknown'}${group?.newapiGroupRatioDecimal ? `@${group.newapiGroupRatioDecimal}` : ''}`,
+          `policy:${listing?.pricePolicy ?? 'none'}/${listing?.priceDriftStatus ?? 'unknown'}`,
+        ].join(' '),
         createdAt: model.createdAt,
       };
     })

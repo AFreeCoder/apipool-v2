@@ -10,6 +10,8 @@ import { TableCard } from '@/shared/blocks/table';
 import { Crumb } from '@/shared/types/blocks/common';
 import { type Table } from '@/shared/types/blocks/table';
 
+import { CatalogPricingSyncControls } from './pricing-sync-controls';
+
 export default async function AdminCatalogModelsPage({
   params,
 }: {
@@ -67,6 +69,11 @@ export default async function AdminCatalogModelsPage({
         className: 'font-mono text-xs',
       },
       { name: 'discountRate', title: t('fields.discountRate') },
+      {
+        name: 'pricingStatus',
+        title: t('fields.pricingStatus'),
+        className: 'font-mono text-xs',
+      },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },
       {
         name: 'actions',
@@ -108,6 +115,18 @@ export default async function AdminCatalogModelsPage({
       <Header crumbs={crumbs} />
       <Main>
         <MainHeader title={t('models.list.title')} />
+        <CatalogPricingSyncControls
+          labels={{
+            title: t('models.pricingSync.title'),
+            description: t('models.pricingSync.description'),
+            sync: t('models.pricingSync.sync'),
+            syncing: t('models.pricingSync.syncing'),
+            drift: t('models.pricingSync.drift'),
+            loading: t('models.pricingSync.loading'),
+            success: t('models.pricingSync.success'),
+            error: t('models.pricingSync.error'),
+          }}
+        />
         <TableCard
           table={table}
           buttons={[

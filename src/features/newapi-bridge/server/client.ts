@@ -1,7 +1,10 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
-import { derivePricingFromNewApiPricing } from '@/features/api-catalog/lib/pricing';
+import {
+  derivePricingFromNewApiPricing,
+  normalizeGroupRatio,
+} from '@/features/api-catalog/lib/pricing';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
 
@@ -173,6 +176,21 @@ export type RemotePricingModel = {
   supportedEndpointTypes: string[];
 };
 
+export type RemotePricingGroupRatio = {
+  raw: unknown;
+  decimal: string;
+  bps: number;
+  sourceKey: 'group_ratio' | 'groupRatio' | 'group_ratios';
+};
+
+export type RemotePricingSnapshot = {
+  models: RemotePricingModel[];
+  vendors: Record<string, string>;
+  groupRatios: Record<string, RemotePricingGroupRatio>;
+  usableGroups: string[];
+  sourceFingerprint: string;
+};
+
 type AuthContext = { token: string; userId: string } | 'none';
 
 type RequestOptions = {
@@ -185,7 +203,7 @@ type RequestOptions = {
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_RETRY_DELAY_MS = 250;
-const DEFAULT_QUOTA_PER_UNIT = 500_000;
+export const DEFAULT_QUOTA_PER_UNIT = 500_000;
 const LIST_PAGE_SIZE = 100;
 const USAGE_LOG_TYPE_CONSUME = 2;
 
@@ -222,11 +240,21 @@ function maskRemoteTokenListKey(key: unknown) {
 }
 
 function asNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function asNullableNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -276,6 +304,147 @@ function lookupVendorName(vendors: unknown, vendorId: string) {
   }
 
   return vendorId;
+}
+
+function normalizeVendors(vendors: unknown): Record<string, string> {
+  if (Array.isArray(vendors)) {
+    return Object.fromEntries(
+      vendors
+        .map((vendor: any) => {
+          const id = String(vendor?.id || vendor?.vendor_id || vendor?.value || '');
+          if (!id) return null;
+          return [id, String(vendor?.name || vendor?.label || vendor?.title || id)];
+        })
+        .filter(Boolean) as [string, string][]
+    );
+  }
+
+  if (vendors && typeof vendors === 'object') {
+    return Object.fromEntries(
+      Object.entries(vendors as Record<string, unknown>).map(([id, value]) => {
+        if (typeof value === 'string') return [id, value];
+        if (value && typeof value === 'object') {
+          const objectValue = value as Record<string, unknown>;
+          return [
+            id,
+            String(
+              objectValue.name ||
+                objectValue.label ||
+                objectValue.title ||
+                objectValue.vendor_name ||
+                id
+            ),
+          ];
+        }
+        return [id, id];
+      })
+    );
+  }
+
+  return {};
+}
+
+function getEnvelopeValue(payload: any, key: string) {
+  return payload?.[key] ?? payload?.data?.[key];
+}
+
+function extractPricingItems(payload: any): any[] {
+  const data = payload?.data;
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.items)) return data.items;
+  if (data && Array.isArray(data.data)) return data.data;
+  return [];
+}
+
+function extractUsableGroups(payload: any): string[] {
+  return asStringArray(
+    getEnvelopeValue(payload, 'usable_group') ??
+      getEnvelopeValue(payload, 'usable_groups') ??
+      getEnvelopeValue(payload, 'groups')
+  );
+}
+
+function groupRatioEntries(value: unknown): [string, unknown][] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((item: any) => {
+        const group = String(
+          item?.group || item?.name || item?.slug || item?.key || ''
+        );
+        const ratio = item?.ratio ?? item?.value ?? item?.group_ratio;
+        return group ? ([group, ratio] as [string, unknown]) : null;
+      })
+      .filter(Boolean) as [string, unknown][];
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>);
+  }
+  return [];
+}
+
+function extractGroupRatios(payload: any): Record<string, RemotePricingGroupRatio> {
+  const result: Record<string, RemotePricingGroupRatio> = {};
+  for (const sourceKey of ['group_ratio', 'groupRatio', 'group_ratios'] as const) {
+    for (const [group, raw] of groupRatioEntries(getEnvelopeValue(payload, sourceKey))) {
+      try {
+        const normalized = normalizeGroupRatio(raw as number | string, sourceKey);
+        result[group] = {
+          raw,
+          decimal: normalized.decimal,
+          bps: normalized.bps,
+          sourceKey,
+        };
+      } catch {
+        // Invalid remote ratios are intentionally ignored here; sync code records
+        // missing/invalid group state without overwriting existing local values.
+      }
+    }
+  }
+  return result;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function fingerprintPricingSnapshot(input: {
+  models: RemotePricingModel[];
+  vendors: Record<string, string>;
+  groupRatios: Record<string, RemotePricingGroupRatio>;
+  usableGroups: string[];
+}) {
+  return createHash('sha256')
+    .update(
+      stableStringify({
+        models: input.models
+          .map((model) => ({
+            modelId: model.modelId,
+            vendorId: model.vendorId,
+            quotaType: model.quotaType,
+            modelRatio: model.modelRatio,
+            modelPrice: model.modelPrice,
+            completionRatio: model.completionRatio,
+            imageRatio: model.imageRatio,
+            enabledGroups: [...model.enabledGroups].sort(),
+            supportedEndpointTypes: [...model.supportedEndpointTypes].sort(),
+          }))
+          .sort((a, b) => a.modelId.localeCompare(b.modelId)),
+        vendors: input.vendors,
+        groupRatios: input.groupRatios,
+        usableGroups: [...input.usableGroups].sort(),
+      })
+    )
+    .digest('hex');
 }
 
 function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
@@ -632,6 +801,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
   }
 
   function toRemoteUsageLog(item: any): RemoteUsageLog {
+    const quota = asNullableNumber(item.quota);
     return {
       id: String(item.id),
       keyMasked: typeof item.token_name === 'string' ? item.token_name : '',
@@ -639,7 +809,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       status: 'success',
       inputTokens: asNumber(item.prompt_tokens),
       outputTokens: asNumber(item.completion_tokens),
-      spendUsd: quotaToUsd(asNumber(item.quota)),
+      spendUsd: quota === null ? undefined : quotaToUsd(quota),
       createdAt: new Date(asNumber(item.created_at) * 1000).toISOString(),
     };
   }
@@ -677,6 +847,30 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     };
   }
 
+  async function getPricingSnapshot(): Promise<RemotePricingSnapshot> {
+    const payload = await requestEnvelope('/api/pricing');
+    const vendors = normalizeVendors(payload.vendors ?? payload.data?.vendors);
+    const models = extractPricingItems(payload)
+      .map((item) => toRemotePricingModel(item, vendors))
+      .filter((item) => item.modelId.length > 0);
+    const groupRatios = extractGroupRatios(payload);
+    const usableGroups = extractUsableGroups(payload);
+    const sourceFingerprint = fingerprintPricingSnapshot({
+      models,
+      vendors,
+      groupRatios,
+      usableGroups,
+    });
+
+    return {
+      models,
+      vendors,
+      groupRatios,
+      usableGroups,
+      sourceFingerprint,
+    };
+  }
+
   return {
     usdToQuota,
     quotaToUsd,
@@ -689,12 +883,10 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       };
     },
 
+    getPricingSnapshot,
+
     async listPricingModels(): Promise<RemotePricingModel[]> {
-      const payload = await requestEnvelope('/api/pricing');
-      const items = unwrapListItems(payload.data);
-      return items
-        .map((item) => toRemotePricingModel(item, payload.vendors))
-        .filter((item) => item.modelId.length > 0);
+      return (await getPricingSnapshot()).models;
     },
 
     /**
