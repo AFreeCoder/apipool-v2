@@ -37,7 +37,8 @@
   "actions": {
     "edit": "编辑",
     "capabilities": "能力",
-    "listings": "售卖项"
+    "listings": "售卖项",
+    "delete": "删除"
   },
   "statusOptions": {
     "active": "启用",
@@ -50,6 +51,7 @@
   "errors": {
     "createFailed": "创建失败",
     "updateFailed": "更新失败",
+    "deleteFailed": "删除失败",
     "missingRecord": "记录不存在",
     "invalidPrice": "价格必须是非负有限数字"
   },
@@ -206,6 +208,17 @@
       "success": "模型已更新",
       "buttons": {
         "submit": "更新"
+      }
+    },
+    "delete": {
+      "title": "删除模型",
+      "crumb": "删除模型",
+      "notFound": "模型不存在",
+      "description": "确认删除模型 {modelId}？这会同时删除该模型下的 {listings} 个售卖项、分类关联和能力关联。",
+      "success": "模型已删除",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
       }
     },
     "form": {

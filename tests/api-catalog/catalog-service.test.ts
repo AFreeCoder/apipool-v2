@@ -355,3 +355,59 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     [vision.id]
   );
 });
+
+test('deleteModel removes catalog model relations even without sqlite foreign key enforcement', async () => {
+  const vendor = await createVendor('delete-model-vendor');
+  const status = await createStatus('delete-model-status');
+  const group = await createGroup('delete-model-group', 'delete-model-gateway');
+  const category = await createCategory('delete-model-category');
+  const capability = await modules.service.createCapability({
+    slug: 'delete-model-capability',
+    name: 'Delete Model Capability',
+    sortOrder: 1,
+    status: 'active',
+  });
+  const created = await modules.service.upsertModelAdminConfig({
+    model: {
+      modelId: 'delete-model-target',
+      displayName: 'Delete Model Target',
+      vendorId: vendor.id,
+      categoryIds: [category.id],
+    },
+    listing: {
+      groupId: group.id,
+      statusId: status.id,
+      inputMicroUsd: 1,
+      outputMicroUsd: 2,
+      smokeTested: true,
+      featured: false,
+      sortOrder: 1,
+    },
+    capabilityIds: [capability.id],
+  });
+
+  await modules.service.deleteModel(created.model.id);
+
+  assert.equal(await modules.service.getModelById(created.model.id), undefined);
+  assert.deepEqual(
+    await modules.service.getListingsByModel(created.model.id),
+    []
+  );
+
+  const [capabilityRows, categoryRows] = await Promise.all([
+    modules
+      .db()
+      .select()
+      .from(modules.schema.catalogModelCapability)
+      .where(
+        eq(modules.schema.catalogModelCapability.modelId, created.model.id)
+      ),
+    modules
+      .db()
+      .select()
+      .from(modules.schema.catalogModelCategory)
+      .where(eq(modules.schema.catalogModelCategory.modelId, created.model.id)),
+  ]);
+  assert.deepEqual(capabilityRows, []);
+  assert.deepEqual(categoryRows, []);
+});

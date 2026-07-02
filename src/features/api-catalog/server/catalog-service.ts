@@ -1,18 +1,17 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
-
-import { db } from '@/core/db';
 import {
   formatDiscountRate,
   microUsdToDollars,
 } from '@/features/api-catalog/lib/pricing';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 
+import { db } from '@/core/db';
 import {
   catalogCapability,
   catalogCategory,
   catalogGroup,
   catalogModel,
-  catalogModelCategory,
   catalogModelCapability,
+  catalogModelCategory,
   catalogModelListing,
   catalogStatus,
   catalogVendor,
@@ -477,7 +476,18 @@ export async function updateModel(
 }
 
 export async function deleteModel(id: string): Promise<void> {
-  await db().delete(catalogModel).where(eq(catalogModel.id, id));
+  await db().transaction(async (tx: any) => {
+    await tx
+      .delete(catalogModelListing)
+      .where(eq(catalogModelListing.modelId, id));
+    await tx
+      .delete(catalogModelCapability)
+      .where(eq(catalogModelCapability.modelId, id));
+    await tx
+      .delete(catalogModelCategory)
+      .where(eq(catalogModelCategory.modelId, id));
+    await tx.delete(catalogModel).where(eq(catalogModel.id, id));
+  });
 }
 
 export async function getListingsByModel(modelId: string): Promise<Listing[]> {
@@ -545,7 +555,9 @@ export async function upsertModelAdminConfig(
     const categories = (await tx
       .select()
       .from(catalogCategory)
-      .where(inArray(catalogCategory.id, input.model.categoryIds))) as Category[];
+      .where(
+        inArray(catalogCategory.id, input.model.categoryIds)
+      )) as Category[];
     const categoriesById = new Map<string, Category>(
       categories.map((category: Category) => [category.id, category])
     );
@@ -646,15 +658,13 @@ async function syncModelCapabilities(
     .where(eq(catalogModelCapability.modelId, modelId));
 
   if (capabilityIds.length > 0) {
-    await database
-      .insert(catalogModelCapability)
-      .values(
-        capabilityIds.map((capabilityId) => ({
-          id: getUuid(),
-          modelId,
-          capabilityId,
-        }))
-      );
+    await database.insert(catalogModelCapability).values(
+      capabilityIds.map((capabilityId) => ({
+        id: getUuid(),
+        modelId,
+        capabilityId,
+      }))
+    );
   }
 }
 

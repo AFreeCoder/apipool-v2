@@ -91,6 +91,12 @@ export default async function AdminCatalogModelsPage({
             icon: 'ListChecks',
             url: `/admin/catalog/models/${item.id}/listings`,
           },
+          {
+            name: 'delete',
+            title: t('actions.delete'),
+            icon: 'Trash2',
+            url: `/admin/catalog/models/${item.id}/delete`,
+          },
         ],
       },
     ],

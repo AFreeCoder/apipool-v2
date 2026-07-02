@@ -37,7 +37,8 @@
   "actions": {
     "edit": "Edit",
     "capabilities": "Capabilities",
-    "listings": "Listings"
+    "listings": "Listings",
+    "delete": "Delete"
   },
   "statusOptions": {
     "active": "Active",
@@ -50,6 +51,7 @@
   "errors": {
     "createFailed": "Create failed",
     "updateFailed": "Update failed",
+    "deleteFailed": "Delete failed",
     "missingRecord": "Record is missing",
     "invalidPrice": "Price must be a non-negative finite number"
   },
@@ -206,6 +208,17 @@
       "success": "Model updated",
       "buttons": {
         "submit": "Update"
+      }
+    },
+    "delete": {
+      "title": "Delete Model",
+      "crumb": "Delete Model",
+      "notFound": "Model not found",
+      "description": "Delete model {modelId}? This also removes {listings} listings, category links, and capability links for this model.",
+      "success": "Model deleted",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
       }
     },
     "form": {

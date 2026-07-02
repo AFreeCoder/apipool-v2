@@ -82,12 +82,15 @@ function disabledFieldPattern(name: string) {
   );
 }
 
-function modelPagePath(page: 'list' | 'new' | 'edit' | 'capabilities') {
+function modelPagePath(
+  page: 'list' | 'new' | 'edit' | 'delete' | 'capabilities'
+) {
   if (page === 'list') return join(modelsRoot, 'page.tsx');
   if (page === 'new') return join(modelsRoot, 'new/page.tsx');
   if (page === 'capabilities') {
     return join(modelsRoot, '[id]/capabilities/page.tsx');
   }
+  if (page === 'delete') return join(modelsRoot, '[id]/delete/page.tsx');
   return join(modelsRoot, '[id]/edit/page.tsx');
 }
 
@@ -186,13 +189,14 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   const listPage = await readFile(modelPagePath('list'), 'utf8');
   const newPage = await readFile(modelPagePath('new'), 'utf8');
   const editPage = await readFile(modelPagePath('edit'), 'utf8');
+  const deletePage = await readFile(modelPagePath('delete'), 'utf8');
   const capabilitiesPage = await readFile(
     modelPagePath('capabilities'),
     'utf8'
   );
 
   assert.match(listPage, /PERMISSIONS\.CATALOG_READ/);
-  for (const source of [newPage, editPage, capabilitiesPage]) {
+  for (const source of [newPage, editPage, deletePage, capabilitiesPage]) {
     assert.match(source, /PERMISSIONS\.CATALOG_WRITE/);
     assert.match(source, /getTranslations\(['"]admin\.catalog['"]\)/);
   }
@@ -207,6 +211,7 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     /admin\/catalog\/models\/\$\{item\.id\}\/capabilities/
   );
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/listings/);
+  assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/delete/);
   for (const field of [
     'vendorName',
     'groupName',
@@ -242,6 +247,14 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(editPage, callPattern('getModelAdminConfig'));
   assert.match(editPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
+
+  assert.match(deletePage, /<FormCard/);
+  assert.match(deletePage, callPattern('getModelById'));
+  assert.match(deletePage, callPattern('getListingsByModel'));
+  assert.match(deletePage, callPattern('deleteModel'));
+  assert.match(deletePage, /variant:\s*['"]destructive['"]/);
+  assert.match(deletePage, /revalidateCatalog\s*\(/);
+  assert.match(deletePage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
 
   assert.match(capabilitiesPage, /<FormCard/);
   assert.match(capabilitiesPage, callPattern('getModelById'));
@@ -376,10 +389,7 @@ test('legacy categories admin route redirects to catalog models', async () => {
 
 test('catalog model search route requires catalog write permission and hides raw New API response', async () => {
   const source = await readFile(
-    join(
-      root,
-      'src/app/api/apipool/admin/catalog/models/search/route.ts'
-    ),
+    join(root, 'src/app/api/apipool/admin/catalog/models/search/route.ts'),
     'utf8'
   );
 
