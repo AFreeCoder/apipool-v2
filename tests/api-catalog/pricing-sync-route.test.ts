@@ -56,12 +56,8 @@ test.afterEach(() => {
 });
 
 test('admin pricing sync and drift routes run success path without leaking sensitive fields', async () => {
-  const {
-    catalogGroup,
-    catalogModel,
-    catalogModelPrice,
-    catalogPriceSyncRun,
-  } = modules.schema;
+  const { catalogGroup, catalogModel, catalogModelPrice, catalogPriceSyncRun } =
+    modules.schema;
   const operator = { id: 'operator-route' };
   const hasPermissionForUser = async () => true;
 
@@ -150,11 +146,52 @@ test('admin pricing sync and drift routes run success path without leaking sensi
   const driftPayload = await driftResponse.json();
   assert.equal(driftPayload.code, 0);
   assert.equal(driftPayload.data.latestRun.id, syncPayload.data.syncRunId);
-  assert.equal(driftPayload.data.latestRun.sourceFingerprint, 'route-fingerprint');
+  assert.equal(
+    driftPayload.data.latestRun.sourceFingerprint,
+    'route-fingerprint'
+  );
 
   const serialized = JSON.stringify({ syncPayload, driftPayload });
   assert.equal(serialized.includes('admin-token'), false);
   assert.equal(serialized.includes('Bearer '), false);
   assert.equal(serialized.includes('newapi-internal'), false);
   assert.equal(serialized.includes('http://'), false);
+});
+
+test('admin pricing sync route records sanitized failed run when New API snapshot fails', async () => {
+  const { catalogPriceSyncRun } = modules.schema;
+  const operator = { id: 'operator-route-failure' };
+
+  modules.pricingSyncRoute.__setCatalogPricingSyncRouteDepsForTest({
+    getOperator: async () => operator,
+    hasPermissionForUser: async () => true,
+    getPricingSnapshot: async () => {
+      throw new Error(
+        'GET http://newapi-internal.local/api/pricing failed Bearer admin-token'
+      );
+    },
+    revalidate: () => {
+      throw new Error('revalidate should not run after sync failure');
+    },
+  });
+
+  const response = await modules.pricingSyncRoute.POST();
+  const payload = await response.json();
+  assert.notEqual(payload.code, 0);
+  assert.equal(payload.message, 'Model pricing sync is unavailable');
+  assert.equal(JSON.stringify(payload).includes('admin-token'), false);
+  assert.equal(JSON.stringify(payload).includes('http://'), false);
+
+  const runs = await modules
+    .db()
+    .select()
+    .from(catalogPriceSyncRun)
+    .where(eq(catalogPriceSyncRun.operatorUserId, operator.id));
+
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].status, 'failed');
+  assert.equal(runs[0].errorMessage.includes('admin-token'), false);
+  assert.equal(runs[0].errorMessage.includes('http://'), false);
+  assert.match(runs[0].errorMessage, /Bearer \[redacted\]/);
+  assert.match(runs[0].reportJson, /redacted/);
 });

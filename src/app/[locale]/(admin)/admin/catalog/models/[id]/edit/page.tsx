@@ -1,4 +1,10 @@
 import {
+  bpsToDiscountFold,
+  discountFoldToBps,
+  microUsdToDollars,
+  optionalDollarsToMicroUsd,
+} from '@/features/api-catalog/lib/pricing';
+import {
   getCapabilities,
   getCategories,
   getGroups,
@@ -7,18 +13,13 @@ import {
   getVendors,
   upsertModelAdminConfig,
 } from '@/features/api-catalog/server/catalog-service';
-import {
-  bpsToDiscountFold,
-  discountFoldToBps,
-  microUsdToDollars,
-  optionalDollarsToMicroUsd,
-} from '@/features/api-catalog/lib/pricing';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
+import { getUserInfo } from '@/shared/models/user';
 import { Crumb } from '@/shared/types/blocks/common';
 
 import { ModelAdminForm } from '../../model-admin-form';
@@ -57,7 +58,7 @@ export default async function CatalogModelEditPage({
     return <Empty message={t('models.edit.notFound')} />;
   }
 
-  const { model, listing } = config;
+  const { model, listing, basePrice } = config;
   const [vendors, groups, categories, capabilities, statuses] =
     await Promise.all([
       getVendors(),
@@ -93,18 +94,17 @@ export default async function CatalogModelEditPage({
       throw new Error(missingRecordMessage);
     }
 
+    const operator = await getUserInfo();
     const result = await upsertModelAdminConfig({
       modelId: model.id,
+      operatorUserId: operator?.id,
       model: {
         modelId: (data.get('modelId') as string).trim(),
         displayName: (data.get('displayName') as string).trim(),
         vendorId: (data.get('vendorId') as string).trim(),
         categoryIds: JSON.parse(data.get('categoryIds') as string),
       },
-      listing: {
-        id: listing?.id,
-        groupId: (data.get('groupId') as string).trim(),
-        statusId: (data.get('statusId') as string).trim(),
+      basePrice: {
         inputMicroUsd: requiredPrice(
           data.get('inputMicroUsd'),
           invalidPriceMessage
@@ -119,8 +119,14 @@ export default async function CatalogModelEditPage({
         imageOutputMicroUsd: optionalDollarsToMicroUsd(
           data.get('imageOutputMicroUsd')
         ),
+      },
+      listing: {
+        id: listing?.id,
+        groupId: (data.get('groupId') as string).trim(),
+        statusId: (data.get('statusId') as string).trim(),
         discountRateBps: discountFoldToBps(data.get('discountFold')),
-        discountNote: (data.get('discountNote') as string | null)?.trim() || null,
+        discountNote:
+          (data.get('discountNote') as string | null)?.trim() || null,
         description: (data.get('description') as string | null)?.trim() || null,
         smokeTested: listing?.smokeTested ?? false,
         featured: listing?.featured ?? false,
@@ -153,7 +159,10 @@ export default async function CatalogModelEditPage({
             title: vendor.name,
             value: vendor.id,
           }))}
-          groups={groups.map((group) => ({ title: group.name, value: group.id }))}
+          groups={groups.map((group) => ({
+            title: group.name,
+            value: group.id,
+          }))}
           categories={categories.map((category) => ({
             title: category.name,
             value: category.id,
@@ -196,13 +205,17 @@ export default async function CatalogModelEditPage({
             capabilityIds: config.capabilities.map(
               (capability) => capability.id
             ),
-            inputMicroUsd: microUsdToDollars(listing?.inputMicroUsd),
-            outputMicroUsd: microUsdToDollars(listing?.outputMicroUsd),
+            inputMicroUsd: microUsdToDollars(
+              basePrice?.baseInputMicroUsd ?? listing?.inputMicroUsd
+            ),
+            outputMicroUsd: microUsdToDollars(
+              basePrice?.baseOutputMicroUsd ?? listing?.outputMicroUsd
+            ),
             imageInputMicroUsd: microUsdToDollars(
-              listing?.imageInputMicroUsd
+              basePrice?.baseImageInputMicroUsd ?? listing?.imageInputMicroUsd
             ),
             imageOutputMicroUsd: microUsdToDollars(
-              listing?.imageOutputMicroUsd
+              basePrice?.baseImageOutputMicroUsd ?? listing?.imageOutputMicroUsd
             ),
             discountFold: bpsToDiscountFold(listing?.discountRateBps) || '10',
             discountNote: listing?.discountNote ?? '',

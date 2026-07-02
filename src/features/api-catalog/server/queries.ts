@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
+import { resolveEffectiveCatalogPrice } from '@/features/api-catalog/lib/pricing';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -15,7 +16,6 @@ import {
   catalogStatus,
   catalogVendor,
 } from '@/config/db/schema';
-import { resolveEffectiveCatalogPrice } from '@/features/api-catalog/lib/pricing';
 
 import type { FilterDimensions, ListingRow } from '../lib/types';
 
@@ -173,8 +173,10 @@ async function queryListingRows({
       pricePolicy: catalogModelListing.pricePolicy,
       overrideInputMicroUsd: catalogModelListing.overrideInputMicroUsd,
       overrideOutputMicroUsd: catalogModelListing.overrideOutputMicroUsd,
-      overrideImageInputMicroUsd: catalogModelListing.overrideImageInputMicroUsd,
-      overrideImageOutputMicroUsd: catalogModelListing.overrideImageOutputMicroUsd,
+      overrideImageInputMicroUsd:
+        catalogModelListing.overrideImageInputMicroUsd,
+      overrideImageOutputMicroUsd:
+        catalogModelListing.overrideImageOutputMicroUsd,
       overrideStatus: catalogModelListing.overrideStatus,
       priceDriftStatus: catalogModelListing.priceDriftStatus,
       baseInputMicroUsd: catalogModelPrice.baseInputMicroUsd,
@@ -190,10 +192,7 @@ async function queryListingRows({
     .innerJoin(catalogVendor, eq(catalogModel.vendorId, catalogVendor.id))
     .innerJoin(catalogCategory, eq(catalogModel.category, catalogCategory.slug))
     .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
-    .leftJoin(
-      catalogModelPrice,
-      eq(catalogModelPrice.modelId, catalogModel.id)
-    )
+    .leftJoin(catalogModelPrice, eq(catalogModelPrice.modelId, catalogModel.id))
     .innerJoin(
       catalogStatus,
       eq(catalogModelListing.statusId, catalogStatus.id)
@@ -267,10 +266,18 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
         category: row.category,
         capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
         contextWindow: row.contextWindow,
-        inputMicroUsd: row.inputMicroUsd,
-        outputMicroUsd: row.outputMicroUsd,
-        imageInputMicroUsd: row.imageInputMicroUsd ?? undefined,
-        imageOutputMicroUsd: row.imageOutputMicroUsd ?? undefined,
+        inputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveInputMicroUsd ?? undefined)
+          : undefined,
+        outputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveOutputMicroUsd ?? undefined)
+          : undefined,
+        imageInputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveImageInputMicroUsd ?? undefined)
+          : undefined,
+        imageOutputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveImageOutputMicroUsd ?? undefined)
+          : undefined,
         listInputMicroUsd: effective.publicConfirmed
           ? (effective.listInputMicroUsd ?? undefined)
           : undefined,
@@ -294,14 +301,12 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
         effectiveOutputMicroUsd: effective.publicConfirmed
           ? (effective.effectiveOutputMicroUsd ?? undefined)
           : undefined,
-        effectiveImageInputMicroUsd:
-          effective.publicConfirmed
-            ? (effective.effectiveImageInputMicroUsd ?? undefined)
-            : undefined,
-        effectiveImageOutputMicroUsd:
-          effective.publicConfirmed
-            ? (effective.effectiveImageOutputMicroUsd ?? undefined)
-            : undefined,
+        effectiveImageInputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveImageInputMicroUsd ?? undefined)
+          : undefined,
+        effectiveImageOutputMicroUsd: effective.publicConfirmed
+          ? (effective.effectiveImageOutputMicroUsd ?? undefined)
+          : undefined,
         pricePresentation: effective.pricePresentation,
       };
     })

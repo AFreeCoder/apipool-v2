@@ -1,4 +1,7 @@
-import { syncCatalogPricingFromSnapshot } from '@/features/api-catalog/server/pricing-sync';
+import {
+  recordCatalogPriceSyncFailure,
+  syncCatalogPricingFromSnapshot,
+} from '@/features/api-catalog/server/pricing-sync';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 
@@ -11,11 +14,17 @@ const CATALOG_WRITE_PERMISSION = 'admin.catalog.write';
 
 type PricingSyncRouteDeps = {
   getOperator: () => Promise<{ id: string } | null | undefined>;
-  hasPermissionForUser: (userId: string, permission: string) => Promise<boolean>;
+  hasPermissionForUser: (
+    userId: string,
+    permission: string
+  ) => Promise<boolean>;
   getPricingSnapshot: () => Promise<
-    Awaited<ReturnType<ReturnType<typeof createNewApiClient>['getPricingSnapshot']>>
+    Awaited<
+      ReturnType<ReturnType<typeof createNewApiClient>['getPricingSnapshot']>
+    >
   >;
   syncPricing: typeof syncCatalogPricingFromSnapshot;
+  recordFailure: typeof recordCatalogPriceSyncFailure;
   revalidate: typeof revalidateCatalog;
 };
 
@@ -30,6 +39,7 @@ const defaultDeps: PricingSyncRouteDeps = {
   },
   getPricingSnapshot: () => createNewApiClient().getPricingSnapshot(),
   syncPricing: syncCatalogPricingFromSnapshot,
+  recordFailure: recordCatalogPriceSyncFailure,
   revalidate: revalidateCatalog,
 };
 
@@ -46,9 +56,12 @@ export function __resetCatalogPricingSyncRouteDepsForTest() {
 }
 
 export async function POST() {
+  let operatorId: string | undefined;
+  let canRecordFailure = false;
   try {
     const operator = await routeDeps.getOperator();
     if (!operator) return withNoStore(respErr('no auth, please sign in'));
+    operatorId = operator.id;
 
     const allowed = await routeDeps.hasPermissionForUser(
       operator.id,
@@ -57,6 +70,7 @@ export async function POST() {
     if (!allowed) {
       return withNoStore(respErr('Model catalog write permission required'));
     }
+    canRecordFailure = true;
 
     const snapshot = await routeDeps.getPricingSnapshot();
     const report = await routeDeps.syncPricing({
@@ -67,8 +81,13 @@ export async function POST() {
 
     return withNoStore(respData(report));
   } catch (error: any) {
-    return withNoStore(
-      respErr(error?.message || 'Model pricing sync is unavailable')
-    );
+    if (canRecordFailure) {
+      try {
+        await routeDeps.recordFailure({ operatorUserId: operatorId, error });
+      } catch {
+        // Preserve the original sync failure response even if audit logging fails.
+      }
+    }
+    return withNoStore(respErr('Model pricing sync is unavailable'));
   }
 }

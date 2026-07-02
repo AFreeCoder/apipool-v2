@@ -168,6 +168,23 @@ test('unmatched listing multiplier remains hidden from public confirmed pricing'
   assert.equal(effective.pricePresentation.note, undefined);
 });
 
+test('fixed-price or incomplete token prices stay hidden even when drift is matched', () => {
+  const effective = resolveEffectiveCatalogPrice({
+    baseInputMicroUsd: null,
+    baseOutputMicroUsd: null,
+    groupRatioBps: 5000,
+    pricePolicy: 'inherit_group',
+    priceDriftStatus: 'matched',
+    listInputMicroUsd: 150000,
+    listOutputMicroUsd: 600000,
+  });
+
+  assert.equal(effective.publicConfirmed, false);
+  assert.equal(effective.effectiveInputMicroUsd, null);
+  assert.equal(effective.effectiveOutputMicroUsd, null);
+  assert.equal(effective.pricePresentation.showPrice, false);
+});
+
 test('verified price override still requires matched drift status', () => {
   const unmatched = resolveEffectiveCatalogPrice({
     pricePolicy: 'price_override',

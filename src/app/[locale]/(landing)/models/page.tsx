@@ -288,12 +288,12 @@ function ModelsTable({
                   showConfirmedPrice &&
                   listing.effectiveInputMicroUsd !== undefined
                     ? listing.effectiveInputMicroUsd
-                    : listing.inputMicroUsd;
+                    : undefined;
                 const outputPrice =
                   showConfirmedPrice &&
                   listing.effectiveOutputMicroUsd !== undefined
                     ? listing.effectiveOutputMicroUsd
-                    : listing.outputMicroUsd;
+                    : undefined;
 
                 return (
                   <tr
@@ -336,22 +336,30 @@ function ModelsTable({
                       {formatContextWindow(listing.contextWindow)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {formatMicroUsdPerMillion(inputPrice)}
+                      {inputPrice === undefined
+                        ? '—'
+                        : formatMicroUsdPerMillion(inputPrice)}
                       {showStrikethrough &&
                         listing.listInputMicroUsd !== undefined && (
-                        <div className="text-muted-foreground text-xs line-through">
-                          {formatMicroUsdPerMillion(listing.listInputMicroUsd)}
-                        </div>
-                      )}
+                          <div className="text-muted-foreground text-xs line-through">
+                            {formatMicroUsdPerMillion(
+                              listing.listInputMicroUsd
+                            )}
+                          </div>
+                        )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {formatMicroUsdPerMillion(outputPrice)}
+                      {outputPrice === undefined
+                        ? '—'
+                        : formatMicroUsdPerMillion(outputPrice)}
                       {showStrikethrough &&
                         listing.listOutputMicroUsd !== undefined && (
-                        <div className="text-muted-foreground text-xs line-through">
-                          {formatMicroUsdPerMillion(listing.listOutputMicroUsd)}
-                        </div>
-                      )}
+                          <div className="text-muted-foreground text-xs line-through">
+                            {formatMicroUsdPerMillion(
+                              listing.listOutputMicroUsd
+                            )}
+                          </div>
+                        )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Badge

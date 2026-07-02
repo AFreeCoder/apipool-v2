@@ -264,7 +264,10 @@ export function resolveEffectiveCatalogPrice(
 
   if (policy === 'inherit_group') {
     if (!input.groupRatioBps) return hidden();
-    effectiveInput = scaleMicroUsd(input.baseInputMicroUsd, input.groupRatioBps);
+    effectiveInput = scaleMicroUsd(
+      input.baseInputMicroUsd,
+      input.groupRatioBps
+    );
     effectiveOutput = scaleMicroUsd(
       input.baseOutputMicroUsd,
       input.groupRatioBps
@@ -302,6 +305,10 @@ export function resolveEffectiveCatalogPrice(
     effectiveImageInput = input.overrideImageInputMicroUsd ?? null;
     effectiveImageOutput = input.overrideImageOutputMicroUsd ?? null;
   } else {
+    return hidden();
+  }
+
+  if (effectiveInput === null || effectiveOutput === null) {
     return hidden();
   }
 
@@ -343,9 +350,7 @@ export function quotaSpendFromEffectivePrice(input: {
   quotaPerUnit: number;
 }): number {
   const usd =
-    (input.inputTokens * input.effectiveInputMicroUsd) /
-      1_000_000 /
-      1_000_000 +
+    (input.inputTokens * input.effectiveInputMicroUsd) / 1_000_000 / 1_000_000 +
     (input.outputTokens * input.effectiveOutputMicroUsd) /
       1_000_000 /
       1_000_000;

@@ -233,12 +233,8 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
 });
 
 test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits current group ratio', async () => {
-  const {
-    catalogGroup,
-    catalogModel,
-    catalogModelListing,
-    catalogModelPrice,
-  } = modules.schema;
+  const { catalogGroup, catalogModel, catalogModelListing, catalogModelPrice } =
+    modules.schema;
   const [model] = await modules
     .db()
     .select()
@@ -335,6 +331,99 @@ test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits
   assert.ok(publicListing);
   assert.equal(publicListing.effectiveInputMicroUsd, undefined);
   assert.equal(publicListing.effectiveOutputMicroUsd, undefined);
+  assert.equal(publicListing.pricePresentation.showPrice, false);
+});
+
+test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matched pricing', async () => {
+  const { catalogModel, catalogModelListing, catalogModelPrice } =
+    modules.schema;
+  const [model] = await modules
+    .db()
+    .select()
+    .from(catalogModel)
+    .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
+    .limit(1);
+
+  await modules
+    .db()
+    .update(catalogModelListing)
+    .set({
+      pricePolicy: 'inherit_group',
+      priceDriftStatus: 'matched',
+      effectivePriceFormula: '{"source":"stale"}',
+    })
+    .where(eq(catalogModelListing.modelId, model.id));
+
+  const report = await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    operatorUserId: 'operator-fixed-price',
+    snapshot: {
+      models: [
+        {
+          modelId: 'gpt-4o-mini',
+          displayName: 'GPT-4o mini',
+          vendorId: 'openai',
+          vendorName: 'OpenAI',
+          quotaType: 1,
+          modelRatio: 0,
+          modelPrice: 0.01,
+          completionRatio: 1,
+          imageRatio: null,
+          source: 'fixed-price',
+          inputMicroUsd: null,
+          outputMicroUsd: null,
+          imageInputMicroUsd: null,
+          imageOutputMicroUsd: null,
+          enabledGroups: ['official'],
+          supportedEndpointTypes: ['responses'],
+        },
+      ],
+      vendors: { openai: 'OpenAI' },
+      groupRatios: {
+        official: {
+          raw: '0.5',
+          decimal: '0.5',
+          bps: 5000,
+          sourceKey: 'group_ratio',
+        },
+      },
+      usableGroups: ['official'],
+      sourceFingerprint: 'fingerprint-fixed-price',
+    },
+  });
+
+  assert.equal(report.status, 'partial');
+  assert.equal(report.fixedPriceCount, 1);
+  assert.equal(report.conflicts[0]?.type, 'fixed_price_needs_review');
+
+  const [price] = await modules
+    .db()
+    .select()
+    .from(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, model.id))
+    .limit(1);
+  assert.equal(price.pricingMode, 'fixed_price');
+  assert.equal(price.driftStatus, 'fixed_needs_review');
+
+  const [listing] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.modelId, model.id))
+    .limit(1);
+  assert.equal(listing.priceDriftStatus, 'needs_live_check');
+  assert.equal(listing.effectivePriceFormula, null);
+
+  const publicListings = await modules.queries.getPublicListingsUncached({
+    group: 'official',
+    status: 'available',
+  });
+  const publicListing = publicListings.find(
+    (item: { modelId: string }) => item.modelId === 'gpt-4o-mini'
+  );
+
+  assert.ok(publicListing);
+  assert.equal(publicListing.inputMicroUsd, undefined);
+  assert.equal(publicListing.effectiveInputMicroUsd, undefined);
   assert.equal(publicListing.pricePresentation.showPrice, false);
 });
 
@@ -616,7 +705,10 @@ test('backfillCatalogModelPrices reports conflicts without changing listing cach
     operatorUserId: 'operator-2',
   });
   const after = await modules.db().select().from(catalogModelListing);
-  const prices = await modules.db().select().from(modules.schema.catalogModelPrice);
+  const prices = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogModelPrice);
 
   assert.ok(report.created >= 1);
   assert.equal(prices.length >= 1, true);

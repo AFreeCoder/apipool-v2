@@ -588,8 +588,10 @@ test('public listings do not expose confirmed discounts before New API group mat
   );
 
   assert.ok(partner);
-  assert.equal(partner.inputMicroUsd, 90000);
-  assert.equal(partner.outputMicroUsd, 180000);
+  assert.equal(partner.inputMicroUsd, undefined);
+  assert.equal(partner.outputMicroUsd, undefined);
+  assert.equal(partner.imageInputMicroUsd, undefined);
+  assert.equal(partner.imageOutputMicroUsd, undefined);
   assert.equal(partner.listInputMicroUsd, undefined);
   assert.equal(partner.listOutputMicroUsd, undefined);
   assert.equal(partner.discountNote, undefined);
@@ -598,12 +600,8 @@ test('public listings do not expose confirmed discounts before New API group mat
 });
 
 test('public listings expose effective price only after matched New API group ratio', async () => {
-  const {
-    catalogGroup,
-    catalogModel,
-    catalogModelListing,
-    catalogModelPrice,
-  } = modules.schema;
+  const { catalogGroup, catalogModel, catalogModelListing, catalogModelPrice } =
+    modules.schema;
   const official = await findBySlug(
     catalogGroup,
     catalogGroup.slug,

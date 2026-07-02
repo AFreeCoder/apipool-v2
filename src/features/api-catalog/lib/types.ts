@@ -9,8 +9,8 @@ export type PublicCatalogListingDto = {
   category: string;
   capabilities: string[];
   contextWindow: number | null;
-  inputMicroUsd: number;
-  outputMicroUsd: number;
+  inputMicroUsd?: number;
+  outputMicroUsd?: number;
   imageInputMicroUsd?: number;
   imageOutputMicroUsd?: number;
   listInputMicroUsd?: number;

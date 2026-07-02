@@ -1,4 +1,8 @@
 import {
+  discountFoldToBps,
+  optionalDollarsToMicroUsd,
+} from '@/features/api-catalog/lib/pricing';
+import {
   getCapabilities,
   getCategories,
   getGroups,
@@ -6,15 +10,12 @@ import {
   getVendors,
   upsertModelAdminConfig,
 } from '@/features/api-catalog/server/catalog-service';
-import {
-  discountFoldToBps,
-  optionalDollarsToMicroUsd,
-} from '@/features/api-catalog/lib/pricing';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
+import { getUserInfo } from '@/shared/models/user';
 import { Crumb } from '@/shared/types/blocks/common';
 
 import { ModelAdminForm } from '../model-admin-form';
@@ -54,7 +55,8 @@ export default async function CatalogModelNewPage({
       getCapabilities(),
       getStatuses(),
     ]);
-  const status = statuses.find((item) => item.slug === 'available') ?? statuses[0];
+  const status =
+    statuses.find((item) => item.slug === 'available') ?? statuses[0];
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
@@ -67,17 +69,17 @@ export default async function CatalogModelNewPage({
     'use server';
 
     await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
+    const operator = await getUserInfo();
 
     const result = await upsertModelAdminConfig({
+      operatorUserId: operator?.id,
       model: {
         modelId: (data.get('modelId') as string).trim(),
         displayName: (data.get('displayName') as string).trim(),
         vendorId: (data.get('vendorId') as string).trim(),
         categoryIds: JSON.parse(data.get('categoryIds') as string),
       },
-      listing: {
-        groupId: (data.get('groupId') as string).trim(),
-        statusId: (data.get('statusId') as string).trim(),
+      basePrice: {
         inputMicroUsd: requiredPrice(
           data.get('inputMicroUsd'),
           invalidPriceMessage
@@ -92,8 +94,13 @@ export default async function CatalogModelNewPage({
         imageOutputMicroUsd: optionalDollarsToMicroUsd(
           data.get('imageOutputMicroUsd')
         ),
+      },
+      listing: {
+        groupId: (data.get('groupId') as string).trim(),
+        statusId: (data.get('statusId') as string).trim(),
         discountRateBps: discountFoldToBps(data.get('discountFold')),
-        discountNote: (data.get('discountNote') as string | null)?.trim() || null,
+        discountNote:
+          (data.get('discountNote') as string | null)?.trim() || null,
         description: (data.get('description') as string | null)?.trim() || null,
       },
       capabilityIds: JSON.parse(data.get('capabilityIds') as string),
@@ -123,7 +130,10 @@ export default async function CatalogModelNewPage({
             title: vendor.name,
             value: vendor.id,
           }))}
-          groups={groups.map((group) => ({ title: group.name, value: group.id }))}
+          groups={groups.map((group) => ({
+            title: group.name,
+            value: group.id,
+          }))}
           categories={categories.map((category) => ({
             title: category.name,
             value: category.id,

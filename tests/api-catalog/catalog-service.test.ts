@@ -268,19 +268,22 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   });
 
   const created = await modules.service.upsertModelAdminConfig({
+    operatorUserId: 'operator-create-admin-model',
     model: {
       modelId: 'admin-gpt-image',
       displayName: 'Admin GPT Image',
       vendorId: vendor.id,
       categoryIds: [textCategory.id, imageCategory.id],
     },
-    listing: {
-      groupId: group.id,
-      statusId: status.id,
+    basePrice: {
       inputMicroUsd: 5_000_000,
       outputMicroUsd: 40_000_000,
       imageInputMicroUsd: 10_000_000,
       imageOutputMicroUsd: 40_000_000,
+    },
+    listing: {
+      groupId: group.id,
+      statusId: status.id,
       discountRateBps: 500,
       discountNote: '0.5 fold launch discount',
       smokeTested: true,
@@ -295,6 +298,11 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   assert.equal(created.listing.imageInputMicroUsd, 10_000_000);
   assert.equal(created.listing.imageOutputMicroUsd, 40_000_000);
   assert.equal(created.listing.discountRateBps, 500);
+  assert.equal(created.basePrice.baseInputMicroUsd, 5_000_000);
+  assert.equal(created.basePrice.baseOutputMicroUsd, 40_000_000);
+  assert.equal(created.basePrice.pricingMode, 'manual_token');
+  assert.equal(created.basePrice.source, 'manual');
+  assert.equal(created.basePrice.reviewedBy, 'operator-create-admin-model');
   assert.deepEqual(
     new Set(
       (await modules.service.getModelCategories(created.model.id)).map(
@@ -310,22 +318,36 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     [text.id, vision.id]
   );
 
+  const { catalogModelListing } = modules.schema;
+  await modules
+    .db()
+    .update(catalogModelListing)
+    .set({
+      priceDriftStatus: 'matched',
+      effectivePriceFormula: '{"source":"newapi_group_ratio"}',
+      effectivePriceSyncedAt: new Date(),
+    })
+    .where(eq(catalogModelListing.id, created.listing.id));
+
   const updated = await modules.service.upsertModelAdminConfig({
     modelId: created.model.id,
+    operatorUserId: 'operator-update-admin-model',
     model: {
       modelId: 'admin-gpt-image-latest',
       displayName: 'Admin GPT Image Latest',
       vendorId: vendor.id,
       categoryIds: [imageCategory.id],
     },
-    listing: {
-      id: created.listing.id,
-      groupId: group.id,
-      statusId: status.id,
+    basePrice: {
       inputMicroUsd: 4_000_000,
       outputMicroUsd: 32_000_000,
       imageInputMicroUsd: 8_000_000,
       imageOutputMicroUsd: 32_000_000,
+    },
+    listing: {
+      id: created.listing.id,
+      groupId: group.id,
+      statusId: status.id,
       discountRateBps: 50,
       discountNote: '0.05 fold experimental discount',
       smokeTested: false,
@@ -342,6 +364,13 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   assert.equal(updated.listing.inputMicroUsd, 4_000_000);
   assert.equal(updated.listing.imageInputMicroUsd, 8_000_000);
   assert.equal(updated.listing.discountRateBps, 50);
+  assert.equal(updated.basePrice.id, created.basePrice.id);
+  assert.equal(updated.basePrice.baseInputMicroUsd, 4_000_000);
+  assert.equal(updated.basePrice.baseImageInputMicroUsd, 8_000_000);
+  assert.equal(updated.basePrice.reviewedBy, 'operator-update-admin-model');
+  assert.equal(updated.listing.priceDriftStatus, 'needs_live_check');
+  assert.equal(updated.listing.effectivePriceFormula, null);
+  assert.equal(updated.listing.effectivePriceSyncedAt, null);
   assert.deepEqual(
     (await modules.service.getModelCategories(created.model.id)).map(
       (category: { id: string }) => category.id
@@ -354,6 +383,16 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     ),
     [vision.id]
   );
+
+  const { catalogModelPrice } = modules.schema;
+  const [storedBasePrice] = await modules
+    .db()
+    .select()
+    .from(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, created.model.id))
+    .limit(1);
+  assert.equal(storedBasePrice.baseOutputMicroUsd, 32_000_000);
+  assert.equal(storedBasePrice.syncStatus, 'manual');
 });
 
 test('deleteModel removes catalog model relations even without sqlite foreign key enforcement', async () => {
@@ -374,11 +413,13 @@ test('deleteModel removes catalog model relations even without sqlite foreign ke
       vendorId: vendor.id,
       categoryIds: [category.id],
     },
+    basePrice: {
+      inputMicroUsd: 1,
+      outputMicroUsd: 2,
+    },
     listing: {
       groupId: group.id,
       statusId: status.id,
-      inputMicroUsd: 1,
-      outputMicroUsd: 2,
       smokeTested: true,
       featured: false,
       sortOrder: 1,

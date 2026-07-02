@@ -1,5 +1,13 @@
 import 'server-only';
 
+import {
+  deriveBasePriceFromNewApiPricing,
+  normalizeGroupRatio,
+} from '@/features/api-catalog/lib/pricing';
+import type {
+  RemotePricingModel,
+  RemotePricingSnapshot,
+} from '@/features/newapi-bridge/server/client';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -11,14 +19,6 @@ import {
   catalogPriceSyncRun,
   catalogStatus,
 } from '@/config/db/schema';
-import {
-  deriveBasePriceFromNewApiPricing,
-  normalizeGroupRatio,
-} from '@/features/api-catalog/lib/pricing';
-import type {
-  RemotePricingModel,
-  RemotePricingSnapshot,
-} from '@/features/newapi-bridge/server/client';
 import { getUuid } from '@/shared/lib/hash';
 
 type BackfillMode = 'report' | 'apply';
@@ -81,6 +81,13 @@ function encodeJson(value: unknown) {
   return JSON.stringify(value);
 }
 
+function sanitizeSyncErrorMessage(message: string) {
+  return message
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
+    .slice(0, 500);
+}
+
 async function insertSyncRun(input: {
   operatorUserId?: string;
   status: 'success' | 'partial' | 'failed';
@@ -114,6 +121,28 @@ async function insertSyncRun(input: {
   return run;
 }
 
+export async function recordCatalogPriceSyncFailure({
+  operatorUserId,
+  error,
+}: {
+  operatorUserId?: string;
+  error: unknown;
+}) {
+  const rawMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : 'Model pricing sync is unavailable';
+  const message = sanitizeSyncErrorMessage(rawMessage);
+  return await insertSyncRun({
+    operatorUserId,
+    status: 'failed',
+    errorMessage: message,
+    report: { error: message },
+  });
+}
+
 async function getListingsForModels(modelIds: string[]) {
   if (modelIds.length === 0) return [];
   return (await db()
@@ -133,8 +162,10 @@ async function getListingsForModels(modelIds: string[]) {
       pricePolicy: catalogModelListing.pricePolicy,
       overrideInputMicroUsd: catalogModelListing.overrideInputMicroUsd,
       overrideOutputMicroUsd: catalogModelListing.overrideOutputMicroUsd,
-      overrideImageInputMicroUsd: catalogModelListing.overrideImageInputMicroUsd,
-      overrideImageOutputMicroUsd: catalogModelListing.overrideImageOutputMicroUsd,
+      overrideImageInputMicroUsd:
+        catalogModelListing.overrideImageInputMicroUsd,
+      overrideImageOutputMicroUsd:
+        catalogModelListing.overrideImageOutputMicroUsd,
       overrideReason: catalogModelListing.overrideReason,
       overrideStatus: catalogModelListing.overrideStatus,
       effectivePriceSyncedAt: catalogModelListing.effectivePriceSyncedAt,
@@ -187,7 +218,9 @@ function backfillBaseFromListing(
       ? listing.listOutputMicroUsd
       : listing.outputMicroUsd,
     baseImageInputMicroUsd:
-      listing.imageInputMicroUsd === null ? undefined : listing.imageInputMicroUsd,
+      listing.imageInputMicroUsd === null
+        ? undefined
+        : listing.imageInputMicroUsd,
     baseImageOutputMicroUsd:
       listing.imageOutputMicroUsd === null
         ? undefined
@@ -212,7 +245,8 @@ function chooseBackfillBase(listings: BackfillListingRow[]) {
     (listing) =>
       listing.listInputMicroUsd !== null && listing.listOutputMicroUsd !== null
   );
-  if (officialListPrice) return backfillBaseFromListing(officialListPrice, 'list');
+  if (officialListPrice)
+    return backfillBaseFromListing(officialListPrice, 'list');
 
   const officialEffective = officialListings[0];
   if (officialEffective) return backfillBaseFromListing(officialEffective);
@@ -246,7 +280,9 @@ export async function backfillCatalogModelPrices({
   const existingPrices = (await db()
     .select()
     .from(catalogModelPrice)) as CatalogModelPriceRow[];
-  const existingModelIds = new Set(existingPrices.map((price) => price.modelId));
+  const existingModelIds = new Set(
+    existingPrices.map((price) => price.modelId)
+  );
   const listings = await getListingsForModels(models.map((model) => model.id));
   const listingsByModel = new Map<string, BackfillListingRow[]>();
   for (const listing of listings) {
@@ -362,7 +398,8 @@ function remoteToPriceValues(remote: RemotePricingModel) {
     supported_endpoint_types: remote.supportedEndpointTypes,
   });
   return {
-    pricingMode: derived.source === 'fixed-price' ? 'fixed_price' : 'token_ratio',
+    pricingMode:
+      derived.source === 'fixed-price' ? 'fixed_price' : 'token_ratio',
     source: 'newapi_pricing',
     sourceModelId: remote.modelId,
     sourceVendorId: remote.vendorId,
@@ -395,7 +432,9 @@ export async function syncCatalogPricingFromSnapshot({
   operatorUserId?: string;
 }): Promise<PricingSyncReport> {
   const models = (await db().select().from(catalogModel)) as CatalogModelRow[];
-  const modelsByModelId = new Map(models.map((model) => [model.modelId, model]));
+  const modelsByModelId = new Map(
+    models.map((model) => [model.modelId, model])
+  );
   const remoteByModelId = new Map(
     snapshot.models.map((model) => [model.modelId, model])
   );
@@ -474,6 +513,9 @@ export async function syncCatalogPricingFromSnapshot({
     for (const listing of listings) {
       const model = models.find((item) => item.id === listing.modelPk);
       const remote = model ? remoteByModelId.get(model.modelId) : undefined;
+      const remotePriceValues = remote
+        ? remoteToPriceValues(remote)
+        : undefined;
       const enabled = Boolean(
         remote &&
           listing.groupNewapiGroup &&
@@ -483,23 +525,41 @@ export async function syncCatalogPricingFromSnapshot({
         listing.groupNewapiGroup &&
           snapshot.groupRatios[listing.groupNewapiGroup]
       );
-      const canConfirmGroupPrice = enabled && hasCurrentGroupRatio;
+      const hasTokenBasePrice = Boolean(
+        remotePriceValues &&
+          remotePriceValues.pricingMode !== 'fixed_price' &&
+          remotePriceValues.baseInputMicroUsd !== null &&
+          remotePriceValues.baseOutputMicroUsd !== null
+      );
+      const canConfirmGroupPrice =
+        enabled && hasCurrentGroupRatio && hasTokenBasePrice;
       let priceDriftStatus = 'missing_group';
       let reportType: string | null = null;
       let publicMatched = false;
 
       if (listing.pricePolicy === 'inherit_group') {
-        priceDriftStatus = canConfirmGroupPrice ? 'matched' : 'missing_group';
+        priceDriftStatus = canConfirmGroupPrice
+          ? 'matched'
+          : remotePriceValues?.pricingMode === 'fixed_price'
+            ? 'needs_live_check'
+            : 'missing_group';
         publicMatched = canConfirmGroupPrice;
         if (!canConfirmGroupPrice) {
-          reportType = enabled ? 'missing_group_ratio' : 'missing_group';
+          reportType =
+            remotePriceValues?.pricingMode === 'fixed_price'
+              ? 'fixed_price_needs_review'
+              : enabled
+                ? 'missing_group_ratio'
+                : 'missing_group';
         }
       } else if (listing.pricePolicy === 'listing_multiplier') {
         priceDriftStatus = 'needs_live_check';
         reportType = 'listing_multiplier_needs_live_check';
       } else if (listing.pricePolicy === 'price_override') {
         priceDriftStatus =
-          listing.overrideStatus === 'verified' ? 'needs_live_check' : 'drifted';
+          listing.overrideStatus === 'verified'
+            ? 'needs_live_check'
+            : 'drifted';
         reportType =
           listing.overrideStatus === 'verified'
             ? 'price_override_needs_live_check'

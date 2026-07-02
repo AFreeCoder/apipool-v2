@@ -25,6 +25,7 @@ export type CatalogStatus = typeof catalogStatus.$inferSelect;
 export type CatalogGroup = typeof catalogGroup.$inferSelect;
 export type Model = typeof catalogModel.$inferSelect;
 export type Listing = typeof catalogModelListing.$inferSelect;
+export type ModelPrice = typeof catalogModelPrice.$inferSelect;
 export type ModelCategory = typeof catalogModelCategory.$inferSelect;
 
 export type NewVendor = typeof catalogVendor.$inferInsert;
@@ -52,20 +53,23 @@ export type UpdateCategory = Partial<Omit<Category, 'id' | 'createdAt'>>;
 
 export type ModelAdminConfigInput = {
   modelId?: string;
+  operatorUserId?: string | null;
   model: {
     modelId: string;
     displayName: string;
     vendorId: string;
     categoryIds: string[];
   };
-  listing: {
-    id?: string;
-    groupId: string;
-    statusId: string;
+  basePrice: {
     inputMicroUsd: number;
     outputMicroUsd: number;
     imageInputMicroUsd?: number | null;
     imageOutputMicroUsd?: number | null;
+  };
+  listing: {
+    id?: string;
+    groupId: string;
+    statusId: string;
     listInputMicroUsd?: number | null;
     listOutputMicroUsd?: number | null;
     discountRateBps?: number | null;
@@ -81,6 +85,7 @@ export type ModelAdminConfigInput = {
 export type ModelAdminConfigResult = {
   model: Model;
   listing: Listing;
+  basePrice: ModelPrice;
 };
 
 export type ModelAdminRow = {
@@ -103,6 +108,7 @@ export type ModelAdminRow = {
 export type ModelAdminConfig = {
   model: Model;
   listing?: Listing;
+  basePrice?: ModelPrice;
   categories: Category[];
   capabilities: Capability[];
 };
@@ -378,14 +384,18 @@ export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
         capabilityNames: capabilities
           .map((capability) => capability.name)
           .join(', '),
-        inputPrice: listing ? microUsdToDollars(listing.inputMicroUsd) : '',
-        outputPrice: listing ? microUsdToDollars(listing.outputMicroUsd) : '',
-        imageInputPrice: listing
-          ? microUsdToDollars(listing.imageInputMicroUsd)
-          : '',
-        imageOutputPrice: listing
-          ? microUsdToDollars(listing.imageOutputMicroUsd)
-          : '',
+        inputPrice: microUsdToDollars(
+          basePrice?.baseInputMicroUsd ?? listing?.inputMicroUsd
+        ),
+        outputPrice: microUsdToDollars(
+          basePrice?.baseOutputMicroUsd ?? listing?.outputMicroUsd
+        ),
+        imageInputPrice: microUsdToDollars(
+          basePrice?.baseImageInputMicroUsd ?? listing?.imageInputMicroUsd
+        ),
+        imageOutputPrice: microUsdToDollars(
+          basePrice?.baseImageOutputMicroUsd ?? listing?.imageOutputMicroUsd
+        ),
         discountRate: listing
           ? formatDiscountRate(listing.discountRateBps)
           : '',
@@ -419,10 +429,16 @@ export async function getModelAdminConfig(
     getModelCategories(model.id),
     getModelCapabilities(model.id),
   ]);
+  const [basePrice] = await db()
+    .select()
+    .from(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, model.id))
+    .limit(1);
 
   return {
     model,
     listing: listings[0],
+    basePrice,
     categories,
     capabilities,
   };
@@ -618,18 +634,54 @@ export async function upsertModelAdminConfig(
     await syncModelCategories(tx, model.id, input.model.categoryIds);
     await syncModelCapabilities(tx, model.id, input.capabilityIds);
 
+    const basePricePatch = {
+      modelId: model.id,
+      pricingMode: 'manual_token',
+      source: 'manual',
+      sourceModelId: input.model.modelId,
+      sourceVendorId: input.model.vendorId,
+      baseInputMicroUsd: input.basePrice.inputMicroUsd,
+      baseOutputMicroUsd: input.basePrice.outputMicroUsd,
+      baseImageInputMicroUsd: input.basePrice.imageInputMicroUsd ?? null,
+      baseImageOutputMicroUsd: input.basePrice.imageOutputMicroUsd ?? null,
+      syncStatus: 'manual',
+      driftStatus: 'unknown',
+      sourceSyncedAt: null,
+      reviewedBy: input.operatorUserId ?? null,
+      reviewedAt: new Date(),
+      reviewNote: 'admin model form',
+    };
+    const [basePrice] = await tx
+      .insert(catalogModelPrice)
+      .values({ ...basePricePatch, id: getUuid() })
+      .onConflictDoUpdate({
+        target: catalogModelPrice.modelId,
+        set: {
+          ...basePricePatch,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    if (!basePrice) {
+      throw new Error('model base price was not saved');
+    }
+
     const listingPatch = {
       modelId: model.id,
       groupId: input.listing.groupId,
       statusId: input.listing.statusId,
-      inputMicroUsd: input.listing.inputMicroUsd,
-      outputMicroUsd: input.listing.outputMicroUsd,
-      imageInputMicroUsd: input.listing.imageInputMicroUsd ?? null,
-      imageOutputMicroUsd: input.listing.imageOutputMicroUsd ?? null,
+      inputMicroUsd: input.basePrice.inputMicroUsd,
+      outputMicroUsd: input.basePrice.outputMicroUsd,
+      imageInputMicroUsd: input.basePrice.imageInputMicroUsd ?? null,
+      imageOutputMicroUsd: input.basePrice.imageOutputMicroUsd ?? null,
       listInputMicroUsd: input.listing.listInputMicroUsd ?? null,
       listOutputMicroUsd: input.listing.listOutputMicroUsd ?? null,
       discountRateBps: input.listing.discountRateBps ?? null,
       discountNote: input.listing.discountNote ?? null,
+      priceDriftStatus: 'needs_live_check',
+      effectivePriceFormula: null,
+      effectivePriceSyncedAt: null,
       description: input.listing.description ?? null,
       smokeTested: input.listing.smokeTested ?? false,
       featured: input.listing.featured ?? false,
@@ -659,7 +711,7 @@ export async function upsertModelAdminConfig(
       throw new Error('listing was not saved');
     }
 
-    return { model, listing };
+    return { model, listing, basePrice };
   });
 }
 
