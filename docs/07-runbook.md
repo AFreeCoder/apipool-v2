@@ -122,6 +122,71 @@ APIPOOL_SMOKE_REQUIRE_LIVE=true npm run smoke:mvp
 
 该脚本会创建 `official` 分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 
+### 3.2 New API option-map 修复
+
+New API 日志如果反复出现 `failed to update option map: unexpected end of JSON input`，先按只读方式确认 `options` 表中的分组 JSON map。`theme.frontend=default` 是合法的字符串配置，不属于 JSON map 错误。
+
+```bash
+ssh apipool_vps 'sqlite3 -header -column /opt/apipool-v2/data/new-api/one-api.db "
+select
+  key,
+  quote(value) as quoted,
+  json_valid(value) as json_valid,
+  case when json_valid(value) then json_type(value) else null end as json_type
+from options
+where key in (
+  '\''GroupGroupRatio'\'',
+  '\''group_ratio_setting.group_special_usable_group'\'',
+  '\''theme.frontend'\''
+)
+order by key;"'
+```
+
+只允许用仓库脚本修复已确认的两个空 map 键：`GroupGroupRatio` 与 `group_ratio_setting.group_special_usable_group`。不要把该脚本接进 `deploy.sh` 自动执行；它是人工数据修复工具。
+
+```bash
+scp deploy/repair-newapi-options.sh apipool_vps:/tmp/repair-newapi-options.sh
+ssh apipool_vps 'chmod 700 /tmp/repair-newapi-options.sh && /tmp/repair-newapi-options.sh'
+```
+
+`--apply` 前必须先做 pre-deploy 备份，并确认最新归档包含 New API SQLite：
+
+```bash
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/backup.sh pre-deploy'
+ssh apipool_vps 'tar -tzf "$(ls -t /opt/apipool-v2/backups/pre-deploy-*.tar.gz | head -1)" | grep -E "data/new-api/one-api.db$"'
+```
+
+确认 dry-run 只报告上述两个键后再应用：
+
+```bash
+ssh apipool_vps '/tmp/repair-newapi-options.sh --apply'
+```
+
+脚本会打印 `rollback sql:` 和 `rollback sha256:`。如果需要回滚，只能在明确确认业务窗口内没有新的 New API 配置改动后执行该 SQL。
+
+应用后回读数据库、检查健康和下一轮同步日志：
+
+```bash
+ssh apipool_vps 'sqlite3 -header -column /opt/apipool-v2/data/new-api/one-api.db "
+select key, value, json_valid(value) as json_valid, json_type(value) as json_type
+from options
+where key in (
+  '\''GroupGroupRatio'\'',
+  '\''group_ratio_setting.group_special_usable_group'\''
+)
+order by key;"'
+ssh apipool_vps 'curl -fsS http://127.0.0.1:3001/api/status'
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml logs --since 5m new-api | grep -E "syncing options|failed to update option map" || true'
+```
+
+如果修复后一轮同步仍出现同一个 option-map 错误，才单独重启 New API，再重新检查 `/api/status` 与日志：
+
+```bash
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml restart new-api'
+ssh apipool_vps 'curl -fsS http://127.0.0.1:3001/api/status'
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml logs --since 2m new-api | grep -E "failed to update option map" || true'
+```
+
 ## 3.5 自动化部署流程
 
 生产部署由 GitHub Actions 构建镜像、VPS 拉取指定镜像、部署脚本先备份后切换容器三段组成。

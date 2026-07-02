@@ -2,25 +2,25 @@ name: APIPool MVP Verify
 
 on:
   pull_request:
-    branches: ["main", "dev"]
+    branches: ['main', 'dev']
   push:
-    branches: ["main", "dev"]
+    branches: ['main', 'dev']
   workflow_dispatch:
 
 jobs:
   local-mvp-verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "22"
-          cache: "pnpm"
+          node-version: '22'
+          cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsc --noEmit --pretty false
@@ -29,7 +29,7 @@ jobs:
       - run: pnpm build
       - run: pnpm smoke:mvp
         env:
-          APIPOOL_SMOKE_REQUIRE_LIVE: "false"
+          APIPOOL_SMOKE_REQUIRE_LIVE: 'false'
 
   live-mvp-smoke:
     if: github.event_name == 'workflow_dispatch'
@@ -37,21 +37,21 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "22"
-          cache: "pnpm"
+          node-version: '22'
+          cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm smoke:mvp
         env:
-          APIPOOL_SMOKE_REQUIRE_LIVE: "true"
+          APIPOOL_SMOKE_REQUIRE_LIVE: 'true'
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NEWAPI_BASE_URL: ${{ secrets.NEWAPI_BASE_URL }}
           NEWAPI_ADMIN_TOKEN: ${{ secrets.NEWAPI_ADMIN_TOKEN }}

@@ -25,6 +25,72 @@ test('docker image workflow builds production-configured immutable images', asyn
   assert.match(workflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
 });
 
+test('GitHub workflows use Node 24-compatible actions without changing release semantics', async () => {
+  const dockerWorkflow = await readFile(
+    '.github/workflows/docker-build.yaml',
+    'utf8'
+  );
+  const verifyWorkflow = await readFile(
+    '.github/workflows/mvp-verify.yaml',
+    'utf8'
+  );
+  const workflows = `${dockerWorkflow}\n${verifyWorkflow}`;
+
+  for (const action of [
+    'actions/checkout@v7',
+    'actions/setup-node@v6',
+    'pnpm/action-setup@v6',
+    'docker/login-action@v4',
+    'docker/metadata-action@v6',
+    'docker/build-push-action@v7',
+  ]) {
+    assert.match(workflows, new RegExp(action.replace('/', '\\/')));
+  }
+
+  for (const oldAction of [
+    'actions/checkout@v4',
+    'actions/setup-node@v4',
+    'pnpm/action-setup@v4',
+    'docker/login-action@v3',
+    'docker/metadata-action@v5',
+    'docker/build-push-action@v5',
+  ]) {
+    assert.doesNotMatch(workflows, new RegExp(oldAction.replace('/', '\\/')));
+  }
+
+  assert.match(dockerWorkflow, /runs-on:\s*ubuntu-latest/);
+  assert.match(verifyWorkflow, /runs-on:\s*ubuntu-latest/);
+  assert.match(dockerWorkflow, /branches:\s*\[['"]main['"], ['"]dev['"]\]/);
+  assert.match(verifyWorkflow, /branches:\s*\[['"]main['"], ['"]dev['"]\]/);
+  assert.match(
+    dockerWorkflow,
+    /push:\s*\$\{\{\s*github\.event_name != 'pull_request'\s*\}\}/
+  );
+  assert.match(
+    dockerWorkflow,
+    /if:\s*github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/
+  );
+  assert.match(dockerWorkflow, /type=sha,format=long/);
+  assert.match(dockerWorkflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
+  assert.equal(
+    [...verifyWorkflow.matchAll(/node-version:\s*['"]22['"]/g)].length,
+    2
+  );
+});
+
+test('New API option repair script is documented and guarded', async () => {
+  const script = await readFile('deploy/repair-newapi-options.sh', 'utf8');
+
+  assert.match(script, /APIPOOL_REPAIR_LOCK/);
+  assert.match(script, /apipool-v2-deploy\.lock/);
+  assert.match(script, /apipool-v2-backup\.lock/);
+  assert.match(script, /BEGIN IMMEDIATE/);
+  assert.match(script, /PRAGMA busy_timeout=5000/);
+  assert.match(script, /rollback sql:/);
+  assert.match(script, /json_type\(value\)/);
+  assert.match(script, /theme\.frontend/);
+});
+
 test('production compose pulls a selected GHCR image tag', async () => {
   const compose = await readFile('docker-compose.prod.yml', 'utf8');
 
