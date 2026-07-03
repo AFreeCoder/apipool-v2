@@ -64,6 +64,13 @@
       "when": 1782931200000,
       "tag": "0008_model_catalog_pricing_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783017600000,
+      "tag": "0009_newapi_username_sync_status",
+      "breakpoints": true
     }
   ]
 }

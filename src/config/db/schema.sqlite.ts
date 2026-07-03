@@ -718,8 +718,17 @@ export const newApiUserBinding = table(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     newapiUserId: text('newapi_user_id').notNull(),
-    status: text('status').notNull(), // pending, active, disabled
+    status: text('status').notNull(), // pending, provisioning, active, username_sync_pending, username_sync_failed, conflict_requires_review, disabled
     newapiUsername: text('newapi_username'),
+    targetNewapiUsername: text('target_newapi_username'),
+    lastSyncErrorCode: text('last_sync_error_code'),
+    lastSyncError: text('last_sync_error'),
+    lastSyncAction: text('last_sync_action'),
+    lastSyncedAt: integer('last_synced_at', { mode: 'timestamp_ms' }),
+    lastSyncAttemptedAt: integer('last_sync_attempted_at', {
+      mode: 'timestamp_ms',
+    }),
+    conflictNewapiUserId: text('conflict_newapi_user_id'),
     newapiPasswordEnc: text('newapi_password_enc'),
     newapiAccessTokenEnc: text('newapi_access_token_enc'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -734,6 +743,12 @@ export const newApiUserBinding = table(
     uniqueIndex('idx_newapi_user_binding_portal_user').on(table.portalUserId),
     uniqueIndex('idx_newapi_user_binding_newapi_user').on(table.newapiUserId),
     index('idx_newapi_user_binding_status').on(table.status),
+    index('idx_newapi_user_binding_target_username').on(
+      table.targetNewapiUsername
+    ),
+    index('idx_newapi_user_binding_sync_error_code').on(
+      table.lastSyncErrorCode
+    ),
   ]
 );
 

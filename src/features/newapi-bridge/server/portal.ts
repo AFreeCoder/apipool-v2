@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
 import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
@@ -28,7 +28,7 @@ import {
   user as userTable,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
-import { User } from '@/shared/models/user';
+import { findUserById, User } from '@/shared/models/user';
 
 import {
   createNewApiClient,
@@ -104,6 +104,12 @@ type AuditInput = {
   errorMessage?: string;
 };
 
+type NewApiBridgeDbWriter = {
+  insert: ReturnType<typeof db>['insert'];
+  update: ReturnType<typeof db>['update'];
+  select: ReturnType<typeof db>['select'];
+};
+
 const TERMINAL_KEY_MUTATION_ERROR_CODES = new Set<NewApiBridgeErrorCode>([
   'unauthorized',
   'forbidden',
@@ -113,6 +119,38 @@ const USAGE_SYNC_LOCK_TTL_MS = 60_000;
 const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
 const DUPLICATE_KEY_NAME_MESSAGE =
   'A key with this name already exists. Delete the existing key or choose another name.';
+const NEWAPI_USERNAME_PHASE_A_MAX_LENGTH = 20;
+
+export type NewapiUsernameEmailDiagnosis =
+  | { ok: true; username: string }
+  | {
+      ok: false;
+      code: 'portal_user_email_missing' | 'newapi_username_too_long';
+      normalizedEmail?: string;
+      message: string;
+    };
+
+export function normalizeNewapiUsernameEmail(
+  email: string | null | undefined
+): NewapiUsernameEmailDiagnosis {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    return {
+      ok: false,
+      code: 'portal_user_email_missing',
+      message: 'Portal user email is missing',
+    };
+  }
+  if (normalizedEmail.length > NEWAPI_USERNAME_PHASE_A_MAX_LENGTH) {
+    return {
+      ok: false,
+      code: 'newapi_username_too_long',
+      normalizedEmail,
+      message: 'New API username exceeds the Phase A limit',
+    };
+  }
+  return { ok: true, username: normalizedEmail };
+}
 
 function getUnknownErrorMessage(error: unknown) {
   return error instanceof Error
@@ -156,17 +194,38 @@ function getFailedKeyMutationStatus(error: unknown): KeyLifecycleStatus {
   return 'failed_retriable';
 }
 
+function sanitizeAuditBody(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeAuditBody);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+      const normalizedKey = key.toLowerCase();
+      if (
+        key === 'key' ||
+        normalizedKey.includes('password') ||
+        normalizedKey.includes('token') ||
+        normalizedKey.includes('secret') ||
+        normalizedKey.includes('credential')
+      ) {
+        return [key, '[redacted]'];
+      }
+      return [key, sanitizeAuditBody(entry)];
+    })
+  );
+}
+
 function serialize(value: unknown) {
   if (value === undefined) return undefined;
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(sanitizeAuditBody(value));
   } catch {
     return String(value);
   }
 }
 
-export async function recordAudit(input: AuditInput) {
-  await db()
+export async function recordAudit(input: AuditInput, writer: any = db()) {
+  await writer
     .insert(newApiBridgeAuditLog)
     .values({
       id: getUuid(),
@@ -369,15 +428,61 @@ export async function getPortalUserBinding(portalUserId: string) {
   return binding;
 }
 
+async function recordUsernameSyncBlocked(input: {
+  portalUserId: string;
+  operatorUserId?: string;
+  targetNewapiUsername?: string;
+  code: 'portal_user_email_missing' | 'newapi_username_too_long';
+  message: string;
+  action: string;
+  idempotencyKey: string;
+}) {
+  const existing = await getPortalUserBinding(input.portalUserId);
+  const attemptedAt = new Date();
+  const values = {
+    status: 'username_sync_failed',
+    targetNewapiUsername: input.targetNewapiUsername ?? null,
+    lastSyncErrorCode: input.code,
+    lastSyncError: input.message,
+    lastSyncAction: input.action,
+    lastSyncAttemptedAt: attemptedAt,
+  };
+
+  const [row] = existing
+    ? await db()
+        .update(newApiUserBinding)
+        .set(values)
+        .where(eq(newApiUserBinding.id, existing.id))
+        .returning()
+    : await db()
+        .insert(newApiUserBinding)
+        .values({
+          id: getUuid(),
+          portalUserId: input.portalUserId,
+          newapiUserId: `pending:${getUuid()}`,
+          ...values,
+        })
+        .returning();
+
+  await recordAudit({
+    portalUserId: input.portalUserId,
+    operatorUserId: input.operatorUserId,
+    action: 'newapi.user.username_sync',
+    targetType: 'newapi_user',
+    targetId: existing?.newapiUserId,
+    status: 'failed',
+    idempotencyKey: input.idempotencyKey,
+    requestBody: { targetNewapiUsername: input.targetNewapiUsername },
+    errorMessage: input.message,
+  });
+
+  return row;
+}
+
 // 远端 token 名称上限 30 字符，用本地 keyId 压缩出唯一技术名，
 // 兼作门户侧幂等键（client.createKey 先查同名 token 再创建）
 function deriveRemoteKeyName(localKeyId: string) {
   return `pk_${localKeyId.replace(/-/g, '').slice(0, 24)}`;
-}
-
-function deriveNewapiUsername(portalUserId: string) {
-  const digest = createHash('sha256').update(portalUserId).digest('hex');
-  return `pu_${digest.slice(0, 16)}`;
 }
 
 function generateNewapiPassword() {
@@ -404,15 +509,153 @@ export function bindingToUserCredentials(binding: {
 export async function ensurePortalUserBinding(
   user: Pick<User, 'id' | 'email'>,
   client: NewApiClient = createNewApiClient(),
-  options: { requiredNewapiGroup?: string } = {}
+  options: {
+    requiredNewapiGroup?: string;
+    syncAction?: string;
+    operatorUserId?: string;
+  } = {}
 ) {
   const existing = await getPortalUserBinding(user.id);
-  const username = existing?.newapiUsername || deriveNewapiUsername(user.id);
+  const syncAction = options.syncAction || 'lazy_provision';
+  const idempotencyKey = `portal-user:${user.id}:username-sync`;
+  if (existing?.status === 'disabled') {
+    throw new NewApiBridgeError({
+      code: 'forbidden',
+      message: 'New API user binding is disabled',
+    });
+  }
+
+  const diagnosis = normalizeNewapiUsernameEmail(user.email);
+  if (!diagnosis.ok) {
+    await recordUsernameSyncBlocked({
+      portalUserId: user.id,
+      operatorUserId: options.operatorUserId,
+      targetNewapiUsername: diagnosis.normalizedEmail,
+      code: diagnosis.code,
+      message: diagnosis.message,
+      action: syncAction,
+      idempotencyKey,
+    });
+    throw new NewApiBridgeError({
+      code: diagnosis.code,
+      message: diagnosis.message,
+    });
+  }
+
+  const username = diagnosis.username;
   if (
     existing &&
     existing.status === 'active' &&
     existing.newapiAccessTokenEnc
   ) {
+    if (existing.newapiUsername !== username) {
+      const attemptedAt = new Date();
+      await db()
+        .update(newApiUserBinding)
+        .set({
+          status: 'username_sync_pending',
+          targetNewapiUsername: username,
+          lastSyncErrorCode: null,
+          lastSyncError: null,
+          lastSyncAction: syncAction,
+          lastSyncAttemptedAt: attemptedAt,
+        })
+        .where(eq(newApiUserBinding.id, existing.id));
+
+      try {
+        const remote = await client.updateUserProfile({
+          newapiUserId: existing.newapiUserId,
+          currentUsername: existing.newapiUsername || undefined,
+          username,
+          displayName: username,
+          group: options.requiredNewapiGroup,
+          remark: `apipool:portalUserId:${user.id}`,
+        });
+        const syncedAt = new Date();
+        const [synced] = await db()
+          .update(newApiUserBinding)
+          .set({
+            status: 'active',
+            newapiUsername: remote.username,
+            targetNewapiUsername: username,
+            lastSyncErrorCode: null,
+            lastSyncError: null,
+            lastSyncAction: syncAction,
+            lastSyncedAt: syncedAt,
+            lastSyncAttemptedAt: attemptedAt,
+            conflictNewapiUserId: null,
+          })
+          .where(eq(newApiUserBinding.id, existing.id))
+          .returning();
+
+        await recordAudit({
+          portalUserId: user.id,
+          operatorUserId: options.operatorUserId,
+          action: 'newapi.user.username_sync',
+          targetType: 'newapi_user',
+          targetId: existing.newapiUserId,
+          status: 'success',
+          idempotencyKey,
+          requestBody: {
+            currentUsername: existing.newapiUsername,
+            targetNewapiUsername: username,
+          },
+          responseBody: {
+            username: remote.username,
+            newapiUserId: remote.newapiUserId,
+          },
+        });
+
+        return synced;
+      } catch (error: any) {
+        const status =
+          error?.code === 'conflict_requires_review'
+            ? 'conflict_requires_review'
+            : 'username_sync_failed';
+        const conflictNewapiUserId =
+          error?.code === 'conflict_requires_review'
+            ? error?.conflictNewapiUserId || null
+            : null;
+        const message = error?.message || 'New API username sync failed';
+        const [failed] = await db()
+          .update(newApiUserBinding)
+          .set({
+            status,
+            targetNewapiUsername: username,
+            lastSyncErrorCode: error?.code || 'remote_error',
+            lastSyncError: message,
+            lastSyncAction: syncAction,
+            lastSyncAttemptedAt: attemptedAt,
+            conflictNewapiUserId,
+          })
+          .where(eq(newApiUserBinding.id, existing.id))
+          .returning();
+
+        await recordAudit({
+          portalUserId: user.id,
+          operatorUserId: options.operatorUserId,
+          action: 'newapi.user.username_sync',
+          targetType: 'newapi_user',
+          targetId: existing.newapiUserId,
+          status: 'failed',
+          idempotencyKey,
+          requestBody: {
+            currentUsername: existing.newapiUsername,
+            targetNewapiUsername: username,
+          },
+          responseBody: conflictNewapiUserId
+            ? { conflictNewapiUserId }
+            : undefined,
+          errorMessage: message,
+        });
+
+        throw new NewApiBridgeError({
+          code: (error?.code || 'remote_error') as NewApiBridgeErrorCode,
+          message: failed.lastSyncError || message,
+        });
+      }
+    }
+
     if (options.requiredNewapiGroup) {
       await client.ensureUserGroup({
         newapiUserId: existing.newapiUserId,
@@ -423,7 +666,6 @@ export async function ensurePortalUserBinding(
     return existing;
   }
 
-  const idempotencyKey = `portal-user:${user.id}`;
   const password = existing?.newapiPasswordEnc
     ? decryptCredential(existing.newapiPasswordEnc)
     : generateNewapiPassword();
@@ -436,8 +678,13 @@ export async function ensurePortalUserBinding(
       .update(newApiUserBinding)
       .set({
         newapiUsername: username,
+        targetNewapiUsername: username,
         newapiPasswordEnc: encryptCredential(password),
-        status: 'pending',
+        status: 'provisioning',
+        lastSyncErrorCode: null,
+        lastSyncError: null,
+        lastSyncAction: syncAction,
+        lastSyncAttemptedAt: new Date(),
       })
       .where(eq(newApiUserBinding.id, existing.id))
       .returning();
@@ -449,9 +696,12 @@ export async function ensurePortalUserBinding(
         id: getUuid(),
         portalUserId: user.id,
         newapiUserId: `pending:${getUuid()}`,
-        status: 'pending',
+        status: 'provisioning',
         newapiUsername: username,
+        targetNewapiUsername: username,
         newapiPasswordEnc: encryptCredential(password),
+        lastSyncAction: syncAction,
+        lastSyncAttemptedAt: new Date(),
       })
       .returning();
     row = created;
@@ -471,12 +721,20 @@ export async function ensurePortalUserBinding(
         newapiUserId: remote.newapiUserId,
         newapiAccessTokenEnc: encryptCredential(remote.accessToken),
         status: 'active',
+        newapiUsername: username,
+        targetNewapiUsername: username,
+        lastSyncErrorCode: null,
+        lastSyncError: null,
+        lastSyncAction: syncAction,
+        lastSyncedAt: new Date(),
+        conflictNewapiUserId: null,
       })
       .where(eq(newApiUserBinding.id, row.id))
       .returning();
 
     await recordAudit({
       portalUserId: user.id,
+      operatorUserId: options.operatorUserId,
       action: 'newapi.user.bind',
       targetType: 'newapi_user',
       targetId: remote.newapiUserId,
@@ -487,17 +745,486 @@ export async function ensurePortalUserBinding(
     });
     return bound;
   } catch (error: any) {
+    const status =
+      error?.code === 'conflict_requires_review'
+        ? 'conflict_requires_review'
+        : 'username_sync_failed';
+    const conflictNewapiUserId =
+      error?.code === 'conflict_requires_review'
+        ? error?.conflictNewapiUserId || null
+        : null;
+    const message = error?.message || 'New API user provision failed';
+    await db()
+      .update(newApiUserBinding)
+      .set({
+        status,
+        targetNewapiUsername: username,
+        lastSyncErrorCode: error?.code || 'remote_error',
+        lastSyncError: message,
+        lastSyncAction: syncAction,
+        lastSyncAttemptedAt: new Date(),
+        conflictNewapiUserId,
+      })
+      .where(eq(newApiUserBinding.id, row.id));
+
     await recordAudit({
       portalUserId: user.id,
+      operatorUserId: options.operatorUserId,
       action: 'newapi.user.bind',
       targetType: 'newapi_user',
       status: 'failed',
       idempotencyKey,
       requestBody: { username },
-      errorMessage: error?.message || 'bind failed',
+      responseBody: conflictNewapiUserId ? { conflictNewapiUserId } : undefined,
+      errorMessage: message,
     });
-    throw error;
+    if (error instanceof NewApiBridgeError) throw error;
+    throw new NewApiBridgeError({
+      code: 'remote_error',
+      message,
+    });
   }
+}
+
+export async function provisionPortalUserAfterSignup(
+  user: Pick<User, 'id' | 'email'>,
+  client: NewApiClient = createNewApiClient()
+): Promise<void> {
+  const diagnosis = normalizeNewapiUsernameEmail(user.email);
+  if (!diagnosis.ok) {
+    await recordUsernameSyncBlocked({
+      portalUserId: user.id,
+      targetNewapiUsername: diagnosis.normalizedEmail,
+      code: diagnosis.code,
+      message: diagnosis.message,
+      action: 'signup_provision',
+      idempotencyKey: `portal-user:${user.id}:signup-provision`,
+    });
+    return;
+  }
+
+  try {
+    await ensurePortalUserBinding(user, client, {
+      syncAction: 'signup_provision',
+    });
+  } catch {
+    // ensurePortalUserBinding already records binding state and audit.
+  }
+}
+
+export function toAdminBindingDto(
+  binding: typeof newApiUserBinding.$inferSelect
+) {
+  return {
+    portalUserId: binding.portalUserId,
+    status: binding.status,
+    newapiUsername: binding.newapiUsername,
+    targetNewapiUsername: binding.targetNewapiUsername,
+    lastSyncErrorCode: binding.lastSyncErrorCode,
+    lastSyncError: binding.lastSyncError,
+    lastSyncAction: binding.lastSyncAction,
+    lastSyncAttemptedAt: binding.lastSyncAttemptedAt,
+    lastSyncedAt: binding.lastSyncedAt,
+    conflictNewapiUserId: binding.conflictNewapiUserId,
+  };
+}
+
+export async function updatePortalUserEmailWithNewapiSync(input: {
+  portalUserId: string;
+  newEmail: string;
+  operatorUserId: string;
+  client?: NewApiClient;
+}): Promise<{
+  status: 'active' | 'username_sync_failed' | 'conflict_requires_review';
+}> {
+  const portalUser = await findUserById(input.portalUserId);
+  if (!portalUser) throw new Error('portal user not found');
+
+  const diagnosis = normalizeNewapiUsernameEmail(input.newEmail);
+  const idempotencyKey = `portal-user:${input.portalUserId}:email-change`;
+  if (!diagnosis.ok) {
+    await recordUsernameSyncBlocked({
+      portalUserId: input.portalUserId,
+      operatorUserId: input.operatorUserId,
+      targetNewapiUsername: diagnosis.normalizedEmail,
+      code: diagnosis.code,
+      message: diagnosis.message,
+      action: 'email_change',
+      idempotencyKey,
+    });
+    return { status: 'username_sync_failed' };
+  }
+
+  const client = input.client || createNewApiClient();
+  const existingBinding = await getPortalUserBinding(input.portalUserId);
+  if (existingBinding?.status === 'disabled') {
+    throw new NewApiBridgeError({
+      code: 'forbidden',
+      message: 'New API user binding is disabled',
+    });
+  }
+
+  let binding: typeof newApiUserBinding.$inferSelect | undefined;
+  const attemptedAt = new Date();
+
+  try {
+    let remote: {
+      newapiUserId: string;
+      username: string;
+      displayName: string;
+      group: string;
+      role: number;
+      remark: string;
+    };
+
+    if (existingBinding?.status === 'active') {
+      await db()
+        .update(newApiUserBinding)
+        .set({
+          status: 'username_sync_pending',
+          targetNewapiUsername: diagnosis.username,
+          lastSyncErrorCode: null,
+          lastSyncError: null,
+          lastSyncAction: 'email_change',
+          lastSyncAttemptedAt: attemptedAt,
+        })
+        .where(eq(newApiUserBinding.id, existingBinding.id));
+
+      remote = await client.updateUserProfile({
+        newapiUserId: existingBinding.newapiUserId,
+        currentUsername: existingBinding.newapiUsername || undefined,
+        username: diagnosis.username,
+        displayName: diagnosis.username,
+        remark: `apipool:portalUserId:${input.portalUserId}`,
+      });
+      binding = existingBinding;
+    } else {
+      binding = await ensurePortalUserBinding(
+        { id: portalUser.id, email: diagnosis.username },
+        client,
+        {
+          syncAction: 'email_change',
+          operatorUserId: input.operatorUserId,
+        }
+      );
+      if (!binding) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: 'New API user binding was not prepared',
+        });
+      }
+      remote = {
+        newapiUserId: binding.newapiUserId,
+        username: binding.newapiUsername || diagnosis.username,
+        displayName: binding.newapiUsername || diagnosis.username,
+        group: '',
+        role: 0,
+        remark: '',
+      };
+    }
+
+    const confirmedBinding = binding;
+    if (!confirmedBinding) {
+      throw new NewApiBridgeError({
+        code: 'remote_error',
+        message: 'New API user binding was not prepared',
+      });
+    }
+    if (
+      remote.newapiUserId !== confirmedBinding.newapiUserId ||
+      remote.username !== diagnosis.username
+    ) {
+      throw new NewApiBridgeError({
+        code: 'remote_error',
+        message: 'New API username update was not confirmed',
+      });
+    }
+
+    try {
+      await db().transaction(async (tx: NewApiBridgeDbWriter) => {
+        await tx
+          .update(userTable)
+          .set({ email: diagnosis.username })
+          .where(eq(userTable.id, input.portalUserId));
+
+        await tx
+          .update(newApiUserBinding)
+          .set({
+            status: 'active',
+            newapiUserId: remote.newapiUserId,
+            newapiUsername: remote.username,
+            targetNewapiUsername: diagnosis.username,
+            lastSyncErrorCode: null,
+            lastSyncError: null,
+            lastSyncAction: 'email_change',
+            lastSyncedAt: new Date(),
+            lastSyncAttemptedAt: attemptedAt,
+            conflictNewapiUserId: null,
+          })
+          .where(eq(newApiUserBinding.id, confirmedBinding.id));
+
+        await recordAudit(
+          {
+            portalUserId: input.portalUserId,
+            operatorUserId: input.operatorUserId,
+            action: 'newapi.user.username_sync',
+            targetType: 'newapi_user',
+            targetId: confirmedBinding.newapiUserId,
+            status: 'success',
+            idempotencyKey,
+            requestBody: {
+              previousEmail: portalUser.email,
+              newEmail: diagnosis.username,
+            },
+            responseBody: {
+              username: remote.username,
+              displayName: remote.displayName,
+              group: remote.group,
+              role: remote.role,
+              remark: remote.remark,
+            },
+          },
+          tx
+        );
+      });
+    } catch (localError: any) {
+      const message =
+        'local_commit_failed: remote username may already be updated; local email/binding commit requires admin compensation';
+      await db()
+        .update(newApiUserBinding)
+        .set({
+          status: 'username_sync_failed',
+          targetNewapiUsername: diagnosis.username,
+          lastSyncErrorCode: 'local_commit_failed',
+          lastSyncError: message,
+          lastSyncAction: 'email_change',
+          lastSyncAttemptedAt: new Date(),
+        })
+        .where(eq(newApiUserBinding.id, confirmedBinding.id));
+      await recordAudit({
+        portalUserId: input.portalUserId,
+        operatorUserId: input.operatorUserId,
+        action: 'newapi.user.username_sync',
+        targetType: 'newapi_user',
+        targetId: confirmedBinding.newapiUserId,
+        status: 'failed',
+        idempotencyKey,
+        requestBody: {
+          previousEmail: portalUser.email,
+          newEmail: diagnosis.username,
+        },
+        responseBody: { remoteUpdatedUsername: remote.username },
+        errorMessage: `${message}: ${
+          localError?.message || 'local commit failed'
+        }`,
+      });
+      return { status: 'username_sync_failed' };
+    }
+
+    return { status: 'active' };
+  } catch (error: any) {
+    const status =
+      error?.code === 'conflict_requires_review'
+        ? 'conflict_requires_review'
+        : 'username_sync_failed';
+    const conflictNewapiUserId =
+      error?.code === 'conflict_requires_review'
+        ? error?.conflictNewapiUserId || null
+        : null;
+    const message = error?.message || 'New API username sync failed';
+    const failedBinding =
+      binding || (await getPortalUserBinding(input.portalUserId));
+    if (failedBinding) {
+      await db()
+        .update(newApiUserBinding)
+        .set({
+          status,
+          targetNewapiUsername: diagnosis.username,
+          lastSyncErrorCode: error?.code || 'remote_error',
+          lastSyncError: message,
+          lastSyncAction: 'email_change',
+          lastSyncAttemptedAt: new Date(),
+          conflictNewapiUserId,
+        })
+        .where(eq(newApiUserBinding.id, failedBinding.id));
+    }
+    await recordAudit({
+      portalUserId: input.portalUserId,
+      operatorUserId: input.operatorUserId,
+      action: 'newapi.user.username_sync',
+      targetType: 'newapi_user',
+      targetId: failedBinding?.newapiUserId,
+      status: 'failed',
+      idempotencyKey,
+      requestBody: { targetNewapiUsername: diagnosis.username },
+      responseBody: conflictNewapiUserId ? { conflictNewapiUserId } : undefined,
+      errorMessage: message,
+    });
+    return { status };
+  }
+}
+
+export async function retryNewapiUserBindingForAdmin(input: {
+  portalUserId: string;
+  operatorUserId?: string;
+  client?: NewApiClient;
+}) {
+  const portalUser = await findUserById(input.portalUserId);
+  if (!portalUser) throw new Error('portal user not found');
+  const binding = await ensurePortalUserBinding(
+    portalUser,
+    input.client || createNewApiClient(),
+    { syncAction: 'manual_retry', operatorUserId: input.operatorUserId }
+  );
+  const [updated] = await db()
+    .update(newApiUserBinding)
+    .set({
+      lastSyncAction: 'manual_retry',
+      lastSyncAttemptedAt: new Date(),
+    })
+    .where(eq(newApiUserBinding.id, binding.id))
+    .returning();
+
+  await recordAudit({
+    portalUserId: input.portalUserId,
+    operatorUserId: input.operatorUserId,
+    action: 'newapi.user.username_sync',
+    targetType: 'newapi_user',
+    targetId: binding.newapiUserId,
+    status: 'success',
+    idempotencyKey: `portal-user:${input.portalUserId}:manual-retry`,
+    requestBody: { action: 'manual_retry' },
+    responseBody: {
+      status: updated.status,
+      newapiUsername: updated.newapiUsername,
+      targetNewapiUsername: updated.targetNewapiUsername,
+    },
+  });
+
+  return toAdminBindingDto(updated);
+}
+
+export async function disableNewapiUserBindingForAdmin(input: {
+  portalUserId: string;
+  reason: string;
+  operatorUserId?: string;
+}) {
+  const existing = await getPortalUserBinding(input.portalUserId);
+  if (!existing) throw new Error('New API user binding not found');
+
+  const [binding] = await db()
+    .update(newApiUserBinding)
+    .set({
+      status: 'disabled',
+      lastSyncAction: 'admin_disable',
+      lastSyncError: input.reason,
+      lastSyncAttemptedAt: new Date(),
+    })
+    .where(eq(newApiUserBinding.id, existing.id))
+    .returning();
+
+  await recordAudit({
+    portalUserId: input.portalUserId,
+    operatorUserId: input.operatorUserId,
+    action: 'newapi.user.binding_disable',
+    targetType: 'newapi_user',
+    targetId: existing.newapiUserId,
+    status: 'success',
+    requestBody: { reason: input.reason },
+  });
+
+  return toAdminBindingDto(binding);
+}
+
+export async function confirmNewapiUserConflictForAdmin(input: {
+  portalUserId: string;
+  newapiUserId: string;
+  operatorUserId?: string;
+  client?: Pick<NewApiClient, 'getUserProfile'>;
+}) {
+  const existing = await getPortalUserBinding(input.portalUserId);
+  if (!existing) throw new Error('New API user binding not found');
+  if (existing.status !== 'conflict_requires_review') {
+    throw new Error('New API user binding is not waiting for conflict review');
+  }
+  if (existing.conflictNewapiUserId !== input.newapiUserId) {
+    throw new Error('New API conflict candidate does not match this binding');
+  }
+  if (!existing.targetNewapiUsername) {
+    throw new Error('New API conflict target username is missing');
+  }
+
+  const [owner] = await db()
+    .select({
+      id: newApiUserBinding.id,
+      portalUserId: newApiUserBinding.portalUserId,
+    })
+    .from(newApiUserBinding)
+    .where(eq(newApiUserBinding.newapiUserId, input.newapiUserId))
+    .limit(1);
+  if (owner && owner.portalUserId !== input.portalUserId) {
+    throw new Error('New API user is already bound to another portal user');
+  }
+
+  const client = input.client || createNewApiClient();
+  const remote = await client.getUserProfile({
+    newapiUserId: input.newapiUserId,
+    username: existing.targetNewapiUsername,
+  });
+  if (
+    remote.newapiUserId !== input.newapiUserId ||
+    remote.username !== existing.targetNewapiUsername
+  ) {
+    throw new Error('New API conflict candidate was not confirmed');
+  }
+
+  let activeBinding: typeof newApiUserBinding.$inferSelect | undefined;
+  await db().transaction(async (tx: NewApiBridgeDbWriter) => {
+    const [updated] = await tx
+      .update(newApiUserBinding)
+      .set({
+        newapiUserId: remote.newapiUserId,
+        status: 'active',
+        newapiUsername: remote.username,
+        targetNewapiUsername: remote.username,
+        lastSyncErrorCode: null,
+        lastSyncError: null,
+        lastSyncAction: 'admin_confirm_conflict',
+        lastSyncedAt: new Date(),
+        lastSyncAttemptedAt: new Date(),
+        conflictNewapiUserId: null,
+      })
+      .where(eq(newApiUserBinding.id, existing.id))
+      .returning();
+    activeBinding = updated;
+
+    await recordAudit(
+      {
+        portalUserId: input.portalUserId,
+        operatorUserId: input.operatorUserId,
+        action: 'newapi.user.conflict_confirm',
+        targetType: 'newapi_user',
+        targetId: remote.newapiUserId,
+        status: 'success',
+        idempotencyKey: `portal-user:${input.portalUserId}:conflict-confirm:${remote.newapiUserId}`,
+        requestBody: {
+          targetNewapiUsername: existing.targetNewapiUsername,
+          conflictNewapiUserId: input.newapiUserId,
+        },
+        responseBody: {
+          username: remote.username,
+          displayName: remote.displayName,
+          group: remote.group,
+          role: remote.role,
+          remark: remote.remark,
+        },
+      },
+      tx
+    );
+  });
+
+  if (!activeBinding) throw new Error('New API conflict confirmation failed');
+  return toAdminBindingDto(activeBinding);
 }
 
 export async function createPortalApiKey(

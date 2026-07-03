@@ -108,16 +108,17 @@ function createBlockingRemoteClient() {
   };
 }
 
-async function insertActiveBinding(userId: string) {
+async function insertActiveBinding(user: { id: string; email: string }) {
   await modules
     .db()
     .insert(modules.schema.newApiUserBinding)
     .values({
-      id: `binding_${userId}`,
-      portalUserId: userId,
-      newapiUserId: `remote_${userId}`,
+      id: `binding_${user.id}`,
+      portalUserId: user.id,
+      newapiUserId: `remote_${user.email}`,
       status: 'active',
-      newapiUsername: `remote_${userId}`,
+      newapiUsername: user.email,
+      targetNewapiUsername: user.email,
       newapiAccessTokenEnc:
         modules.crypto.encryptCredential('test-access-token'),
     });
@@ -163,7 +164,7 @@ async function executeRaw(sql: string) {
 test.before(setupDb);
 
 test('recharge applies once and is idempotent on replay', async () => {
-  const user = await insertUser('recharge_user_1', 'recharge1@example.com');
+  const user = await insertUser('recharge_user_1', 'r1@b.co');
   const { client, getAdjustCalls } = createWorkingRemoteClient();
   const input = {
     orderNo: 'order_recharge_1',
@@ -182,7 +183,8 @@ test('recharge applies once and is idempotent on replay', async () => {
   assert.equal(rows[0].source, 'recharge');
   assert.equal(rows[0].amountUsd, 5);
   assert.match(rows[0].newapiChangeId, /^code-recharge:order_recharge_1$/);
-  assert.match(rows[0].newapiUserId, /^remote_pu_/);
+  assert.equal(rows[0].newapiUserId, 'remote_r1@b.co');
+  assert.equal(rows[0].newapiUserId.includes('pu_'), false);
 
   // 重放 3 次只加额 1 次
   for (let i = 0; i < 3; i += 1) {
@@ -196,7 +198,7 @@ test('recharge applies once and is idempotent on replay', async () => {
 test('recharge remains applied when success audit logging fails after remote quota adjustment', async () => {
   const user = await insertUser(
     'recharge_user_audit_failure',
-    'recharge-audit-failure@example.com'
+    'ra1@b.co'
   );
   const { client, getAdjustCalls } = createWorkingRemoteClient();
   const input = {
@@ -240,9 +242,9 @@ test('recharge remains applied when success audit logging fails after remote quo
 test('recharge claims a pending ledger before remote quota adjustment', async () => {
   const user = await insertUser(
     'recharge_user_concurrent_pending',
-    'recharge-concurrent-pending@example.com'
+    'rcp@b.co'
   );
-  await insertActiveBinding(user.id);
+  await insertActiveBinding(user);
   await insertRechargeLedger({
     id: 'ledger_concurrent_pending',
     userId: user.id,
@@ -280,9 +282,9 @@ test('recharge claims a pending ledger before remote quota adjustment', async ()
 test('recharge requires reconciliation instead of retrying after remote success and applied update failure', async () => {
   const user = await insertUser(
     'recharge_user_apply_failure',
-    'recharge-apply-failure@example.com'
+    'raf@b.co'
   );
-  await insertActiveBinding(user.id);
+  await insertActiveBinding(user);
   await insertRechargeLedger({
     id: 'ledger_apply_failure',
     userId: user.id,
@@ -328,7 +330,7 @@ test('recharge requires reconciliation instead of retrying after remote success 
 });
 
 test('recharge survives a New API outage and retries without double-charging', async () => {
-  const user = await insertUser('recharge_user_2', 'recharge2@example.com');
+  const user = await insertUser('recharge_user_2', 'r2@b.co');
   const input = {
     orderNo: 'order_recharge_2',
     userId: user.id,
@@ -369,7 +371,7 @@ test('recharge survives a New API outage and retries without double-charging', a
 });
 
 test('terminal bridge errors mark the ledger failed for operator follow-up', async () => {
-  const user = await insertUser('recharge_user_3', 'recharge3@example.com');
+  const user = await insertUser('recharge_user_3', 'r3@b.co');
   const forbiddenClient = {
     provisionUser: async () => {
       throw new modules.NewApiBridgeError({
@@ -396,7 +398,7 @@ test('terminal bridge errors mark the ledger failed for operator follow-up', asy
 });
 
 test('non-usd or zero-amount orders are skipped without ledger rows', async () => {
-  const user = await insertUser('recharge_user_4', 'recharge4@example.com');
+  const user = await insertUser('recharge_user_4', 'r4@b.co');
   const { client } = createWorkingRemoteClient();
 
   const eur = await modules.recharge.applyRechargeForOrder(
@@ -428,7 +430,7 @@ test('non-usd or zero-amount orders are skipped without ledger rows', async () =
 });
 
 test('handleCheckoutSuccess grants credit once and leaves recharge retriable when bridge is down', async () => {
-  const user = await insertUser('recharge_user_5', 'recharge5@example.com');
+  const user = await insertUser('recharge_user_5', 'r5@b.co');
   const orderNo = 'order_checkout_e2e';
 
   await modules.orderModel.createOrder({
@@ -515,7 +517,7 @@ test('handleCheckoutSuccess grants credit once and leaves recharge retriable whe
 test('handleCheckoutSuccess self-heals missing recharge ledger on paid webhook replay', async () => {
   const user = await insertUser(
     'recharge_user_paid_replay_missing_ledger',
-    'recharge-paid-replay-missing-ledger@example.com'
+    'rpr@b.co'
   );
   const orderNo = 'order_checkout_paid_replay_missing_ledger';
 
@@ -565,7 +567,7 @@ test('handleCheckoutSuccess self-heals missing recharge ledger on paid webhook r
 test('handleCheckoutSuccess does not start recharge when the paid transition is not won', async () => {
   const user = await insertUser(
     'recharge_user_lost_transition',
-    'recharge-lost-transition@example.com'
+    'rlt@b.co'
   );
   const orderNo = 'order_checkout_lost_transition';
 
@@ -620,7 +622,7 @@ test('handleCheckoutSuccess does not start recharge when the paid transition is 
 test('order transaction does not grant credit when paid-order optimistic lock is not won', async () => {
   const user = await insertUser(
     'recharge_user_stale_order',
-    'recharge-stale-order@example.com'
+    'rso@b.co'
   );
   const orderNo = 'order_checkout_stale_paid';
 

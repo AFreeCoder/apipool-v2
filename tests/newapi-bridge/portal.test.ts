@@ -35,6 +35,7 @@ async function setupPortalDb() {
     catalogGroup,
     newApiBridgeAuditLog,
     newApiKeyBinding,
+    newApiUserBinding,
     usageLogSnapshot,
     usageSnapshot,
   } = await import('@/config/db/schema');
@@ -43,16 +44,19 @@ async function setupPortalDb() {
     '@/features/newapi-bridge/server/client'
   );
   const portal = await import('@/features/newapi-bridge/server/portal');
+  const userModel = await import('@/shared/models/user');
 
   modules = {
     db,
     newApiBridgeAuditLog,
     newApiKeyBinding,
+    newApiUserBinding,
     NewApiBridgeError,
     portal,
     catalogGroup,
     usageLogSnapshot,
     usageSnapshot,
+    userModel,
     user,
   };
 
@@ -102,6 +106,28 @@ function createSuccessfulRemoteClient() {
       id: newapiKeyId,
       deleted: true,
     }),
+    getQuota: async () => ({ balanceUsd: 25, quotaRemaining: 25 }),
+    getUsageSummary: async () => ({
+      requestCount: 1,
+      inputTokens: 12,
+      outputTokens: 8,
+      spendUsd: 1,
+      byModel: [
+        { modelId: 'gpt-4o-mini', requests: 1, tokens: 20, spendUsd: 1 },
+      ],
+    }),
+    listUsageLogs: async () => [
+      {
+        id: 'remote_request_successful_client',
+        keyMasked: 'sk-...usage',
+        modelId: 'gpt-4o-mini',
+        status: 'success',
+        inputTokens: 12,
+        outputTokens: 8,
+        spendUsd: 1,
+        createdAt: '2026-05-24T10:00:00.000Z',
+      },
+    ],
   };
 }
 
@@ -121,10 +147,733 @@ function assertNoFields(record: Record<string, unknown>, fields: string[]) {
 
 test.before(setupPortalDb);
 
+test('newapi user binding sync fields survive sqlite migrations', async () => {
+  const portalUser = await insertUser(
+    'portal_user_binding_sync_schema',
+    'a@b.co'
+  );
+  const attemptedAt = new Date(1782931200000);
+  const syncedAt = new Date(1783017600000);
+
+  const [row] = await modules
+    .db()
+    .insert(modules.newApiUserBinding)
+    .values({
+      id: 'binding_sync_schema_row',
+      portalUserId: portalUser.id,
+      newapiUserId: 'pending:binding-sync-schema',
+      status: 'username_sync_failed',
+      newapiUsername: 'pu_legacy',
+      targetNewapiUsername: 'a@b.co',
+      lastSyncErrorCode: 'newapi_username_too_long',
+      lastSyncError: 'New API username exceeds the Phase A limit',
+      lastSyncAction: 'signup_provision',
+      lastSyncedAt: syncedAt,
+      lastSyncAttemptedAt: attemptedAt,
+      conflictNewapiUserId: 'remote_conflict_42',
+    })
+    .returning();
+
+  assert.equal(row.targetNewapiUsername, 'a@b.co');
+  assert.equal(row.lastSyncErrorCode, 'newapi_username_too_long');
+  assert.equal(
+    row.lastSyncError,
+    'New API username exceeds the Phase A limit'
+  );
+  assert.equal(row.lastSyncAction, 'signup_provision');
+  assert.equal(row.conflictNewapiUserId, 'remote_conflict_42');
+  assert.equal(row.lastSyncedAt?.getTime(), syncedAt.getTime());
+  assert.equal(row.lastSyncAttemptedAt?.getTime(), attemptedAt.getTime());
+});
+
+test('getUsers can filter by New API binding status and sync error without exposing credentials', async () => {
+  await modules
+    .db()
+    .delete(modules.newApiUserBinding)
+    .where(eq(modules.newApiUserBinding.id, 'binding_sync_schema_row'));
+
+  const userA = await insertUser('portal_user_filter_status', 'flt@b.co');
+  const userB = await insertUser('portal_user_filter_other', 'flo@b.co');
+  await modules.db().insert(modules.newApiUserBinding).values([
+    {
+      id: 'binding_filter_status',
+      portalUserId: userA.id,
+      newapiUserId: 'pending:filter-status',
+      status: 'username_sync_failed',
+      targetNewapiUsername: 'flt@b.co',
+      lastSyncErrorCode: 'newapi_username_too_long',
+      newapiAccessTokenEnc: 'secret-token',
+      newapiPasswordEnc: 'secret-password',
+    },
+    {
+      id: 'binding_filter_other',
+      portalUserId: userB.id,
+      newapiUserId: 'remote_other',
+      status: 'active',
+      targetNewapiUsername: 'flo@b.co',
+    },
+  ]);
+
+  const rows = await modules.userModel.getUsers({
+    newApiBindingStatus: 'username_sync_failed',
+    lastSyncErrorCode: 'newapi_username_too_long',
+    limit: 30,
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, userA.id);
+  assert.equal(rows[0].newApiBinding?.status, 'username_sync_failed');
+  assert.equal(
+    rows[0].newApiBinding?.lastSyncErrorCode,
+    'newapi_username_too_long'
+  );
+  assert.equal(
+    Object.hasOwn(rows[0].newApiBinding || {}, 'newapiUserId'),
+    false
+  );
+  assert.equal(
+    Object.hasOwn(rows[0].newApiBinding || {}, 'newapiAccessTokenEnc'),
+    false
+  );
+  assert.equal(
+    Object.hasOwn(rows[0].newApiBinding || {}, 'newapiPasswordEnc'),
+    false
+  );
+});
+
+test('getUsers keeps users without New API bindings when binding filters are absent', async () => {
+  const unboundUser = await insertUser(
+    'portal_user_filter_unbound',
+    'unbound@b.co'
+  );
+
+  const rows = await modules.userModel.getUsers({
+    email: unboundUser.email,
+    limit: 30,
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, unboundUser.id);
+  assert.equal(rows[0].newApiBinding, null);
+});
+
+test('getUsersCount matches rows under New API binding status and sync error filters', async () => {
+  const matchingUser = await insertUser(
+    'portal_user_filter_count_match',
+    'fcm@b.co'
+  );
+  const otherErrorUser = await insertUser(
+    'portal_user_filter_count_other_error',
+    'fco@b.co'
+  );
+  await modules.db().insert(modules.newApiUserBinding).values([
+    {
+      id: 'binding_filter_count_match',
+      portalUserId: matchingUser.id,
+      newapiUserId: 'pending:filter-count-match',
+      status: 'username_sync_failed',
+      targetNewapiUsername: 'fcm@b.co',
+      lastSyncErrorCode: 'task5_count_error',
+    },
+    {
+      id: 'binding_filter_count_other_error',
+      portalUserId: otherErrorUser.id,
+      newapiUserId: 'pending:filter-count-other-error',
+      status: 'username_sync_failed',
+      targetNewapiUsername: 'fco@b.co',
+      lastSyncErrorCode: 'task5_other_error',
+    },
+  ]);
+
+  const filters = {
+    newApiBindingStatus: 'username_sync_failed',
+    lastSyncErrorCode: 'task5_count_error',
+    limit: 30,
+  };
+  const rows = await modules.userModel.getUsers(filters);
+  const total = await modules.userModel.getUsersCount({
+    newApiBindingStatus: filters.newApiBindingStatus,
+    lastSyncErrorCode: filters.lastSyncErrorCode,
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(total, rows.length);
+  assert.equal(rows[0].id, matchingUser.id);
+});
+
+test('normalizeNewapiUsernameEmail lowercases trims and blocks Phase A long emails', async () => {
+  assert.deepEqual(
+    modules.portal.normalizeNewapiUsernameEmail(' User@Example.COM '),
+    { ok: true, username: 'user@example.com' }
+  );
+  assert.deepEqual(modules.portal.normalizeNewapiUsernameEmail('   '), {
+    ok: false,
+    code: 'portal_user_email_missing',
+    message: 'Portal user email is missing',
+  });
+  assert.deepEqual(
+    modules.portal.normalizeNewapiUsernameEmail('very-long-user@example.com'),
+    {
+      ok: false,
+      code: 'newapi_username_too_long',
+      normalizedEmail: 'very-long-user@example.com',
+      message: 'New API username exceeds the Phase A limit',
+    }
+  );
+});
+
+test('ensurePortalUserBinding provisions short normalized email usernames without pu hash', async () => {
+  const portalUser = await insertUser(
+    'portal_user_short_email_binding',
+    ' A@B.CO '
+  );
+  const provisionInputs: any[] = [];
+  const fakeRemote = {
+    provisionUser: async (input: any) => {
+      provisionInputs.push(input);
+      return { newapiUserId: 'remote_short_email', accessToken: 'token' };
+    },
+    ensureUserGroup: async () => {},
+  };
+
+  const binding = await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    fakeRemote
+  );
+
+  assert.equal(provisionInputs[0].username, 'a@b.co');
+  assert.equal(provisionInputs[0].displayName, 'a@b.co');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'a@b.co');
+  assert.equal(binding.targetNewapiUsername, 'a@b.co');
+  assert.equal(/^pu_/.test(binding.newapiUsername || ''), false);
+});
+
+test('ensurePortalUserBinding blocks long emails with audit instead of creating technical usernames', async () => {
+  const portalUser = await insertUser(
+    'portal_user_long_email_binding',
+    'very-long-bind@example.com'
+  );
+  let remoteCalled = false;
+  const fakeRemote = {
+    provisionUser: async () => {
+      remoteCalled = true;
+      throw new Error('remote should not be called');
+    },
+    ensureUserGroup: async () => {},
+  };
+
+  await assert.rejects(
+    modules.portal.ensurePortalUserBinding(portalUser, fakeRemote),
+    /Phase A limit/
+  );
+
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'username_sync_failed');
+  assert.equal(binding.targetNewapiUsername, 'very-long-bind@example.com');
+  assert.equal(binding.lastSyncErrorCode, 'newapi_username_too_long');
+  assert.equal(/^pu_/.test(binding.newapiUsername || ''), false);
+  assert.equal(remoteCalled, false);
+
+  const audits = await modules
+    .db()
+    .select()
+    .from(modules.newApiBridgeAuditLog)
+    .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
+  const failedAudit = audits.find(
+    (row: any) =>
+      row.action === 'newapi.user.username_sync' && row.status === 'failed'
+  );
+  assert.ok(failedAudit, 'long email username block should be audited');
+  assert.match(failedAudit.errorMessage || '', /Phase A limit/);
+});
+
+test('ensurePortalUserBinding blocks empty emails with audit before remote calls', async () => {
+  const portalUser = await insertUser('portal_user_empty_email_binding', '   ');
+  let remoteCalled = false;
+  const fakeRemote = {
+    provisionUser: async () => {
+      remoteCalled = true;
+      throw new Error('remote should not be called');
+    },
+    ensureUserGroup: async () => {},
+  };
+
+  await assert.rejects(
+    modules.portal.ensurePortalUserBinding(portalUser, fakeRemote),
+    (error: any) => {
+      assert.ok(error instanceof modules.NewApiBridgeError);
+      assert.equal(error.code, 'portal_user_email_missing');
+      return true;
+    }
+  );
+
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'username_sync_failed');
+  assert.equal(binding.targetNewapiUsername, null);
+  assert.equal(binding.lastSyncErrorCode, 'portal_user_email_missing');
+  assert.equal(remoteCalled, false);
+
+  const audits = await modules
+    .db()
+    .select()
+    .from(modules.newApiBridgeAuditLog)
+    .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
+  const failedAudit = audits.find(
+    (row: any) =>
+      row.action === 'newapi.user.username_sync' && row.status === 'failed'
+  );
+  assert.ok(failedAudit, 'empty email username block should be audited');
+  assert.match(failedAudit.errorMessage || '', /email is missing/);
+});
+
+test('ensurePortalUserBinding syncs legacy active pu usernames before reuse', async () => {
+  const portalUser = await insertUser(
+    'portal_user_legacy_binding_sync',
+    'c@d.co'
+  );
+  const updates: any[] = [];
+  const fakeRemote = {
+    provisionUser: async () => ({
+      newapiUserId: '7',
+      accessToken: 'token',
+    }),
+    ensureUserGroup: async () => {},
+    updateUserProfile: async (input: any) => {
+      updates.push(input);
+      return {
+        newapiUserId: input.newapiUserId,
+        username: input.username,
+        displayName: input.displayName,
+        group: input.group || '',
+        role: 1,
+        remark: input.remark || '',
+      };
+    },
+  };
+
+  const first = await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    fakeRemote
+  );
+  await modules
+    .db()
+    .update(modules.newApiUserBinding)
+    .set({ newapiUsername: 'pu_legacy_user' })
+    .where(eq(modules.newApiUserBinding.id, first.id));
+
+  const synced = await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    fakeRemote,
+    { requiredNewapiGroup: 'ng-portal-test' }
+  );
+
+  assert.equal(updates[0].newapiUserId, '7');
+  assert.equal(updates[0].currentUsername, 'pu_legacy_user');
+  assert.equal(updates[0].username, 'c@d.co');
+  assert.equal(updates[0].group, 'ng-portal-test');
+  assert.equal(synced.status, 'active');
+  assert.equal(synced.newapiUsername, 'c@d.co');
+});
+
+test('ensurePortalUserBinding stores conflict_requires_review candidates for existing remote usernames', async () => {
+  const portalUser = await insertUser(
+    'portal_user_conflict_binding',
+    'conf@t.co'
+  );
+  const fakeRemote = {
+    provisionUser: async () => {
+      const error = new modules.NewApiBridgeError({
+        code: 'conflict_requires_review',
+        message: 'New API username already exists and requires review',
+        conflictNewapiUserId: 'remote_conflict_7',
+      });
+      throw error;
+    },
+    ensureUserGroup: async () => {},
+  };
+
+  await assert.rejects(
+    modules.portal.ensurePortalUserBinding(portalUser, fakeRemote),
+    (error: any) => {
+      assert.ok(error instanceof modules.NewApiBridgeError);
+      assert.equal(error.code, 'conflict_requires_review');
+      return true;
+    }
+  );
+
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'conflict_requires_review');
+  assert.equal(binding.targetNewapiUsername, 'conf@t.co');
+  assert.equal(binding.lastSyncErrorCode, 'conflict_requires_review');
+  assert.equal(binding.conflictNewapiUserId, 'remote_conflict_7');
+});
+
+test('provisionPortalUserAfterSignup records failures without throwing to auth', async () => {
+  const portalUser = await insertUser(
+    'portal_user_signup_long_email',
+    'very-long-sign@example.com'
+  );
+  let remoteCalled = false;
+
+  await modules.portal.provisionPortalUserAfterSignup(portalUser, {
+    provisionUser: async () => {
+      remoteCalled = true;
+      throw new Error('remote should not be called');
+    },
+    ensureUserGroup: async () => {},
+  });
+
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'username_sync_failed');
+  assert.equal(binding.lastSyncAction, 'signup_provision');
+  assert.equal(binding.lastSyncErrorCode, 'newapi_username_too_long');
+  assert.equal(remoteCalled, false);
+});
+
+test('updatePortalUserEmailWithNewapiSync updates local email only after remote username succeeds', async () => {
+  const portalUser = await insertUser(
+    'portal_user_email_change_short',
+    'e4s0@b.co'
+  );
+  const operator = await insertUser(
+    'operator_email_change_short',
+    'ops4s@b.co'
+  );
+  const updates: any[] = [];
+  const fakeRemote = {
+    provisionUser: async () => ({
+      newapiUserId: 'remote_email_change_short',
+      accessToken: 'token',
+    }),
+    ensureUserGroup: async () => {},
+    updateUserProfile: async (input: any) => {
+      updates.push(input);
+      return {
+        newapiUserId: input.newapiUserId,
+        username: input.username,
+        displayName: input.displayName,
+        group: input.group || '',
+        role: 1,
+        remark: input.remark || '',
+      };
+    },
+  };
+  await modules.portal.ensurePortalUserBinding(portalUser, fakeRemote);
+
+  const result = await modules.portal.updatePortalUserEmailWithNewapiSync({
+    portalUserId: portalUser.id,
+    newEmail: ' E4S1@B.CO ',
+    operatorUserId: operator.id,
+    client: fakeRemote,
+  });
+
+  const [updated] = await modules
+    .db()
+    .select()
+    .from(modules.user)
+    .where(eq(modules.user.id, portalUser.id))
+    .limit(1);
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+
+  assert.equal(result.status, 'active');
+  assert.equal(updates[0].username, 'e4s1@b.co');
+  assert.equal(updated.email, 'e4s1@b.co');
+  assert.equal(binding.newapiUsername, 'e4s1@b.co');
+  assert.equal(binding.lastSyncAction, 'email_change');
+});
+
+test('updatePortalUserEmailWithNewapiSync blocks long emails without committing local email', async () => {
+  const portalUser = await insertUser(
+    'portal_user_email_change_long',
+    'e4l0@b.co'
+  );
+  const operator = await insertUser(
+    'operator_email_change_long',
+    'ops4l@b.co'
+  );
+
+  const result = await modules.portal.updatePortalUserEmailWithNewapiSync({
+    portalUserId: portalUser.id,
+    newEmail: 'very-long-user@example.com',
+    operatorUserId: operator.id,
+    client: createSuccessfulRemoteClient(),
+  });
+
+  const [updated] = await modules
+    .db()
+    .select()
+    .from(modules.user)
+    .where(eq(modules.user.id, portalUser.id))
+    .limit(1);
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+
+  assert.equal(result.status, 'username_sync_failed');
+  assert.equal(updated.email, 'e4l0@b.co');
+  assert.equal(binding.targetNewapiUsername, 'very-long-user@example.com');
+  assert.equal(binding.lastSyncErrorCode, 'newapi_username_too_long');
+});
+
+test('updatePortalUserEmailWithNewapiSync lets admins replace a previously blocked long email with a short email', async () => {
+  const portalUser = await insertUser(
+    'portal_user_email_change_from_long',
+    'very-long-old-email@example.com'
+  );
+  const operator = await insertUser(
+    'operator_email_change_from_long',
+    'op4x@b.co'
+  );
+  await modules.db().insert(modules.newApiUserBinding).values({
+    id: 'binding_email_change_from_long',
+    portalUserId: portalUser.id,
+    newapiUserId: 'pending:email-change-from-long',
+    status: 'username_sync_failed',
+    targetNewapiUsername: 'very-long-old-email@example.com',
+    lastSyncErrorCode: 'newapi_username_too_long',
+    lastSyncError: 'New API username exceeds the Phase A limit',
+    lastSyncAction: 'email_change',
+  });
+  const provisions: any[] = [];
+  const updates: any[] = [];
+  const fakeRemote = {
+    provisionUser: async (input: any) => {
+      provisions.push(input);
+      return {
+        newapiUserId: 'remote_email_change_from_long',
+        accessToken: 'token-from-long',
+      };
+    },
+    ensureUserGroup: async () => {},
+    updateUserProfile: async (input: any) => {
+      updates.push(input);
+      return {
+        newapiUserId: input.newapiUserId,
+        username: input.username,
+        displayName: input.displayName,
+        group: input.group || '',
+        role: 1,
+        remark: input.remark || '',
+      };
+    },
+  };
+
+  const result = await modules.portal.updatePortalUserEmailWithNewapiSync({
+    portalUserId: portalUser.id,
+    newEmail: ' E4X@B.CO ',
+    operatorUserId: operator.id,
+    client: fakeRemote,
+  });
+
+  const [updated] = await modules
+    .db()
+    .select()
+    .from(modules.user)
+    .where(eq(modules.user.id, portalUser.id))
+    .limit(1);
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+
+  assert.equal(result.status, 'active');
+  assert.equal(provisions.length, 1);
+  assert.equal(provisions[0].username, 'e4x@b.co');
+  assert.equal(updates.length, 0);
+  assert.equal(updated.email, 'e4x@b.co');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUserId, 'remote_email_change_from_long');
+  assert.equal(binding.newapiUsername, 'e4x@b.co');
+  assert.equal(binding.targetNewapiUsername, 'e4x@b.co');
+  assert.equal(binding.lastSyncErrorCode, null);
+});
+
+test('updatePortalUserEmailWithNewapiSync records local_commit_failed when remote update succeeds but local transaction fails', async () => {
+  const portalUser = await insertUser(
+    'portal_user_email_change_local_fail',
+    'e4f0@b.co'
+  );
+  const operator = await insertUser(
+    'operator_email_change_local_fail',
+    'ops4f@b.co'
+  );
+  await insertUser('portal_user_email_change_conflicting_email', 'e4f1@b.co');
+  const updates: any[] = [];
+  const fakeRemote = {
+    provisionUser: async () => ({
+      newapiUserId: 'remote_email_change_local_fail',
+      accessToken: 'token',
+    }),
+    ensureUserGroup: async () => {},
+    updateUserProfile: async (input: any) => {
+      updates.push(input);
+      return {
+        newapiUserId: input.newapiUserId,
+        username: input.username,
+        displayName: input.displayName,
+        group: input.group || '',
+        role: 1,
+        remark: input.remark || '',
+      };
+    },
+  };
+  await modules.portal.ensurePortalUserBinding(portalUser, fakeRemote);
+
+  const result = await modules.portal.updatePortalUserEmailWithNewapiSync({
+    portalUserId: portalUser.id,
+    newEmail: 'e4f1@b.co',
+    operatorUserId: operator.id,
+    client: fakeRemote,
+  });
+
+  const [updated] = await modules
+    .db()
+    .select()
+    .from(modules.user)
+    .where(eq(modules.user.id, portalUser.id))
+    .limit(1);
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  const audits = await modules
+    .db()
+    .select()
+    .from(modules.newApiBridgeAuditLog)
+    .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
+
+  assert.equal(updates.length, 1);
+  assert.equal(result.status, 'username_sync_failed');
+  assert.equal(updated.email, 'e4f0@b.co');
+  assert.equal(binding.status, 'username_sync_failed');
+  assert.equal(binding.targetNewapiUsername, 'e4f1@b.co');
+  assert.equal(binding.lastSyncErrorCode, 'local_commit_failed');
+  assert.match(
+    binding.lastSyncError || '',
+    /remote username may already be updated/i
+  );
+  assert.equal(
+    audits.some(
+      (row: any) =>
+        row.action === 'newapi.user.username_sync' &&
+        row.status === 'failed' &&
+        /local_commit_failed/.test(row.errorMessage || '')
+    ),
+    true
+  );
+});
+
+test('ensurePortalUserBinding keeps disabled bindings disabled and avoids remote calls', async () => {
+  const portalUser = await insertUser(
+    'portal_user_disabled_binding_guard',
+    'dbg@b.co'
+  );
+  const operator = await insertUser(
+    'operator_disabled_binding_guard',
+    'opdg@b.co'
+  );
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await modules.portal.disableNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    reason: 'security review',
+    operatorUserId: operator.id,
+  });
+  let remoteCalls = 0;
+  const forbiddenRemote = {
+    provisionUser: async () => {
+      remoteCalls += 1;
+      throw new Error('remote provision should not be called');
+    },
+    ensureUserGroup: async () => {
+      remoteCalls += 1;
+      throw new Error('remote group sync should not be called');
+    },
+    updateUserProfile: async () => {
+      remoteCalls += 1;
+      throw new Error('remote profile update should not be called');
+    },
+  };
+
+  await assert.rejects(
+    modules.portal.ensurePortalUserBinding(portalUser, forbiddenRemote),
+    (error: any) => {
+      assert.ok(error instanceof modules.NewApiBridgeError);
+      assert.equal(error.code, 'forbidden');
+      return true;
+    }
+  );
+
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'disabled');
+  assert.equal(remoteCalls, 0);
+});
+
+test('adjustPortalQuota does not create applied ledger entries when binding cannot become active', async () => {
+  const portalUser = await insertUser(
+    'portal_user_long_email_quota',
+    'very-long-quota@example.com'
+  );
+  const operator = await insertUser('operator_long_email_quota', 'ops@b.co');
+
+  await assert.rejects(
+    modules.portal.adjustPortalQuota({
+      portalUser,
+      operatorUserId: operator.id,
+      amountUsd: 10,
+      reason: 'long email blocked',
+      idempotencyKey: 'long-email-quota-blocked',
+      client: createSuccessfulRemoteClient(),
+    }),
+    /Phase A limit/
+  );
+
+  const rows = await modules.portal.listAdjustmentLedgerByPortalUser(
+    portalUser.id
+  );
+  assert.equal(rows.some((row: any) => row.status === 'applied'), false);
+});
+
+test('long-email quota adjustment leaves no applied ledger and records sync audit', async () => {
+  const portalUser = await insertUser(
+    'portal_user_long_email_ledger_regression',
+    'very-long-user@example.com'
+  );
+  const operator = await insertUser(
+    'operator_long_email_ledger_regression',
+    'op6@b.co'
+  );
+
+  await assert.rejects(
+    modules.portal.adjustPortalQuota({
+      portalUser,
+      operatorUserId: operator.id,
+      amountUsd: 20,
+      reason: 'regression guard',
+      idempotencyKey: 'long-email-ledger-regression',
+      client: createSuccessfulRemoteClient(),
+    }),
+    /Phase A limit/
+  );
+
+  const ledger = await modules.portal.listAdjustmentLedgerByPortalUser(
+    portalUser.id
+  );
+  const audits = await modules
+    .db()
+    .select()
+    .from(modules.newApiBridgeAuditLog)
+    .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
+
+  assert.equal(ledger.some((row: any) => row.status === 'applied'), false);
+  assert.equal(
+    audits.some(
+      (row: any) =>
+        row.action === 'newapi.user.username_sync' && row.status === 'failed'
+    ),
+    true
+  );
+});
+
 test('createPortalApiKey keeps a retriable local key row when remote creation fails', async () => {
   const portalUser = await insertUser(
     'portal_user_create_failure',
-    'create-failure@example.com'
+    'cfail@t.co'
   );
 
   const fakeRemote = {
@@ -167,7 +916,7 @@ test('createPortalApiKey keeps a retriable local key row when remote creation fa
 test('createPortalApiKey rejects remote-created keys that are not active', async () => {
   const portalUser = await insertUser(
     'portal_user_create_disabled',
-    'create-disabled@example.com'
+    'cdis@t.co'
   );
 
   const fakeRemote = {
@@ -208,7 +957,7 @@ test('createPortalApiKey rejects remote-created keys that are not active', async
 test('createPortalApiKey preserves remote-created evidence when local binding fails', async () => {
   const portalUser = await insertUser(
     'portal_user_create_binding_failure',
-    'create-binding-failure@example.com'
+    'cbind@t.co'
   );
   const remote = createSuccessfulRemoteClient() as any;
   const existing = await modules.portal.createPortalApiKey(
@@ -331,7 +1080,7 @@ test('portal users cannot disable or delete another user key', async () => {
 test('database rejects duplicate undeleted key display names per portal user', async () => {
   const portalUser = await insertUser(
     'portal_user_duplicate_name_index',
-    'duplicate-name-index@example.com'
+    'dupidx@t.co'
   );
 
   await modules.db().insert(modules.newApiKeyBinding).values({
@@ -391,7 +1140,7 @@ test('database rejects duplicate undeleted key display names per portal user', a
 test('portal key DTOs expose only MVP customer key fields', async () => {
   const portalUser = await insertUser(
     'portal_user_safe_key_dto',
-    'safe-key-dto@example.com'
+    'skdto@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const created = await modules.portal.createPortalApiKey(
@@ -429,10 +1178,45 @@ test('portal key DTOs expose only MVP customer key fields', async () => {
   assertNoFields(deleted, forbiddenFields);
 });
 
+test('public usage and key DTOs do not expose New API user binding internals after username sync changes', async () => {
+  const portalUser = await insertUser(
+    'portal_user_redaction_regression',
+    'red@b.co'
+  );
+  const remote = createSuccessfulRemoteClient();
+  const created = await modules.portal.createPortalApiKey(
+    portalUser,
+    portalKeyInput('Redaction regression'),
+    remote as any
+  );
+  const keys = await modules.portal.listPortalApiKeys(portalUser.id);
+  const usage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    remote as any
+  );
+
+  assertNoFields(created.binding, [
+    'newapiUserId',
+    'newapiKeyId',
+    'newapiGroup',
+    'newapiAccessTokenEnc',
+    'newapiPasswordEnc',
+  ]);
+  assertNoFields(keys[0], [
+    'newapiUserId',
+    'newapiKeyId',
+    'newapiGroup',
+    'newapiAccessTokenEnc',
+    'newapiPasswordEnc',
+  ]);
+  assertNoFields(usage.summary as any, ['newapiUserId', 'newapiGroup']);
+});
+
 test('listPortalApiKeys returns the portal group name and public slug without leaking internal group fields', async () => {
   const portalUser = await insertUser(
     'portal_user_key_group_name',
-    'key-group-name@example.com'
+    'kgrp@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const created = await modules.portal.createPortalApiKey(
@@ -459,7 +1243,7 @@ test('listPortalApiKeys returns the portal group name and public slug without le
 test('listPortalApiKeys syncs remote key status without exposing remote ids', async () => {
   const portalUser = await insertUser(
     'portal_user_key_list_sync',
-    'key-list-sync@example.com'
+    'klist@t.co'
   );
   const remote = createSuccessfulRemoteClient() as any;
   const created = await modules.portal.createPortalApiKey(
@@ -494,7 +1278,7 @@ test('listPortalApiKeys syncs remote key status without exposing remote ids', as
 test('listPortalApiKeys keeps delete pending until remote revocation is visible', async () => {
   const portalUser = await insertUser(
     'portal_user_key_delete_pending_sync',
-    'key-delete-pending-sync@example.com'
+    'kdelp@t.co'
   );
   const remote = createSuccessfulRemoteClient() as any;
   const created = await modules.portal.createPortalApiKey(
@@ -553,7 +1337,7 @@ test('listPortalApiKeys keeps delete pending until remote revocation is visible'
 test('disablePortalApiKey and deletePortalApiKey complete only after remote confirmation', async () => {
   const portalUser = await insertUser(
     'portal_user_key_lifecycle',
-    'key-lifecycle@example.com'
+    'klife@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
@@ -581,7 +1365,7 @@ test('disablePortalApiKey and deletePortalApiKey complete only after remote conf
 test('disablePortalApiKey keeps retriable failure when remote does not confirm disabled', async () => {
   const portalUser = await insertUser(
     'portal_user_disable_unconfirmed',
-    'disable-unconfirmed@example.com'
+    'dunc@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
@@ -621,7 +1405,7 @@ test('disablePortalApiKey keeps retriable failure when remote does not confirm d
 test('deletePortalApiKey keeps retriable failure when remote confirms a different key id', async () => {
   const portalUser = await insertUser(
     'portal_user_delete_wrong_remote_id',
-    'delete-wrong-remote-id@example.com'
+    'dwri@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
@@ -661,7 +1445,7 @@ test('deletePortalApiKey keeps retriable failure when remote confirms a differen
 test('deletePortalApiKey cleans up Task 4 cleanable statuses with real remote-id shapes', async () => {
   const portalUser = await insertUser(
     'portal_user_cleanup_cleanable_statuses',
-    'cleanup-cleanable-statuses@example.com'
+    'clnst@t.co'
   );
   const remote = createSuccessfulRemoteClient();
 
@@ -817,7 +1601,7 @@ test('deletePortalApiKey cleans up Task 4 cleanable statuses with real remote-id
 test('key lifecycle mutations reject non-actionable statuses before remote calls', async () => {
   const portalUser = await insertUser(
     'portal_user_key_action_guard',
-    'key-action-guard@example.com'
+    'kguard@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
@@ -878,7 +1662,7 @@ test('key lifecycle mutations reject non-actionable statuses before remote calls
 test('key lifecycle terminal remote errors persist failed_terminal', async () => {
   const portalUser = await insertUser(
     'portal_user_key_terminal_failure',
-    'key-terminal-failure@example.com'
+    'kterm@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const disableResult = await modules.portal.createPortalApiKey(
@@ -942,7 +1726,7 @@ test('key lifecycle terminal remote errors persist failed_terminal', async () =>
 test('key disable and delete audits include operation idempotency keys', async () => {
   const portalUser = await insertUser(
     'portal_user_key_mutation_audit',
-    'key-mutation-audit@example.com'
+    'kaudit@t.co'
   );
   const remote = createSuccessfulRemoteClient();
   const result = await modules.portal.createPortalApiKey(
@@ -988,11 +1772,11 @@ test('key disable and delete audits include operation idempotency keys', async (
 test('adjustPortalQuota applies ledger only after New API returns a change id', async () => {
   const portalUser = await insertUser(
     'portal_user_adjust_success',
-    'adjust-success@example.com'
+    'adj1@t.co'
   );
   const operator = await insertUser(
     'operator_adjust_success',
-    'ops-success@example.com'
+    'ops1@t.co'
   );
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
@@ -1021,11 +1805,11 @@ test('adjustPortalQuota applies ledger only after New API returns a change id', 
 test('adjustPortalQuota reuses an idempotency key without applying quota twice', async () => {
   const portalUser = await insertUser(
     'portal_user_adjust_idempotent',
-    'adjust-idempotent@example.com'
+    'adj2@t.co'
   );
   const operator = await insertUser(
     'operator_adjust_idempotent',
-    'ops-idempotent@example.com'
+    'ops2@t.co'
   );
   let adjustmentCalls = 0;
   const fakeRemote = {
@@ -1065,11 +1849,11 @@ test('adjustPortalQuota reuses an idempotency key without applying quota twice',
 test('customer ledger list does not expose New API or operator internals', async () => {
   const portalUser = await insertUser(
     'portal_user_safe_ledger_dto',
-    'safe-ledger-dto@example.com'
+    'ledg@t.co'
   );
   const operator = await insertUser(
     'operator_safe_ledger_dto',
-    'safe-ledger-ops@example.com'
+    'ops3@t.co'
   );
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
@@ -1104,11 +1888,11 @@ test('customer ledger list does not expose New API or operator internals', async
 test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry', async () => {
   const portalUser = await insertUser(
     'portal_user_adjust_failure',
-    'adjust-failure@example.com'
+    'adjf@t.co'
   );
   const operator = await insertUser(
     'operator_adjust_failure',
-    'ops@example.com'
+    'ops4@t.co'
   );
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
@@ -1144,11 +1928,11 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
 test('adjustPortalQuota marks remote-applied confirmation failures for reconciliation', async () => {
   const portalUser = await insertUser(
     'portal_user_adjust_reconciliation',
-    'adjust-reconciliation@example.com'
+    'adjr@t.co'
   );
   const operator = await insertUser(
     'operator_adjust_reconciliation',
-    'ops-reconciliation@example.com'
+    'ops5@t.co'
   );
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
@@ -1185,7 +1969,7 @@ test('adjustPortalQuota marks remote-applied confirmation failures for reconcili
 test('getPortalUsage snapshots repeated remote logs only once', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_sync',
-    'usage-sync@example.com'
+    'us1@t.co'
   );
   const syncedLog = {
     id: 'remote_request_1',
@@ -1240,7 +2024,7 @@ test('getPortalUsage snapshots repeated remote logs only once', async () => {
 test('getPortalUsage preserves duplicate request ids from a single sync response', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_duplicate_ids',
-    'usage-duplicate-ids@example.com'
+    'us2@t.co'
   );
   const duplicateLogs = [
     {
@@ -1329,7 +2113,7 @@ test('getPortalUsage preserves duplicate request ids from a single sync response
 test('cached usage logs do not expose internal snapshot or New API request fields', async () => {
   const portalUser = await insertUser(
     'portal_user_cached_usage_dto',
-    'cached-usage-dto@example.com'
+    'us3@t.co'
   );
   const syncedLog = {
     id: 'remote_request_cached_1',
@@ -1392,7 +2176,7 @@ test('cached usage logs do not expose internal snapshot or New API request field
 test('getPortalUsage returns stale when an old usable cache exists and sync fails', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_old_cache',
-    'usage-old-cache@example.com'
+    'us4@t.co'
   );
   const syncedLog = {
     id: 'remote_request_old_cache_1',
@@ -1460,7 +2244,7 @@ test('getPortalUsage returns stale when an old usable cache exists and sync fail
 test('getPortalUsage returns syncing snapshot without duplicate remote reads', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_syncing',
-    'usage-syncing@example.com'
+    'us5@t.co'
   );
   const healthyRemote = {
     provisionUser: async (input: { username: string }) => ({
@@ -1524,7 +2308,7 @@ test('getPortalUsage returns syncing snapshot without duplicate remote reads', a
 test('getPortalUsage returns failed when initial usage sync has no cached data', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_initial_failure',
-    'usage-initial-failure@example.com'
+    'us6@t.co'
   );
   const healthyRemote = {
     provisionUser: async (input: { username: string }) => ({

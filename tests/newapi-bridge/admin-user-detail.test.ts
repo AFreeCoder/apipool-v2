@@ -6,6 +6,16 @@ import { createClient } from '@libsql/client';
 
 let modules: any;
 
+const detailPagePath =
+  'src/app/[locale]/(admin)/admin/users/[id]/detail/page.tsx';
+const listPagePath = 'src/app/[locale]/(admin)/admin/users/page.tsx';
+const actionPath =
+  'src/features/newapi-bridge/server/admin-user-binding-actions.ts';
+
+function getByPath(obj: any, path: string) {
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+}
+
 async function setupDb() {
   const dbPath = join(process.cwd(), '.tmp', 'admin-user-detail.db');
   await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
@@ -364,7 +374,7 @@ test('admin user detail page keeps the required read-only data sources and i18n 
   const page = await readFile(
     join(
       process.cwd(),
-      'src/app/[locale]/(admin)/admin/users/[id]/detail/page.tsx'
+      detailPagePath
     ),
     'utf8'
   );
@@ -386,4 +396,103 @@ test('admin user detail page keeps the required read-only data sources and i18n 
   assert.match(page, /detail\.ledger\.columns\.audit/);
   assert.match(page, /getTranslations\(['"]admin\.users['"]\)/);
   assert.doesNotMatch(page, /[\u4e00-\u9fff]/);
+});
+
+test('admin user detail page renders New API binding card and recovery actions', async () => {
+  const source = await readFile(join(process.cwd(), detailPagePath), 'utf8');
+
+  assert.match(source, /getPortalUserBinding/);
+  assert.match(source, /toAdminBindingDto/);
+  assert.match(source, /detail\.binding\.title/);
+  assert.match(source, /detail\.binding\.fields\.target_username/);
+  assert.match(source, /detail\.binding\.fields\.confirmed_username/);
+  assert.match(source, /detail\.binding\.fields\.error_code/);
+  assert.match(source, /retryNewapiUserBindingAction/);
+  assert.match(source, /confirmNewapiUserConflictAction/);
+  assert.match(source, /disableNewapiUserBindingAction/);
+  assert.match(source, /conflict_requires_review/);
+  assert.doesNotMatch(source, /newapiAccessTokenEnc/);
+  assert.doesNotMatch(source, /newapiPasswordEnc/);
+});
+
+test('admin user list exposes server-side binding filters and safe columns', async () => {
+  const source = await readFile(join(process.cwd(), listPagePath), 'utf8');
+
+  assert.match(source, /newApiBindingStatus/);
+  assert.match(source, /lastSyncErrorCode/);
+  assert.match(source, /fields\.newapi_binding_status/);
+  assert.match(source, /fields\.newapi_sync_error/);
+  assert.match(source, /list\.filters\.username_sync_failed/);
+  assert.match(source, /list\.filters\.newapi_username_too_long/);
+  assert.doesNotMatch(source, /newapiAccessTokenEnc/);
+  assert.doesNotMatch(source, /newapiPasswordEnc/);
+});
+
+test('admin binding actions are exported with USERS_WRITE permission checks', async () => {
+  const source = await readFile(join(process.cwd(), actionPath), 'utf8');
+
+  assert.match(source, /export async function retryNewapiUserBindingAction/);
+  assert.match(source, /export async function confirmNewapiUserConflictAction/);
+  assert.match(source, /export async function disableNewapiUserBindingAction/);
+  assert.match(source, /PERMISSIONS\.USERS_WRITE/);
+  assert.match(source, /getUserInfo/);
+  assert.match(source, /admin user session required/);
+  assert.equal(
+    (source.match(/operatorUserId:\s*currentUser\.id/g) || []).length,
+    3
+  );
+  assert.equal((source.match(/await requirePermission/g) || []).length, 3);
+});
+
+test('admin users locale files contain all New API binding keys used by pages', async () => {
+  const requiredKeys = [
+    'fields.newapi_binding_status',
+    'fields.newapi_sync_error',
+    'list.filters.username_sync_failed',
+    'list.filters.conflict_requires_review',
+    'list.filters.newapi_username_too_long',
+    'detail.errors.binding',
+    'detail.binding.title',
+    'detail.binding.description',
+    'detail.binding.fields.status',
+    'detail.binding.fields.target_username',
+    'detail.binding.fields.confirmed_username',
+    'detail.binding.fields.error_code',
+    'detail.binding.fields.last_attempted',
+    'detail.binding.fields.last_synced',
+    'detail.binding.actions.retry',
+    'detail.binding.actions.confirm_conflict',
+    'detail.binding.actions.disable',
+    'detail.status.binding.pending',
+    'detail.status.binding.provisioning',
+    'detail.status.binding.active',
+    'detail.status.binding.username_sync_pending',
+    'detail.status.binding.username_sync_failed',
+    'detail.status.binding.conflict_requires_review',
+    'detail.status.binding.disabled',
+  ];
+
+  for (const locale of ['zh', 'en']) {
+    const json = JSON.parse(
+      await readFile(
+        join(
+          process.cwd(),
+          `src/config/locale/messages/${locale}/admin/users.json`
+        ),
+        'utf8'
+      )
+    );
+    for (const key of requiredKeys) {
+      assert.equal(
+        typeof getByPath(json, key),
+        'string',
+        `${locale} missing ${key}`
+      );
+      assert.equal(
+        getByPath(json, key).includes('admin.users.'),
+        false,
+        `${locale} ${key} must not be a raw translation key`
+      );
+    }
+  }
 });

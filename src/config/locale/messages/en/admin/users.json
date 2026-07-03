@@ -11,7 +11,9 @@
     "roles": "Roles",
     "ip": "IP",
     "locale": "Locale",
-    "utm_source": "UTM Source"
+    "utm_source": "UTM Source",
+    "newapi_binding_status": "New API Binding",
+    "newapi_sync_error": "Sync Error"
   },
   "list": {
     "title": "Users",
@@ -34,6 +36,11 @@
         "title": "Email",
         "placeholder": "Email"
       }
+    },
+    "filters": {
+      "username_sync_failed": "Sync failed",
+      "conflict_requires_review": "Needs review",
+      "newapi_username_too_long": "Long email blocked"
     }
   },
   "empty": {
@@ -71,7 +78,25 @@
     "errors": {
       "usage": "Usage data is temporarily unavailable.",
       "keys": "API key data is temporarily unavailable.",
-      "ledger": "Quota adjustment history is temporarily unavailable."
+      "ledger": "Quota adjustment history is temporarily unavailable.",
+      "binding": "New API binding status is temporarily unavailable."
+    },
+    "binding": {
+      "title": "New API Binding",
+      "description": "Username, status, and recovery actions for this user's New API binding.",
+      "fields": {
+        "status": "Status",
+        "target_username": "Target Username",
+        "confirmed_username": "Confirmed Username",
+        "error_code": "Error Code",
+        "last_attempted": "Last Attempted",
+        "last_synced": "Last Synced"
+      },
+      "actions": {
+        "retry": "Retry",
+        "confirm_conflict": "Confirm Conflict Owner",
+        "disable": "Disable Binding"
+      }
     },
     "balance": {
       "title": "Balance and Quota",
@@ -158,6 +183,15 @@
         "success": "Success",
         "failed": "Failed",
         "error": "Error"
+      },
+      "binding": {
+        "pending": "Pending",
+        "provisioning": "Provisioning",
+        "active": "Active",
+        "username_sync_pending": "Username Sync Pending",
+        "username_sync_failed": "Username Sync Failed",
+        "conflict_requires_review": "Needs Review",
+        "disabled": "Disabled"
       }
     }
   },

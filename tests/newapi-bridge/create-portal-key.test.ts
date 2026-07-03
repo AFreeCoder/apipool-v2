@@ -144,10 +144,47 @@ async function getKeyBinding(id: string) {
 
 test.before(setupDb);
 
+test('createPortalApiKey blocks Phase A long emails before remote key creation', async () => {
+  const portalUser = await insertUser(
+    'create_key_long_email_user',
+    'very-long-user@example.com'
+  );
+  const remote = createRecordingRemoteClient();
+
+  await assert.rejects(
+    modules.portal.createPortalApiKey(
+      portalUser,
+      { name: 'Long email key', groupSlug: 'official' },
+      remote.client
+    ),
+    /Phase A limit/
+  );
+
+  assert.equal(remote.getProvisionUserInputs().length, 0);
+  assert.equal(remote.getCreateKeyInputs().length, 0);
+});
+
+test('createPortalApiKey uses normalized email username for first-time short-email users', async () => {
+  const portalUser = await insertUser(
+    'create_key_short_email_user',
+    ' A@B.CO '
+  );
+  const remote = createRecordingRemoteClient();
+
+  await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Short email key', groupSlug: 'official' },
+    remote.client
+  );
+
+  assert.equal(remote.getProvisionUserInputs()[0].username, 'a@b.co');
+  assert.equal(/^pu_/.test(remote.getProvisionUserInputs()[0].username), false);
+});
+
 test('createPortalApiKey resolves groupSlug server-side and stores only internal group fields locally', async () => {
   const portalUser = await insertUser(
     'create_key_group_user',
-    'create-key-group@example.com'
+    'keyg1@t.co'
   );
   const remote = createRecordingRemoteClient();
 
@@ -181,7 +218,7 @@ test('createPortalApiKey resolves groupSlug server-side and stores only internal
 test('createPortalApiKey ensures an existing New API user can access the target group', async () => {
   const portalUser = await insertUser(
     'create_key_existing_group_user',
-    'create-key-existing-group@example.com'
+    'keyg2@t.co'
   );
   const remote = createRecordingRemoteClient();
 
@@ -211,7 +248,7 @@ test('createPortalApiKey ensures an existing New API user can access the target 
 test('createPortalApiKey rejects key-capable groups without explicit New API mapping before calling remote', async () => {
   const portalUser = await insertUser(
     'create_key_unmapped_user',
-    'create-key-unmapped@example.com'
+    'unmap@t.co'
   );
   const remote = createRecordingRemoteClient();
 
@@ -235,7 +272,7 @@ test('createPortalApiKey rejects unavailable groups before calling the remote cl
   ] as const) {
     const portalUser = await insertUser(
       `create_key_reject_${groupSlug}`,
-      `create-key-reject-${groupSlug}@example.com`
+      `rej-${groupSlug}@t.co`
     );
     const remote = createRecordingRemoteClient();
 
@@ -255,7 +292,7 @@ test('createPortalApiKey rejects unavailable groups before calling the remote cl
 test('createPortalApiKey rejects duplicate key names before calling the remote client', async () => {
   const portalUser = await insertUser(
     'create_key_dup_user',
-    'create-key-dup@example.com'
+    'keydup@t.co'
   );
   // 用唯一 remote key id，避免与其它用例共享 db 时撞 newapi_key_id 的 UNIQUE 约束
   const createKeyInputs: any[] = [];
@@ -298,7 +335,7 @@ test('createPortalApiKey rejects duplicate key names before calling the remote c
 test('deletePortalApiKey cleans up failed/stuck keys locally without requiring remote', async () => {
   const portalUser = await insertUser(
     'cleanup_failed_user',
-    'cleanup-failed@example.com'
+    'clean@t.co'
   );
   const failingClient = {
     provisionUser: async (input: { username: string }) => ({

@@ -6,11 +6,18 @@ import {
   formatUsdAmount,
 } from '@/features/api-console/lib/money';
 import {
+  getPortalUserBinding,
   getPortalUsage,
   listAdjustmentLedgerByPortalUser,
   listKeysByPortalUser,
+  toAdminBindingDto,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
+import {
+  confirmNewapiUserConflictAction,
+  disableNewapiUserBindingAction,
+  retryNewapiUserBindingAction,
+} from '@/features/newapi-bridge/server/admin-user-binding-actions';
 import { getTranslations } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
@@ -18,6 +25,7 @@ import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { Table } from '@/shared/blocks/table';
 import { TableCard } from '@/shared/blocks/table/table-card';
 import { Badge } from '@/shared/components/ui/badge';
+import { Button } from '@/shared/components/ui/button';
 import {
   Card,
   CardContent,
@@ -134,7 +142,9 @@ function statusVariant(status: string | null | undefined) {
   if (
     status === 'failed' ||
     status === 'failed_terminal' ||
-    status === 'reconciliation_required'
+    status === 'reconciliation_required' ||
+    status === 'username_sync_failed' ||
+    status === 'conflict_requires_review'
   ) {
     return 'destructive' as const;
   }
@@ -195,11 +205,19 @@ export default async function AdminUserDetailPage({
     notFound();
   }
 
-  const [usageResult, keysResult, ledgerResult] = await Promise.all([
-    loadOrFallback(() => getPortalUsage(targetUser), emptyUsageView()),
-    loadOrFallback(() => listKeysByPortalUser(targetUser.id), []),
-    loadOrFallback(() => listAdjustmentLedgerByPortalUser(targetUser.id), []),
-  ]);
+  const [bindingResult, usageResult, keysResult, ledgerResult] =
+    await Promise.all([
+      loadOrFallback(async () => {
+        const binding = await getPortalUserBinding(targetUser.id);
+        return binding ? toAdminBindingDto(binding) : null;
+      }, null),
+      loadOrFallback(() => getPortalUsage(targetUser), emptyUsageView()),
+      loadOrFallback(() => listKeysByPortalUser(targetUser.id), []),
+      loadOrFallback(
+        () => listAdjustmentLedgerByPortalUser(targetUser.id),
+        []
+      ),
+    ]);
 
   const emptyValue = t('detail.empty.value');
   const usageStatus = translateStatus(
@@ -386,6 +404,106 @@ export default async function AdminUserDetailPage({
         />
 
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('detail.binding.title')}</CardTitle>
+              <CardDescription>
+                {t('detail.binding.description')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {bindingResult.failed ? (
+                <DataNotice>{t('detail.errors.binding')}</DataNotice>
+              ) : null}
+              <dl className="grid gap-4 md:grid-cols-3">
+                <Metric
+                  label={t('detail.binding.fields.status')}
+                  value={translateStatus(
+                    t,
+                    'detail.status.binding',
+                    bindingResult.data?.status,
+                    emptyValue
+                  )}
+                />
+                <Metric
+                  label={t('detail.binding.fields.target_username')}
+                  value={bindingResult.data?.targetNewapiUsername || emptyValue}
+                />
+                <Metric
+                  label={t('detail.binding.fields.confirmed_username')}
+                  value={bindingResult.data?.newapiUsername || emptyValue}
+                />
+                <Metric
+                  label={t('detail.binding.fields.error_code')}
+                  value={bindingResult.data?.lastSyncErrorCode || emptyValue}
+                />
+                <Metric
+                  label={t('detail.binding.fields.last_attempted')}
+                  value={formatDateTime(
+                    bindingResult.data?.lastSyncAttemptedAt,
+                    locale,
+                    t('detail.empty.never_synced')
+                  )}
+                />
+                <Metric
+                  label={t('detail.binding.fields.last_synced')}
+                  value={formatDateTime(
+                    bindingResult.data?.lastSyncedAt,
+                    locale,
+                    t('detail.empty.never_synced')
+                  )}
+                />
+              </dl>
+              {bindingResult.data?.lastSyncError ? (
+                <DataNotice>{bindingResult.data.lastSyncError}</DataNotice>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <form
+                  action={async () => {
+                    'use server';
+                    await retryNewapiUserBindingAction({
+                      portalUserId: targetUser.id,
+                    });
+                  }}
+                >
+                  <Button type="submit" variant="outline" size="sm">
+                    {t('detail.binding.actions.retry')}
+                  </Button>
+                </form>
+                {bindingResult.data?.status === 'conflict_requires_review' &&
+                bindingResult.data.conflictNewapiUserId ? (
+                  <form
+                    action={async () => {
+                      'use server';
+                      await confirmNewapiUserConflictAction({
+                        portalUserId: targetUser.id,
+                        newapiUserId:
+                          bindingResult.data!.conflictNewapiUserId!,
+                      });
+                    }}
+                  >
+                    <Button type="submit" variant="outline" size="sm">
+                      {t('detail.binding.actions.confirm_conflict')}
+                    </Button>
+                  </form>
+                ) : null}
+                <form
+                  action={async () => {
+                    'use server';
+                    await disableNewapiUserBindingAction({
+                      portalUserId: targetUser.id,
+                      reason: 'admin detail action',
+                    });
+                  }}
+                >
+                  <Button type="submit" variant="destructive" size="sm">
+                    {t('detail.binding.actions.disable')}
+                  </Button>
+                </form>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>{t('detail.balance.title')}</CardTitle>

@@ -11,7 +11,9 @@
     "roles": "角色",
     "ip": "IP",
     "locale": "语言",
-    "utm_source": "UTM Source"
+    "utm_source": "UTM Source",
+    "newapi_binding_status": "New API 绑定",
+    "newapi_sync_error": "同步错误"
   },
   "list": {
     "title": "用户",
@@ -34,6 +36,11 @@
         "title": "邮箱",
         "placeholder": "邮箱"
       }
+    },
+    "filters": {
+      "username_sync_failed": "同步失败",
+      "conflict_requires_review": "需人工确认",
+      "newapi_username_too_long": "长邮箱阻断"
     }
   },
   "empty": {
@@ -71,7 +78,25 @@
     "errors": {
       "usage": "用量数据暂时不可用。",
       "keys": "API Key 数据暂时不可用。",
-      "ledger": "调额历史暂时不可用。"
+      "ledger": "调额历史暂时不可用。",
+      "binding": "New API 绑定状态暂时不可用。"
+    },
+    "binding": {
+      "title": "New API 绑定",
+      "description": "该用户与 New API 用户名、状态和补偿动作。",
+      "fields": {
+        "status": "状态",
+        "target_username": "目标用户名",
+        "confirmed_username": "已确认用户名",
+        "error_code": "错误码",
+        "last_attempted": "最后尝试",
+        "last_synced": "最后成功"
+      },
+      "actions": {
+        "retry": "重试",
+        "confirm_conflict": "确认冲突归属",
+        "disable": "停用绑定"
+      }
     },
     "balance": {
       "title": "余额与额度",
@@ -158,6 +183,15 @@
         "success": "成功",
         "failed": "失败",
         "error": "错误"
+      },
+      "binding": {
+        "pending": "待处理",
+        "provisioning": "创建中",
+        "active": "已启用",
+        "username_sync_pending": "用户名同步中",
+        "username_sync_failed": "用户名同步失败",
+        "conflict_requires_review": "需人工确认",
+        "disabled": "已停用"
       }
     }
   },

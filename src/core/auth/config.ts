@@ -5,6 +5,7 @@ import { getLocale } from 'next-intl/server';
 import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import * as schema from '@/config/db/schema';
+import { provisionPortalUserAfterSignup } from '@/features/newapi-bridge/server/portal';
 import { VerifyEmail } from '@/shared/blocks/email/verify-email';
 import {
   getCookieFromCtx,
@@ -146,6 +147,12 @@ export async function getAuthOptions(configs: Record<string, string>) {
               await grantRoleForNewUser(user);
             } catch (e) {
               console.log('grant credits or role for new user failed', e);
+            }
+
+            try {
+              await provisionPortalUserAfterSignup(user);
+            } catch (e) {
+              console.log('provision New API user after signup failed', e);
             }
           },
         },

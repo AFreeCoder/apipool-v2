@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 
+import { Link } from '@/core/i18n/navigation';
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';
@@ -14,16 +15,60 @@ import { getUserRoles, hasPermission } from '@/shared/services/rbac';
 import { Crumb, Search } from '@/shared/types/blocks/common';
 import { type Table } from '@/shared/types/blocks/table';
 
+type AdminUsersSearchParams = {
+  page?: number;
+  pageSize?: number;
+  email?: string;
+  newApiBindingStatus?: string;
+  lastSyncErrorCode?: string;
+};
+
+function translateStatus(
+  t: (key: string) => string,
+  prefix: string,
+  value: string | null | undefined,
+  fallback: string
+) {
+  if (!value) return fallback;
+  try {
+    return t(`${prefix}.${value}`);
+  } catch {
+    return value;
+  }
+}
+
+function statusVariant(status: string | null | undefined) {
+  if (status === 'username_sync_failed') {
+    return 'destructive' as const;
+  }
+  if (status === 'active') {
+    return 'default' as const;
+  }
+  return 'secondary' as const;
+}
+
+function usersFilterHref(
+  current: AdminUsersSearchParams,
+  patch: Partial<AdminUsersSearchParams>
+) {
+  const params = new URLSearchParams();
+  const nextParams = { ...current, ...patch, page: undefined };
+
+  for (const [key, value] of Object.entries(nextParams)) {
+    if (value === undefined || value === null || value === '') continue;
+    params.set(key, String(value));
+  }
+
+  const query = params.toString();
+  return query ? `/admin/users?${query}` : '/admin/users';
+}
+
 export default async function AdminUsersPage({
   params,
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{
-    page?: number;
-    pageSize?: number;
-    email?: string;
-  }>;
+  searchParams: Promise<AdminUsersSearchParams>;
 }) {
   const { locale } = await params;
 
@@ -40,15 +85,27 @@ export default async function AdminUsersPage({
 
   const t = await getTranslations('admin.users');
 
-  const { page: pageNum, pageSize, email } = await searchParams;
+  const {
+    page: pageNum,
+    pageSize,
+    email,
+    newApiBindingStatus,
+    lastSyncErrorCode,
+  } = await searchParams;
   const page = pageNum || 1;
   const limit = pageSize || 30;
+  const userFilters = { email, newApiBindingStatus, lastSyncErrorCode };
+  const currentSearchParams = {
+    page: pageNum,
+    pageSize,
+    email,
+    newApiBindingStatus,
+    lastSyncErrorCode,
+  };
 
-  const total = await getUsersCount({
-    email,
-  });
+  const total = await getUsersCount(userFilters);
   const users = await getUsers({
-    email,
+    ...userFilters,
     page,
     limit,
   });
@@ -81,6 +138,26 @@ export default async function AdminUsersPage({
         placeholder: '-',
       },
       { name: 'email', title: t('fields.email'), type: 'copy' },
+      {
+        name: 'newApiBinding',
+        title: t('fields.newapi_binding_status'),
+        callback: (item: User) => (
+          <Badge variant={statusVariant(item.newApiBinding?.status)}>
+            {translateStatus(
+              t,
+              'detail.status.binding',
+              item.newApiBinding?.status,
+              '-'
+            )}
+          </Badge>
+        ),
+      },
+      {
+        name: 'newApiBindingError',
+        title: t('fields.newapi_sync_error'),
+        callback: (item: User) =>
+          item.newApiBinding?.lastSyncErrorCode || '-',
+      },
       {
         name: 'roles',
         title: t('fields.roles'),
@@ -157,6 +234,32 @@ export default async function AdminUsersPage({
       <Header crumbs={crumbs} />
       <Main>
         <MainHeader title={t('list.title')} search={search} />
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Link
+            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm"
+            href={usersFilterHref(currentSearchParams, {
+              newApiBindingStatus: 'username_sync_failed',
+            })}
+          >
+            {t('list.filters.username_sync_failed')}
+          </Link>
+          <Link
+            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm"
+            href={usersFilterHref(currentSearchParams, {
+              newApiBindingStatus: 'conflict_requires_review',
+            })}
+          >
+            {t('list.filters.conflict_requires_review')}
+          </Link>
+          <Link
+            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm"
+            href={usersFilterHref(currentSearchParams, {
+              lastSyncErrorCode: 'newapi_username_too_long',
+            })}
+          >
+            {t('list.filters.newapi_username_too_long')}
+          </Link>
+        </div>
         <TableCard table={table} />
       </Main>
     </>

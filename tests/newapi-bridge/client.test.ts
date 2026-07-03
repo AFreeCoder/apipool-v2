@@ -302,6 +302,41 @@ test('provisionUser reuses an existing remote user without re-creating it', asyn
   );
 });
 
+test('provisionUser reports an existing username login failure as conflict requiring review', async () => {
+  const { client, requests } = createMockedClient({
+    'GET /api/user/search': () =>
+      ok({ items: [{ id: 42, username: 'a@b.co', quota: 0 }] }),
+    'POST /api/user/login': () =>
+      Response.json({
+        success: false,
+        message: 'invalid username or password',
+      }),
+  });
+
+  await assert.rejects(
+    client.provisionUser({
+      username: 'a@b.co',
+      password: 'wrong-portal-password',
+    }),
+    (error: any) => {
+      assert.ok(error instanceof NewApiBridgeError);
+      assert.equal(error.code, 'conflict_requires_review');
+      assert.equal(error.conflictNewapiUserId, '42');
+      assert.match(error.message, /requires review/i);
+      return true;
+    }
+  );
+
+  assert.equal(
+    requests.some(
+      (req) =>
+        req.method === 'POST' && new URL(req.url).pathname === '/api/user/'
+    ),
+    false,
+    'should not create a user when the username already exists'
+  );
+});
+
 test('provisionUser assigns the requested New API user group before issuing an access token', async () => {
   let created = false;
   const { client, requests } = createMockedClient({
@@ -410,6 +445,278 @@ test('ensureUserGroup updates an existing New API user group without regeneratin
     requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
     ['GET /api/user/search', 'PUT /api/user/']
   );
+});
+
+test('updateUserProfile preserves remote role and sends a full user profile payload', async () => {
+  let updateBody: any;
+  const { client } = createMockedClient({
+    'GET /api/user/search': (req) => {
+      const keyword = new URL(req.url).searchParams.get('keyword');
+      if (keyword === 'oldname') {
+        return ok({
+          items: [
+            {
+              id: 7,
+              username: 'oldname',
+              display_name: 'Old Name',
+              group: 'old-group',
+              role: 10,
+              remark: 'apipool:portalUserId:user_7',
+            },
+          ],
+        });
+      }
+      if (keyword === 'a@b.co') {
+        return ok({
+          items: [
+            {
+              id: 7,
+              username: 'a@b.co',
+              display_name: 'a@b.co',
+              group: 'ng-official',
+              role: 10,
+              remark: 'apipool:portalUserId:user_7',
+            },
+          ],
+        });
+      }
+      return ok({ items: [] });
+    },
+    'PUT /api/user/': async (req) => {
+      updateBody = await req.json();
+      return ok({ id: 7 });
+    },
+  });
+
+  const result = await client.updateUserProfile({
+    newapiUserId: '7',
+    currentUsername: 'oldname',
+    username: 'a@b.co',
+    displayName: 'a@b.co',
+    group: 'ng-official',
+    remark: 'apipool:portalUserId:user_7',
+  });
+
+  assert.deepEqual(updateBody, {
+    id: 7,
+    username: 'a@b.co',
+    display_name: 'a@b.co',
+    group: 'ng-official',
+    role: 10,
+    remark: 'apipool:portalUserId:user_7',
+  });
+  assert.equal(result.newapiUserId, '7');
+  assert.equal(result.username, 'a@b.co');
+  assert.equal(result.role, 10);
+});
+
+test('updateUserProfile rejects remote users without a numeric role', async () => {
+  let putCalled = false;
+  const { client } = createMockedClient({
+    'GET /api/user/search': (req) => {
+      const keyword = new URL(req.url).searchParams.get('keyword');
+      if (keyword === 'oldname') {
+        return ok({
+          items: [
+            {
+              id: 7,
+              username: 'oldname',
+              display_name: 'Old Name',
+              group: 'default',
+              remark: '',
+            },
+          ],
+        });
+      }
+      return ok({ items: [] });
+    },
+    'PUT /api/user/': () => {
+      putCalled = true;
+      return ok({});
+    },
+  });
+
+  await assert.rejects(
+    client.updateUserProfile({
+      newapiUserId: '7',
+      currentUsername: 'oldname',
+      username: 'a@b.co',
+      displayName: 'a@b.co',
+    }),
+    (error: any) =>
+      error instanceof NewApiBridgeError &&
+      error.code === 'malformed_response'
+  );
+  assert.equal(putCalled, false);
+});
+
+test('updateUserProfile allows the target username when it already belongs to the same remote user', async () => {
+  let updateBody: any;
+  const { client } = createMockedClient({
+    'GET /api/user/search': (req) => {
+      const keyword = new URL(req.url).searchParams.get('keyword');
+      assert.equal(keyword, 'a@b.co');
+      return ok({
+        items: [
+          {
+            id: 7,
+            username: 'a@b.co',
+            display_name: 'a@b.co',
+            group: 'default',
+            role: 3,
+            remark: 'apipool:portalUserId:user_7',
+          },
+        ],
+      });
+    },
+    'PUT /api/user/': async (req) => {
+      updateBody = await req.json();
+      return ok({ id: 7 });
+    },
+  });
+
+  const result = await client.updateUserProfile({
+    newapiUserId: '7',
+    username: 'a@b.co',
+    displayName: 'a@b.co',
+    group: 'ng-official',
+    remark: 'apipool:portalUserId:user_7',
+  });
+
+  assert.deepEqual(updateBody, {
+    id: 7,
+    username: 'a@b.co',
+    display_name: 'a@b.co',
+    group: 'ng-official',
+    role: 3,
+    remark: 'apipool:portalUserId:user_7',
+  });
+  assert.equal(result.newapiUserId, '7');
+  assert.equal(result.username, 'a@b.co');
+});
+
+test('updateUserProfile refuses to overwrite a different remote user with the target username', async () => {
+  const { client } = createMockedClient({
+    'GET /api/user/search': (req) => {
+      const keyword = new URL(req.url).searchParams.get('keyword');
+      if (keyword === 'oldname') {
+        return ok({
+          items: [
+            {
+              id: 7,
+              username: 'oldname',
+              display_name: 'Old Name',
+              group: 'default',
+              role: 1,
+              remark: '',
+            },
+          ],
+        });
+      }
+      if (keyword === 'a@b.co') {
+        return ok({
+          items: [
+            {
+              id: 8,
+              username: 'a@b.co',
+              display_name: 'a@b.co',
+              group: 'default',
+              role: 1,
+              remark: '',
+            },
+          ],
+        });
+      }
+      return ok({ items: [] });
+    },
+    'PUT /api/user/': () => ok({}),
+  });
+
+  await assert.rejects(
+    client.updateUserProfile({
+      newapiUserId: '7',
+      currentUsername: 'oldname',
+      username: 'a@b.co',
+      displayName: 'a@b.co',
+    }),
+    (error: any) => {
+      assert.ok(error instanceof NewApiBridgeError);
+      assert.equal(error.code, 'conflict_requires_review');
+      assert.equal(error.conflictNewapiUserId, '8');
+      return true;
+    }
+  );
+});
+
+test('updateUserProfile maps New API max validation failures to newapi_username_too_long', async () => {
+  const { client } = createMockedClient({
+    'GET /api/user/search': (req) => {
+      const keyword = new URL(req.url).searchParams.get('keyword');
+      if (keyword === 'oldname') {
+        return ok({
+          items: [
+            {
+              id: 7,
+              username: 'oldname',
+              display_name: 'Old Name',
+              group: 'default',
+              role: 1,
+              remark: '',
+            },
+          ],
+        });
+      }
+      return ok({ items: [] });
+    },
+    'PUT /api/user/': () =>
+      fail(
+        "Key: 'User.Username' Error:Field validation for 'Username' failed on the 'max' tag"
+      ),
+  });
+
+  await assert.rejects(
+    client.updateUserProfile({
+      newapiUserId: '7',
+      currentUsername: 'oldname',
+      username: 'very-long-email@example.com',
+      displayName: 'very-long-email@example.com',
+    }),
+    (error: any) =>
+      error instanceof NewApiBridgeError &&
+      error.code === 'newapi_username_too_long'
+  );
+});
+
+test('getUserProfile confirms a remote user by username and id without returning credentials', async () => {
+  const { client } = createMockedClient({
+    'GET /api/user/search': (req) => {
+      const keyword = new URL(req.url).searchParams.get('keyword');
+      assert.equal(keyword, 'a@b.co');
+      return ok({
+        items: [
+          {
+            id: 7,
+            username: 'a@b.co',
+            display_name: 'a@b.co',
+            group: 'ng-official',
+            role: 1,
+            remark: 'apipool:portalUserId:user_7',
+          },
+        ],
+      });
+    },
+  });
+
+  const profile = await client.getUserProfile({
+    newapiUserId: '7',
+    username: 'a@b.co',
+  });
+
+  assert.equal(profile.newapiUserId, '7');
+  assert.equal(profile.username, 'a@b.co');
+  assert.equal(profile.group, 'ng-official');
+  assert.equal(Object.hasOwn(profile as any, 'accessToken'), false);
+  assert.equal(Object.hasOwn(profile as any, 'password'), false);
 });
 
 test('createKey creates a remote token and fetches the full key with sk- prefix', async () => {

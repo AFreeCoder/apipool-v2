@@ -1,9 +1,9 @@
 import { headers } from 'next/headers';
-import { count, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
 
 import { getAuth } from '@/core/auth';
 import { db } from '@/core/db';
-import { user } from '@/config/db/schema';
+import { newApiUserBinding, user } from '@/config/db/schema';
 
 import { Permission, Role } from '../services/rbac';
 import { getRemainingCredits } from './credit';
@@ -13,14 +13,71 @@ export interface UserCredits {
   expiresAt: Date | null;
 }
 
+export type UserNewApiBindingSummary = {
+  status: string | null;
+  targetNewapiUsername: string | null;
+  newapiUsername: string | null;
+  lastSyncErrorCode: string | null;
+  lastSyncAttemptedAt: Date | null;
+  lastSyncedAt: Date | null;
+};
+
 export type User = typeof user.$inferSelect & {
   isAdmin?: boolean;
   credits?: UserCredits;
   roles?: Role[];
   permissions?: Permission[];
+  newApiBinding?: UserNewApiBindingSummary | null;
 };
 export type NewUser = typeof user.$inferInsert;
 export type UpdateUser = Partial<Omit<NewUser, 'id' | 'createdAt' | 'email'>>;
+
+type UserListFilters = {
+  email?: string;
+  newApiBindingStatus?: string;
+  lastSyncErrorCode?: string;
+};
+
+function getUserListConditions({
+  email,
+  newApiBindingStatus,
+  lastSyncErrorCode,
+}: UserListFilters) {
+  const conditions: SQL[] = [];
+
+  if (email) {
+    conditions.push(eq(user.email, email));
+  }
+  if (newApiBindingStatus) {
+    conditions.push(eq(newApiUserBinding.status, newApiBindingStatus));
+  }
+  if (lastSyncErrorCode) {
+    conditions.push(eq(newApiUserBinding.lastSyncErrorCode, lastSyncErrorCode));
+  }
+
+  return conditions;
+}
+
+const userListSelect = {
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  emailVerified: user.emailVerified,
+  image: user.image,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+  utmSource: user.utmSource,
+  ip: user.ip,
+  locale: user.locale,
+  newApiBinding: {
+    status: newApiUserBinding.status,
+    targetNewapiUsername: newApiUserBinding.targetNewapiUsername,
+    newapiUsername: newApiUserBinding.newapiUsername,
+    lastSyncErrorCode: newApiUserBinding.lastSyncErrorCode,
+    lastSyncAttemptedAt: newApiUserBinding.lastSyncAttemptedAt,
+    lastSyncedAt: newApiUserBinding.lastSyncedAt,
+  },
+};
 
 export async function updateUser(userId: string, updatedUser: UpdateUser) {
   const [result] = await db()
@@ -42,15 +99,26 @@ export async function getUsers({
   page = 1,
   limit = 30,
   email,
+  newApiBindingStatus,
+  lastSyncErrorCode,
 }: {
-  email?: string;
   page?: number;
   limit?: number;
-} = {}): Promise<User[]> {
+} & UserListFilters = {}): Promise<User[]> {
+  const conditions = getUserListConditions({
+    email,
+    newApiBindingStatus,
+    lastSyncErrorCode,
+  });
+
   const result = await db()
-    .select()
+    .select(userListSelect)
     .from(user)
-    .where(email ? eq(user.email, email) : undefined)
+    .leftJoin(
+      newApiUserBinding,
+      eq(newApiUserBinding.portalUserId, user.id)
+    )
+    .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(user.createdAt))
     .limit(limit)
     .offset((page - 1) * limit);
@@ -58,11 +126,17 @@ export async function getUsers({
   return result;
 }
 
-export async function getUsersCount({ email }: { email?: string }) {
+export async function getUsersCount(filters: UserListFilters = {}) {
+  const conditions = getUserListConditions(filters);
+
   const [result] = await db()
     .select({ count: count() })
     .from(user)
-    .where(email ? eq(user.email, email) : undefined);
+    .leftJoin(
+      newApiUserBinding,
+      eq(newApiUserBinding.portalUserId, user.id)
+    )
+    .where(conditions.length ? and(...conditions) : undefined);
   return result?.count || 0;
 }
 

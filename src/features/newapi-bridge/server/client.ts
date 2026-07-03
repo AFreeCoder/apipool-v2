@@ -15,25 +15,32 @@ export type NewApiBridgeErrorCode =
   | 'rate_limited'
   | 'timeout'
   | 'remote_error'
-  | 'malformed_response';
+  | 'malformed_response'
+  | 'conflict_requires_review'
+  | 'portal_user_email_missing'
+  | 'newapi_username_too_long';
 
 export class NewApiBridgeError extends Error {
   code: NewApiBridgeErrorCode;
   status?: number;
+  conflictNewapiUserId?: string;
 
   constructor({
     code,
     message,
     status,
+    conflictNewapiUserId,
   }: {
     code: NewApiBridgeErrorCode;
     message: string;
     status?: number;
+    conflictNewapiUserId?: string;
   }) {
     super(message);
     this.name = 'NewApiBridgeError';
     this.code = code;
     this.status = status;
+    this.conflictNewapiUserId = conflictNewapiUserId;
   }
 }
 
@@ -155,6 +162,28 @@ export type RemoteUsageLog = {
 export type RemoteProvisionedUser = {
   newapiUserId: string;
   accessToken: string;
+};
+
+export type RemoteUserProfile = {
+  newapiUserId: string;
+  username: string;
+  displayName: string;
+  group: string;
+  role: number;
+  remark: string;
+};
+
+export type NewApiUserProfileUpdateInput = {
+  newapiUserId: string;
+  currentUsername?: string;
+  username: string;
+  displayName?: string;
+  group?: string;
+  remark?: string;
+};
+
+type RemoteUserLookup = Omit<RemoteUserProfile, 'role'> & {
+  role?: number;
 };
 
 export type RemotePricingModel = {
@@ -513,6 +542,40 @@ function unwrapListItems(data: any): any[] {
   return [];
 }
 
+function toRemoteUserLookup(
+  item: any,
+  fallbackUsername: string
+): RemoteUserLookup | undefined {
+  if (!item?.id) return undefined;
+  const username = String(item.username || fallbackUsername);
+  return {
+    newapiUserId: String(item.id),
+    username,
+    displayName:
+      typeof item.display_name === 'string' ? item.display_name : username,
+    group: typeof item.group === 'string' ? item.group : '',
+    role: typeof item.role === 'number' ? item.role : undefined,
+    remark: typeof item.remark === 'string' ? item.remark : '',
+  };
+}
+
+function requireRemoteUserProfile(
+  user: RemoteUserLookup | undefined,
+  username: string
+): RemoteUserProfile | undefined {
+  if (!user) return undefined;
+  if (typeof user.role !== 'number') {
+    throw new NewApiBridgeError({
+      code: 'malformed_response',
+      message: `New API user profile missing numeric role: ${username}`,
+    });
+  }
+  return {
+    ...user,
+    role: user.role,
+  };
+}
+
 function extractSessionCookie(response: Response): string {
   const headersWithGetSetCookie = response.headers as Headers & {
     getSetCookie?: () => string[];
@@ -731,24 +794,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     const match = unwrapListItems(data).find(
       (item: any) => item?.username === username
     );
-    return match
-      ? {
-          id: String(match.id),
-          username: String(match.username || username),
-          displayName:
-            typeof match.display_name === 'string'
-              ? match.display_name
-              : String(match.username || username),
-          group: typeof match.group === 'string' ? match.group : '',
-          role: typeof match.role === 'number' ? match.role : 1,
-          remark: typeof match.remark === 'string' ? match.remark : '',
-          quota: asNumber(match.quota),
-        }
-      : undefined;
+    return toRemoteUserLookup(match, username);
   }
 
   async function ensureRemoteUserGroup(
-    user: Awaited<ReturnType<typeof findUserByUsername>>,
+    user: RemoteUserProfile,
     group?: string
   ) {
     const targetGroup = group?.trim();
@@ -757,11 +807,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     await request('/api/user/', {
       method: 'PUT',
       body: {
-        id: toRemoteUserId(user.id),
+        id: toRemoteUserId(user.newapiUserId),
         username: user.username,
         display_name: user.displayName || user.username,
         group: targetGroup,
-        role: user.role || 1,
+        role: user.role,
         remark: user.remark || '',
       },
     });
@@ -901,6 +951,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       group?: string;
     }): Promise<RemoteProvisionedUser> {
       const existing = await findUserByUsername(input.username);
+      const isExistingRemoteUser = Boolean(existing);
       if (!existing) {
         await request('/api/user/', {
           method: 'POST',
@@ -919,7 +970,16 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
           message: `New API user not found after creation: ${input.username}`,
         });
       }
-      await ensureRemoteUserGroup(found, input.group);
+      if (input.group?.trim() && !isExistingRemoteUser) {
+        const groupUser = requireRemoteUserProfile(found, input.username);
+        if (!groupUser) {
+          throw new NewApiBridgeError({
+            code: 'remote_error',
+            message: `New API user not found for group update: ${input.username}`,
+          });
+        }
+        await ensureRemoteUserGroup(groupUser, input.group);
+      }
 
       const loginResponse = await rawRequest('/api/user/login', {
         method: 'POST',
@@ -928,6 +988,13 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       });
       const loginPayload = await loginResponse.json().catch(() => undefined);
       if (!loginPayload?.success) {
+        if (isExistingRemoteUser) {
+          throw new NewApiBridgeError({
+            code: 'conflict_requires_review',
+            message: `New API username already exists and requires review: ${input.username}`,
+            conflictNewapiUserId: found.newapiUserId,
+          });
+        }
         throw new NewApiBridgeError({
           code: 'unauthorized',
           message: loginPayload?.message || 'New API user login failed',
@@ -941,8 +1008,19 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         });
       }
 
+      if (input.group?.trim() && isExistingRemoteUser) {
+        const groupUser = requireRemoteUserProfile(found, input.username);
+        if (!groupUser) {
+          throw new NewApiBridgeError({
+            code: 'remote_error',
+            message: `New API user not found for group update: ${input.username}`,
+          });
+        }
+        await ensureRemoteUserGroup(groupUser, input.group);
+      }
+
       const accessToken = await request<string>('/api/user/token', {
-        auth: { token: '', userId: found.id },
+        auth: { token: '', userId: found.newapiUserId },
         cookie,
       });
       if (typeof accessToken !== 'string' || accessToken.length === 0) {
@@ -952,7 +1030,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
         });
       }
 
-      return { newapiUserId: found.id, accessToken };
+      return { newapiUserId: found.newapiUserId, accessToken };
     },
 
     async ensureUserGroup(input: {
@@ -960,20 +1038,108 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       username: string;
       group: string;
     }): Promise<void> {
-      const found = await findUserByUsername(input.username);
+      const found = requireRemoteUserProfile(
+        await findUserByUsername(input.username),
+        input.username
+      );
       if (!found) {
         throw new NewApiBridgeError({
           code: 'remote_error',
           message: `New API user not found for group update: ${input.username}`,
         });
       }
-      if (found.id !== input.newapiUserId) {
+      if (found.newapiUserId !== input.newapiUserId) {
         throw new NewApiBridgeError({
           code: 'remote_error',
           message: `New API user id mismatch for group update: ${input.username}`,
         });
       }
       await ensureRemoteUserGroup(found, input.group);
+    },
+
+    async getUserProfile(input: {
+      newapiUserId: string;
+      username: string;
+    }): Promise<RemoteUserProfile> {
+      const found = requireRemoteUserProfile(
+        await findUserByUsername(input.username),
+        input.username
+      );
+      if (!found || found.newapiUserId !== input.newapiUserId) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API user profile was not confirmed: ${input.username}`,
+        });
+      }
+      return found;
+    },
+
+    async updateUserProfile(
+      input: NewApiUserProfileUpdateInput
+    ): Promise<RemoteUserProfile> {
+      const current = input.currentUsername
+        ? requireRemoteUserProfile(
+            await findUserByUsername(input.currentUsername),
+            input.currentUsername
+          )
+        : undefined;
+      const target = requireRemoteUserProfile(
+        await findUserByUsername(input.username),
+        input.username
+      );
+
+      if (target && target.newapiUserId !== input.newapiUserId) {
+        throw new NewApiBridgeError({
+          code: 'conflict_requires_review',
+          message: `New API username belongs to another user: ${input.username}`,
+          conflictNewapiUserId: target.newapiUserId,
+        });
+      }
+
+      const remote = current ?? target;
+      if (!remote || remote.newapiUserId !== input.newapiUserId) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API user not found for profile update: ${input.newapiUserId}`,
+        });
+      }
+
+      const displayName = input.displayName || input.username;
+      try {
+        await request('/api/user/', {
+          method: 'PUT',
+          body: {
+            id: toRemoteUserId(input.newapiUserId),
+            username: input.username,
+            display_name: displayName,
+            group: input.group ?? remote.group,
+            role: remote.role,
+            remark: input.remark ?? remote.remark,
+          },
+        });
+      } catch (error: any) {
+        const message = String(error?.message || '');
+        if (/\bmax\b/i.test(message) && /username|display/i.test(message)) {
+          throw new NewApiBridgeError({
+            code: 'newapi_username_too_long',
+            message,
+            status: error?.status,
+          });
+        }
+        throw error;
+      }
+
+      const confirmed = requireRemoteUserProfile(
+        await findUserByUsername(input.username),
+        input.username
+      );
+      if (!confirmed || confirmed.newapiUserId !== input.newapiUserId) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: `New API profile update was not confirmed: ${input.username}`,
+        });
+      }
+      return confirmed;
     },
 
     /**
