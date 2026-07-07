@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
 import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
@@ -119,9 +119,15 @@ const USAGE_SYNC_LOCK_TTL_MS = 60_000;
 const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
 const DUPLICATE_KEY_NAME_MESSAGE =
   'A key with this name already exists. Delete the existing key or choose another name.';
+const MAX_REMOTE_NEWAPI_USERNAME_LENGTH = 20;
 
 export type NewapiUsernameEmailDiagnosis =
-  | { ok: true; username: string }
+  | {
+      ok: true;
+      username: string;
+      remoteUsername: string;
+      usesSurrogateUsername: boolean;
+    }
   | {
       ok: false;
       code: 'portal_user_email_missing';
@@ -142,7 +148,48 @@ export function normalizeNewapiUsernameEmail(
       message: 'Portal user email is missing',
     };
   }
-  return { ok: true, username: normalizedEmail };
+  return {
+    ok: true,
+    username: normalizedEmail,
+    remoteUsername:
+      normalizedEmail.length <= MAX_REMOTE_NEWAPI_USERNAME_LENGTH
+        ? normalizedEmail
+        : '',
+    usesSurrogateUsername:
+      normalizedEmail.length > MAX_REMOTE_NEWAPI_USERNAME_LENGTH,
+  };
+}
+
+function buildSurrogateNewapiUsername(portalUserId: string, email: string) {
+  const hash = createHash('sha256')
+    .update(`${portalUserId}:${email}`)
+    .digest('hex')
+    .slice(0, MAX_REMOTE_NEWAPI_USERNAME_LENGTH - 3);
+  return `pu_${hash}`;
+}
+
+function isUsableRemoteNewapiUsername(username: string | null | undefined) {
+  const normalized = String(username || '').trim();
+  return (
+    normalized.length > 0 &&
+    normalized.length <= MAX_REMOTE_NEWAPI_USERNAME_LENGTH &&
+    !normalized.startsWith('pending:')
+  );
+}
+
+function resolveRemoteNewapiUsername(input: {
+  portalUserId: string;
+  diagnosis: Extract<NewapiUsernameEmailDiagnosis, { ok: true }>;
+  existing?: typeof newApiUserBinding.$inferSelect | null;
+}) {
+  if (!input.diagnosis.usesSurrogateUsername) return input.diagnosis.username;
+  if (isUsableRemoteNewapiUsername(input.existing?.newapiUsername)) {
+    return String(input.existing?.newapiUsername).trim().toLowerCase();
+  }
+  return buildSurrogateNewapiUsername(
+    input.portalUserId,
+    input.diagnosis.username
+  );
 }
 
 function getUnknownErrorMessage(error: unknown) {
@@ -552,7 +599,12 @@ export async function ensurePortalUserBinding(
     });
   }
 
-  const username = diagnosis.username;
+  const targetUsername = diagnosis.username;
+  const username = resolveRemoteNewapiUsername({
+    portalUserId: user.id,
+    diagnosis,
+    existing,
+  });
   if (
     existing &&
     existing.status === 'active' &&
@@ -564,7 +616,7 @@ export async function ensurePortalUserBinding(
         .update(newApiUserBinding)
         .set({
           status: 'username_sync_pending',
-          targetNewapiUsername: username,
+          targetNewapiUsername: targetUsername,
           lastSyncErrorCode: null,
           lastSyncError: null,
           lastSyncAction: syncAction,
@@ -579,7 +631,7 @@ export async function ensurePortalUserBinding(
           username,
           displayName: username,
           group: options.requiredNewapiGroup,
-          remark: `apipool:portalUserId:${user.id}`,
+          remark: `apipool:portalUserId:${user.id};email:${targetUsername}`,
         });
         const syncedAt = new Date();
         const [synced] = await db()
@@ -587,7 +639,7 @@ export async function ensurePortalUserBinding(
           .set({
             status: 'active',
             newapiUsername: remote.username,
-            targetNewapiUsername: username,
+            targetNewapiUsername: targetUsername,
             lastSyncErrorCode: null,
             lastSyncError: null,
             lastSyncAction: syncAction,
@@ -608,7 +660,8 @@ export async function ensurePortalUserBinding(
           idempotencyKey,
           requestBody: {
             currentUsername: existing.newapiUsername,
-            targetNewapiUsername: username,
+            targetNewapiUsername: targetUsername,
+            remoteUsername: username,
           },
           responseBody: {
             username: remote.username,
@@ -631,7 +684,7 @@ export async function ensurePortalUserBinding(
           .update(newApiUserBinding)
           .set({
             status,
-            targetNewapiUsername: username,
+            targetNewapiUsername: targetUsername,
             lastSyncErrorCode: error?.code || 'remote_error',
             lastSyncError: message,
             lastSyncAction: syncAction,
@@ -651,7 +704,8 @@ export async function ensurePortalUserBinding(
           idempotencyKey,
           requestBody: {
             currentUsername: existing.newapiUsername,
-            targetNewapiUsername: username,
+            targetNewapiUsername: targetUsername,
+            remoteUsername: username,
           },
           responseBody: conflictNewapiUserId
             ? { conflictNewapiUserId }
@@ -673,6 +727,26 @@ export async function ensurePortalUserBinding(
         group: options.requiredNewapiGroup,
       });
     }
+    if (
+      existing.targetNewapiUsername !== targetUsername ||
+      existing.lastSyncErrorCode ||
+      existing.lastSyncError
+    ) {
+      const [updated] = await db()
+        .update(newApiUserBinding)
+        .set({
+          targetNewapiUsername: targetUsername,
+          lastSyncErrorCode: null,
+          lastSyncError: null,
+          lastSyncAction: syncAction,
+          lastSyncedAt: new Date(),
+          lastSyncAttemptedAt: new Date(),
+          conflictNewapiUserId: null,
+        })
+        .where(eq(newApiUserBinding.id, existing.id))
+        .returning();
+      return updated;
+    }
     return existing;
   }
 
@@ -688,7 +762,7 @@ export async function ensurePortalUserBinding(
       .update(newApiUserBinding)
       .set({
         newapiUsername: username,
-        targetNewapiUsername: username,
+        targetNewapiUsername: targetUsername,
         newapiPasswordEnc: encryptCredential(password),
         status: 'provisioning',
         lastSyncErrorCode: null,
@@ -708,7 +782,7 @@ export async function ensurePortalUserBinding(
         newapiUserId: `pending:${getUuid()}`,
         status: 'provisioning',
         newapiUsername: username,
-        targetNewapiUsername: username,
+        targetNewapiUsername: targetUsername,
         newapiPasswordEnc: encryptCredential(password),
         lastSyncAction: syncAction,
         lastSyncAttemptedAt: new Date(),
@@ -732,7 +806,7 @@ export async function ensurePortalUserBinding(
         newapiAccessTokenEnc: encryptCredential(remote.accessToken),
         status: 'active',
         newapiUsername: username,
-        targetNewapiUsername: username,
+        targetNewapiUsername: targetUsername,
         lastSyncErrorCode: null,
         lastSyncError: null,
         lastSyncAction: syncAction,
@@ -751,7 +825,11 @@ export async function ensurePortalUserBinding(
       status: 'success',
       idempotencyKey,
       // 审计绝不落凭据，只记用户名与远端 ID
-      responseBody: { username, newapiUserId: remote.newapiUserId },
+      responseBody: {
+        username,
+        targetNewapiUsername: targetUsername,
+        newapiUserId: remote.newapiUserId,
+      },
     });
     return bound;
   } catch (error: any) {
@@ -768,7 +846,7 @@ export async function ensurePortalUserBinding(
       .update(newApiUserBinding)
       .set({
         status,
-        targetNewapiUsername: username,
+        targetNewapiUsername: targetUsername,
         lastSyncErrorCode: error?.code || 'remote_error',
         lastSyncError: message,
         lastSyncAction: syncAction,
@@ -785,7 +863,9 @@ export async function ensurePortalUserBinding(
       status: 'failed',
       idempotencyKey,
       requestBody: { username },
-      responseBody: conflictNewapiUserId ? { conflictNewapiUserId } : undefined,
+      responseBody: conflictNewapiUserId
+        ? { conflictNewapiUserId, targetNewapiUsername: targetUsername }
+        : { targetNewapiUsername: targetUsername },
       errorMessage: message,
     });
     if (error instanceof NewApiBridgeError) throw error;
@@ -874,6 +954,12 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
     });
   }
 
+  const targetUsername = diagnosis.username;
+  const username = resolveRemoteNewapiUsername({
+    portalUserId: input.portalUserId,
+    diagnosis,
+    existing: existingBinding,
+  });
   let binding: typeof newApiUserBinding.$inferSelect | undefined;
   const attemptedAt = new Date();
 
@@ -888,29 +974,40 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
     };
 
     if (existingBinding?.status === 'active') {
-      await db()
-        .update(newApiUserBinding)
-        .set({
-          status: 'username_sync_pending',
-          targetNewapiUsername: diagnosis.username,
-          lastSyncErrorCode: null,
-          lastSyncError: null,
-          lastSyncAction: 'email_change',
-          lastSyncAttemptedAt: attemptedAt,
-        })
-        .where(eq(newApiUserBinding.id, existingBinding.id));
+      if (existingBinding.newapiUsername !== username) {
+        await db()
+          .update(newApiUserBinding)
+          .set({
+            status: 'username_sync_pending',
+            targetNewapiUsername: targetUsername,
+            lastSyncErrorCode: null,
+            lastSyncError: null,
+            lastSyncAction: 'email_change',
+            lastSyncAttemptedAt: attemptedAt,
+          })
+          .where(eq(newApiUserBinding.id, existingBinding.id));
 
-      remote = await client.updateUserProfile({
-        newapiUserId: existingBinding.newapiUserId,
-        currentUsername: existingBinding.newapiUsername || undefined,
-        username: diagnosis.username,
-        displayName: diagnosis.username,
-        remark: `apipool:portalUserId:${input.portalUserId}`,
-      });
+        remote = await client.updateUserProfile({
+          newapiUserId: existingBinding.newapiUserId,
+          currentUsername: existingBinding.newapiUsername || undefined,
+          username,
+          displayName: username,
+          remark: `apipool:portalUserId:${input.portalUserId};email:${targetUsername}`,
+        });
+      } else {
+        remote = {
+          newapiUserId: existingBinding.newapiUserId,
+          username,
+          displayName: username,
+          group: '',
+          role: 0,
+          remark: '',
+        };
+      }
       binding = existingBinding;
     } else {
       binding = await ensurePortalUserBinding(
-        { id: portalUser.id, email: diagnosis.username },
+        { id: portalUser.id, email: targetUsername },
         client,
         {
           syncAction: 'email_change',
@@ -925,8 +1022,8 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
       }
       remote = {
         newapiUserId: binding.newapiUserId,
-        username: binding.newapiUsername || diagnosis.username,
-        displayName: binding.newapiUsername || diagnosis.username,
+        username: binding.newapiUsername || username,
+        displayName: binding.newapiUsername || username,
         group: '',
         role: 0,
         remark: '',
@@ -942,7 +1039,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
     }
     if (
       remote.newapiUserId !== confirmedBinding.newapiUserId ||
-      remote.username !== diagnosis.username
+      remote.username !== username
     ) {
       throw new NewApiBridgeError({
         code: 'remote_error',
@@ -954,7 +1051,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
       await db().transaction(async (tx: NewApiBridgeDbWriter) => {
         await tx
           .update(userTable)
-          .set({ email: diagnosis.username })
+          .set({ email: targetUsername })
           .where(eq(userTable.id, input.portalUserId));
 
         await tx
@@ -963,7 +1060,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
             status: 'active',
             newapiUserId: remote.newapiUserId,
             newapiUsername: remote.username,
-            targetNewapiUsername: diagnosis.username,
+            targetNewapiUsername: targetUsername,
             lastSyncErrorCode: null,
             lastSyncError: null,
             lastSyncAction: 'email_change',
@@ -984,7 +1081,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
             idempotencyKey,
             requestBody: {
               previousEmail: portalUser.email,
-              newEmail: diagnosis.username,
+              newEmail: targetUsername,
             },
             responseBody: {
               username: remote.username,
@@ -1004,7 +1101,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
         .update(newApiUserBinding)
         .set({
           status: 'username_sync_failed',
-          targetNewapiUsername: diagnosis.username,
+          targetNewapiUsername: targetUsername,
           lastSyncErrorCode: 'local_commit_failed',
           lastSyncError: message,
           lastSyncAction: 'email_change',
@@ -1021,7 +1118,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
         idempotencyKey,
         requestBody: {
           previousEmail: portalUser.email,
-          newEmail: diagnosis.username,
+          newEmail: targetUsername,
         },
         responseBody: { remoteUpdatedUsername: remote.username },
         errorMessage: `${message}: ${
@@ -1049,7 +1146,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
         .update(newApiUserBinding)
         .set({
           status,
-          targetNewapiUsername: diagnosis.username,
+          targetNewapiUsername: targetUsername,
           lastSyncErrorCode: error?.code || 'remote_error',
           lastSyncError: message,
           lastSyncAction: 'email_change',
@@ -1066,7 +1163,10 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
       targetId: failedBinding?.newapiUserId,
       status: 'failed',
       idempotencyKey,
-      requestBody: { targetNewapiUsername: diagnosis.username },
+      requestBody: {
+        targetNewapiUsername: targetUsername,
+        remoteUsername: username,
+      },
       responseBody: conflictNewapiUserId ? { conflictNewapiUserId } : undefined,
       errorMessage: message,
     });

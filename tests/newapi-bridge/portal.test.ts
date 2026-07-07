@@ -307,7 +307,12 @@ test('getUsersCount matches rows under New API binding status and sync error fil
 test('normalizeNewapiUsernameEmail lowercases trims and accepts long verified emails', async () => {
   assert.deepEqual(
     modules.portal.normalizeNewapiUsernameEmail(' User@Example.COM '),
-    { ok: true, username: 'user@example.com' }
+    {
+      ok: true,
+      username: 'user@example.com',
+      remoteUsername: 'user@example.com',
+      usesSurrogateUsername: false,
+    }
   );
   assert.deepEqual(modules.portal.normalizeNewapiUsernameEmail('   '), {
     ok: false,
@@ -316,7 +321,12 @@ test('normalizeNewapiUsernameEmail lowercases trims and accepts long verified em
   });
   assert.deepEqual(
     modules.portal.normalizeNewapiUsernameEmail('very-long-user@example.com'),
-    { ok: true, username: 'very-long-user@example.com' }
+    {
+      ok: true,
+      username: 'very-long-user@example.com',
+      remoteUsername: '',
+      usesSurrogateUsername: true,
+    }
   );
 });
 
@@ -347,7 +357,7 @@ test('ensurePortalUserBinding provisions short normalized email usernames withou
   assert.equal(/^pu_/.test(binding.newapiUsername || ''), false);
 });
 
-test('ensurePortalUserBinding provisions long email usernames without pu hash', async () => {
+test('ensurePortalUserBinding provisions long emails with a New API compatible username', async () => {
   const portalUser = await insertUser(
     'portal_user_long_email_binding',
     'very-long-bind@example.com'
@@ -366,13 +376,14 @@ test('ensurePortalUserBinding provisions long email usernames without pu hash', 
     fakeRemote
   );
 
-  assert.equal(provisionInputs[0].username, 'very-long-bind@example.com');
-  assert.equal(provisionInputs[0].displayName, 'very-long-bind@example.com');
+  assert.match(provisionInputs[0].username, /^pu_[a-f0-9]+$/);
+  assert.ok(provisionInputs[0].username.length <= 20);
+  assert.equal(provisionInputs[0].displayName, provisionInputs[0].username);
   assert.equal(binding.status, 'active');
-  assert.equal(binding.newapiUsername, 'very-long-bind@example.com');
+  assert.equal(binding.newapiUsername, provisionInputs[0].username);
   assert.equal(binding.targetNewapiUsername, 'very-long-bind@example.com');
   assert.equal(binding.lastSyncErrorCode, null);
-  assert.equal(/^pu_/.test(binding.newapiUsername || ''), false);
+  assert.equal(/^pu_/.test(binding.newapiUsername || ''), true);
 
   const audits = await modules
     .db()
@@ -524,10 +535,11 @@ test('provisionPortalUserAfterSignup provisions long emails without throwing to 
 
   const binding = await modules.portal.getPortalUserBinding(portalUser.id);
   assert.equal(binding.status, 'active');
-  assert.equal(binding.newapiUsername, 'very-long-sign@example.com');
+  assert.match(binding.newapiUsername || '', /^pu_[a-f0-9]+$/);
+  assert.equal(binding.targetNewapiUsername, 'very-long-sign@example.com');
   assert.equal(binding.lastSyncAction, 'signup_provision');
   assert.equal(binding.lastSyncErrorCode, null);
-  assert.equal(provisionInputs[0].username, 'very-long-sign@example.com');
+  assert.equal(provisionInputs[0].username, binding.newapiUsername);
 });
 
 test('updatePortalUserEmailWithNewapiSync updates local email only after remote username succeeds', async () => {
@@ -607,7 +619,7 @@ test('updatePortalUserEmailWithNewapiSync commits long emails after remote usern
   assert.equal(result.status, 'active');
   assert.equal(updated.email, 'very-long-user@example.com');
   assert.equal(binding.status, 'active');
-  assert.equal(binding.newapiUsername, 'very-long-user@example.com');
+  assert.match(binding.newapiUsername || '', /^pu_[a-f0-9]+$/);
   assert.equal(binding.targetNewapiUsername, 'very-long-user@example.com');
   assert.equal(binding.lastSyncErrorCode, null);
 });
@@ -839,7 +851,8 @@ test('adjustPortalQuota applies ledger for long email users after binding succee
     true
   );
   assert.equal(binding.status, 'active');
-  assert.equal(binding.newapiUsername, 'very-long-quota@example.com');
+  assert.match(binding.newapiUsername || '', /^pu_[a-f0-9]+$/);
+  assert.equal(binding.targetNewapiUsername, 'very-long-quota@example.com');
 });
 
 test('long-email quota adjustment records no failed username sync audit', async () => {
@@ -922,9 +935,11 @@ test('getPortalUsage lazily provisions missing signup binding and returns zero b
   );
   const binding = await modules.portal.getPortalUserBinding(portalUser.id);
 
-  assert.equal(provisionInputs[0].username, 'lazy-signup@example.com');
+  assert.match(provisionInputs[0].username, /^pu_[a-f0-9]+$/);
+  assert.ok(provisionInputs[0].username.length <= 20);
   assert.equal(binding.status, 'active');
-  assert.equal(binding.newapiUsername, 'lazy-signup@example.com');
+  assert.equal(binding.newapiUsername, provisionInputs[0].username);
+  assert.equal(binding.targetNewapiUsername, 'lazy-signup@example.com');
   assert.equal(usage.summary.balanceUsd, 0);
   assert.equal(usage.summary.quotaRemaining, 0);
   assert.equal(usage.summary.status, 'empty');

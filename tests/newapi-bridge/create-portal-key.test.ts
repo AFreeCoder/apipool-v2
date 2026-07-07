@@ -160,10 +160,8 @@ test('createPortalApiKey provisions long email users before remote key creation'
     remote.client
   );
 
-  assert.equal(
-    remote.getProvisionUserInputs()[0].username,
-    'very-long-user@example.com'
-  );
+  assert.match(remote.getProvisionUserInputs()[0].username, /^pu_[a-f0-9]+$/);
+  assert.ok(remote.getProvisionUserInputs()[0].username.length <= 20);
   assert.equal(remote.getCreateKeyInputs().length, 1);
 });
 

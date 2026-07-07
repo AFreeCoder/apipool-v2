@@ -267,8 +267,9 @@ test('retryNewapiUserBindingForAdmin provisions long emails and records operator
 
   assert.equal(result.status, 'active');
   assert.equal(binding.status, 'active');
-  assert.equal(binding.newapiUsername, 'very-long-retry@example.com');
-  assert.equal(provisionInputs[0].username, 'very-long-retry@example.com');
+  assert.match(binding.newapiUsername || '', /^pu_[a-f0-9]+$/);
+  assert.equal(binding.targetNewapiUsername, 'very-long-retry@example.com');
+  assert.equal(provisionInputs[0].username, binding.newapiUsername);
   assert.ok(successAudit, 'manual retry success should be audited');
   assert.equal(successAudit.operatorUserId, operator.id);
 });
