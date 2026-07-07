@@ -60,6 +60,7 @@ function createCheckoutDeps() {
         app_url: 'https://app.apipool.dev',
         default_locale: 'en',
         default_payment_provider: 'stripe',
+        stripe_secret_key: 'sk_test_checkoutsecret123',
       }) as any,
     getPaymentService: async () =>
       ({
@@ -158,6 +159,78 @@ test('checkout handler creates a custom top-up order from server-side cents and 
     providerOrder.successUrl,
     'https://app.apipool.dev/api/payment/callback?order_no=order_checkout_test'
   );
+});
+
+test('checkout handler rejects malformed Stripe secret before order creation', async () => {
+  const { deps, createdOrders, updatedOrders, createPaymentCalls } =
+    createCheckoutDeps();
+  deps.getAllConfigs = async () =>
+    ({
+      app_name: 'APIPool',
+      app_url: 'https://app.apipool.dev',
+      default_locale: 'en',
+      default_payment_provider: 'stripe',
+      stripe_secret_key: 'bRRQHWAg00004Lfz',
+    }) as any;
+
+  const response = await createTopUpCheckoutResponse({
+    body: {
+      product_id: 'topup_10',
+      currency: 'USD',
+      locale: 'en',
+    },
+    pricingItems: pricingItemsFixture,
+    deps,
+  });
+  const payload = await parseResponse(response);
+
+  assert.equal(payload.code, -1);
+  assert.equal(
+    payload.message,
+    'stripe payment provider is not configured correctly'
+  );
+  assert.equal(createdOrders.length, 0);
+  assert.equal(updatedOrders.length, 0);
+  assert.equal(createPaymentCalls.length, 0);
+});
+
+test('checkout handler redacts Stripe invalid API key provider errors', async () => {
+  const { deps, createdOrders, updatedOrders } = createCheckoutDeps();
+  deps.getPaymentService = async () =>
+    ({
+      getProvider: (name: string) =>
+        name === 'stripe'
+          ? {
+              name: 'stripe',
+              createPayment: async () => {
+                throw new Error(
+                  'Invalid API Key provided: bRRQHWAg****4Lfz'
+                );
+              },
+            }
+          : undefined,
+    }) as any;
+
+  const response = await createTopUpCheckoutResponse({
+    body: {
+      product_id: 'topup_10',
+      currency: 'USD',
+      locale: 'en',
+    },
+    pricingItems: pricingItemsFixture,
+    deps,
+  });
+  const payload = await parseResponse(response);
+
+  assert.equal(payload.code, -1);
+  assert.equal(
+    payload.message,
+    'checkout failed: payment provider credentials are invalid'
+  );
+  assert.doesNotMatch(payload.message, /bRRQHWAg/);
+  assert.equal(createdOrders.length, 1);
+  assert.equal(updatedOrders.length, 1);
+  assert.equal(updatedOrders[0].update.status, 'completed');
 });
 
 test('checkout handler creates preset top-up orders from pricing config, not client amount fields', async () => {

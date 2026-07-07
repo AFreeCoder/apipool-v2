@@ -252,6 +252,53 @@ test('settings page exports a collector that skips empty submitted values', asyn
   );
 });
 
+test('settings collector rejects malformed Stripe secret values', async () => {
+  const source = await readFile(settingsPagePath, 'utf8');
+  const collectNonEmptyConfigs = await loadCollectNonEmptyConfigs(source);
+
+  const formData = new FormData();
+  formData.set('stripe_secret_key', 'bRRQHWAg00004Lfz');
+  formData.set('stripe_enabled', 'true');
+
+  assert.throws(
+    () =>
+      collectNonEmptyConfigs(formData, [
+        { name: 'stripe_secret_key' },
+        { name: 'stripe_enabled' },
+      ]),
+    /Stripe Secret Key must be a Stripe secret or restricted key/
+  );
+
+  const invalidWebhookSecretData = new FormData();
+  invalidWebhookSecretData.set('stripe_signing_secret', 'bRRQHWAg00004Lfz');
+
+  assert.throws(
+    () =>
+      collectNonEmptyConfigs(invalidWebhookSecretData, [
+        { name: 'stripe_signing_secret' },
+      ]),
+    /Stripe Signing Secret must be a Stripe webhook signing secret/
+  );
+
+  const validData = new FormData();
+  validData.set('stripe_secret_key', ' sk_test_validsecret123 ');
+  validData.set('stripe_signing_secret', 'whsec_validsecret123');
+  validData.set('stripe_enabled', 'true');
+
+  assert.deepEqual(
+    collectNonEmptyConfigs(validData, [
+      { name: 'stripe_secret_key' },
+      { name: 'stripe_signing_secret' },
+      { name: 'stripe_enabled' },
+    ]),
+    {
+      stripe_secret_key: 'sk_test_validsecret123',
+      stripe_signing_secret: 'whsec_validsecret123',
+      stripe_enabled: 'true',
+    }
+  );
+});
+
 test('settings page is wired back to FormCard and config save flow', async () => {
   const source = await readFile(settingsPagePath, 'utf8');
 
@@ -266,6 +313,9 @@ test('settings page is wired back to FormCard and config save flow', async () =>
   assert.match(source, /saveConfigs/);
   assert.match(source, /<FormCard/);
   assert.match(source, /collectNonEmptyConfigs/);
+  assert.match(source, /autoComplete:\s*'new-password'/);
+  assert.match(source, /'data-lpignore':\s*'true'/);
+  assert.match(source, /'data-1p-ignore':\s*'true'/);
 });
 
 test('admin sidebar links to auth and email settings with matching locale shapes', async () => {

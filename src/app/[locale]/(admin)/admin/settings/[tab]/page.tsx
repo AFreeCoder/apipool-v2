@@ -41,13 +41,39 @@ export function collectNonEmptyConfigs(
   settings: Pick<Setting, 'name'>[]
 ) {
   const configs: Record<string, string> = {};
+  const validators: Record<
+    string,
+    { label: string; pattern: RegExp; expected: string }
+  > = {
+    stripe_secret_key: {
+      label: 'Stripe Secret Key',
+      pattern: /^(sk|rk)_(test|live)_[A-Za-z0-9]+$/,
+      expected: 'a Stripe secret or restricted key',
+    },
+    stripe_signing_secret: {
+      label: 'Stripe Signing Secret',
+      pattern: /^whsec_[A-Za-z0-9]+$/,
+      expected: 'a Stripe webhook signing secret',
+    },
+  };
 
   for (const setting of settings) {
     const value = data.get(setting.name);
-    if (typeof value !== 'string' || value.trim() === '') {
+    if (typeof value !== 'string') {
       continue;
     }
-    configs[setting.name] = value;
+
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      continue;
+    }
+
+    const validator = validators[setting.name];
+    if (validator && !validator.pattern.test(trimmedValue)) {
+      throw new Error(`${validator.label} must be ${validator.expected}`);
+    }
+
+    configs[setting.name] = validator ? trimmedValue : value;
   }
 
   return configs;
@@ -86,6 +112,13 @@ export default async function SettingsPage({
   const fields: FormField[] = currentSettings.map((setting) => {
     const isPassword = setting.type === 'password';
     const hasConfiguredValue = Boolean(configs[setting.name]);
+    const passwordAttributes = isPassword
+      ? {
+          autoComplete: 'new-password',
+          'data-lpignore': 'true',
+          'data-1p-ignore': 'true',
+        }
+      : {};
 
     return {
       name: setting.name,
@@ -97,7 +130,10 @@ export default async function SettingsPage({
           : setting.placeholder,
       options: setting.options,
       tip: setting.tip,
-      attributes: setting.attributes,
+      attributes: {
+        ...setting.attributes,
+        ...passwordAttributes,
+      },
       group: setting.group,
       value: isPassword ? '' : configs[setting.name] ?? '',
     };

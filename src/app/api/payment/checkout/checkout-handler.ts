@@ -57,6 +57,24 @@ const defaultDeps: CheckoutHandlerDeps = {
   now: () => new Date(),
 };
 
+function isStripeSecretKey(value: unknown) {
+  return (
+    typeof value === 'string' &&
+    /^(sk|rk)_(test|live)_[A-Za-z0-9]+$/.test(value.trim())
+  );
+}
+
+function getCheckoutErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error || 'unknown error');
+
+  if (/invalid api key provided/i.test(message)) {
+    return 'checkout failed: payment provider credentials are invalid';
+  }
+
+  return `checkout failed: ${message}`;
+}
+
 export async function createTopUpCheckoutResponse(input: {
   body: CheckoutRequestBody;
   pricingItems: PricingItem[];
@@ -100,6 +118,13 @@ export async function createTopUpCheckoutResponse(input: {
   }
   if (!paymentProviderName) {
     return respErr('no payment provider configured');
+  }
+
+  if (
+    paymentProviderName === 'stripe' &&
+    !isStripeSecretKey(configs.stripe_secret_key)
+  ) {
+    return respErr('stripe payment provider is not configured correctly');
   }
 
   const allowedProviders = checkout.allowedProviders;
@@ -260,7 +285,7 @@ export async function createTopUpCheckoutResponse(input: {
       checkoutInfo: JSON.stringify(checkoutOrder),
     });
 
-    return respErr('checkout failed: ' + e.message);
+    return respErr(getCheckoutErrorMessage(e));
   }
 }
 
