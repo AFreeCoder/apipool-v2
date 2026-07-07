@@ -6,7 +6,13 @@
   "topUp": {
     "popular": "推荐",
     "add": "充值 {price}",
-    "checkoutError": "暂时无法发起支付"
+    "checkoutError": "暂时无法发起支付",
+    "customTitle": "自定义金额",
+    "customDescription": "输入 10 到 1000 美元之间的整数金额。",
+    "customPlaceholder": "美元金额",
+    "customButton": "按自定义金额充值",
+    "customRange": "整数美元，10-1000 美元",
+    "customInvalid": "请输入 10 到 1000 美元之间的整数金额。"
   },
   "paymentStatus": {
     "paid": "已支付",

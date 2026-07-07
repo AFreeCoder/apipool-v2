@@ -1,9 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  parseCustomTopUpAmountInput,
+  TOP_UP_CUSTOM_MAX_USD,
+  TOP_UP_CUSTOM_MIN_USD,
+} from '@/features/api-console/lib/top-up-products';
 import { Loader2 } from 'lucide-react';
 
 import { Button } from '@/shared/components/ui/button';
+import { Input } from '@/shared/components/ui/input';
 import { cn } from '@/shared/lib/utils';
 
 export type TopUpPackage = {
@@ -25,23 +31,24 @@ export function TopUpPackages({
     popular: string;
     add: string;
     checkoutError: string;
+    customTitle: string;
+    customDescription: string;
+    customPlaceholder: string;
+    customButton: string;
+    customRange: string;
+    customInvalid: string;
   };
 }) {
   const [loadingId, setLoadingId] = useState('');
   const [error, setError] = useState('');
+  const [customAmount, setCustomAmount] = useState('');
 
-  async function checkout(productId: string) {
-    setLoadingId(productId);
-    setError('');
+  async function startCheckout(body: Record<string, unknown>) {
     try {
       const response = await fetch('/api/payment/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          product_id: productId,
-          currency: 'USD',
-          locale,
-        }),
+        body: JSON.stringify(body),
       });
       const payload = await response.json();
       if (payload.code !== 0 || !payload.data?.checkoutUrl) {
@@ -54,9 +61,35 @@ export function TopUpPackages({
     }
   }
 
+  async function checkout(productId: string) {
+    setLoadingId(productId);
+    setError('');
+    await startCheckout({
+      product_id: productId,
+      currency: 'USD',
+      locale,
+    });
+  }
+
+  async function checkoutCustom() {
+    const amountUsd = parseCustomTopUpAmountInput(customAmount);
+    if (!amountUsd) {
+      setError(labels.customInvalid);
+      return;
+    }
+
+    setLoadingId('custom');
+    setError('');
+    await startCheckout({
+      custom_amount_usd: amountUsd,
+      currency: 'USD',
+      locale,
+    });
+  }
+
   return (
     <div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {packages.map((pkg) => (
           <div
             key={pkg.productId}
@@ -94,6 +127,49 @@ export function TopUpPackages({
             </Button>
           </div>
         ))}
+      </div>
+      <div className="bg-card mt-4 rounded-xl border p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="text-muted-foreground text-xs tracking-wide uppercase">
+              {labels.customTitle}
+            </div>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {labels.customDescription}
+            </p>
+            <div className="mt-4 flex max-w-md flex-col gap-2 sm:flex-row">
+              <Input
+                type="number"
+                min={TOP_UP_CUSTOM_MIN_USD}
+                max={TOP_UP_CUSTOM_MAX_USD}
+                step={1}
+                inputMode="numeric"
+                value={customAmount}
+                placeholder={labels.customPlaceholder}
+                aria-invalid={Boolean(error)}
+                aria-describedby="custom-top-up-range"
+                disabled={loadingId !== ''}
+                onChange={(event) => setCustomAmount(event.target.value)}
+              />
+              <Button
+                className="sm:w-auto"
+                disabled={loadingId !== ''}
+                onClick={checkoutCustom}
+              >
+                {loadingId === 'custom' && (
+                  <Loader2 className="size-4 animate-spin" />
+                )}
+                {labels.customButton}
+              </Button>
+            </div>
+            <p
+              id="custom-top-up-range"
+              className="text-muted-foreground mt-2 text-xs"
+            >
+              {labels.customRange}
+            </p>
+          </div>
+        </div>
       </div>
       {error && <p className="text-destructive mt-3 text-sm">{error}</p>}
     </div>

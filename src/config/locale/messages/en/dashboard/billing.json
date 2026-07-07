@@ -6,7 +6,13 @@
   "topUp": {
     "popular": "Popular",
     "add": "Add {price}",
-    "checkoutError": "Checkout could not start"
+    "checkoutError": "Checkout could not start",
+    "customTitle": "Custom amount",
+    "customDescription": "Enter a whole USD amount from $10 to $1000.",
+    "customPlaceholder": "Amount in USD",
+    "customButton": "Add custom amount",
+    "customRange": "Whole USD amount, $10-$1000",
+    "customInvalid": "Enter a whole USD amount from $10 to $1000."
   },
   "paymentStatus": {
     "paid": "Paid",
