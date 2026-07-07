@@ -40,7 +40,7 @@
     "filters": {
       "username_sync_failed": "同步失败",
       "conflict_requires_review": "需人工确认",
-      "newapi_username_too_long": "长邮箱阻断"
+      "newapi_username_too_long": "用户名过长"
     }
   },
   "empty": {

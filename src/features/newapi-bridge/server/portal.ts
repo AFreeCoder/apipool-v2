@@ -119,13 +119,12 @@ const USAGE_SYNC_LOCK_TTL_MS = 60_000;
 const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
 const DUPLICATE_KEY_NAME_MESSAGE =
   'A key with this name already exists. Delete the existing key or choose another name.';
-const NEWAPI_USERNAME_PHASE_A_MAX_LENGTH = 20;
 
 export type NewapiUsernameEmailDiagnosis =
   | { ok: true; username: string }
   | {
       ok: false;
-      code: 'portal_user_email_missing' | 'newapi_username_too_long';
+      code: 'portal_user_email_missing';
       normalizedEmail?: string;
       message: string;
     };
@@ -133,20 +132,14 @@ export type NewapiUsernameEmailDiagnosis =
 export function normalizeNewapiUsernameEmail(
   email: string | null | undefined
 ): NewapiUsernameEmailDiagnosis {
-  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedEmail = String(email || '')
+    .trim()
+    .toLowerCase();
   if (!normalizedEmail) {
     return {
       ok: false,
       code: 'portal_user_email_missing',
       message: 'Portal user email is missing',
-    };
-  }
-  if (normalizedEmail.length > NEWAPI_USERNAME_PHASE_A_MAX_LENGTH) {
-    return {
-      ok: false,
-      code: 'newapi_username_too_long',
-      normalizedEmail,
-      message: 'New API username exceeds the Phase A limit',
     };
   }
   return { ok: true, username: normalizedEmail };
@@ -225,21 +218,19 @@ function serialize(value: unknown) {
 }
 
 export async function recordAudit(input: AuditInput, writer: any = db()) {
-  await writer
-    .insert(newApiBridgeAuditLog)
-    .values({
-      id: getUuid(),
-      portalUserId: input.portalUserId,
-      operatorUserId: input.operatorUserId,
-      action: input.action,
-      targetType: input.targetType,
-      targetId: input.targetId,
-      status: input.status,
-      idempotencyKey: input.idempotencyKey,
-      requestBody: serialize(input.requestBody),
-      responseBody: serialize(input.responseBody),
-      errorMessage: input.errorMessage,
-    });
+  await writer.insert(newApiBridgeAuditLog).values({
+    id: getUuid(),
+    portalUserId: input.portalUserId,
+    operatorUserId: input.operatorUserId,
+    action: input.action,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    status: input.status,
+    idempotencyKey: input.idempotencyKey,
+    requestBody: serialize(input.requestBody),
+    responseBody: serialize(input.responseBody),
+    errorMessage: input.errorMessage,
+  });
 }
 
 function parseJsonArray<T>(value: string | null | undefined): T[] {
@@ -382,8 +373,8 @@ function toPortalUsageViewFromSnapshot(
 ): PortalUsageView {
   return {
     summary: {
-      balanceUsd: snapshot.balanceUsd,
-      quotaRemaining: snapshot.quotaRemaining,
+      balanceUsd: snapshot.balanceUsd ?? 0,
+      quotaRemaining: snapshot.quotaRemaining ?? 0,
       requestCount: snapshot.requestCount,
       inputTokens: snapshot.inputTokens,
       outputTokens: snapshot.outputTokens,
@@ -394,6 +385,25 @@ function toPortalUsageViewFromSnapshot(
       errorMessage,
     },
     logs: logs.map(toPublicUsageLog),
+  };
+}
+
+function emptyPortalUsageView(
+  status: PortalUsageView['summary']['status'] = 'empty',
+  errorMessage?: string
+): PortalUsageView {
+  return {
+    summary: {
+      balanceUsd: 0,
+      quotaRemaining: 0,
+      requestCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      byModel: [],
+      status,
+      errorMessage,
+    },
+    logs: [],
   };
 }
 
@@ -432,7 +442,7 @@ async function recordUsernameSyncBlocked(input: {
   portalUserId: string;
   operatorUserId?: string;
   targetNewapiUsername?: string;
-  code: 'portal_user_email_missing' | 'newapi_username_too_long';
+  code: 'portal_user_email_missing';
   message: string;
   action: string;
   idempotencyKey: string;
@@ -1779,18 +1789,22 @@ export async function getPortalUsage(
   range: PortalUsageRange = '7d',
   client: NewApiClient = createNewApiClient()
 ): Promise<PortalUsageView> {
-  const binding = await getPortalUserBinding(user.id);
+  let binding = await getPortalUserBinding(user.id);
   if (!binding || binding.status !== 'active') {
-    return {
-      summary: {
-        requestCount: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        byModel: [],
-        status: 'empty',
-      },
-      logs: [],
-    };
+    try {
+      binding = await ensurePortalUserBinding(user, client, {
+        syncAction: 'usage_lazy_provision',
+      });
+    } catch (error: any) {
+      return emptyPortalUsageView(
+        'failed',
+        getPublicUsageSyncErrorMessage(error)
+      );
+    }
+  }
+
+  if (!binding || binding.status !== 'active') {
+    return emptyPortalUsageView();
   }
 
   const [cachedBeforeSync] = await db()
@@ -1979,6 +1993,8 @@ export async function getPortalUsage(
 
     return {
       summary: {
+        balanceUsd: 0,
+        quotaRemaining: 0,
         requestCount: 0,
         inputTokens: 0,
         outputTokens: 0,

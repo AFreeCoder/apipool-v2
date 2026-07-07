@@ -176,10 +176,7 @@ test('newapi user binding sync fields survive sqlite migrations', async () => {
 
   assert.equal(row.targetNewapiUsername, 'a@b.co');
   assert.equal(row.lastSyncErrorCode, 'newapi_username_too_long');
-  assert.equal(
-    row.lastSyncError,
-    'New API username exceeds the Phase A limit'
-  );
+  assert.equal(row.lastSyncError, 'New API username exceeds the Phase A limit');
   assert.equal(row.lastSyncAction, 'signup_provision');
   assert.equal(row.conflictNewapiUserId, 'remote_conflict_42');
   assert.equal(row.lastSyncedAt?.getTime(), syncedAt.getTime());
@@ -194,25 +191,28 @@ test('getUsers can filter by New API binding status and sync error without expos
 
   const userA = await insertUser('portal_user_filter_status', 'flt@b.co');
   const userB = await insertUser('portal_user_filter_other', 'flo@b.co');
-  await modules.db().insert(modules.newApiUserBinding).values([
-    {
-      id: 'binding_filter_status',
-      portalUserId: userA.id,
-      newapiUserId: 'pending:filter-status',
-      status: 'username_sync_failed',
-      targetNewapiUsername: 'flt@b.co',
-      lastSyncErrorCode: 'newapi_username_too_long',
-      newapiAccessTokenEnc: 'secret-token',
-      newapiPasswordEnc: 'secret-password',
-    },
-    {
-      id: 'binding_filter_other',
-      portalUserId: userB.id,
-      newapiUserId: 'remote_other',
-      status: 'active',
-      targetNewapiUsername: 'flo@b.co',
-    },
-  ]);
+  await modules
+    .db()
+    .insert(modules.newApiUserBinding)
+    .values([
+      {
+        id: 'binding_filter_status',
+        portalUserId: userA.id,
+        newapiUserId: 'pending:filter-status',
+        status: 'username_sync_failed',
+        targetNewapiUsername: 'flt@b.co',
+        lastSyncErrorCode: 'newapi_username_too_long',
+        newapiAccessTokenEnc: 'secret-token',
+        newapiPasswordEnc: 'secret-password',
+      },
+      {
+        id: 'binding_filter_other',
+        portalUserId: userB.id,
+        newapiUserId: 'remote_other',
+        status: 'active',
+        targetNewapiUsername: 'flo@b.co',
+      },
+    ]);
 
   const rows = await modules.userModel.getUsers({
     newApiBindingStatus: 'username_sync_failed',
@@ -266,24 +266,27 @@ test('getUsersCount matches rows under New API binding status and sync error fil
     'portal_user_filter_count_other_error',
     'fco@b.co'
   );
-  await modules.db().insert(modules.newApiUserBinding).values([
-    {
-      id: 'binding_filter_count_match',
-      portalUserId: matchingUser.id,
-      newapiUserId: 'pending:filter-count-match',
-      status: 'username_sync_failed',
-      targetNewapiUsername: 'fcm@b.co',
-      lastSyncErrorCode: 'task5_count_error',
-    },
-    {
-      id: 'binding_filter_count_other_error',
-      portalUserId: otherErrorUser.id,
-      newapiUserId: 'pending:filter-count-other-error',
-      status: 'username_sync_failed',
-      targetNewapiUsername: 'fco@b.co',
-      lastSyncErrorCode: 'task5_other_error',
-    },
-  ]);
+  await modules
+    .db()
+    .insert(modules.newApiUserBinding)
+    .values([
+      {
+        id: 'binding_filter_count_match',
+        portalUserId: matchingUser.id,
+        newapiUserId: 'pending:filter-count-match',
+        status: 'username_sync_failed',
+        targetNewapiUsername: 'fcm@b.co',
+        lastSyncErrorCode: 'task5_count_error',
+      },
+      {
+        id: 'binding_filter_count_other_error',
+        portalUserId: otherErrorUser.id,
+        newapiUserId: 'pending:filter-count-other-error',
+        status: 'username_sync_failed',
+        targetNewapiUsername: 'fco@b.co',
+        lastSyncErrorCode: 'task5_other_error',
+      },
+    ]);
 
   const filters = {
     newApiBindingStatus: 'username_sync_failed',
@@ -301,7 +304,7 @@ test('getUsersCount matches rows under New API binding status and sync error fil
   assert.equal(rows[0].id, matchingUser.id);
 });
 
-test('normalizeNewapiUsernameEmail lowercases trims and blocks Phase A long emails', async () => {
+test('normalizeNewapiUsernameEmail lowercases trims and accepts long verified emails', async () => {
   assert.deepEqual(
     modules.portal.normalizeNewapiUsernameEmail(' User@Example.COM '),
     { ok: true, username: 'user@example.com' }
@@ -313,12 +316,7 @@ test('normalizeNewapiUsernameEmail lowercases trims and blocks Phase A long emai
   });
   assert.deepEqual(
     modules.portal.normalizeNewapiUsernameEmail('very-long-user@example.com'),
-    {
-      ok: false,
-      code: 'newapi_username_too_long',
-      normalizedEmail: 'very-long-user@example.com',
-      message: 'New API username exceeds the Phase A limit',
-    }
+    { ok: true, username: 'very-long-user@example.com' }
   );
 });
 
@@ -349,31 +347,32 @@ test('ensurePortalUserBinding provisions short normalized email usernames withou
   assert.equal(/^pu_/.test(binding.newapiUsername || ''), false);
 });
 
-test('ensurePortalUserBinding blocks long emails with audit instead of creating technical usernames', async () => {
+test('ensurePortalUserBinding provisions long email usernames without pu hash', async () => {
   const portalUser = await insertUser(
     'portal_user_long_email_binding',
     'very-long-bind@example.com'
   );
-  let remoteCalled = false;
+  const provisionInputs: any[] = [];
   const fakeRemote = {
-    provisionUser: async () => {
-      remoteCalled = true;
-      throw new Error('remote should not be called');
+    provisionUser: async (input: any) => {
+      provisionInputs.push(input);
+      return { newapiUserId: 'remote_long_email', accessToken: 'token' };
     },
     ensureUserGroup: async () => {},
   };
 
-  await assert.rejects(
-    modules.portal.ensurePortalUserBinding(portalUser, fakeRemote),
-    /Phase A limit/
+  const binding = await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    fakeRemote
   );
 
-  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
-  assert.equal(binding.status, 'username_sync_failed');
+  assert.equal(provisionInputs[0].username, 'very-long-bind@example.com');
+  assert.equal(provisionInputs[0].displayName, 'very-long-bind@example.com');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'very-long-bind@example.com');
   assert.equal(binding.targetNewapiUsername, 'very-long-bind@example.com');
-  assert.equal(binding.lastSyncErrorCode, 'newapi_username_too_long');
+  assert.equal(binding.lastSyncErrorCode, null);
   assert.equal(/^pu_/.test(binding.newapiUsername || ''), false);
-  assert.equal(remoteCalled, false);
 
   const audits = await modules
     .db()
@@ -384,8 +383,7 @@ test('ensurePortalUserBinding blocks long emails with audit instead of creating 
     (row: any) =>
       row.action === 'newapi.user.username_sync' && row.status === 'failed'
   );
-  assert.ok(failedAudit, 'long email username block should be audited');
-  assert.match(failedAudit.errorMessage || '', /Phase A limit/);
+  assert.equal(failedAudit, undefined);
 });
 
 test('ensurePortalUserBinding blocks empty emails with audit before remote calls', async () => {
@@ -509,26 +507,27 @@ test('ensurePortalUserBinding stores conflict_requires_review candidates for exi
   assert.equal(binding.conflictNewapiUserId, 'remote_conflict_7');
 });
 
-test('provisionPortalUserAfterSignup records failures without throwing to auth', async () => {
+test('provisionPortalUserAfterSignup provisions long emails without throwing to auth', async () => {
   const portalUser = await insertUser(
     'portal_user_signup_long_email',
     'very-long-sign@example.com'
   );
-  let remoteCalled = false;
+  const provisionInputs: any[] = [];
 
   await modules.portal.provisionPortalUserAfterSignup(portalUser, {
-    provisionUser: async () => {
-      remoteCalled = true;
-      throw new Error('remote should not be called');
+    provisionUser: async (input: any) => {
+      provisionInputs.push(input);
+      return { newapiUserId: 'remote_signup_long', accessToken: 'token' };
     },
     ensureUserGroup: async () => {},
   });
 
   const binding = await modules.portal.getPortalUserBinding(portalUser.id);
-  assert.equal(binding.status, 'username_sync_failed');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'very-long-sign@example.com');
   assert.equal(binding.lastSyncAction, 'signup_provision');
-  assert.equal(binding.lastSyncErrorCode, 'newapi_username_too_long');
-  assert.equal(remoteCalled, false);
+  assert.equal(binding.lastSyncErrorCode, null);
+  assert.equal(provisionInputs[0].username, 'very-long-sign@example.com');
 });
 
 test('updatePortalUserEmailWithNewapiSync updates local email only after remote username succeeds', async () => {
@@ -583,15 +582,12 @@ test('updatePortalUserEmailWithNewapiSync updates local email only after remote 
   assert.equal(binding.lastSyncAction, 'email_change');
 });
 
-test('updatePortalUserEmailWithNewapiSync blocks long emails without committing local email', async () => {
+test('updatePortalUserEmailWithNewapiSync commits long emails after remote username succeeds', async () => {
   const portalUser = await insertUser(
     'portal_user_email_change_long',
     'e4l0@b.co'
   );
-  const operator = await insertUser(
-    'operator_email_change_long',
-    'ops4l@b.co'
-  );
+  const operator = await insertUser('operator_email_change_long', 'ops4l@b.co');
 
   const result = await modules.portal.updatePortalUserEmailWithNewapiSync({
     portalUserId: portalUser.id,
@@ -608,10 +604,12 @@ test('updatePortalUserEmailWithNewapiSync blocks long emails without committing 
     .limit(1);
   const binding = await modules.portal.getPortalUserBinding(portalUser.id);
 
-  assert.equal(result.status, 'username_sync_failed');
-  assert.equal(updated.email, 'e4l0@b.co');
+  assert.equal(result.status, 'active');
+  assert.equal(updated.email, 'very-long-user@example.com');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'very-long-user@example.com');
   assert.equal(binding.targetNewapiUsername, 'very-long-user@example.com');
-  assert.equal(binding.lastSyncErrorCode, 'newapi_username_too_long');
+  assert.equal(binding.lastSyncErrorCode, null);
 });
 
 test('updatePortalUserEmailWithNewapiSync lets admins replace a previously blocked long email with a short email', async () => {
@@ -804,52 +802,74 @@ test('ensurePortalUserBinding keeps disabled bindings disabled and avoids remote
   assert.equal(remoteCalls, 0);
 });
 
-test('adjustPortalQuota does not create applied ledger entries when binding cannot become active', async () => {
+test('adjustPortalQuota applies ledger for long email users after binding succeeds', async () => {
   const portalUser = await insertUser(
     'portal_user_long_email_quota',
     'very-long-quota@example.com'
   );
   const operator = await insertUser('operator_long_email_quota', 'ops@b.co');
-
-  await assert.rejects(
-    modules.portal.adjustPortalQuota({
-      portalUser,
-      operatorUserId: operator.id,
-      amountUsd: 10,
-      reason: 'long email blocked',
-      idempotencyKey: 'long-email-quota-blocked',
-      client: createSuccessfulRemoteClient(),
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
-    /Phase A limit/
-  );
+    adjustQuota: async () => ({
+      changeId: 'change_long_email_quota_1',
+      balanceUsd: 10,
+    }),
+  } as any;
+
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 10,
+    reason: 'long email recharge',
+    idempotencyKey: 'long-email-quota-applied',
+    client: fakeRemote,
+  });
 
   const rows = await modules.portal.listAdjustmentLedgerByPortalUser(
     portalUser.id
   );
-  assert.equal(rows.some((row: any) => row.status === 'applied'), false);
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(ledger.status, 'applied');
+  assert.equal(ledger.newapiChangeId, 'change_long_email_quota_1');
+  assert.equal(
+    rows.some((row: any) => row.status === 'applied'),
+    true
+  );
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'very-long-quota@example.com');
 });
 
-test('long-email quota adjustment leaves no applied ledger and records sync audit', async () => {
+test('long-email quota adjustment records no failed username sync audit', async () => {
   const portalUser = await insertUser(
     'portal_user_long_email_ledger_regression',
-    'very-long-user@example.com'
+    'very-long-ledger@example.com'
   );
   const operator = await insertUser(
     'operator_long_email_ledger_regression',
     'op6@b.co'
   );
-
-  await assert.rejects(
-    modules.portal.adjustPortalQuota({
-      portalUser,
-      operatorUserId: operator.id,
-      amountUsd: 20,
-      reason: 'regression guard',
-      idempotencyKey: 'long-email-ledger-regression',
-      client: createSuccessfulRemoteClient(),
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
     }),
-    /Phase A limit/
-  );
+    adjustQuota: async () => ({
+      changeId: 'change_long_email_ledger_regression_1',
+      balanceUsd: 20,
+    }),
+  } as any;
+
+  const applied = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 20,
+    reason: 'regression guard',
+    idempotencyKey: 'long-email-ledger-regression',
+    client: fakeRemote,
+  });
 
   const ledger = await modules.portal.listAdjustmentLedgerByPortalUser(
     portalUser.id
@@ -860,14 +880,83 @@ test('long-email quota adjustment leaves no applied ledger and records sync audi
     .from(modules.newApiBridgeAuditLog)
     .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
 
-  assert.equal(ledger.some((row: any) => row.status === 'applied'), false);
+  assert.equal(applied.status, 'applied');
+  assert.equal(
+    ledger.some((row: any) => row.status === 'applied'),
+    true
+  );
   assert.equal(
     audits.some(
       (row: any) =>
         row.action === 'newapi.user.username_sync' && row.status === 'failed'
     ),
-    true
+    false
   );
+});
+
+test('getPortalUsage lazily provisions missing signup binding and returns zero balance for new users', async () => {
+  const portalUser = await insertUser(
+    'portal_user_usage_lazy_signup',
+    'lazy-signup@example.com'
+  );
+  const provisionInputs: any[] = [];
+  const fakeRemote = {
+    provisionUser: async (input: any) => {
+      provisionInputs.push(input);
+      return { newapiUserId: 'remote_lazy_signup', accessToken: 'token' };
+    },
+    getQuota: async () => ({ balanceUsd: 0, quotaRemaining: 0 }),
+    getUsageSummary: async () => ({
+      requestCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      byModel: [],
+    }),
+    listUsageLogs: async () => [],
+  } as any;
+
+  const usage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    fakeRemote
+  );
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+
+  assert.equal(provisionInputs[0].username, 'lazy-signup@example.com');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'lazy-signup@example.com');
+  assert.equal(usage.summary.balanceUsd, 0);
+  assert.equal(usage.summary.quotaRemaining, 0);
+  assert.equal(usage.summary.status, 'empty');
+});
+
+test('getPortalUsage returns zero balance instead of a dash when signup binding is temporarily unavailable', async () => {
+  const portalUser = await insertUser(
+    'portal_user_usage_lazy_signup_down',
+    'lazy-down@example.com'
+  );
+  let provisionCalls = 0;
+  const failingRemote = {
+    provisionUser: async () => {
+      provisionCalls += 1;
+      throw new modules.NewApiBridgeError({
+        code: 'timeout',
+        message: 'New API is temporarily unavailable',
+      });
+    },
+  } as any;
+
+  const usage = await modules.portal.getPortalUsage(
+    portalUser,
+    '7d',
+    failingRemote
+  );
+
+  assert.equal(provisionCalls, 1);
+  assert.equal(usage.summary.balanceUsd, 0);
+  assert.equal(usage.summary.quotaRemaining, 0);
+  assert.equal(usage.summary.status, 'failed');
+  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/i);
 });
 
 test('createPortalApiKey keeps a retriable local key row when remote creation fails', async () => {
@@ -1138,10 +1227,7 @@ test('database rejects duplicate undeleted key display names per portal user', a
 });
 
 test('portal key DTOs expose only MVP customer key fields', async () => {
-  const portalUser = await insertUser(
-    'portal_user_safe_key_dto',
-    'skdto@t.co'
-  );
+  const portalUser = await insertUser('portal_user_safe_key_dto', 'skdto@t.co');
   const remote = createSuccessfulRemoteClient();
   const created = await modules.portal.createPortalApiKey(
     portalUser,
@@ -1774,10 +1860,7 @@ test('adjustPortalQuota applies ledger only after New API returns a change id', 
     'portal_user_adjust_success',
     'adj1@t.co'
   );
-  const operator = await insertUser(
-    'operator_adjust_success',
-    'ops1@t.co'
-  );
+  const operator = await insertUser('operator_adjust_success', 'ops1@t.co');
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
       newapiUserId: `remote_${input.username}`,
@@ -1807,10 +1890,7 @@ test('adjustPortalQuota reuses an idempotency key without applying quota twice',
     'portal_user_adjust_idempotent',
     'adj2@t.co'
   );
-  const operator = await insertUser(
-    'operator_adjust_idempotent',
-    'ops2@t.co'
-  );
+  const operator = await insertUser('operator_adjust_idempotent', 'ops2@t.co');
   let adjustmentCalls = 0;
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
@@ -1851,10 +1931,7 @@ test('customer ledger list does not expose New API or operator internals', async
     'portal_user_safe_ledger_dto',
     'ledg@t.co'
   );
-  const operator = await insertUser(
-    'operator_safe_ledger_dto',
-    'ops3@t.co'
-  );
+  const operator = await insertUser('operator_safe_ledger_dto', 'ops3@t.co');
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
       newapiUserId: `remote_${input.username}`,
@@ -1890,10 +1967,7 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
     'portal_user_adjust_failure',
     'adjf@t.co'
   );
-  const operator = await insertUser(
-    'operator_adjust_failure',
-    'ops4@t.co'
-  );
+  const operator = await insertUser('operator_adjust_failure', 'ops4@t.co');
   const fakeRemote = {
     provisionUser: async (input: { username: string }) => ({
       newapiUserId: `remote_${input.username}`,
@@ -1967,10 +2041,7 @@ test('adjustPortalQuota marks remote-applied confirmation failures for reconcili
 });
 
 test('getPortalUsage snapshots repeated remote logs only once', async () => {
-  const portalUser = await insertUser(
-    'portal_user_usage_sync',
-    'us1@t.co'
-  );
+  const portalUser = await insertUser('portal_user_usage_sync', 'us1@t.co');
   const syncedLog = {
     id: 'remote_request_1',
     keyMasked: 'sk-...usage',
@@ -2242,10 +2313,7 @@ test('getPortalUsage returns stale when an old usable cache exists and sync fail
 });
 
 test('getPortalUsage returns syncing snapshot without duplicate remote reads', async () => {
-  const portalUser = await insertUser(
-    'portal_user_usage_syncing',
-    'us5@t.co'
-  );
+  const portalUser = await insertUser('portal_user_usage_syncing', 'us5@t.co');
   const healthyRemote = {
     provisionUser: async (input: { username: string }) => ({
       newapiUserId: `remote_${input.username}`,

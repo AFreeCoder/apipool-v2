@@ -48,38 +48,41 @@ async function setupDb() {
     })
     .where(eq(modules.schema.catalogGroup.slug, 'official'));
 
-  await modules.db().insert(modules.schema.catalogGroup).values([
-    {
-      id: 'catalog_group_internal_disabled',
-      slug: 'disabled',
-      name: 'Disabled',
-      userDescription: 'Disabled route',
-      newapiGroup: 'ng-disabled',
-      allowCreateKey: true,
-      sortOrder: 2,
-      status: 'disabled',
-    },
-    {
-      id: 'catalog_group_internal_locked',
-      slug: 'locked',
-      name: 'Locked',
-      userDescription: 'Locked route',
-      newapiGroup: 'ng-locked',
-      allowCreateKey: false,
-      sortOrder: 3,
-      status: 'active',
-    },
-    {
-      id: 'catalog_group_internal_unmapped',
-      slug: 'unmapped',
-      name: 'Unmapped',
-      userDescription: 'Missing remote route',
-      newapiGroup: '',
-      allowCreateKey: true,
-      sortOrder: 4,
-      status: 'active',
-    },
-  ]);
+  await modules
+    .db()
+    .insert(modules.schema.catalogGroup)
+    .values([
+      {
+        id: 'catalog_group_internal_disabled',
+        slug: 'disabled',
+        name: 'Disabled',
+        userDescription: 'Disabled route',
+        newapiGroup: 'ng-disabled',
+        allowCreateKey: true,
+        sortOrder: 2,
+        status: 'disabled',
+      },
+      {
+        id: 'catalog_group_internal_locked',
+        slug: 'locked',
+        name: 'Locked',
+        userDescription: 'Locked route',
+        newapiGroup: 'ng-locked',
+        allowCreateKey: false,
+        sortOrder: 3,
+        status: 'active',
+      },
+      {
+        id: 'catalog_group_internal_unmapped',
+        slug: 'unmapped',
+        name: 'Unmapped',
+        userDescription: 'Missing remote route',
+        newapiGroup: '',
+        allowCreateKey: true,
+        sortOrder: 4,
+        status: 'active',
+      },
+    ]);
 
   groupIds = {
     official: 'seed_group_official',
@@ -144,24 +147,24 @@ async function getKeyBinding(id: string) {
 
 test.before(setupDb);
 
-test('createPortalApiKey blocks Phase A long emails before remote key creation', async () => {
+test('createPortalApiKey provisions long email users before remote key creation', async () => {
   const portalUser = await insertUser(
     'create_key_long_email_user',
     'very-long-user@example.com'
   );
   const remote = createRecordingRemoteClient();
 
-  await assert.rejects(
-    modules.portal.createPortalApiKey(
-      portalUser,
-      { name: 'Long email key', groupSlug: 'official' },
-      remote.client
-    ),
-    /Phase A limit/
+  await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Long email key', groupSlug: 'official' },
+    remote.client
   );
 
-  assert.equal(remote.getProvisionUserInputs().length, 0);
-  assert.equal(remote.getCreateKeyInputs().length, 0);
+  assert.equal(
+    remote.getProvisionUserInputs()[0].username,
+    'very-long-user@example.com'
+  );
+  assert.equal(remote.getCreateKeyInputs().length, 1);
 });
 
 test('createPortalApiKey uses normalized email username for first-time short-email users', async () => {
@@ -182,10 +185,7 @@ test('createPortalApiKey uses normalized email username for first-time short-ema
 });
 
 test('createPortalApiKey resolves groupSlug server-side and stores only internal group fields locally', async () => {
-  const portalUser = await insertUser(
-    'create_key_group_user',
-    'keyg1@t.co'
-  );
+  const portalUser = await insertUser('create_key_group_user', 'keyg1@t.co');
   const remote = createRecordingRemoteClient();
 
   const result = await modules.portal.createPortalApiKey(
@@ -246,10 +246,7 @@ test('createPortalApiKey ensures an existing New API user can access the target 
 });
 
 test('createPortalApiKey rejects key-capable groups without explicit New API mapping before calling remote', async () => {
-  const portalUser = await insertUser(
-    'create_key_unmapped_user',
-    'unmap@t.co'
-  );
+  const portalUser = await insertUser('create_key_unmapped_user', 'unmap@t.co');
   const remote = createRecordingRemoteClient();
 
   await assert.rejects(
@@ -290,10 +287,7 @@ test('createPortalApiKey rejects unavailable groups before calling the remote cl
 });
 
 test('createPortalApiKey rejects duplicate key names before calling the remote client', async () => {
-  const portalUser = await insertUser(
-    'create_key_dup_user',
-    'keydup@t.co'
-  );
+  const portalUser = await insertUser('create_key_dup_user', 'keydup@t.co');
   // 用唯一 remote key id，避免与其它用例共享 db 时撞 newapi_key_id 的 UNIQUE 约束
   const createKeyInputs: any[] = [];
   const dupClient = {
@@ -333,10 +327,7 @@ test('createPortalApiKey rejects duplicate key names before calling the remote c
 });
 
 test('deletePortalApiKey cleans up failed/stuck keys locally without requiring remote', async () => {
-  const portalUser = await insertUser(
-    'cleanup_failed_user',
-    'clean@t.co'
-  );
+  const portalUser = await insertUser('cleanup_failed_user', 'clean@t.co');
   const failingClient = {
     provisionUser: async (input: { username: string }) => ({
       newapiUserId: `remote_${input.username}`,

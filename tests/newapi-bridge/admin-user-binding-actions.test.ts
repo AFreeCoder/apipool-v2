@@ -225,7 +225,7 @@ test('confirmNewapiUserConflictForAdmin activates a reviewed conflict and writes
   );
 });
 
-test('retryNewapiUserBindingForAdmin records operator on failed manual retry audit', async () => {
+test('retryNewapiUserBindingForAdmin provisions long emails and records operator on manual retry audit', async () => {
   const portalUser = await insertUser(
     'portal_user_manual_retry_long_email',
     'very-long-retry@example.com'
@@ -234,42 +234,43 @@ test('retryNewapiUserBindingForAdmin records operator on failed manual retry aud
     'operator_manual_retry_long_email',
     'oprt@b.co'
   );
-  let remoteCalls = 0;
+  const provisionInputs: any[] = [];
 
-  await assert.rejects(
-    modules.portal.retryNewapiUserBindingForAdmin({
-      portalUserId: portalUser.id,
-      operatorUserId: operator.id,
-      client: {
-        provisionUser: async () => {
-          remoteCalls += 1;
-          throw new Error('remote should not be called');
-        },
-        ensureUserGroup: async () => {
-          remoteCalls += 1;
-          throw new Error('remote should not be called');
-        },
+  const result = await modules.portal.retryNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    client: {
+      provisionUser: async (input: any) => {
+        provisionInputs.push(input);
+        return {
+          newapiUserId: 'remote_manual_retry_long',
+          accessToken: 'token',
+        };
       },
-    }),
-    /Phase A limit/
-  );
+      ensureUserGroup: async () => {},
+    },
+  });
+
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
 
   const audits = await modules
     .db()
     .select()
     .from(modules.newApiBridgeAuditLog)
     .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
-  const failedAudit = audits.find(
+  const successAudit = audits.find(
     (row: any) =>
       row.action === 'newapi.user.username_sync' &&
-      row.status === 'failed' &&
-      row.idempotencyKey ===
-        `portal-user:${portalUser.id}:username-sync`
+      row.status === 'success' &&
+      row.idempotencyKey === `portal-user:${portalUser.id}:manual-retry`
   );
 
-  assert.ok(failedAudit, 'manual retry failure should be audited');
-  assert.equal(failedAudit.operatorUserId, operator.id);
-  assert.equal(remoteCalls, 0);
+  assert.equal(result.status, 'active');
+  assert.equal(binding.status, 'active');
+  assert.equal(binding.newapiUsername, 'very-long-retry@example.com');
+  assert.equal(provisionInputs[0].username, 'very-long-retry@example.com');
+  assert.ok(successAudit, 'manual retry success should be audited');
+  assert.equal(successAudit.operatorUserId, operator.id);
 });
 
 test('admin binding server actions require permission before current admin lookup and pass operator id', async () => {
@@ -297,7 +298,10 @@ test('admin binding server actions require permission before current admin looku
   ]) {
     const actionStart = source.indexOf(`export async function ${actionName}`);
     assert.notEqual(actionStart, -1, `${actionName} should exist`);
-    const permissionIndex = source.indexOf('await requirePermission', actionStart);
+    const permissionIndex = source.indexOf(
+      'await requirePermission',
+      actionStart
+    );
     const currentUserIndex = source.indexOf(
       'const currentUser = await getCurrentAdminUser()',
       actionStart

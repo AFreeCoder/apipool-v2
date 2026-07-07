@@ -40,7 +40,7 @@
     "filters": {
       "username_sync_failed": "Sync failed",
       "conflict_requires_review": "Needs review",
-      "newapi_username_too_long": "Long email blocked"
+      "newapi_username_too_long": "Username too long"
     }
   },
   "empty": {
