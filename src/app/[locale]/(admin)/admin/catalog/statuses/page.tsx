@@ -66,6 +66,12 @@ export default async function AdminCatalogStatusesPage({
             icon: 'RiEditLine',
             url: `/admin/catalog/statuses/${item.id}/edit`,
           },
+          {
+            name: 'delete',
+            title: t('actions.delete'),
+            icon: 'Trash2',
+            url: `/admin/catalog/statuses/${item.id}/delete`,
+          },
         ],
       },
     ],

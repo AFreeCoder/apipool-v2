@@ -51,6 +51,7 @@ export default async function CatalogStatusEditPage({
         type: 'text',
         title: t('fields.slug'),
         validation: { required: true },
+        attributes: { disabled: true },
       },
       {
         name: 'name',
@@ -105,7 +106,7 @@ export default async function CatalogStatusEditPage({
         }
 
         const patch: UpdateCatalogStatus = {
-          slug: (data.get('slug') as string).trim(),
+          slug: catalogStatus.slug,
           name: (data.get('name') as string).trim(),
           isCallable: data.get('isCallable') === 'true',
           isPublicVisible: data.get('isPublicVisible') === 'true',

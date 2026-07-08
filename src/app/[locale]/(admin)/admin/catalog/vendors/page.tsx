@@ -54,6 +54,12 @@ export default async function AdminCatalogVendorsPage({
             icon: 'RiEditLine',
             url: `/admin/catalog/vendors/${item.id}/edit`,
           },
+          {
+            name: 'delete',
+            title: t('actions.delete'),
+            icon: 'Trash2',
+            url: `/admin/catalog/vendors/${item.id}/delete`,
+          },
         ],
       },
     ],

@@ -1,7 +1,7 @@
 import {
+  CatalogDeleteBlockedError,
+  deleteVendor,
   getVendorById,
-  updateVendor,
-  UpdateVendor,
 } from '@/features/api-catalog/server/catalog-service';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
@@ -13,7 +13,7 @@ import { FormCard } from '@/shared/blocks/form';
 import { Crumb } from '@/shared/types/blocks/common';
 import { Form } from '@/shared/types/blocks/form';
 
-export default async function CatalogVendorEditPage({
+export default async function CatalogVendorDeletePage({
   params,
 }: {
   params: Promise<{ locale: string; id: string }>;
@@ -29,83 +29,50 @@ export default async function CatalogVendorEditPage({
 
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
-  const updateFailedMessage = t('errors.updateFailed');
-  const successMessage = t('vendors.edit.success');
+  const deleteFailedMessage = t('errors.deleteFailed');
+  const blockedMessage = t('vendors.delete.blocked');
+  const successMessage = t('vendors.delete.success');
   const vendor = await getVendorById(id);
 
   if (!vendor) {
-    return <Empty message={t('vendors.edit.notFound')} />;
+    return <Empty message={t('vendors.delete.notFound')} />;
   }
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
     { title: t('crumbs.catalog'), url: '/admin/catalog/vendors' },
     { title: t('vendors.list.crumb'), url: '/admin/catalog/vendors' },
-    { title: t('vendors.edit.crumb'), is_active: true },
+    { title: t('vendors.delete.crumb'), is_active: true },
   ];
 
   const form: Form = {
-    fields: [
-      {
-        name: 'slug',
-        type: 'text',
-        title: t('fields.slug'),
-        validation: { required: true },
-        attributes: { disabled: true },
-      },
-      {
-        name: 'name',
-        type: 'text',
-        title: t('fields.name'),
-        validation: { required: true },
-      },
-      {
-        name: 'sortOrder',
-        type: 'number',
-        title: t('fields.sortOrder'),
-        validation: { required: true },
-      },
-      {
-        name: 'status',
-        type: 'select',
-        title: t('fields.status'),
-        validation: { required: true },
-        options: [
-          { title: t('statusOptions.active'), value: 'active' },
-          { title: t('statusOptions.disabled'), value: 'disabled' },
-        ],
-      },
-    ],
+    fields: [],
     passby: {
       vendor,
     },
-    data: vendor,
     submit: {
       button: {
-        title: t('vendors.edit.buttons.submit'),
+        title: t('vendors.delete.buttons.submit'),
+        icon: 'Trash2',
+        variant: 'destructive',
       },
-      handler: async (data, passby) => {
+      handler: async (_data, passby) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { vendor } = passby;
-
-        if (!vendor) {
+        const target = passby?.vendor;
+        if (!target?.id) {
           throw new Error(missingRecordMessage);
         }
 
-        const patch: UpdateVendor = {
-          slug: vendor.slug,
-          name: (data.get('name') as string).trim(),
-          sortOrder: Number(data.get('sortOrder') ?? 0),
-          status: (data.get('status') as string) || 'active',
-        };
-
-        const result = await updateVendor(vendor.id as string, patch);
-
-        if (!result) {
-          throw new Error(updateFailedMessage);
+        try {
+          await deleteVendor(target.id);
+        } catch (error) {
+          if (error instanceof CatalogDeleteBlockedError) {
+            throw new Error(blockedMessage);
+          }
+          throw new Error(deleteFailedMessage);
         }
 
         revalidateCatalog();
@@ -123,7 +90,21 @@ export default async function CatalogVendorEditPage({
     <>
       <Header crumbs={crumbs} />
       <Main>
-        <MainHeader title={t('vendors.edit.title')} />
+        <MainHeader
+          title={t('vendors.delete.title')}
+          description={t('vendors.delete.description', {
+            name: vendor.name,
+            slug: vendor.slug,
+          })}
+          actions={[
+            {
+              title: t('vendors.delete.buttons.cancel'),
+              icon: 'ArrowLeft',
+              variant: 'outline',
+              url: '/admin/catalog/vendors',
+            },
+          ]}
+        />
         <FormCard form={form} className="md:max-w-xl" />
       </Main>
     </>

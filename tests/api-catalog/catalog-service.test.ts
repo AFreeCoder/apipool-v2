@@ -79,14 +79,33 @@ async function createCategory(slug: string) {
   });
 }
 
-async function createModel(slug: string, vendorId: string) {
+async function createModel(slug: string, vendorId: string, category = 'llm') {
   return modules.service.createModel({
     modelId: slug,
     displayName: `Model ${slug}`,
     vendorId,
-    category: 'llm',
+    category,
     contextWindow: 128000,
   });
+}
+
+async function createModelListing(slug: string) {
+  const vendor = await createVendor(`${slug}-vendor`);
+  const status = await createStatus(`${slug}-status`);
+  const model = await createModel(`${slug}-model`, vendor.id);
+  const group = await createGroup(`${slug}-group`, `${slug}-gateway`);
+  const listing = await modules.service.createListing({
+    modelId: model.id,
+    groupId: group.id,
+    statusId: status.id,
+    inputMicroUsd: 1,
+    outputMicroUsd: 2,
+    smokeTested: true,
+    featured: false,
+    sortOrder: 1,
+  });
+
+  return { vendor, status, model, group, listing };
 }
 
 test.before(setupDb);
@@ -143,6 +162,249 @@ test('status service persists callable and public visibility booleans', async ()
   const found = await modules.service.getStatusById(status.id);
   assert.equal(found?.isCallable, true);
   assert.equal(found?.isPublicVisible, false);
+});
+
+test('dictionary update services reject slug changes and preserve stored slugs', async () => {
+  const vendor = await createVendor('immutable-vendor');
+  const group = await createGroup('immutable-group', 'immutable-gateway');
+  const category = await createCategory('immutable-category');
+  const capability = await modules.service.createCapability({
+    slug: 'immutable-capability',
+    name: 'Immutable Capability',
+    sortOrder: 1,
+    status: 'active',
+  });
+  const status = await createStatus('immutable-status');
+
+  const cases = [
+    {
+      update: () =>
+        modules.service.updateVendor(vendor.id, { slug: 'changed-vendor' }),
+      read: () => modules.service.getVendorById(vendor.id),
+      slug: vendor.slug,
+    },
+    {
+      update: () =>
+        modules.service.updateGroup(group.id, { slug: 'changed-group' }),
+      read: () => modules.service.getGroupById(group.id),
+      slug: group.slug,
+    },
+    {
+      update: () =>
+        modules.service.updateCategory(category.id, {
+          slug: 'changed-category',
+        }),
+      read: () => modules.service.getCategoryById(category.id),
+      slug: category.slug,
+    },
+    {
+      update: () =>
+        modules.service.updateCapability(capability.id, {
+          slug: 'changed-capability',
+        }),
+      read: () => modules.service.getCapabilityById(capability.id),
+      slug: capability.slug,
+    },
+    {
+      update: () =>
+        modules.service.updateStatus(status.id, { slug: 'changed-status' }),
+      read: () => modules.service.getStatusById(status.id),
+      slug: status.slug,
+    },
+  ];
+
+  for (const item of cases) {
+    await assert.rejects(item.update, /slug/i);
+    assert.equal((await item.read())?.slug, item.slug);
+  }
+});
+
+test('dictionary update services accept original slug while updating non-slug fields', async () => {
+  const vendor = await createVendor('immutable-positive-vendor');
+  const group = await createGroup(
+    'immutable-positive-group',
+    'immutable-positive-gateway'
+  );
+  const category = await createCategory('immutable-positive-category');
+  const capability = await modules.service.createCapability({
+    slug: 'immutable-positive-capability',
+    name: 'Immutable Positive Capability',
+    sortOrder: 1,
+    status: 'active',
+  });
+  const status = await createStatus('immutable-positive-status');
+
+  const updatedVendor = await modules.service.updateVendor(vendor.id, {
+    slug: vendor.slug,
+    name: 'Immutable Positive Vendor Updated',
+  });
+  assert.equal(updatedVendor.slug, vendor.slug);
+  assert.equal(updatedVendor.name, 'Immutable Positive Vendor Updated');
+
+  const updatedGroup = await modules.service.updateGroup(group.id, {
+    slug: group.slug,
+    name: 'Immutable Positive Group Updated',
+  });
+  assert.equal(updatedGroup.slug, group.slug);
+  assert.equal(updatedGroup.name, 'Immutable Positive Group Updated');
+
+  const updatedCategory = await modules.service.updateCategory(category.id, {
+    slug: category.slug,
+    name: 'Immutable Positive Category Updated',
+  });
+  assert.equal(updatedCategory.slug, category.slug);
+  assert.equal(updatedCategory.name, 'Immutable Positive Category Updated');
+
+  const updatedCapability = await modules.service.updateCapability(
+    capability.id,
+    {
+      slug: capability.slug,
+      name: 'Immutable Positive Capability Updated',
+    }
+  );
+  assert.equal(updatedCapability.slug, capability.slug);
+  assert.equal(updatedCapability.name, 'Immutable Positive Capability Updated');
+
+  const updatedStatus = await modules.service.updateStatus(status.id, {
+    slug: status.slug,
+    name: 'Immutable Positive Status Updated',
+  });
+  assert.equal(updatedStatus.slug, status.slug);
+  assert.equal(updatedStatus.name, 'Immutable Positive Status Updated');
+});
+
+test('dictionary delete services allow unreferenced records', async () => {
+  const vendor = await createVendor('delete-free-vendor');
+  const group = await createGroup('delete-free-group', 'delete-free-gateway');
+  const category = await createCategory('delete-free-category');
+  const capability = await modules.service.createCapability({
+    slug: 'delete-free-capability',
+    name: 'Delete Free Capability',
+    sortOrder: 1,
+    status: 'active',
+  });
+  const status = await createStatus('delete-free-status');
+
+  await modules.service.deleteVendor(vendor.id);
+  await modules.service.deleteGroup(group.id);
+  await modules.service.deleteCategory(category.id);
+  await modules.service.deleteCapability(capability.id);
+  await modules.service.deleteStatus(status.id);
+
+  assert.equal(await modules.service.getVendorById(vendor.id), undefined);
+  assert.equal(await modules.service.getGroupById(group.id), undefined);
+  assert.equal(await modules.service.getCategoryById(category.id), undefined);
+  assert.equal(await modules.service.getCapabilityById(capability.id), undefined);
+  assert.equal(await modules.service.getStatusById(status.id), undefined);
+});
+
+test('dictionary delete services block referenced vendor, group, capability, and status records', async () => {
+  const created = await createModelListing('delete-blocked');
+  const capability = await modules.service.createCapability({
+    slug: 'delete-blocked-capability',
+    name: 'Delete Blocked Capability',
+    sortOrder: 1,
+    status: 'active',
+  });
+  await modules.service.setModelCapabilities(created.model.id, [capability.id]);
+
+  for (const action of [
+    () => modules.service.deleteVendor(created.vendor.id),
+    () => modules.service.deleteGroup(created.group.id),
+    () => modules.service.deleteCapability(capability.id),
+    () => modules.service.deleteStatus(created.status.id),
+  ]) {
+    await assert.rejects(action, (error: unknown) => {
+      assert.equal(
+        error instanceof modules.service.CatalogDeleteBlockedError,
+        true
+      );
+      return true;
+    });
+  }
+});
+
+test('category deletion is blocked by model category links and legacy category slug references', async () => {
+  const vendor = await createVendor('category-block-vendor');
+  const linkedCategory = await createCategory('category-block-linked');
+  const linkedModel = await createModel('category-block-linked-model', vendor.id);
+
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelCategory)
+    .values({
+      id: 'category_block_link',
+      modelId: linkedModel.id,
+      categoryId: linkedCategory.id,
+    });
+
+  await assert.rejects(
+    () => modules.service.deleteCategory(linkedCategory.id),
+    (error: unknown) =>
+      error instanceof modules.service.CatalogDeleteBlockedError
+  );
+
+  const slugCategory = await createCategory('category-block-slug');
+  await createModel('category-block-slug-model', vendor.id, slugCategory.slug);
+
+  await assert.rejects(
+    () => modules.service.deleteCategory(slugCategory.id),
+    (error: unknown) =>
+      error instanceof modules.service.CatalogDeleteBlockedError
+  );
+});
+
+test('group deletion ignores deleted key bindings but blocks active key bindings', async () => {
+  const deletedGroup = await createGroup(
+    'key-binding-deleted-group',
+    'key-binding-deleted-gateway'
+  );
+  const activeGroup = await createGroup(
+    'key-binding-active-group',
+    'key-binding-active-gateway'
+  );
+
+  await modules.db().insert(modules.schema.user).values({
+    id: 'key_binding_guard_user',
+    name: 'Key Binding Guard',
+    email: 'key-binding-guard@example.com',
+  });
+
+  await modules.db().insert(modules.schema.newApiKeyBinding).values([
+    {
+      id: 'key_binding_guard_deleted',
+      portalUserId: 'key_binding_guard_user',
+      newapiUserId: 'remote_key_binding_guard_deleted',
+      newapiKeyId: 'remote_key_binding_guard_deleted_key',
+      keyMasked: 'sk-...deleted',
+      displayName: 'Deleted key binding',
+      status: 'deleted',
+      groupId: deletedGroup.id,
+      newapiGroup: deletedGroup.newapiGroup,
+      idempotencyKey: 'key_binding_guard_deleted',
+    },
+    {
+      id: 'key_binding_guard_active',
+      portalUserId: 'key_binding_guard_user',
+      newapiUserId: 'remote_key_binding_guard_active',
+      newapiKeyId: 'remote_key_binding_guard_active_key',
+      keyMasked: 'sk-...active',
+      displayName: 'Active key binding',
+      status: 'active',
+      groupId: activeGroup.id,
+      newapiGroup: activeGroup.newapiGroup,
+      idempotencyKey: 'key_binding_guard_active',
+    },
+  ]);
+
+  await modules.service.deleteGroup(deletedGroup.id);
+  assert.equal(await modules.service.getGroupById(deletedGroup.id), undefined);
+
+  await assert.rejects(
+    () => modules.service.deleteGroup(activeGroup.id),
+    (error: unknown) =>
+      error instanceof modules.service.CatalogDeleteBlockedError
+  );
 });
 
 test('setModelCapabilities replaces all capability links for a model', async () => {

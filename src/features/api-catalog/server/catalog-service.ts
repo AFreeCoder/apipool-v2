@@ -2,7 +2,7 @@ import {
   formatDiscountRate,
   microUsdToDollars,
 } from '@/features/api-catalog/lib/pricing';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, ne } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -16,6 +16,7 @@ import {
   catalogModelPrice,
   catalogStatus,
   catalogVendor,
+  newApiKeyBinding,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 
@@ -113,6 +114,57 @@ export type ModelAdminConfig = {
   capabilities: Capability[];
 };
 
+export type CatalogReference = {
+  label: string;
+  count: number;
+};
+
+export class CatalogDeleteBlockedError extends Error {
+  code = 'CATALOG_DELETE_BLOCKED' as const;
+
+  constructor(
+    public readonly label: string,
+    public readonly references: CatalogReference[]
+  ) {
+    super(`${label} is still referenced by catalog data.`);
+    this.name = 'CatalogDeleteBlockedError';
+  }
+}
+
+function assertImmutableSlug(
+  currentSlug: string | undefined,
+  patchSlug: string | undefined,
+  label: string
+) {
+  if (
+    currentSlug === undefined ||
+    patchSlug === undefined ||
+    patchSlug === currentSlug
+  ) {
+    return;
+  }
+
+  throw new Error(`${label} slug is immutable.`);
+}
+
+async function getCatalogReferenceCount(table: any, where: any) {
+  const [result] = await db()
+    .select({ total: count() })
+    .from(table)
+    .where(where);
+  return Number(result?.total ?? 0);
+}
+
+function ensureNoCatalogReferences(
+  label: string,
+  references: CatalogReference[]
+) {
+  const blockingReferences = references.filter((reference) => reference.count > 0);
+  if (blockingReferences.length > 0) {
+    throw new CatalogDeleteBlockedError(label, blockingReferences);
+  }
+}
+
 export async function getVendors(): Promise<Vendor[]> {
   return await db()
     .select()
@@ -140,6 +192,9 @@ export async function updateVendor(
   id: string,
   patch: UpdateVendor
 ): Promise<Vendor> {
+  const current = await getVendorById(id);
+  assertImmutableSlug(current?.slug, patch.slug, 'vendor');
+
   const [result] = await db()
     .update(catalogVendor)
     .set(patch)
@@ -149,6 +204,19 @@ export async function updateVendor(
 }
 
 export async function deleteVendor(id: string): Promise<void> {
+  const vendor = await getVendorById(id);
+  if (!vendor) return;
+
+  ensureNoCatalogReferences('vendor', [
+    {
+      label: 'catalog_model.vendor_id',
+      count: await getCatalogReferenceCount(
+        catalogModel,
+        eq(catalogModel.vendorId, vendor.id)
+      ),
+    },
+  ]);
+
   await db().delete(catalogVendor).where(eq(catalogVendor.id, id));
 }
 
@@ -181,6 +249,9 @@ export async function updateCategory(
   id: string,
   patch: UpdateCategory
 ): Promise<Category> {
+  const current = await getCategoryById(id);
+  assertImmutableSlug(current?.slug, patch.slug, 'category');
+
   const [result] = await db()
     .update(catalogCategory)
     .set(patch)
@@ -190,6 +261,26 @@ export async function updateCategory(
 }
 
 export async function deleteCategory(id: string): Promise<void> {
+  const category = await getCategoryById(id);
+  if (!category) return;
+
+  ensureNoCatalogReferences('category', [
+    {
+      label: 'catalog_model_category.category_id',
+      count: await getCatalogReferenceCount(
+        catalogModelCategory,
+        eq(catalogModelCategory.categoryId, category.id)
+      ),
+    },
+    {
+      label: 'catalog_model.category',
+      count: await getCatalogReferenceCount(
+        catalogModel,
+        eq(catalogModel.category, category.slug)
+      ),
+    },
+  ]);
+
   await db().delete(catalogCategory).where(eq(catalogCategory.id, id));
 }
 
@@ -224,6 +315,9 @@ export async function updateCapability(
   id: string,
   patch: UpdateCapability
 ): Promise<Capability> {
+  const current = await getCapabilityById(id);
+  assertImmutableSlug(current?.slug, patch.slug, 'capability');
+
   const [result] = await db()
     .update(catalogCapability)
     .set(patch)
@@ -233,6 +327,19 @@ export async function updateCapability(
 }
 
 export async function deleteCapability(id: string): Promise<void> {
+  const capability = await getCapabilityById(id);
+  if (!capability) return;
+
+  ensureNoCatalogReferences('capability', [
+    {
+      label: 'catalog_model_capability.capability_id',
+      count: await getCatalogReferenceCount(
+        catalogModelCapability,
+        eq(catalogModelCapability.capabilityId, capability.id)
+      ),
+    },
+  ]);
+
   await db().delete(catalogCapability).where(eq(catalogCapability.id, id));
 }
 
@@ -267,6 +374,9 @@ export async function updateStatus(
   id: string,
   patch: UpdateCatalogStatus
 ): Promise<CatalogStatus> {
+  const current = await getStatusById(id);
+  assertImmutableSlug(current?.slug, patch.slug, 'status');
+
   const [result] = await db()
     .update(catalogStatus)
     .set(patch)
@@ -276,6 +386,19 @@ export async function updateStatus(
 }
 
 export async function deleteStatus(id: string): Promise<void> {
+  const status = await getStatusById(id);
+  if (!status) return;
+
+  ensureNoCatalogReferences('status', [
+    {
+      label: 'catalog_model_listing.status_id',
+      count: await getCatalogReferenceCount(
+        catalogModelListing,
+        eq(catalogModelListing.statusId, status.id)
+      ),
+    },
+  ]);
+
   await db().delete(catalogStatus).where(eq(catalogStatus.id, id));
 }
 
@@ -320,6 +443,9 @@ export async function updateGroup(
   id: string,
   patch: UpdateCatalogGroup
 ): Promise<CatalogGroup> {
+  const current = await getGroupById(id);
+  assertImmutableSlug(current?.slug, patch.slug, 'group');
+
   const [result] = await db()
     .update(catalogGroup)
     .set(patch)
@@ -329,6 +455,29 @@ export async function updateGroup(
 }
 
 export async function deleteGroup(id: string): Promise<void> {
+  const group = await getGroupById(id);
+  if (!group) return;
+
+  ensureNoCatalogReferences('group', [
+    {
+      label: 'catalog_model_listing.group_id',
+      count: await getCatalogReferenceCount(
+        catalogModelListing,
+        eq(catalogModelListing.groupId, group.id)
+      ),
+    },
+    {
+      label: 'newapi_key_binding.group_id',
+      count: await getCatalogReferenceCount(
+        newApiKeyBinding,
+        and(
+          eq(newApiKeyBinding.groupId, group.id),
+          ne(newApiKeyBinding.status, 'deleted')
+        )
+      ),
+    },
+  ]);
+
   await db().delete(catalogGroup).where(eq(catalogGroup.id, id));
 }
 

@@ -50,9 +50,10 @@ const entities = [
   },
 ] as const;
 
-function pagePath(route: string, page: 'list' | 'new' | 'edit') {
+function pagePath(route: string, page: 'list' | 'new' | 'edit' | 'delete') {
   if (page === 'list') return join(catalogRoot, route, 'page.tsx');
   if (page === 'new') return join(catalogRoot, route, 'new/page.tsx');
+  if (page === 'delete') return join(catalogRoot, route, '[id]/delete/page.tsx');
   return join(catalogRoot, route, '[id]/edit/page.tsx');
 }
 
@@ -115,14 +116,18 @@ test('catalog dictionary admin pages exist with read/write permissions and i18n'
     const listPage = await readFile(pagePath(entity.route, 'list'), 'utf8');
     const newPage = await readFile(pagePath(entity.route, 'new'), 'utf8');
     const editPage = await readFile(pagePath(entity.route, 'edit'), 'utf8');
+    const deletePage = await readFile(
+      pagePath(entity.route, 'delete'),
+      'utf8'
+    );
 
     assert.match(listPage, /PERMISSIONS\.CATALOG_READ/);
     assert.match(newPage, /PERMISSIONS\.CATALOG_WRITE/);
     assert.match(editPage, /PERMISSIONS\.CATALOG_WRITE/);
+    assert.match(deletePage, /PERMISSIONS\.CATALOG_WRITE/);
 
-    for (const source of [listPage, newPage, editPage]) {
+    for (const source of [listPage, newPage, editPage, deletePage]) {
       assert.match(source, /getTranslations\(['"]admin\.catalog['"]\)/);
-      assert.doesNotMatch(source, callPattern(entity.delete));
     }
   }
 });
@@ -132,6 +137,10 @@ test('catalog dictionary pages use TableCard/FormCard and catalog service handle
     const listPage = await readFile(pagePath(entity.route, 'list'), 'utf8');
     const newPage = await readFile(pagePath(entity.route, 'new'), 'utf8');
     const editPage = await readFile(pagePath(entity.route, 'edit'), 'utf8');
+    const deletePage = await readFile(
+      pagePath(entity.route, 'delete'),
+      'utf8'
+    );
 
     assert.match(listPage, /<TableCard[\s\S]*buttons=/);
     assert.match(listPage, callPattern(entity.list));
@@ -139,6 +148,10 @@ test('catalog dictionary pages use TableCard/FormCard and catalog service handle
     assert.match(
       listPage,
       new RegExp(`admin/catalog/${entity.route}/\\$\\{item\\.id\\}/edit`)
+    );
+    assert.match(
+      listPage,
+      new RegExp(`admin/catalog/${entity.route}/\\$\\{item\\.id\\}/delete`)
     );
 
     assert.match(newPage, /<FormCard/);
@@ -157,6 +170,30 @@ test('catalog dictionary pages use TableCard/FormCard and catalog service handle
       editPage,
       new RegExp(`redirect_url:\\s*['"]/admin/catalog/${entity.route}['"]`)
     );
+    assert.match(editPage, disabledFieldPattern('slug'));
+
+    assert.match(deletePage, /<FormCard/);
+    assert.match(deletePage, callPattern(entity.getById));
+    assert.match(deletePage, callPattern(entity.delete));
+    assert.match(deletePage, /CatalogDeleteBlockedError/);
+    assert.match(deletePage, /delete\.blocked/);
+    assert.match(deletePage, /errors\.deleteFailed/);
+    assert.match(deletePage, /variant:\s*['"]destructive['"]/);
+    assert.match(deletePage, /actions=\{\[/);
+    assert.match(
+      deletePage,
+      new RegExp(`${entity.route}\\.delete\\.buttons\\.cancel`)
+    );
+    assert.match(deletePage, /icon:\s*['"]ArrowLeft['"]/);
+    assert.match(
+      deletePage,
+      new RegExp(`\\burl:\\s*['"]/admin/catalog/${entity.route}['"]`)
+    );
+    assert.match(deletePage, /revalidateCatalog\s*\(/);
+    assert.match(
+      deletePage,
+      new RegExp(`redirect_url:\\s*['"]/admin/catalog/${entity.route}['"]`)
+    );
   }
 });
 
@@ -170,7 +207,7 @@ test('catalog status forms expose callable and public visibility switches', asyn
   }
 });
 
-test('catalog group forms expose mapping, key creation, and immutable edit slug', async () => {
+test('catalog group forms expose mapping and key creation controls', async () => {
   const newPage = await readFile(pagePath('groups', 'new'), 'utf8');
   const editPage = await readFile(pagePath('groups', 'edit'), 'utf8');
 
@@ -178,11 +215,6 @@ test('catalog group forms expose mapping, key creation, and immutable edit slug'
     assert.match(source, fieldPattern('newapiGroup'));
     assert.match(source, switchFieldPattern('allowCreateKey'));
   }
-
-  assert.match(
-    editPage,
-    /name:\s*['"]slug['"][\s\S]*?attributes:\s*\{\s*disabled:\s*true\s*\}/
-  );
 });
 
 test('catalog model pages expose admin catalog fields, candidate form, and listings entry points', async () => {

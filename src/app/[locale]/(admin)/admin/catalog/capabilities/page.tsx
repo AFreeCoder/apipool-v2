@@ -54,6 +54,12 @@ export default async function AdminCatalogCapabilitiesPage({
             icon: 'RiEditLine',
             url: `/admin/catalog/capabilities/${item.id}/edit`,
           },
+          {
+            name: 'delete',
+            title: t('actions.delete'),
+            icon: 'Trash2',
+            url: `/admin/catalog/capabilities/${item.id}/delete`,
+          },
         ],
       },
     ],

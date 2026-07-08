@@ -80,6 +80,18 @@
       "buttons": {
         "submit": "更新"
       }
+    },
+    "delete": {
+      "title": "删除供应商",
+      "crumb": "删除供应商",
+      "notFound": "供应商不存在",
+      "description": "确认删除供应商 {name}（{slug}）？只有未被模型引用的供应商可以删除。",
+      "success": "供应商已删除",
+      "blocked": "该记录仍被模型目录使用，不能删除。请改为禁用或下架相关入口。",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
+      }
     }
   },
   "categories": {
@@ -105,6 +117,18 @@
       "success": "分类已更新",
       "buttons": {
         "submit": "更新"
+      }
+    },
+    "delete": {
+      "title": "删除分类",
+      "crumb": "删除分类",
+      "notFound": "分类不存在",
+      "description": "确认删除分类 {name}（{slug}）？只有未被模型引用的分类可以删除。",
+      "success": "分类已删除",
+      "blocked": "该记录仍被模型目录使用，不能删除。请改为禁用或下架相关入口。",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
       }
     }
   },
@@ -132,6 +156,18 @@
       "buttons": {
         "submit": "更新"
       }
+    },
+    "delete": {
+      "title": "删除能力",
+      "crumb": "删除能力",
+      "notFound": "能力不存在",
+      "description": "确认删除能力 {name}（{slug}）？只有未被模型引用的能力可以删除。",
+      "success": "能力已删除",
+      "blocked": "该记录仍被模型目录使用，不能删除。请改为禁用或下架相关入口。",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
+      }
     }
   },
   "statuses": {
@@ -158,6 +194,18 @@
       "buttons": {
         "submit": "更新"
       }
+    },
+    "delete": {
+      "title": "删除状态",
+      "crumb": "删除状态",
+      "notFound": "状态不存在",
+      "description": "确认删除状态 {name}（{slug}）？只有未被售卖项引用的状态可以删除。",
+      "success": "状态已删除",
+      "blocked": "该记录仍被模型目录使用，不能删除。请改为禁用或下架相关入口。",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
+      }
     }
   },
   "groups": {
@@ -183,6 +231,18 @@
       "success": "分组已更新",
       "buttons": {
         "submit": "更新"
+      }
+    },
+    "delete": {
+      "title": "删除分组",
+      "crumb": "删除分组",
+      "notFound": "分组不存在",
+      "description": "确认删除分组 {name}（{slug}）？只有未被售卖项或未删除 API Key 引用的分组可以删除。",
+      "success": "分组已删除",
+      "blocked": "该记录仍被模型目录使用，不能删除。请改为禁用或下架相关入口。",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
       }
     }
   },

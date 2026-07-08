@@ -1,7 +1,7 @@
 import {
+  CatalogDeleteBlockedError,
+  deleteCategory,
   getCategoryById,
-  updateCategory,
-  UpdateCategory,
 } from '@/features/api-catalog/server/catalog-service';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
@@ -13,7 +13,7 @@ import { FormCard } from '@/shared/blocks/form';
 import { Crumb } from '@/shared/types/blocks/common';
 import { Form } from '@/shared/types/blocks/form';
 
-export default async function CatalogCategoryEditPage({
+export default async function CatalogCategoryDeletePage({
   params,
 }: {
   params: Promise<{ locale: string; id: string }>;
@@ -29,83 +29,50 @@ export default async function CatalogCategoryEditPage({
 
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
-  const updateFailedMessage = t('errors.updateFailed');
-  const successMessage = t('categories.edit.success');
+  const deleteFailedMessage = t('errors.deleteFailed');
+  const blockedMessage = t('categories.delete.blocked');
+  const successMessage = t('categories.delete.success');
   const category = await getCategoryById(id);
 
   if (!category) {
-    return <Empty message={t('categories.edit.notFound')} />;
+    return <Empty message={t('categories.delete.notFound')} />;
   }
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
     { title: t('crumbs.catalog'), url: '/admin/catalog/categories' },
     { title: t('categories.list.crumb'), url: '/admin/catalog/categories' },
-    { title: t('categories.edit.crumb'), is_active: true },
+    { title: t('categories.delete.crumb'), is_active: true },
   ];
 
   const form: Form = {
-    fields: [
-      {
-        name: 'slug',
-        type: 'text',
-        title: t('fields.slug'),
-        validation: { required: true },
-        attributes: { disabled: true },
-      },
-      {
-        name: 'name',
-        type: 'text',
-        title: t('fields.name'),
-        validation: { required: true },
-      },
-      {
-        name: 'sortOrder',
-        type: 'number',
-        title: t('fields.sortOrder'),
-        validation: { required: true },
-      },
-      {
-        name: 'status',
-        type: 'select',
-        title: t('fields.status'),
-        validation: { required: true },
-        options: [
-          { title: t('statusOptions.active'), value: 'active' },
-          { title: t('statusOptions.disabled'), value: 'disabled' },
-        ],
-      },
-    ],
+    fields: [],
     passby: {
       category,
     },
-    data: category,
     submit: {
       button: {
-        title: t('categories.edit.buttons.submit'),
+        title: t('categories.delete.buttons.submit'),
+        icon: 'Trash2',
+        variant: 'destructive',
       },
-      handler: async (data, passby) => {
+      handler: async (_data, passby) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { category } = passby;
-
-        if (!category) {
+        const target = passby?.category;
+        if (!target?.id) {
           throw new Error(missingRecordMessage);
         }
 
-        const patch: UpdateCategory = {
-          slug: category.slug,
-          name: (data.get('name') as string).trim(),
-          sortOrder: Number(data.get('sortOrder') ?? 0),
-          status: (data.get('status') as string) || 'active',
-        };
-
-        const result = await updateCategory(category.id as string, patch);
-
-        if (!result) {
-          throw new Error(updateFailedMessage);
+        try {
+          await deleteCategory(target.id);
+        } catch (error) {
+          if (error instanceof CatalogDeleteBlockedError) {
+            throw new Error(blockedMessage);
+          }
+          throw new Error(deleteFailedMessage);
         }
 
         revalidateCatalog();
@@ -123,7 +90,21 @@ export default async function CatalogCategoryEditPage({
     <>
       <Header crumbs={crumbs} />
       <Main>
-        <MainHeader title={t('categories.edit.title')} />
+        <MainHeader
+          title={t('categories.delete.title')}
+          description={t('categories.delete.description', {
+            name: category.name,
+            slug: category.slug,
+          })}
+          actions={[
+            {
+              title: t('categories.delete.buttons.cancel'),
+              icon: 'ArrowLeft',
+              variant: 'outline',
+              url: '/admin/catalog/categories',
+            },
+          ]}
+        />
         <FormCard form={form} className="md:max-w-xl" />
       </Main>
     </>

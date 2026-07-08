@@ -61,6 +61,12 @@ export default async function AdminCatalogGroupsPage({
             icon: 'RiEditLine',
             url: `/admin/catalog/groups/${item.id}/edit`,
           },
+          {
+            name: 'delete',
+            title: t('actions.delete'),
+            icon: 'Trash2',
+            url: `/admin/catalog/groups/${item.id}/delete`,
+          },
         ],
       },
     ],

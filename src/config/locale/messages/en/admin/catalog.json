@@ -80,6 +80,18 @@
       "buttons": {
         "submit": "Update"
       }
+    },
+    "delete": {
+      "title": "Delete Vendor",
+      "crumb": "Delete Vendor",
+      "notFound": "Vendor not found",
+      "description": "Delete vendor {name} ({slug})? Only vendors not referenced by models can be deleted.",
+      "success": "Vendor deleted",
+      "blocked": "This record is still used by the catalog and cannot be deleted. Disable or unpublish the related entry instead.",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
+      }
     }
   },
   "categories": {
@@ -105,6 +117,18 @@
       "success": "Category updated",
       "buttons": {
         "submit": "Update"
+      }
+    },
+    "delete": {
+      "title": "Delete Category",
+      "crumb": "Delete Category",
+      "notFound": "Category not found",
+      "description": "Delete category {name} ({slug})? Only categories not referenced by models can be deleted.",
+      "success": "Category deleted",
+      "blocked": "This record is still used by the catalog and cannot be deleted. Disable or unpublish the related entry instead.",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
       }
     }
   },
@@ -132,6 +156,18 @@
       "buttons": {
         "submit": "Update"
       }
+    },
+    "delete": {
+      "title": "Delete Capability",
+      "crumb": "Delete Capability",
+      "notFound": "Capability not found",
+      "description": "Delete capability {name} ({slug})? Only capabilities not referenced by models can be deleted.",
+      "success": "Capability deleted",
+      "blocked": "This record is still used by the catalog and cannot be deleted. Disable or unpublish the related entry instead.",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
+      }
     }
   },
   "statuses": {
@@ -158,6 +194,18 @@
       "buttons": {
         "submit": "Update"
       }
+    },
+    "delete": {
+      "title": "Delete Status",
+      "crumb": "Delete Status",
+      "notFound": "Status not found",
+      "description": "Delete status {name} ({slug})? Only statuses not referenced by listings can be deleted.",
+      "success": "Status deleted",
+      "blocked": "This record is still used by the catalog and cannot be deleted. Disable or unpublish the related entry instead.",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
+      }
     }
   },
   "groups": {
@@ -183,6 +231,18 @@
       "success": "Group updated",
       "buttons": {
         "submit": "Update"
+      }
+    },
+    "delete": {
+      "title": "Delete Group",
+      "crumb": "Delete Group",
+      "notFound": "Group not found",
+      "description": "Delete group {name} ({slug})? Only groups not referenced by listings or non-deleted API keys can be deleted.",
+      "success": "Group deleted",
+      "blocked": "This record is still used by the catalog and cannot be deleted. Disable or unpublish the related entry instead.",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
       }
     }
   },
