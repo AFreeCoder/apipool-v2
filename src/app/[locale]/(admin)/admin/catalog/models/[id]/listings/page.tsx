@@ -16,6 +16,7 @@ import { Crumb } from '@/shared/types/blocks/common';
 import { type Table } from '@/shared/types/blocks/table';
 
 type ListingRow = Listing & {
+  groupSlug: string;
   groupName: string;
   statusName: string;
   discountRate: string;
@@ -47,13 +48,14 @@ export default async function AdminCatalogModelListingsPage({
     getStatuses(),
     getListingsByModel(model.id),
   ]);
-  const groupNames = new Map(groups.map((group) => [group.id, group.name]));
+  const groupById = new Map(groups.map((group) => [group.id, group]));
   const statusNames = new Map(
     statuses.map((status) => [status.id, status.name])
   );
   const rows: ListingRow[] = listings.map((listing) => ({
     ...listing,
-    groupName: groupNames.get(listing.groupId) ?? listing.groupId,
+    groupSlug: groupById.get(listing.groupId)?.slug ?? listing.groupId,
+    groupName: groupById.get(listing.groupId)?.name ?? listing.groupId,
     statusName: statusNames.get(listing.statusId) ?? listing.statusId,
     discountRate: formatDiscountRate(listing.discountRateBps),
   }));
@@ -67,7 +69,8 @@ export default async function AdminCatalogModelListingsPage({
 
   const table: Table = {
     columns: [
-      { name: 'groupName', title: t('fields.group') },
+      { name: 'groupSlug', title: t('fields.groupSlug'), type: 'copy' },
+      { name: 'groupName', title: t('fields.name') },
       { name: 'statusName', title: t('fields.status'), type: 'label' },
       { name: 'discountRate', title: t('fields.discountRate') },
       { name: 'discountNote', title: t('fields.discountNote') },
@@ -83,6 +86,12 @@ export default async function AdminCatalogModelListingsPage({
             title: t('actions.edit'),
             icon: 'RiEditLine',
             url: `/admin/catalog/models/${model.id}/listings/${item.id}/edit`,
+          },
+          {
+            name: 'delete',
+            title: t('actions.delete'),
+            icon: 'Trash2',
+            url: `/admin/catalog/models/${model.id}/listings/${item.id}/delete`,
           },
         ],
       },

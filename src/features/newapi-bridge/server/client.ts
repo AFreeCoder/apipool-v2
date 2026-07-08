@@ -155,6 +155,15 @@ export type RemoteUsageLog = {
   status: 'success' | 'failed' | 'cancelled';
   inputTokens: number;
   outputTokens: number;
+  cacheTokens?: number;
+  cacheRatio?: number;
+  cacheCreationTokens?: number;
+  cacheCreationRatio?: number;
+  cacheCreationTokens5m?: number;
+  cacheCreationRatio5m?: number;
+  cacheCreationTokens1h?: number;
+  cacheCreationRatio1h?: number;
+  usageSemantic?: string;
   spendUsd?: number;
   createdAt: string;
 };
@@ -850,8 +859,78 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return { start: end - days * 24 * 60 * 60, end };
   }
 
+  function parseUsageLogCacheMetadata(item: any) {
+    let other = item?.other;
+    if (typeof other === 'string' && other.trim().length > 0) {
+      try {
+        other = JSON.parse(other);
+      } catch {
+        other = undefined;
+      }
+    }
+
+    const cacheTokens = asNullableNumber(
+      other?.cache_tokens ?? other?.cacheTokens
+    );
+    const cacheRatio = asNullableNumber(other?.cache_ratio ?? other?.cacheRatio);
+    const cacheCreationTokens = asNullableNumber(
+      other?.cache_creation_tokens ?? other?.cacheCreationTokens
+    );
+    const cacheCreationRatio = asNullableNumber(
+      other?.cache_creation_ratio ?? other?.cacheCreationRatio
+    );
+    const cacheCreationTokens5m = asNullableNumber(
+      other?.cache_creation_tokens_5m ?? other?.cacheCreationTokens5m
+    );
+    const cacheCreationRatio5m = asNullableNumber(
+      other?.cache_creation_ratio_5m ?? other?.cacheCreationRatio5m
+    );
+    const cacheCreationTokens1h = asNullableNumber(
+      other?.cache_creation_tokens_1h ?? other?.cacheCreationTokens1h
+    );
+    const cacheCreationRatio1h = asNullableNumber(
+      other?.cache_creation_ratio_1h ?? other?.cacheCreationRatio1h
+    );
+    const usageSemantic =
+      typeof (other?.usage_semantic ?? other?.usageSemantic) === 'string'
+        ? String(other?.usage_semantic ?? other?.usageSemantic).trim()
+        : '';
+
+    return {
+      cacheTokens:
+        cacheTokens !== null && cacheTokens >= 0 ? cacheTokens : undefined,
+      cacheRatio: cacheRatio !== null && cacheRatio >= 0 ? cacheRatio : undefined,
+      cacheCreationTokens:
+        cacheCreationTokens !== null && cacheCreationTokens >= 0
+          ? cacheCreationTokens
+          : undefined,
+      cacheCreationRatio:
+        cacheCreationRatio !== null && cacheCreationRatio >= 0
+          ? cacheCreationRatio
+          : undefined,
+      cacheCreationTokens5m:
+        cacheCreationTokens5m !== null && cacheCreationTokens5m >= 0
+          ? cacheCreationTokens5m
+          : undefined,
+      cacheCreationRatio5m:
+        cacheCreationRatio5m !== null && cacheCreationRatio5m >= 0
+          ? cacheCreationRatio5m
+          : undefined,
+      cacheCreationTokens1h:
+        cacheCreationTokens1h !== null && cacheCreationTokens1h >= 0
+          ? cacheCreationTokens1h
+          : undefined,
+      cacheCreationRatio1h:
+        cacheCreationRatio1h !== null && cacheCreationRatio1h >= 0
+          ? cacheCreationRatio1h
+          : undefined,
+      usageSemantic: usageSemantic.length > 0 ? usageSemantic : undefined,
+    };
+  }
+
   function toRemoteUsageLog(item: any): RemoteUsageLog {
     const quota = asNullableNumber(item.quota);
+    const cache = parseUsageLogCacheMetadata(item);
     return {
       id: String(item.id),
       keyMasked: typeof item.token_name === 'string' ? item.token_name : '',
@@ -859,6 +938,15 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       status: 'success',
       inputTokens: asNumber(item.prompt_tokens),
       outputTokens: asNumber(item.completion_tokens),
+      cacheTokens: cache.cacheTokens,
+      cacheRatio: cache.cacheRatio,
+      cacheCreationTokens: cache.cacheCreationTokens,
+      cacheCreationRatio: cache.cacheCreationRatio,
+      cacheCreationTokens5m: cache.cacheCreationTokens5m,
+      cacheCreationRatio5m: cache.cacheCreationRatio5m,
+      cacheCreationTokens1h: cache.cacheCreationTokens1h,
+      cacheCreationRatio1h: cache.cacheCreationRatio1h,
+      usageSemantic: cache.usageSemantic,
       spendUsd: quota === null ? undefined : quotaToUsd(quota),
       createdAt: new Date(asNumber(item.created_at) * 1000).toISOString(),
     };

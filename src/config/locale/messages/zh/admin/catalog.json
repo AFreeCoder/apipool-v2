@@ -17,6 +17,7 @@
     "displayName": "模型名称",
     "vendor": "供应商",
     "group": "分组",
+    "groupSlug": "分组 ID",
     "category": "分类",
     "categories": "分类",
     "contextWindow": "上下文窗口",
@@ -30,8 +31,6 @@
     "discountRate": "折扣",
     "discountNote": "折扣说明",
     "description": "说明",
-    "smokeTested": "运维烟测通过",
-    "smokeTestedTip": "仅表示运维已确认该分组折扣在生产链路完成烟测，不会自动触发烟测。",
     "createdAt": "创建时间",
     "actions": "操作"
   },
@@ -337,6 +336,17 @@
       "success": "分组折扣已更新",
       "buttons": {
         "submit": "更新"
+      }
+    },
+    "delete": {
+      "title": "删除分组折扣",
+      "crumb": "删除分组折扣",
+      "notFound": "分组折扣不存在",
+      "description": "确认删除模型 {model} 的分组折扣 {group}？这只会删除该模型在该分组下的折扣配置，不会删除分组本身。",
+      "success": "分组折扣已删除",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
       }
     }
   }

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -846,6 +847,15 @@ export const usageLogSnapshot = table(
     status: text('status').notNull(),
     inputTokens: integer('input_tokens').notNull().default(0),
     outputTokens: integer('output_tokens').notNull().default(0),
+    cacheTokens: integer('cache_tokens'),
+    cacheRatio: real('cache_ratio'),
+    cacheCreationTokens: integer('cache_creation_tokens'),
+    cacheCreationRatio: real('cache_creation_ratio'),
+    cacheCreationTokens5m: integer('cache_creation_tokens_5m'),
+    cacheCreationRatio5m: real('cache_creation_ratio_5m'),
+    cacheCreationTokens1h: integer('cache_creation_tokens_1h'),
+    cacheCreationRatio1h: real('cache_creation_ratio_1h'),
+    usageSemantic: text('usage_semantic'),
     spendUsd: integer('spend_usd'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     syncedAt: integer('synced_at', { mode: 'timestamp_ms' })

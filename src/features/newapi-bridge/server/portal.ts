@@ -76,6 +76,15 @@ export type PortalUsageView = {
     status: string;
     inputTokens: number;
     outputTokens: number;
+    cacheTokens?: number | null;
+    cacheRatio?: number | null;
+    cacheCreationTokens?: number | null;
+    cacheCreationRatio?: number | null;
+    cacheCreationTokens5m?: number | null;
+    cacheCreationRatio5m?: number | null;
+    cacheCreationTokens1h?: number | null;
+    cacheCreationRatio1h?: number | null;
+    usageSemantic?: string | null;
     spendUsd?: number | null;
     createdAt: Date;
   }>;
@@ -369,6 +378,15 @@ function toPublicUsageLog(row: any) {
     status: row.status,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
+    cacheTokens: row.cacheTokens,
+    cacheRatio: row.cacheRatio,
+    cacheCreationTokens: row.cacheCreationTokens,
+    cacheCreationRatio: row.cacheCreationRatio,
+    cacheCreationTokens5m: row.cacheCreationTokens5m,
+    cacheCreationRatio5m: row.cacheCreationRatio5m,
+    cacheCreationTokens1h: row.cacheCreationTokens1h,
+    cacheCreationRatio1h: row.cacheCreationRatio1h,
+    usageSemantic: row.usageSemantic,
     spendUsd: row.spendUsd,
     createdAt:
       row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
@@ -2019,6 +2037,15 @@ export async function getPortalUsage(
           status: log.status,
           inputTokens: log.inputTokens,
           outputTokens: log.outputTokens,
+          cacheTokens: log.cacheTokens,
+          cacheRatio: log.cacheRatio,
+          cacheCreationTokens: log.cacheCreationTokens,
+          cacheCreationRatio: log.cacheCreationRatio,
+          cacheCreationTokens5m: log.cacheCreationTokens5m,
+          cacheCreationRatio5m: log.cacheCreationRatio5m,
+          cacheCreationTokens1h: log.cacheCreationTokens1h,
+          cacheCreationRatio1h: log.cacheCreationRatio1h,
+          usageSemantic: log.usageSemantic,
           spendUsd: log.spendUsd,
           createdAt: new Date(log.createdAt),
           syncedAt,
@@ -2045,6 +2072,15 @@ export async function getPortalUsage(
         status: log.status,
         inputTokens: log.inputTokens,
         outputTokens: log.outputTokens,
+        cacheTokens: log.cacheTokens,
+        cacheRatio: log.cacheRatio,
+        cacheCreationTokens: log.cacheCreationTokens,
+        cacheCreationRatio: log.cacheCreationRatio,
+        cacheCreationTokens5m: log.cacheCreationTokens5m,
+        cacheCreationRatio5m: log.cacheCreationRatio5m,
+        cacheCreationTokens1h: log.cacheCreationTokens1h,
+        cacheCreationRatio1h: log.cacheCreationRatio1h,
+        usageSemantic: log.usageSemantic,
         spendUsd: log.spendUsd,
         createdAt: new Date(log.createdAt),
       })),

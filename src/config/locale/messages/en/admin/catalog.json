@@ -17,6 +17,7 @@
     "displayName": "Model Name",
     "vendor": "Vendor",
     "group": "Group",
+    "groupSlug": "Group ID",
     "category": "Category",
     "categories": "Categories",
     "contextWindow": "Context Window",
@@ -30,8 +31,6 @@
     "discountRate": "Discount",
     "discountNote": "Discount Note",
     "description": "Description",
-    "smokeTested": "Ops Smoke Tested",
-    "smokeTestedTip": "Marks that operations has confirmed this group discount through the production smoke path. It does not run a smoke test automatically.",
     "createdAt": "Created At",
     "actions": "Actions"
   },
@@ -337,6 +336,17 @@
       "success": "Group discount updated",
       "buttons": {
         "submit": "Update"
+      }
+    },
+    "delete": {
+      "title": "Delete Group Discount",
+      "crumb": "Delete Group Discount",
+      "notFound": "Group discount not found",
+      "description": "Delete group discount {group} for model {model}? This only removes this model's discount configuration for the group; it does not delete the group itself.",
+      "success": "Group discount deleted",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
       }
     }
   }

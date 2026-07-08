@@ -139,6 +139,103 @@ function getExpectedModelUsage(
   return usage.summary.byModel.find(({ modelId }) => modelId === expectedModel);
 }
 
+function normalizeCacheTokens(log: PortalUsageView['logs'][number]) {
+  const rawCacheTokens = Number(log.cacheTokens ?? 0);
+  if (!Number.isFinite(rawCacheTokens) || rawCacheTokens <= 0) return 0;
+  return rawCacheTokens;
+}
+
+function normalizeTokenCount(value: number | null | undefined) {
+  const raw = Number(value ?? 0);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw;
+}
+
+function normalizeRatio(value: number | null | undefined) {
+  const raw = Number(value ?? 1);
+  if (!Number.isFinite(raw) || raw < 0) return 1;
+  return raw;
+}
+
+function normalizeCacheRatio(log: PortalUsageView['logs'][number]) {
+  return normalizeRatio(log.cacheRatio);
+}
+
+function usesAnthropicCacheSemantics(log: PortalUsageView['logs'][number]) {
+  const semantic = String(log.usageSemantic ?? '').toLowerCase();
+  if (semantic === 'anthropic') return true;
+
+  // New API treats legacy Claude-derived OpenAI-format usage with 5m/1h split
+  // cache write fields as Anthropic cache semantics even without usage_semantic.
+  return (
+    normalizeTokenCount(log.cacheCreationTokens5m) > 0 ||
+    normalizeTokenCount(log.cacheCreationTokens1h) > 0
+  );
+}
+
+function normalizeCacheCreation(log: PortalUsageView['logs'][number]) {
+  const total = normalizeTokenCount(log.cacheCreationTokens);
+  const tokens5m = normalizeTokenCount(log.cacheCreationTokens5m);
+  const tokens1h = normalizeTokenCount(log.cacheCreationTokens1h);
+
+  if (!usesAnthropicCacheSemantics(log)) {
+    return {
+      tokens: total,
+      billableTokens: total * normalizeRatio(log.cacheCreationRatio),
+      ratios: total > 0 ? [normalizeRatio(log.cacheCreationRatio)] : [],
+    };
+  }
+
+  const tokens = Math.max(total, tokens5m + tokens1h);
+  const defaultTokens = Math.max(0, total - tokens5m - tokens1h);
+
+  return {
+    tokens,
+    billableTokens:
+      defaultTokens * normalizeRatio(log.cacheCreationRatio) +
+      tokens5m * normalizeRatio(log.cacheCreationRatio5m) +
+      tokens1h * normalizeRatio(log.cacheCreationRatio1h),
+    ratios: [
+      defaultTokens > 0 ? normalizeRatio(log.cacheCreationRatio) : undefined,
+      tokens5m > 0 ? normalizeRatio(log.cacheCreationRatio5m) : undefined,
+      tokens1h > 0 ? normalizeRatio(log.cacheCreationRatio1h) : undefined,
+    ].filter((ratio): ratio is number => typeof ratio === 'number'),
+  };
+}
+
+function quotaSpendFromUsageLogs({
+  logs,
+  effectiveInputMicroUsd,
+  effectiveOutputMicroUsd,
+  quotaPerUnit,
+}: {
+  logs: PortalUsageView['logs'];
+  effectiveInputMicroUsd: number;
+  effectiveOutputMicroUsd: number;
+  quotaPerUnit: number;
+}) {
+  const usd = logs.reduce((sum, log) => {
+    const cacheTokens = normalizeCacheTokens(log);
+    const cacheRatio = normalizeCacheRatio(log);
+    const cacheCreation = normalizeCacheCreation(log);
+    const shouldSubtractCache = !usesAnthropicCacheSemantics(log);
+    const nonCachedInputTokens =
+      log.inputTokens -
+      (shouldSubtractCache ? cacheTokens : 0) -
+      (shouldSubtractCache ? cacheCreation.tokens : 0);
+    const billableInputTokens =
+      nonCachedInputTokens +
+      cacheTokens * cacheRatio +
+      cacheCreation.billableTokens;
+    return (
+      sum +
+      (billableInputTokens * effectiveInputMicroUsd) / 1_000_000 / 1_000_000 +
+      (log.outputTokens * effectiveOutputMicroUsd) / 1_000_000 / 1_000_000
+    );
+  }, 0);
+  return Math.round(usd * quotaPerUnit);
+}
+
 export function resolveSmokeConfirmedEffectivePrice(
   listings: Array<
     Pick<
@@ -220,16 +317,59 @@ export function buildSmokePriceReconciliationReport({
   );
   const inputTokens = loggedInputTokens || summaryInputDelta;
   const outputTokens = loggedOutputTokens || summaryOutputDelta;
+  const loggedCacheTokens = newLogs.reduce(
+    (sum, log) => sum + normalizeCacheTokens(log),
+    0
+  );
+  const loggedCacheCreationTokens = newLogs.reduce(
+    (sum, log) => sum + normalizeCacheCreation(log).tokens,
+    0
+  );
+  const cacheRatios = [
+    ...new Set(
+      newLogs
+        .filter((log) => normalizeCacheTokens(log) > 0)
+        .map((log) => normalizeCacheRatio(log))
+    ),
+  ];
+  const cacheRatioLabel =
+    cacheRatios.length === 0
+      ? 'none'
+      : cacheRatios.length === 1
+        ? String(cacheRatios[0])
+        : 'mixed';
+  const cacheCreationRatios = [
+    ...new Set(
+      newLogs.flatMap((log) =>
+        normalizeCacheCreation(log).tokens > 0
+          ? normalizeCacheCreation(log).ratios
+          : []
+      )
+    ),
+  ];
+  const cacheCreationRatioLabel =
+    cacheCreationRatios.length === 0
+      ? 'none'
+      : cacheCreationRatios.length === 1
+        ? String(cacheCreationRatios[0])
+        : 'mixed';
   const expectedQuota =
-    inputTokens + outputTokens > 0
-      ? quotaSpendFromEffectivePrice({
-          inputTokens,
-          outputTokens,
+    newLogs.length > 0
+      ? quotaSpendFromUsageLogs({
+          logs: newLogs,
           effectiveInputMicroUsd,
           effectiveOutputMicroUsd,
           quotaPerUnit,
         })
-      : undefined;
+      : inputTokens + outputTokens > 0
+        ? quotaSpendFromEffectivePrice({
+            inputTokens,
+            outputTokens,
+            effectiveInputMicroUsd,
+            effectiveOutputMicroUsd,
+            quotaPerUnit,
+          })
+        : undefined;
 
   const allNewLogsHaveSpend =
     newLogs.length > 0 &&
@@ -272,6 +412,10 @@ export function buildSmokePriceReconciliationReport({
     `effectiveOutputMicroUsd=${effectiveOutputMicroUsd}`,
     `inputTokens=${inputTokens}`,
     `outputTokens=${outputTokens}`,
+    `cacheTokens=${loggedCacheTokens}`,
+    `cacheRatio=${cacheRatioLabel}`,
+    `cacheCreationTokens=${loggedCacheCreationTokens}`,
+    `cacheCreationRatio=${cacheCreationRatioLabel}`,
     `expectedQuota=${expectedQuota ?? 'unavailable'}`,
     `actualQuota=${actualQuota ?? 'unavailable'}`,
     `actualDelta=${source === 'quota_delta' ? (actualQuota ?? 'unavailable') : 'n/a'}`,

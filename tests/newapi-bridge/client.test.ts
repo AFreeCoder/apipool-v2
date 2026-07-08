@@ -963,6 +963,48 @@ test('listUsageLogs maps consumption logs with USD spend', async () => {
   assert.equal(url.searchParams.get('type'), '2');
 });
 
+test('listUsageLogs maps New API cache token billing metadata', async () => {
+  const { client } = createMockedClient({
+    'GET /api/log/self': () =>
+      ok({
+        items: [
+          {
+            id: 11,
+            token_name: 'pk_abc',
+            model_name: 'gpt-5.5',
+            prompt_tokens: 4388,
+            completion_tokens: 5,
+            quota: 2405,
+            other: JSON.stringify({
+              cache_tokens: 3840,
+              cache_ratio: 0.1,
+              cache_creation_tokens: 128,
+              cache_creation_ratio: 1.25,
+              cache_creation_tokens_5m: 32,
+              cache_creation_ratio_5m: 1.1,
+              cache_creation_tokens_1h: 16,
+              cache_creation_ratio_1h: 1.5,
+              usage_semantic: 'anthropic',
+            }),
+            created_at: 1_781_252_611,
+          },
+        ],
+      }),
+  });
+
+  const logs = await client.listUsageLogs(USER, 20);
+
+  assert.equal(logs[0].cacheTokens, 3840);
+  assert.equal(logs[0].cacheRatio, 0.1);
+  assert.equal(logs[0].cacheCreationTokens, 128);
+  assert.equal(logs[0].cacheCreationRatio, 1.25);
+  assert.equal(logs[0].cacheCreationTokens5m, 32);
+  assert.equal(logs[0].cacheCreationRatio5m, 1.1);
+  assert.equal(logs[0].cacheCreationTokens1h, 16);
+  assert.equal(logs[0].cacheCreationRatio1h, 1.5);
+  assert.equal(logs[0].usageSemantic, 'anthropic');
+});
+
 test('listUsageLogs leaves spend unavailable when usage quota is missing or invalid', async () => {
   const { client } = createMockedClient({
     'GET /api/log/self': () =>

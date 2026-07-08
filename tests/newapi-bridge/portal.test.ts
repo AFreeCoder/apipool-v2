@@ -2064,6 +2064,15 @@ test('getPortalUsage snapshots repeated remote logs only once', async () => {
     status: 'success',
     inputTokens: 12,
     outputTokens: 8,
+    cacheTokens: 4,
+    cacheRatio: 0.25,
+    cacheCreationTokens: 2,
+    cacheCreationRatio: 1.25,
+    cacheCreationTokens5m: 1,
+    cacheCreationRatio5m: 1.1,
+    cacheCreationTokens1h: 1,
+    cacheCreationRatio1h: 1.5,
+    usageSemantic: 'anthropic',
     spendUsd: 1,
     createdAt: '2026-05-24T10:00:00.000Z',
   };
@@ -2105,6 +2114,17 @@ test('getPortalUsage snapshots repeated remote logs only once', async () => {
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].newapiRequestId, syncedLog.id);
+  assert.equal(rows[0].cacheTokens, 4);
+  assert.equal(rows[0].cacheRatio, 0.25);
+  assert.equal(rows[0].cacheCreationTokens, 2);
+  assert.equal(rows[0].cacheCreationRatio, 1.25);
+  assert.equal(rows[0].cacheCreationTokens5m, 1);
+  assert.equal(rows[0].cacheCreationRatio5m, 1.1);
+  assert.equal(rows[0].cacheCreationTokens1h, 1);
+  assert.equal(rows[0].cacheCreationRatio1h, 1.5);
+  assert.equal(rows[0].usageSemantic, 'anthropic');
+  assert.equal(usage.logs[0].cacheCreationTokens, 2);
+  assert.equal(usage.logs[0].usageSemantic, 'anthropic');
 });
 
 test('getPortalUsage preserves duplicate request ids from a single sync response', async () => {

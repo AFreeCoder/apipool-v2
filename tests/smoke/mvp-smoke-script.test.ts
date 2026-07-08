@@ -274,6 +274,124 @@ test('MVP smoke price reconciliation reports expected actual delta and tolerance
   assert.match(report.detail, /source=usage_log/);
 });
 
+test('MVP smoke price reconciliation applies New API cache token discounts', () => {
+  const report = buildSmokePriceReconciliationReport({
+    model: 'gpt-5.5',
+    groupSlug: 'discount-1',
+    effectiveInputMicroUsd: 5_000_000,
+    effectiveOutputMicroUsd: 30_000_000,
+    quotaPerUnit: 500_000,
+    toleranceQuota: 1,
+    beforeUsage: usageView({
+      quotaRemaining: 10_000,
+      logs: [],
+    }),
+    afterUsage: usageView({
+      quotaRemaining: 7_595,
+      logs: [
+        {
+          id: 'new',
+          modelId: 'gpt-5.5',
+          inputTokens: 4_388,
+          outputTokens: 5,
+          cacheTokens: 3_840,
+          cacheRatio: 0.1,
+          spendUsd: 0.00481,
+        },
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.match(report.detail, /inputTokens=4388/);
+  assert.match(report.detail, /cacheTokens=3840/);
+  assert.match(report.detail, /cacheRatio=0.1/);
+  assert.match(report.detail, /expectedQuota=2405/);
+  assert.match(report.detail, /actualQuota=2405/);
+  assert.match(report.detail, /deltaQuota=0/);
+});
+
+test('MVP smoke price reconciliation applies New API cache creation discounts', () => {
+  const report = buildSmokePriceReconciliationReport({
+    model: 'gpt-5.5',
+    groupSlug: 'discount-1',
+    effectiveInputMicroUsd: 1_000_000,
+    effectiveOutputMicroUsd: 2_000_000,
+    quotaPerUnit: 1_000_000,
+    toleranceQuota: 1,
+    beforeUsage: usageView({
+      quotaRemaining: 10_000,
+      logs: [],
+    }),
+    afterUsage: usageView({
+      quotaRemaining: 8_980,
+      logs: [
+        {
+          id: 'new',
+          modelId: 'gpt-5.5',
+          inputTokens: 1_000,
+          outputTokens: 10,
+          cacheTokens: 100,
+          cacheRatio: 0.5,
+          cacheCreationTokens: 200,
+          cacheCreationRatio: 1.25,
+          usageSemantic: 'openai',
+          spendUsd: 0.00102,
+        },
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.match(report.detail, /inputTokens=1000/);
+  assert.match(report.detail, /cacheTokens=100/);
+  assert.match(report.detail, /cacheCreationTokens=200/);
+  assert.match(report.detail, /expectedQuota=1020/);
+  assert.match(report.detail, /actualQuota=1020/);
+  assert.match(report.detail, /deltaQuota=0/);
+});
+
+test('MVP smoke price reconciliation applies Anthropic cache creation semantics', () => {
+  const report = buildSmokePriceReconciliationReport({
+    model: 'claude-sonnet-4',
+    groupSlug: 'discount-1',
+    effectiveInputMicroUsd: 1_000_000,
+    effectiveOutputMicroUsd: 2_000_000,
+    quotaPerUnit: 1_000_000,
+    toleranceQuota: 1,
+    beforeUsage: usageView({
+      quotaRemaining: 10_000,
+      logs: [],
+    }),
+    afterUsage: usageView({
+      quotaRemaining: 8_665,
+      logs: [
+        {
+          id: 'new',
+          modelId: 'claude-sonnet-4',
+          inputTokens: 50,
+          outputTokens: 0,
+          cacheCreationTokens: 1_000,
+          cacheCreationRatio: 1.25,
+          cacheCreationTokens5m: 100,
+          cacheCreationRatio5m: 1.1,
+          cacheCreationTokens1h: 200,
+          cacheCreationRatio1h: 1.5,
+          usageSemantic: 'anthropic',
+          spendUsd: 0.001335,
+        },
+      ],
+    }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.match(report.detail, /inputTokens=50/);
+  assert.match(report.detail, /cacheCreationTokens=1000/);
+  assert.match(report.detail, /expectedQuota=1335/);
+  assert.match(report.detail, /actualQuota=1335/);
+  assert.match(report.detail, /deltaQuota=0/);
+});
+
 test('MVP smoke price reconciliation falls back to quota delta when log spend is unavailable', () => {
   const report = buildSmokePriceReconciliationReport({
     model: 'gpt-4o-mini',
@@ -414,6 +532,15 @@ function usageView({
     modelId: string;
     inputTokens?: number;
     outputTokens?: number;
+    cacheTokens?: number | null;
+    cacheRatio?: number | null;
+    cacheCreationTokens?: number | null;
+    cacheCreationRatio?: number | null;
+    cacheCreationTokens5m?: number | null;
+    cacheCreationRatio5m?: number | null;
+    cacheCreationTokens1h?: number | null;
+    cacheCreationRatio1h?: number | null;
+    usageSemantic?: string | null;
     spendUsd?: number | null;
   }>;
 }) {
@@ -433,6 +560,15 @@ function usageView({
       status: 'success',
       inputTokens: log.inputTokens ?? 0,
       outputTokens: log.outputTokens ?? 0,
+      cacheTokens: log.cacheTokens,
+      cacheRatio: log.cacheRatio,
+      cacheCreationTokens: log.cacheCreationTokens,
+      cacheCreationRatio: log.cacheCreationRatio,
+      cacheCreationTokens5m: log.cacheCreationTokens5m,
+      cacheCreationRatio5m: log.cacheCreationRatio5m,
+      cacheCreationTokens1h: log.cacheCreationTokens1h,
+      cacheCreationRatio1h: log.cacheCreationRatio1h,
+      usageSemantic: log.usageSemantic,
       spendUsd: log.spendUsd,
       createdAt: new Date(0),
     })),

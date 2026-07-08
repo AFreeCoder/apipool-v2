@@ -71,6 +71,13 @@
       "when": 1783017600000,
       "tag": "0009_newapi_username_sync_status",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783526400000,
+      "tag": "0010_usage_log_cache_metadata",
+      "breakpoints": true
     }
   ]
 }

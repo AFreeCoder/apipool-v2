@@ -95,9 +95,12 @@ function modelPagePath(
   return join(modelsRoot, '[id]/edit/page.tsx');
 }
 
-function listingPagePath(page: 'list' | 'new' | 'edit') {
+function listingPagePath(page: 'list' | 'new' | 'edit' | 'delete') {
   if (page === 'list') return join(modelsRoot, '[id]/listings/page.tsx');
   if (page === 'new') return join(modelsRoot, '[id]/listings/new/page.tsx');
+  if (page === 'delete') {
+    return join(modelsRoot, '[id]/listings/[listingId]/delete/page.tsx');
+  }
   return join(modelsRoot, '[id]/listings/[listingId]/edit/page.tsx');
 }
 
@@ -350,16 +353,17 @@ test('catalog pricing sync and drift admin routes require permissions and call p
   assert.doesNotMatch(driftRoute, /newapiGroup/);
 });
 
-test('catalog listing child pages expose per-model sales item CRUD and immutable edit group', async () => {
+test('catalog listing child pages expose per-model group discount CRUD without smoke toggle', async () => {
   const listPage = await readFile(listingPagePath('list'), 'utf8');
   const newPage = await readFile(listingPagePath('new'), 'utf8');
   const editPage = await readFile(listingPagePath('edit'), 'utf8');
+  const deletePage = await readFile(listingPagePath('delete'), 'utf8');
 
   assert.match(listPage, /PERMISSIONS\.CATALOG_READ/);
-  for (const source of [newPage, editPage]) {
+  for (const source of [newPage, editPage, deletePage]) {
     assert.match(source, /PERMISSIONS\.CATALOG_WRITE/);
   }
-  for (const source of [listPage, newPage, editPage]) {
+  for (const source of [listPage, newPage, editPage, deletePage]) {
     assert.match(source, /getTranslations\(['"]admin\.catalog['"]\)/);
   }
 
@@ -376,6 +380,12 @@ test('catalog listing child pages expose per-model sales item CRUD and immutable
     listPage,
     /admin\/catalog\/models\/\$\{model\.id\}\/listings\/\$\{item\.id\}\/edit/
   );
+  assert.match(
+    listPage,
+    /admin\/catalog\/models\/\$\{model\.id\}\/listings\/\$\{item\.id\}\/delete/
+  );
+  assert.match(listPage, /name:\s*['"]groupSlug['"]/);
+  assert.match(listPage, /name:\s*['"]groupName['"]/);
   assert.match(listPage, /name:\s*['"]discountRate['"]/);
   assert.match(listPage, /name:\s*['"]discountNote['"]/);
   assert.match(listPage, /name:\s*['"]description['"]/);
@@ -403,8 +413,8 @@ test('catalog listing child pages expose per-model sales item CRUD and immutable
     assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
     assert.match(source, typedFieldPattern('description', 'textarea'));
-    assert.match(source, switchFieldPattern('smokeTested'));
-    assert.match(source, /t\(['"]fields\.smokeTestedTip['"]\)/);
+    assert.doesNotMatch(source, switchFieldPattern('smokeTested'));
+    assert.doesNotMatch(source, /t\(['"]fields\.smokeTestedTip['"]\)/);
     for (const hiddenField of [
       'inputMicroUsd',
       'outputMicroUsd',
@@ -436,6 +446,17 @@ test('catalog listing child pages expose per-model sales item CRUD and immutable
   assert.match(
     editPage,
     /redirect_url:\s*`\/admin\/catalog\/models\/\$\{model\.id\}\/listings`/
+  );
+
+  assert.match(deletePage, /<FormCard/);
+  assert.match(deletePage, callPattern('getModelById'));
+  assert.match(deletePage, callPattern('getListingById'));
+  assert.match(deletePage, callPattern('deleteListing'));
+  assert.match(deletePage, /variant:\s*['"]destructive['"]/);
+  assert.match(deletePage, /revalidateCatalog\s*\(/);
+  assert.match(
+    deletePage,
+    /redirect_url:\s*`\/admin\/catalog\/models\/\$\{targetModel\.id\}\/listings`/
   );
 });
 
@@ -559,9 +580,14 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
   assert.equal(zh.listings.list.crumb, '分组折扣');
   assert.equal(zh.actions.listings, '分组折扣');
   assert.match(zh.models.delete.description, /分组折扣/);
-  assert.equal(zh.fields.smokeTested, '运维烟测通过');
-  assert.ok(en.fields.smokeTestedTip);
-  assert.ok(zh.fields.smokeTestedTip);
+  assert.equal(en.fields.groupSlug, 'Group ID');
+  assert.equal(zh.fields.groupSlug, '分组 ID');
+  assert.equal(en.fields.smokeTested, undefined);
+  assert.equal(zh.fields.smokeTested, undefined);
+  assert.equal(en.fields.smokeTestedTip, undefined);
+  assert.equal(zh.fields.smokeTestedTip, undefined);
+  assert.ok(en.listings.delete);
+  assert.ok(zh.listings.delete);
   assert.ok(en.errors.missingBasePrice);
   assert.ok(zh.errors.missingBasePrice);
   assert.equal(en.fields.pricingStatus, undefined);

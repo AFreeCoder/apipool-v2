@@ -60,6 +60,7 @@ test('catalog pricing policy tables and columns are exported from sqlite schema'
   const listing = schemaExports.catalogModelListing as Record<string, unknown>;
   const price = schemaExports.catalogModelPrice as Record<string, unknown>;
   const syncRun = schemaExports.catalogPriceSyncRun as Record<string, unknown>;
+  const usageLog = schemaExports.usageLogSnapshot as Record<string, unknown>;
 
   assert.ok(group.newapiGroupRatioDecimal);
   assert.ok(group.newapiGroupRatioBps);
@@ -76,29 +77,53 @@ test('catalog pricing policy tables and columns are exported from sqlite schema'
   assert.ok(listing.priceDriftStatus);
   assert.ok(syncRun.reportJson);
   assert.ok(syncRun.sourceFingerprint);
+  assert.ok(usageLog.cacheTokens);
+  assert.ok(usageLog.cacheRatio);
+  assert.ok(usageLog.cacheCreationTokens);
+  assert.ok(usageLog.cacheCreationRatio);
+  assert.ok(usageLog.usageSemantic);
 });
 
-test('latest catalog pricing migration has matching journal and snapshot entries', async () => {
+test('latest sqlite migration has matching journal and snapshot entries', async () => {
   const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
   const sqlFiles = await readdir(migrationsDir);
+
+  const journal = JSON.parse(
+    await readFile(join(migrationsDir, 'meta', '_journal.json'), 'utf8')
+  ) as { entries: Array<{ idx: number; tag: string }> };
+  const latest = journal.entries.at(-1);
+  assert.ok(latest, 'migration journal should have entries');
+
   assert.ok(
-    sqlFiles.includes('0008_model_catalog_pricing_policy.sql'),
-    'pricing policy SQL migration should exist'
+    sqlFiles.includes(`${latest.tag}.sql`),
+    `latest SQL migration ${latest.tag}.sql should exist`
   );
 
-  const journal = await readFile(
+  const snapshotName = `${String(latest.idx).padStart(4, '0')}_snapshot.json`;
+  const snapshot = await readFile(
+    join(migrationsDir, 'meta', snapshotName),
+    'utf8'
+  );
+  assert.match(snapshot, /usage_log_snapshot/);
+  assert.match(snapshot, /cache_tokens/);
+  assert.match(snapshot, /cache_ratio/);
+  assert.match(snapshot, /cache_creation_tokens/);
+  assert.match(snapshot, /cache_creation_ratio/);
+  assert.match(snapshot, /usage_semantic/);
+
+  const legacyPricingJournal = await readFile(
     join(migrationsDir, 'meta', '_journal.json'),
     'utf8'
   );
-  assert.match(journal, /0008_model_catalog_pricing_policy/);
+  assert.match(legacyPricingJournal, /0008_model_catalog_pricing_policy/);
 
-  const snapshot = await readFile(
+  const pricingSnapshot = await readFile(
     join(migrationsDir, 'meta', '0008_snapshot.json'),
     'utf8'
   );
-  assert.match(snapshot, /catalog_model_price/);
-  assert.match(snapshot, /catalog_price_sync_run/);
-  assert.match(snapshot, /price_policy/);
+  assert.match(pricingSnapshot, /catalog_model_price/);
+  assert.match(pricingSnapshot, /catalog_price_sync_run/);
+  assert.match(pricingSnapshot, /price_policy/);
 });
 
 test('newApiKeyBinding exposes the catalog group foreign key column', () => {
