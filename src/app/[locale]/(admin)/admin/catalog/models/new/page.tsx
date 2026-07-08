@@ -146,16 +146,12 @@ export default async function CatalogModelNewPage({
             modelId: t('fields.modelId'),
             displayName: t('fields.displayName'),
             vendor: t('fields.vendor'),
-            group: t('fields.group'),
             categories: t('fields.categories'),
             capabilities: t('fields.capabilities'),
             inputMicroUsd: t('fields.inputMicroUsd'),
             outputMicroUsd: t('fields.outputMicroUsd'),
             imageInputMicroUsd: t('fields.imageInputMicroUsd'),
             imageOutputMicroUsd: t('fields.imageOutputMicroUsd'),
-            discountRate: t('fields.discountRate'),
-            discountNote: t('fields.discountNote'),
-            description: t('fields.description'),
           }}
           messages={{
             submit: t('models.new.buttons.submit'),
@@ -164,7 +160,6 @@ export default async function CatalogModelNewPage({
             searching: t('models.form.searching'),
             noCandidates: t('models.form.noCandidates'),
             fixedPrice: t('models.form.fixedPrice'),
-            discountPreview: t('models.form.discountPreview'),
           }}
           initial={{
             modelId: '',

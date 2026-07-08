@@ -14,7 +14,7 @@
     "newapiGroup": "New API 分组",
     "allowCreateKey": "允许创建 Key",
     "modelId": "模型 ID",
-    "displayName": "展示名称",
+    "displayName": "模型名称",
     "vendor": "供应商",
     "group": "分组",
     "category": "分类",
@@ -28,17 +28,17 @@
     "listInputMicroUsd": "划线输入价（美元 / 1M）",
     "listOutputMicroUsd": "划线输出价（美元 / 1M）",
     "discountRate": "折扣",
-    "pricingStatus": "价格同步状态",
     "discountNote": "折扣说明",
     "description": "说明",
-    "smokeTested": "已冒烟",
+    "smokeTested": "运维烟测通过",
+    "smokeTestedTip": "仅表示运维已确认该分组折扣在生产链路完成烟测，不会自动触发烟测。",
     "createdAt": "创建时间",
     "actions": "操作"
   },
   "actions": {
     "edit": "编辑",
     "capabilities": "能力",
-    "listings": "售卖项",
+    "listings": "分组折扣",
     "delete": "删除"
   },
   "statusOptions": {
@@ -54,6 +54,7 @@
     "updateFailed": "更新失败",
     "deleteFailed": "删除失败",
     "missingRecord": "记录不存在",
+    "missingBasePrice": "缺少模型基准输入/输出价格，请先在模型表单保存基准价格后再新增分组折扣",
     "invalidPrice": "价格必须是非负有限数字"
   },
   "vendors": {
@@ -285,7 +286,7 @@
       "title": "删除模型",
       "crumb": "删除模型",
       "notFound": "模型不存在",
-      "description": "确认删除模型 {modelId}？这会同时删除该模型下的 {listings} 个售卖项、分类关联和能力关联。",
+      "description": "确认删除模型 {modelId}？这会同时删除该模型下的 {listings} 个分组折扣、分类关联和能力关联。",
       "success": "模型已删除",
       "buttons": {
         "submit": "确认删除",
@@ -313,27 +314,27 @@
   },
   "listings": {
     "list": {
-      "title": "模型售卖项",
-      "crumb": "售卖项",
+      "title": "分组折扣",
+      "crumb": "分组折扣",
       "notFound": "模型不存在",
       "buttons": {
-        "new": "新增售卖项"
+        "new": "新增分组折扣"
       }
     },
     "new": {
-      "title": "新增售卖项",
-      "crumb": "新增售卖项",
+      "title": "新增分组折扣",
+      "crumb": "新增分组折扣",
       "notFound": "模型不存在",
-      "success": "售卖项已创建",
+      "success": "分组折扣已创建",
       "buttons": {
         "submit": "创建"
       }
     },
     "edit": {
-      "title": "编辑售卖项",
-      "crumb": "编辑售卖项",
-      "notFound": "售卖项不存在",
-      "success": "售卖项已更新",
+      "title": "编辑分组折扣",
+      "crumb": "编辑分组折扣",
+      "notFound": "分组折扣不存在",
+      "success": "分组折扣已更新",
       "buttons": {
         "submit": "更新"
       }

@@ -223,6 +223,10 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     join(modelsRoot, 'pricing-sync-controls.tsx'),
     'utf8'
   );
+  const modelForm = await readFile(
+    join(modelsRoot, 'model-admin-form.tsx'),
+    'utf8'
+  );
   const newPage = await readFile(modelPagePath('new'), 'utf8');
   const editPage = await readFile(modelPagePath('edit'), 'utf8');
   const deletePage = await readFile(modelPagePath('delete'), 'utf8');
@@ -251,17 +255,20 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/delete/);
   for (const field of [
     'vendorName',
-    'groupName',
     'categoryNames',
     'capabilityNames',
     'inputPrice',
     'outputPrice',
     'imageInputPrice',
     'imageOutputPrice',
-    'discountRate',
-    'pricingStatus',
   ]) {
     assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
+  }
+  for (const hiddenField of ['groupName', 'discountRate', 'pricingStatus']) {
+    assert.doesNotMatch(
+      listPage,
+      new RegExp(`name:\\s*['"]${hiddenField}['"]`)
+    );
   }
   assert.doesNotMatch(listPage, /contextWindow/);
 
@@ -269,17 +276,25 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     assert.match(source, /<ModelAdminForm/);
     assert.doesNotMatch(source, /<FormCard/);
     assert.match(source, callPattern('getVendors'));
-    assert.match(source, callPattern('getGroups'));
     assert.match(source, callPattern('getCategories'));
     assert.match(source, callPattern('getCapabilities'));
     assert.match(source, callPattern('getStatuses'));
     assert.match(source, callPattern('upsertModelAdminConfig'));
     assert.match(source, callPattern('optionalDollarsToMicroUsd'));
-    assert.match(source, callPattern('discountFoldToBps'));
     assert.match(source, /JSON\.parse\(.*categoryIds/);
     assert.match(source, /JSON\.parse\(.*capabilityIds/);
     assert.doesNotMatch(source, fieldPattern('contextWindow'));
     assert.match(source, /revalidateCatalog\s*\(/);
+  }
+  assert.match(newPage, callPattern('getGroups'));
+  assert.match(editPage, callPattern('getGroups'));
+  for (const hiddenField of [
+    'groupId',
+    'discountFold',
+    'discountNote',
+    'description',
+  ]) {
+    assert.match(modelForm, new RegExp(`name="${hiddenField}"`));
   }
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
@@ -361,10 +376,22 @@ test('catalog listing child pages expose per-model sales item CRUD and immutable
     listPage,
     /admin\/catalog\/models\/\$\{model\.id\}\/listings\/\$\{item\.id\}\/edit/
   );
-  assert.match(listPage, /name:\s*['"]listInputPrice['"]/);
-  assert.match(listPage, /name:\s*['"]listOutputPrice['"]/);
+  assert.match(listPage, /name:\s*['"]discountRate['"]/);
   assert.match(listPage, /name:\s*['"]discountNote['"]/);
   assert.match(listPage, /name:\s*['"]description['"]/);
+  for (const hiddenColumn of [
+    'inputPrice',
+    'outputPrice',
+    'listInputPrice',
+    'listOutputPrice',
+    'smokeTested',
+    'sortOrder',
+  ]) {
+    assert.doesNotMatch(
+      listPage,
+      new RegExp(`name:\\s*['"]${hiddenColumn}['"]`)
+    );
+  }
 
   for (const source of [newPage, editPage]) {
     assert.match(source, /<FormCard/);
@@ -373,27 +400,38 @@ test('catalog listing child pages expose per-model sales item CRUD and immutable
     assert.match(source, callPattern('getStatuses'));
     assert.match(source, typedFieldPattern('groupId', 'select'));
     assert.match(source, typedFieldPattern('statusId', 'select'));
-    assert.match(source, typedFieldPattern('inputMicroUsd', 'number'));
-    assert.match(source, typedFieldPattern('outputMicroUsd', 'number'));
-    assert.match(source, typedFieldPattern('listInputMicroUsd', 'number'));
-    assert.match(source, typedFieldPattern('listOutputMicroUsd', 'number'));
+    assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
     assert.match(source, typedFieldPattern('description', 'textarea'));
     assert.match(source, switchFieldPattern('smokeTested'));
-    assert.match(source, typedFieldPattern('sortOrder', 'number'));
-    assert.match(source, callPattern('dollarsToMicroUsd'));
-    assert.match(source, /t\(['"]errors\.invalidPrice['"]\)/);
-    assert.match(source, /Number\.isFinite/);
+    assert.match(source, /t\(['"]fields\.smokeTestedTip['"]\)/);
+    for (const hiddenField of [
+      'inputMicroUsd',
+      'outputMicroUsd',
+      'listInputMicroUsd',
+      'listOutputMicroUsd',
+      'sortOrder',
+    ]) {
+      assert.doesNotMatch(source, typedFieldPattern(hiddenField, 'number'));
+    }
     assert.match(source, /revalidateCatalog\s*\(/);
   }
   assert.match(newPage, callPattern('createListing'));
+  assert.match(newPage, /baseInputMicroUsd/);
+  assert.match(newPage, /defaultListing/);
+  assert.match(newPage, /missingBasePriceMessage/);
+  assert.match(newPage, /t\(['"]errors\.missingBasePrice['"]\)/);
+  assert.match(newPage, callPattern('requiredBasePrice'));
+  assert.doesNotMatch(newPage, /\?\?\s*0/);
   assert.match(
     newPage,
     /redirect_url:\s*`\/admin\/catalog\/models\/\$\{model\.id\}\/listings`/
   );
   assert.match(editPage, callPattern('getListingById'));
   assert.match(editPage, callPattern('updateListing'));
-  assert.match(editPage, callPattern('microUsdToDollars'));
+  assert.match(editPage, /pricePolicy:\s*listing\.pricePolicy/);
+  assert.match(editPage, /featured:\s*listing\.featured/);
+  assert.match(editPage, /sortOrder:\s*listing\.sortOrder/);
   assert.match(editPage, disabledFieldPattern('groupId'));
   assert.match(
     editPage,
@@ -512,6 +550,22 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
       'utf8'
     )
   );
+
+  assert.equal(en.listings.list.title, 'Group Discounts');
+  assert.equal(en.listings.list.crumb, 'Group Discounts');
+  assert.equal(en.actions.listings, 'Group Discounts');
+  assert.match(en.models.delete.description, /group discounts/);
+  assert.equal(zh.listings.list.title, '分组折扣');
+  assert.equal(zh.listings.list.crumb, '分组折扣');
+  assert.equal(zh.actions.listings, '分组折扣');
+  assert.match(zh.models.delete.description, /分组折扣/);
+  assert.equal(zh.fields.smokeTested, '运维烟测通过');
+  assert.ok(en.fields.smokeTestedTip);
+  assert.ok(zh.fields.smokeTestedTip);
+  assert.ok(en.errors.missingBasePrice);
+  assert.ok(zh.errors.missingBasePrice);
+  assert.equal(en.fields.pricingStatus, undefined);
+  assert.equal(zh.fields.pricingStatus, undefined);
 
   assert.deepEqual(collectKeyPaths(en).sort(), collectKeyPaths(zh).sort());
 });

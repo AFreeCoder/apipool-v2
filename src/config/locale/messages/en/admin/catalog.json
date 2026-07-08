@@ -14,7 +14,7 @@
     "newapiGroup": "New API Group",
     "allowCreateKey": "Allow Key Creation",
     "modelId": "Model ID",
-    "displayName": "Display Name",
+    "displayName": "Model Name",
     "vendor": "Vendor",
     "group": "Group",
     "category": "Category",
@@ -28,17 +28,17 @@
     "listInputMicroUsd": "List Input Price (USD / 1M)",
     "listOutputMicroUsd": "List Output Price (USD / 1M)",
     "discountRate": "Discount",
-    "pricingStatus": "Pricing Sync Status",
     "discountNote": "Discount Note",
     "description": "Description",
-    "smokeTested": "Smoke Tested",
+    "smokeTested": "Ops Smoke Tested",
+    "smokeTestedTip": "Marks that operations has confirmed this group discount through the production smoke path. It does not run a smoke test automatically.",
     "createdAt": "Created At",
     "actions": "Actions"
   },
   "actions": {
     "edit": "Edit",
     "capabilities": "Capabilities",
-    "listings": "Listings",
+    "listings": "Group Discounts",
     "delete": "Delete"
   },
   "statusOptions": {
@@ -54,6 +54,7 @@
     "updateFailed": "Update failed",
     "deleteFailed": "Delete failed",
     "missingRecord": "Record is missing",
+    "missingBasePrice": "Missing model base input/output prices. Save the model base prices before creating a group discount.",
     "invalidPrice": "Price must be a non-negative finite number"
   },
   "vendors": {
@@ -285,7 +286,7 @@
       "title": "Delete Model",
       "crumb": "Delete Model",
       "notFound": "Model not found",
-      "description": "Delete model {modelId}? This also removes {listings} listings, category links, and capability links for this model.",
+      "description": "Delete model {modelId}? This also removes {listings} group discounts, category links, and capability links for this model.",
       "success": "Model deleted",
       "buttons": {
         "submit": "Confirm Delete",
@@ -313,27 +314,27 @@
   },
   "listings": {
     "list": {
-      "title": "Model Listings",
-      "crumb": "Listings",
+      "title": "Group Discounts",
+      "crumb": "Group Discounts",
       "notFound": "Model not found",
       "buttons": {
-        "new": "New Listing"
+        "new": "New Group Discount"
       }
     },
     "new": {
-      "title": "New Listing",
-      "crumb": "New Listing",
+      "title": "New Group Discount",
+      "crumb": "New Group Discount",
       "notFound": "Model not found",
-      "success": "Listing created",
+      "success": "Group discount created",
       "buttons": {
         "submit": "Create"
       }
     },
     "edit": {
-      "title": "Edit Listing",
-      "crumb": "Edit Listing",
-      "notFound": "Listing not found",
-      "success": "Listing updated",
+      "title": "Edit Group Discount",
+      "crumb": "Edit Group Discount",
+      "notFound": "Group discount not found",
+      "success": "Group discount updated",
       "buttons": {
         "submit": "Update"
       }

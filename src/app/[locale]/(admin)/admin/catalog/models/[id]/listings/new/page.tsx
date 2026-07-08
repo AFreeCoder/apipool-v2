@@ -1,10 +1,11 @@
 import {
-  dollarsToMicroUsd,
-  optionalDollarsToMicroUsd,
+  bpsToDiscountFold,
+  discountFoldToBps,
 } from '@/features/api-catalog/lib/pricing';
 import {
   createListing,
   getGroups,
+  getModelAdminConfig,
   getModelById,
   getStatuses,
   NewListing,
@@ -19,9 +20,14 @@ import { FormCard } from '@/shared/blocks/form';
 import { Crumb } from '@/shared/types/blocks/common';
 import { Form } from '@/shared/types/blocks/form';
 
-function parseSortOrder(value: FormDataEntryValue | null): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
+function requiredBasePrice(
+  value: number | null | undefined,
+  message: string
+): number {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+  return value;
 }
 
 export default async function CatalogModelListingNewPage({
@@ -40,14 +46,20 @@ export default async function CatalogModelListingNewPage({
 
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
+  const missingBasePriceMessage = t('errors.missingBasePrice');
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const successMessage = t('listings.new.success');
-  const model = await getModelById(id);
+  const [model, config] = await Promise.all([
+    getModelById(id),
+    getModelAdminConfig(id),
+  ]);
 
   if (!model) {
     return <Empty message={t('listings.new.notFound')} />;
   }
+  const defaultListing = config?.listing;
+  const basePrice = config?.basePrice;
 
   const [groups, statuses] = await Promise.all([getGroups(), getStatuses()]);
   const groupOptions = groups.map((group) => ({
@@ -87,28 +99,10 @@ export default async function CatalogModelListingNewPage({
         options: statusOptions,
       },
       {
-        name: 'inputMicroUsd',
+        name: 'discountFold',
         type: 'number',
-        title: t('fields.inputMicroUsd'),
-        validation: { required: true, min: 0 },
-      },
-      {
-        name: 'outputMicroUsd',
-        type: 'number',
-        title: t('fields.outputMicroUsd'),
-        validation: { required: true, min: 0 },
-      },
-      {
-        name: 'listInputMicroUsd',
-        type: 'number',
-        title: t('fields.listInputMicroUsd'),
-        validation: { min: 0 },
-      },
-      {
-        name: 'listOutputMicroUsd',
-        type: 'number',
-        title: t('fields.listOutputMicroUsd'),
-        validation: { min: 0 },
+        title: t('fields.discountRate'),
+        validation: { min: 0.01, max: 10 },
       },
       {
         name: 'discountNote',
@@ -124,28 +118,21 @@ export default async function CatalogModelListingNewPage({
         name: 'smokeTested',
         type: 'switch',
         title: t('fields.smokeTested'),
-      },
-      {
-        name: 'sortOrder',
-        type: 'number',
-        title: t('fields.sortOrder'),
-        validation: { required: true },
+        tip: t('fields.smokeTestedTip'),
       },
     ],
     passby: {
       model,
+      basePrice,
+      defaultListing,
     },
     data: {
       groupId: groups[0]?.id ?? '',
       statusId: statuses[0]?.id ?? '',
-      inputMicroUsd: '0',
-      outputMicroUsd: '0',
-      listInputMicroUsd: '',
-      listOutputMicroUsd: '',
+      discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '10',
       discountNote: '',
       description: '',
       smokeTested: false,
-      sortOrder: 0,
     },
     submit: {
       button: {
@@ -156,11 +143,20 @@ export default async function CatalogModelListingNewPage({
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { model } = passby;
+        const { model, basePrice, defaultListing } = passby;
 
         if (!model) {
           throw new Error(missingRecordMessage);
         }
+
+        const inputMicroUsd = requiredBasePrice(
+          basePrice?.baseInputMicroUsd ?? defaultListing?.inputMicroUsd,
+          missingBasePriceMessage
+        );
+        const outputMicroUsd = requiredBasePrice(
+          basePrice?.baseOutputMicroUsd ?? defaultListing?.outputMicroUsd,
+          missingBasePriceMessage
+        );
 
         let newListing: NewListing;
         try {
@@ -168,27 +164,28 @@ export default async function CatalogModelListingNewPage({
             modelId: model.id,
             groupId: (data.get('groupId') as string).trim(),
             statusId: (data.get('statusId') as string).trim(),
-            inputMicroUsd: dollarsToMicroUsd(
-              data.get('inputMicroUsd') as string
-            ),
-            outputMicroUsd: dollarsToMicroUsd(
-              data.get('outputMicroUsd') as string
-            ),
-            listInputMicroUsd: optionalDollarsToMicroUsd(
-              data.get('listInputMicroUsd')
-            ),
-            listOutputMicroUsd: optionalDollarsToMicroUsd(
-              data.get('listOutputMicroUsd')
-            ),
+            inputMicroUsd,
+            outputMicroUsd,
+            imageInputMicroUsd:
+              basePrice?.baseImageInputMicroUsd ??
+              defaultListing?.imageInputMicroUsd ??
+              null,
+            imageOutputMicroUsd:
+              basePrice?.baseImageOutputMicroUsd ??
+              defaultListing?.imageOutputMicroUsd ??
+              null,
+            listInputMicroUsd: defaultListing?.listInputMicroUsd ?? null,
+            listOutputMicroUsd: defaultListing?.listOutputMicroUsd ?? null,
+            discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
               (data.get('discountNote') as string | null)?.trim() || null,
             description:
               (data.get('description') as string | null)?.trim() || null,
             smokeTested: data.get('smokeTested') === 'true',
             featured: false,
-            sortOrder: parseSortOrder(data.get('sortOrder')),
+            sortOrder: 0,
           } as NewListing;
-        } catch (error) {
+        } catch {
           throw new Error(invalidPriceMessage);
         }
 

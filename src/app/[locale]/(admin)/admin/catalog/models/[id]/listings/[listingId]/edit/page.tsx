@@ -1,7 +1,6 @@
 import {
-  dollarsToMicroUsd,
-  microUsdToDollars,
-  optionalDollarsToMicroUsd,
+  bpsToDiscountFold,
+  discountFoldToBps,
 } from '@/features/api-catalog/lib/pricing';
 import {
   getGroups,
@@ -20,11 +19,6 @@ import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
 import { Crumb } from '@/shared/types/blocks/common';
 import { Form } from '@/shared/types/blocks/form';
-
-function parseSortOrder(value: FormDataEntryValue | null): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
 
 export default async function CatalogModelListingEditPage({
   params,
@@ -93,28 +87,10 @@ export default async function CatalogModelListingEditPage({
         options: statusOptions,
       },
       {
-        name: 'inputMicroUsd',
+        name: 'discountFold',
         type: 'number',
-        title: t('fields.inputMicroUsd'),
-        validation: { required: true, min: 0 },
-      },
-      {
-        name: 'outputMicroUsd',
-        type: 'number',
-        title: t('fields.outputMicroUsd'),
-        validation: { required: true, min: 0 },
-      },
-      {
-        name: 'listInputMicroUsd',
-        type: 'number',
-        title: t('fields.listInputMicroUsd'),
-        validation: { min: 0 },
-      },
-      {
-        name: 'listOutputMicroUsd',
-        type: 'number',
-        title: t('fields.listOutputMicroUsd'),
-        validation: { min: 0 },
+        title: t('fields.discountRate'),
+        validation: { min: 0.01, max: 10 },
       },
       {
         name: 'discountNote',
@@ -130,12 +106,7 @@ export default async function CatalogModelListingEditPage({
         name: 'smokeTested',
         type: 'switch',
         title: t('fields.smokeTested'),
-      },
-      {
-        name: 'sortOrder',
-        type: 'number',
-        title: t('fields.sortOrder'),
-        validation: { required: true },
+        tip: t('fields.smokeTestedTip'),
       },
     ],
     passby: {
@@ -144,10 +115,7 @@ export default async function CatalogModelListingEditPage({
     },
     data: {
       ...listing,
-      inputMicroUsd: microUsdToDollars(listing.inputMicroUsd),
-      outputMicroUsd: microUsdToDollars(listing.outputMicroUsd),
-      listInputMicroUsd: microUsdToDollars(listing.listInputMicroUsd),
-      listOutputMicroUsd: microUsdToDollars(listing.listOutputMicroUsd),
+      discountFold: bpsToDiscountFold(listing.discountRateBps) || '',
     },
     submit: {
       button: {
@@ -170,26 +138,17 @@ export default async function CatalogModelListingEditPage({
             modelId: model.id,
             groupId: listing.groupId,
             statusId: (data.get('statusId') as string).trim(),
-            inputMicroUsd: dollarsToMicroUsd(
-              data.get('inputMicroUsd') as string
-            ),
-            outputMicroUsd: dollarsToMicroUsd(
-              data.get('outputMicroUsd') as string
-            ),
-            listInputMicroUsd: optionalDollarsToMicroUsd(
-              data.get('listInputMicroUsd')
-            ),
-            listOutputMicroUsd: optionalDollarsToMicroUsd(
-              data.get('listOutputMicroUsd')
-            ),
+            discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
               (data.get('discountNote') as string | null)?.trim() || null,
             description:
               (data.get('description') as string | null)?.trim() || null,
             smokeTested: data.get('smokeTested') === 'true',
-            sortOrder: parseSortOrder(data.get('sortOrder')),
+            pricePolicy: listing.pricePolicy,
+            featured: listing.featured,
+            sortOrder: listing.sortOrder,
           };
-        } catch (error) {
+        } catch {
           throw new Error(invalidPriceMessage);
         }
 

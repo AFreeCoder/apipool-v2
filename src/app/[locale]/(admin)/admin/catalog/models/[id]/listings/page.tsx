@@ -1,4 +1,4 @@
-import { microUsdToDollars } from '@/features/api-catalog/lib/pricing';
+import { formatDiscountRate } from '@/features/api-catalog/lib/pricing';
 import {
   getGroups,
   getListingsByModel,
@@ -18,20 +18,8 @@ import { type Table } from '@/shared/types/blocks/table';
 type ListingRow = Listing & {
   groupName: string;
   statusName: string;
-  inputPrice: string;
-  outputPrice: string;
-  listInputPrice: string;
-  listOutputPrice: string;
+  discountRate: string;
 };
-
-function formatPrice(microUsd: number) {
-  return `$${microUsdToDollars(microUsd)}`;
-}
-
-function formatOptionalPrice(microUsd: number | null) {
-  if (microUsd === null) return '';
-  return `$${microUsdToDollars(microUsd)}`;
-}
 
 export default async function AdminCatalogModelListingsPage({
   params,
@@ -67,10 +55,7 @@ export default async function AdminCatalogModelListingsPage({
     ...listing,
     groupName: groupNames.get(listing.groupId) ?? listing.groupId,
     statusName: statusNames.get(listing.statusId) ?? listing.statusId,
-    inputPrice: formatPrice(listing.inputMicroUsd),
-    outputPrice: formatPrice(listing.outputMicroUsd),
-    listInputPrice: formatOptionalPrice(listing.listInputMicroUsd),
-    listOutputPrice: formatOptionalPrice(listing.listOutputMicroUsd),
+    discountRate: formatDiscountRate(listing.discountRateBps),
   }));
 
   const crumbs: Crumb[] = [
@@ -84,14 +69,9 @@ export default async function AdminCatalogModelListingsPage({
     columns: [
       { name: 'groupName', title: t('fields.group') },
       { name: 'statusName', title: t('fields.status'), type: 'label' },
-      { name: 'inputPrice', title: t('fields.inputMicroUsd') },
-      { name: 'outputPrice', title: t('fields.outputMicroUsd') },
-      { name: 'listInputPrice', title: t('fields.listInputMicroUsd') },
-      { name: 'listOutputPrice', title: t('fields.listOutputMicroUsd') },
+      { name: 'discountRate', title: t('fields.discountRate') },
       { name: 'discountNote', title: t('fields.discountNote') },
       { name: 'description', title: t('fields.description') },
-      { name: 'smokeTested', title: t('fields.smokeTested') },
-      { name: 'sortOrder', title: t('fields.sortOrder') },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },
       {
         name: 'actions',

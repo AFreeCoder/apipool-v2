@@ -45,7 +45,6 @@ export default async function AdminCatalogModelsPage({
       },
       { name: 'displayName', title: t('fields.displayName') },
       { name: 'vendorName', title: t('fields.vendor') },
-      { name: 'groupName', title: t('fields.group') },
       { name: 'categoryNames', title: t('fields.categories') },
       { name: 'capabilityNames', title: t('fields.capabilities') },
       {
@@ -66,12 +65,6 @@ export default async function AdminCatalogModelsPage({
       {
         name: 'imageOutputPrice',
         title: t('fields.imageOutputMicroUsd'),
-        className: 'font-mono text-xs',
-      },
-      { name: 'discountRate', title: t('fields.discountRate') },
-      {
-        name: 'pricingStatus',
-        title: t('fields.pricingStatus'),
         className: 'font-mono text-xs',
       },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },

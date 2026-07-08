@@ -1,13 +1,12 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Loader2, Save, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useRouter } from '@/core/i18n/navigation';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
-import { Textarea } from '@/shared/components/ui/textarea';
 
 export type ModelAdminFormOption = {
   value: string;
@@ -44,23 +43,18 @@ export type ModelAdminFormMessages = {
   searching: string;
   noCandidates: string;
   fixedPrice: string;
-  discountPreview: string;
 };
 
 export type ModelAdminFormLabels = {
   modelId: string;
   displayName: string;
   vendor: string;
-  group: string;
   categories: string;
   capabilities: string;
   inputMicroUsd: string;
   outputMicroUsd: string;
   imageInputMicroUsd: string;
   imageOutputMicroUsd: string;
-  discountRate: string;
-  discountNote: string;
-  description: string;
 };
 
 type Candidate = {
@@ -97,7 +91,6 @@ function parseMultiSelect(element: HTMLSelectElement) {
 export function ModelAdminForm({
   initial,
   vendors,
-  groups,
   categories,
   capabilities,
   labels,
@@ -108,7 +101,7 @@ export function ModelAdminForm({
   const [modelId, setModelId] = useState(initial.modelId);
   const [displayName, setDisplayName] = useState(initial.displayName);
   const [vendorId, setVendorId] = useState(initial.vendorId);
-  const [groupId, setGroupId] = useState(initial.groupId);
+  const [groupId] = useState(initial.groupId);
   const [statusId] = useState(initial.statusId);
   const [categoryIds, setCategoryIds] = useState(initial.categoryIds);
   const [capabilityIds, setCapabilityIds] = useState(initial.capabilityIds);
@@ -120,20 +113,14 @@ export function ModelAdminForm({
   const [imageOutputMicroUsd, setImageOutputMicroUsd] = useState(
     initial.imageOutputMicroUsd
   );
-  const [discountFold, setDiscountFold] = useState(initial.discountFold);
-  const [discountNote, setDiscountNote] = useState(initial.discountNote);
-  const [description, setDescription] = useState(initial.description);
+  const [discountFold] = useState(initial.discountFold);
+  const [discountNote] = useState(initial.discountNote);
+  const [description] = useState(initial.description);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  const discountPreview = useMemo(() => {
-    const amount = Number(discountFold);
-    if (!Number.isFinite(amount) || amount <= 0) return '';
-    return `${messages.discountPreview}: ${amount} (${amount * 10}%)`;
-  }, [discountFold, messages.discountPreview]);
 
   useEffect(() => {
     const keyword = modelId.trim();
@@ -220,7 +207,7 @@ export function ModelAdminForm({
   return (
     <form onSubmit={submit} className="bg-card max-w-4xl rounded-lg border p-5">
       <div className="grid gap-5">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-1">
           <label className="grid gap-2 text-sm">
             {labels.vendor}
             <select
@@ -243,27 +230,6 @@ export function ModelAdminForm({
             </select>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            {labels.group}
-            <select
-              name="groupId"
-              value={groupId}
-              onChange={(event) => {
-                setGroupId(event.target.value);
-                setCandidates([]);
-                setHasSearched(false);
-                setSearchError('');
-              }}
-              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-              required
-            >
-              {groups.map((group) => (
-                <option key={group.value} value={group.value}>
-                  {group.title}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -334,35 +300,6 @@ export function ModelAdminForm({
             />
           </label>
         </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2 text-sm">
-            {labels.discountRate}
-            <Input
-              name="discountFold"
-              inputMode="decimal"
-              min="0.01"
-              max="10"
-              step="0.01"
-              value={discountFold}
-              onChange={(event) => setDiscountFold(event.target.value)}
-            />
-            {discountPreview && (
-              <span className="text-muted-foreground text-xs">
-                {discountPreview}
-              </span>
-            )}
-          </label>
-        </div>
-
-        <label className="grid gap-2 text-sm">
-          {labels.discountNote}
-          <Input
-            name="discountNote"
-            value={discountNote}
-            onChange={(event) => setDiscountNote(event.target.value)}
-          />
-        </label>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm">
@@ -444,16 +381,11 @@ export function ModelAdminForm({
           </label>
         </div>
 
-        <label className="grid gap-2 text-sm">
-          {labels.description}
-          <Textarea
-            name="description"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </label>
-
+        <input type="hidden" name="groupId" value={groupId} />
         <input type="hidden" name="statusId" value={statusId} />
+        <input type="hidden" name="discountFold" value={discountFold} />
+        <input type="hidden" name="discountNote" value={discountNote} />
+        <input type="hidden" name="description" value={description} />
         <input
           type="hidden"
           name="categoryIds"
