@@ -1,4 +1,8 @@
 import {
+  ModelFilters,
+  type ModelFilterGroup,
+} from '@/features/api-catalog/components/model-filters';
+import {
   buildModelFilterHref,
   formatMicroUsdPerMillion,
   parseModelFilters,
@@ -103,41 +107,56 @@ export default async function ModelsPage({
       listing.statusName
     ),
   }));
-  const filterGroups = [
-    {
-      label: t('filters.provider'),
-      key: 'vendor',
-      options: dimensions.vendors,
-    },
-    {
-      label: t('filters.group'),
-      key: 'group',
-      options: dimensions.groups.map((option) =>
-        localizeOption('groups', option)
-      ),
-    },
-    {
-      label: t('filters.category'),
-      key: 'category',
-      options: dimensions.categories.map((option) =>
-        localizeOption('categories', option)
-      ),
-    },
-    {
-      label: t('filters.capability'),
-      key: 'capability',
-      options: dimensions.capabilities.map((option) =>
-        localizeOption('capabilities', option)
-      ),
-    },
-    {
-      label: t('filters.status'),
-      key: 'status',
-      options: dimensions.statuses.map((option) =>
-        localizeOption('statuses', option)
-      ),
-    },
-  ] as const;
+  const filterGroups: ModelFilterGroup[] = (
+    [
+      {
+        label: t('filters.provider'),
+        key: 'vendor',
+        options: dimensions.vendors,
+      },
+      {
+        label: t('filters.group'),
+        key: 'group',
+        options: dimensions.groups.map((option) =>
+          localizeOption('groups', option)
+        ),
+      },
+      {
+        label: t('filters.category'),
+        key: 'category',
+        options: dimensions.categories.map((option) =>
+          localizeOption('categories', option)
+        ),
+      },
+      {
+        label: t('filters.capability'),
+        key: 'capability',
+        options: dimensions.capabilities.map((option) =>
+          localizeOption('capabilities', option)
+        ),
+      },
+      {
+        label: t('filters.status'),
+        key: 'status',
+        options: dimensions.statuses.map((option) =>
+          localizeOption('statuses', option)
+        ),
+      },
+    ] as const
+  ).map((group) => ({
+    key: group.key,
+    label: group.label,
+    allHref: buildModelFilterHref(filters, { [group.key]: undefined }),
+    activeName:
+      group.options.find((option) => option.slug === filters[group.key])
+        ?.name ?? null,
+    options: group.options.map((option) => ({
+      slug: option.slug,
+      name: option.name,
+      href: buildModelFilterHref(filters, { [group.key]: option.slug }),
+      active: filters[group.key] === option.slug,
+    })),
+  }));
 
   return (
     <div className="bg-background">
@@ -154,39 +173,13 @@ export default async function ModelsPage({
             {t('description')}
           </p>
 
-          <div className="mt-8 space-y-2">
-            {filterGroups.map((group) => (
-              <div
-                key={group.key}
-                className="flex flex-wrap items-center gap-1.5"
-              >
-                <span className="text-muted-foreground w-20 shrink-0 text-xs tracking-wide uppercase">
-                  {group.label}
-                </span>
-                <FilterLink
-                  active={!filters[group.key]}
-                  href={buildModelFilterHref(filters, {
-                    [group.key]: undefined,
-                  })}
-                >
-                  {t('filters.all')}
-                </FilterLink>
-                {group.options.map((option) => {
-                  const active = filters[group.key] === option.slug;
-                  return (
-                    <FilterLink
-                      key={option.slug}
-                      active={active}
-                      href={buildModelFilterHref(filters, {
-                        [group.key]: option.slug,
-                      })}
-                    >
-                      {option.name}
-                    </FilterLink>
-                  );
-                })}
-              </div>
-            ))}
+          <div className="mt-6">
+            <ModelFilters
+              groups={filterGroups}
+              allLabel={t('filters.all')}
+              clearLabel={t('filters.clear')}
+              clearHref="/models"
+            />
           </div>
         </div>
       </section>
@@ -219,32 +212,6 @@ export default async function ModelsPage({
         </div>
       </section>
     </div>
-  );
-}
-
-function FilterLink({
-  active,
-  href,
-  children,
-}: {
-  active: boolean;
-  href: string;
-  children: React.ReactNode;
-}) {
-  const base =
-    'focus-visible:ring-ring inline-flex min-h-8 items-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none sm:min-h-0';
-
-  return (
-    <Link
-      href={href}
-      className={
-        active
-          ? `${base} bg-primary text-primary-foreground font-medium`
-          : `${base} text-muted-foreground hover:text-foreground hover:bg-muted border`
-      }
-    >
-      {children}
-    </Link>
   );
 }
 

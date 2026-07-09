@@ -12,21 +12,31 @@
     "category": "Category",
     "capability": "Capabilities",
     "status": "Status",
-    "all": "All"
+    "all": "All",
+    "clear": "Clear filters"
   },
   "dimensions": {
     "groups": {
-      "official": "Official"
+      "official": "Official",
+      "sub2api": "Proxy"
     },
     "categories": {
-      "llm": "LLM"
+      "llm": "LLM",
+      "embedding": "Embedding",
+      "image": "Image",
+      "audio": "Audio",
+      "rerank": "Rerank"
     },
     "capabilities": {
       "text": "Text",
-      "vision": "Vision"
+      "vision": "Vision",
+      "video": "Video",
+      "audio": "Audio"
     },
     "statuses": {
-      "available": "Available"
+      "available": "Available",
+      "coming_soon": "Coming soon",
+      "retired": "Retired"
     }
   },
   "empty": {

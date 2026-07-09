@@ -12,21 +12,31 @@
     "category": "分类",
     "capability": "能力",
     "status": "状态",
-    "all": "全部"
+    "all": "全部",
+    "clear": "清除筛选"
   },
   "dimensions": {
     "groups": {
-      "official": "官方"
+      "official": "官方",
+      "sub2api": "反代"
     },
     "categories": {
-      "llm": "大语言模型"
+      "llm": "大语言模型",
+      "embedding": "向量嵌入",
+      "image": "图像",
+      "audio": "音频",
+      "rerank": "重排序"
     },
     "capabilities": {
       "text": "文本",
-      "vision": "视觉"
+      "vision": "视觉",
+      "video": "视频",
+      "audio": "音频"
     },
     "statuses": {
-      "available": "可用"
+      "available": "可用",
+      "coming_soon": "即将上线",
+      "retired": "已下线"
     }
   },
   "empty": {
