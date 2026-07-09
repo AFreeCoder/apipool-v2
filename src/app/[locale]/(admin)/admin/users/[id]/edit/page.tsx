@@ -56,23 +56,19 @@ export default async function UserEditPage({
         title: t('fields.avatar'),
       },
     ],
-    passby: {
-      user: user,
-    },
     data: user,
     submit: {
       button: {
         title: t('edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.USERS_WRITE });
 
-        const { user } = passby;
-
-        if (!user) {
-          throw new Error('no auth');
+        const targetUser = await findUserById(id);
+        if (!targetUser) {
+          throw new Error('user not found');
         }
 
         const name = data.get('name') as string;
@@ -83,7 +79,7 @@ export default async function UserEditPage({
           image: image as string,
         };
 
-        const result = await updateUser(user.id as string, newUser);
+        const result = await updateUser(targetUser.id as string, newUser);
 
         if (!result) {
           throw new Error('update user failed');

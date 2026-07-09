@@ -1,9 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import {
-  PERMISSIONS,
-  requireAllPermissions,
-} from '@/core/rbac';
+import { PERMISSIONS, requireAllPermissions } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
@@ -70,9 +67,6 @@ export default async function UserEditRolesPage({
         validation: { required: true },
       },
     ],
-    passby: {
-      user,
-    },
     data: {
       ...user,
       roles: userRoleIds,
@@ -81,29 +75,42 @@ export default async function UserEditRolesPage({
       button: {
         title: t('edit_roles.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requireAllPermissions({
           codes: [PERMISSIONS.USERS_WRITE, PERMISSIONS.ROLES_WRITE],
         });
 
-        const { user } = passby;
-
-        if (!user) {
-          throw new Error('no auth');
+        const targetUser = await findUserById(id);
+        if (!targetUser) {
+          throw new Error('user not found');
         }
 
         let roles = data.get('roles') as unknown as string[];
         if (typeof roles === 'string') {
           try {
             roles = JSON.parse(roles);
-          } catch (error) {
+          } catch {
             throw new Error('invalid roles');
           }
         }
 
-        await assignRolesToUser(user.id as string, roles);
+        if (
+          !Array.isArray(roles) ||
+          roles.some((roleId) => typeof roleId !== 'string')
+        ) {
+          throw new Error('invalid roles');
+        }
+
+        const allowedRoleIds = new Set(
+          (await getRoles()).map((role) => role.id)
+        );
+        if (roles.some((roleId) => !allowedRoleIds.has(roleId))) {
+          throw new Error('invalid roles');
+        }
+
+        await assignRolesToUser(targetUser.id as string, roles);
 
         return {
           status: 'success',

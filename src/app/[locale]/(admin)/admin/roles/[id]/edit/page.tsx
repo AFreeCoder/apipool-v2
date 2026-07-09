@@ -57,23 +57,19 @@ export default async function RoleEditPage({
         validation: { required: true },
       },
     ],
-    passby: {
-      role: role,
-    },
     data: role,
     submit: {
       button: {
         title: t('edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.ROLES_WRITE });
 
-        const { role } = passby;
-
-        if (!role) {
-          throw new Error('no auth');
+        const targetRole = await getRoleById(id);
+        if (!targetRole) {
+          throw new Error('role not found');
         }
 
         const title = data.get('title') as string;
@@ -84,7 +80,7 @@ export default async function RoleEditPage({
           description: description as string,
         };
 
-        const result = await updateRole(role.id as string, newRole);
+        const result = await updateRole(targetRole.id as string, newRole);
 
         if (!result) {
           throw new Error('update role failed');

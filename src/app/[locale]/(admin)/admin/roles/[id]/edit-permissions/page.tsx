@@ -74,9 +74,6 @@ export default async function RoleEditPermissionsPage({
         validation: { required: true },
       },
     ],
-    passby: {
-      role: role,
-    },
     data: {
       ...role,
       permissions: rolePermissionIds,
@@ -85,27 +82,44 @@ export default async function RoleEditPermissionsPage({
       button: {
         title: t('edit_permissions.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.ROLES_WRITE });
 
-        const { role } = passby;
-
-        if (!role) {
-          throw new Error('no auth');
+        const targetRole = await getRoleById(id);
+        if (!targetRole) {
+          throw new Error('role not found');
         }
 
         let permissions = data.get('permissions') as unknown as string[];
         if (typeof permissions === 'string') {
           try {
             permissions = JSON.parse(permissions);
-          } catch (error) {
+          } catch {
             throw new Error('invalid permissions');
           }
         }
 
-        await assignPermissionsToRole(role.id as string, permissions);
+        if (
+          !Array.isArray(permissions) ||
+          permissions.some((permissionId) => typeof permissionId !== 'string')
+        ) {
+          throw new Error('invalid permissions');
+        }
+
+        const allowedPermissionIds = new Set(
+          (await getPermissions()).map((permission) => permission.id)
+        );
+        if (
+          permissions.some(
+            (permissionId) => !allowedPermissionIds.has(permissionId)
+          )
+        ) {
+          throw new Error('invalid permissions');
+        }
+
+        await assignPermissionsToRole(targetRole.id as string, permissions);
 
         return {
           status: 'success',

@@ -308,12 +308,20 @@ test('settings page is wired back to FormCard and config save flow', async () =>
     /redirect\(\{\s*href:\s*['"]\/admin\/apipool-adjustments['"]/
   );
   assert.match(source, /PERMISSIONS\.SETTINGS_READ/);
+  assert.match(source, /PERMISSIONS\.SETTINGS_WRITE/);
+  assert.match(source, /requireAllPermissions/);
   assert.match(source, /getSettingTabs/);
   assert.match(source, /getSettings/);
   assert.match(source, /getAllConfigs/);
   assert.match(source, /saveConfigs/);
   assert.match(source, /<FormCard/);
   assert.match(source, /collectNonEmptyConfigs/);
+  assert.match(
+    source,
+    /\.filter\(\(setting\)\s*=>\s*setting\.tab\s*===\s*tab\)/
+  );
+  assert.match(source, /type:\s*setting\.type/);
+  assert.doesNotMatch(source, /passby\.settings/);
   assert.match(source, /autoComplete:\s*'new-password'/);
   assert.match(source, /'data-lpignore':\s*'true'/);
   assert.match(source, /'data-1p-ignore':\s*'true'/);

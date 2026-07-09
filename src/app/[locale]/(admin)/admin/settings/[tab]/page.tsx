@@ -1,7 +1,11 @@
-import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
+import {
+  PERMISSIONS,
+  requireAllPermissions,
+  requirePermission,
+} from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
 import { getAllConfigs, saveConfigs } from '@/shared/models/config';
@@ -148,7 +152,7 @@ export default async function SettingsPage({
         ...passwordAttributes,
       },
       group: setting.group,
-      value: isPassword ? '' : configs[setting.name] ?? '',
+      value: isPassword ? '' : (configs[setting.name] ?? ''),
     };
   });
 
@@ -159,20 +163,21 @@ export default async function SettingsPage({
 
   const form: Form = {
     fields,
-    passby: {
-      tab,
-      settings: currentSettings.map((setting) => ({ name: setting.name })),
-    },
     submit: {
       button: {
         title: t('edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
-        await requirePermission({ code: PERMISSIONS.SETTINGS_WRITE });
+        await requireAllPermissions({
+          codes: [PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_WRITE],
+        });
 
-        const configs = collectNonEmptyConfigs(data, passby.settings);
+        const writableSettings = (await getSettings())
+          .filter((setting) => setting.tab === tab)
+          .map((setting) => ({ name: setting.name, type: setting.type }));
+        const configs = collectNonEmptyConfigs(data, writableSettings);
         if (Object.keys(configs).length > 0) {
           await saveConfigs(configs);
         }
@@ -180,7 +185,7 @@ export default async function SettingsPage({
         return {
           status: 'success',
           message: 'settings updated',
-          redirect_url: `/admin/settings/${passby.tab}`,
+          redirect_url: `/admin/settings/${tab}`,
         };
       },
     },

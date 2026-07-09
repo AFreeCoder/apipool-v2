@@ -67,7 +67,15 @@ const targets: AuthzTarget[] = [
   },
 ];
 
-function serverActionWritePermissionPattern(permission: AuthzTarget['permission']) {
+function serverActionWritePermissionPattern(
+  permission: AuthzTarget['permission']
+) {
+  if (permission === 'SETTINGS_WRITE') {
+    return new RegExp(
+      String.raw`['"]use server['"];\s*(?:(?://[^\n]*|/\*[\s\S]*?\*/)\s*)*await\s+requireAllPermissions\(\s*\{\s*codes:\s*\[(?=[^\]]*PERMISSIONS\.SETTINGS_READ)(?=[^\]]*PERMISSIONS\.SETTINGS_WRITE)[^\]]*\]\s*,?\s*\}\s*\);`
+    );
+  }
+
   return new RegExp(
     String.raw`['"]use server['"];\s*(?:(?://[^\n]*|/\*[\s\S]*?\*/)\s*)*await\s+requirePermission\(\s*\{\s*code:\s*PERMISSIONS\.${permission}\s*,?\s*\}\s*\);`
   );
@@ -78,7 +86,7 @@ for (const target of targets) {
     const source = await readFile(join(process.cwd(), target.path), 'utf8');
 
     const requirePermissionCalls =
-      source.match(/\bawait\s+requirePermission\s*\(/g) ?? [];
+      source.match(/\bawait\s+require(?:All)?Permission(?:s)?\s*\(/g) ?? [];
 
     assert.ok(
       requirePermissionCalls.length >= 2,
@@ -87,7 +95,7 @@ for (const target of targets) {
     assert.match(
       source,
       serverActionWritePermissionPattern(target.permission),
-      `${target.path} should call requirePermission(${target.permission}) immediately after 'use server'`
+      `${target.path} should authorize ${target.permission} immediately after 'use server'`
     );
   });
 }
