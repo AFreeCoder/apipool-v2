@@ -52,6 +52,9 @@ NEWAPI_UPSTREAM="${APIPOOL_NEWAPI_UPSTREAM:-127.0.0.1:3001}"
 NEWAPI_BASIC_AUTH_USER="${APIPOOL_NEWAPI_BASIC_AUTH_USER:-$(read_env_value APIPOOL_NEWAPI_BASIC_AUTH_USER)}"
 NEWAPI_BASIC_AUTH_HASH="${APIPOOL_NEWAPI_BASIC_AUTH_HASH:-$(read_env_value APIPOOL_NEWAPI_BASIC_AUTH_HASH)}"
 NEWAPI_ALLOWED_IPS="${APIPOOL_NEWAPI_ALLOWED_IPS:-$(read_env_value APIPOOL_NEWAPI_ALLOWED_IPS)}"
+# 显式接受「New API 管理面公网开放」的退出开关。默认（未设置）保持 fail-closed；
+# 设为 true 时跳过守卫并打印警告。保护改到 Cloudflare 层，或明确接受裸奔。
+NEWAPI_ALLOW_UNPROTECTED="${APIPOOL_NEWAPI_ALLOW_UNPROTECTED:-$(read_env_value APIPOOL_NEWAPI_ALLOW_UNPROTECTED)}"
 
 has_basic_auth=0
 if [ -n "$NEWAPI_BASIC_AUTH_USER" ] && [ -n "$NEWAPI_BASIC_AUTH_HASH" ]; then
@@ -64,15 +67,24 @@ if [ -n "$NEWAPI_ALLOWED_IPS" ]; then
 fi
 
 if [ "$has_basic_auth" -eq 0 ] && [ "$has_ip_allowlist" -eq 0 ]; then
-  cat >&2 <<'MSG'
+  case "$NEWAPI_ALLOW_UNPROTECTED" in
+    true | True | TRUE | 1 | yes | YES)
+      echo "configure-caddy.sh: WARNING: newapi vhost exposed WITHOUT Caddy-level protection (APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true). New API admin backend is public; ensure protection at Cloudflare or accept the risk." >&2
+      ;;
+    *)
+      cat >&2 <<'MSG'
 configure-caddy.sh: refusing to expose the New API operator surface unprotected.
 
 Set at least one of:
   - basic auth:   APIPOOL_NEWAPI_BASIC_AUTH_USER + APIPOOL_NEWAPI_BASIC_AUTH_HASH
                   (hash via: caddy hash-password --plaintext '<password>')
   - IP allowlist: APIPOOL_NEWAPI_ALLOWED_IPS (space separated IPs/CIDRs)
+Or explicitly accept public exposure of the New API admin backend:
+  - APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true
 MSG
-  exit 78
+      exit 78
+      ;;
+  esac
 fi
 
 # newapi vhost 的保护指令

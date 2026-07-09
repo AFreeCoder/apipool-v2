@@ -115,7 +115,7 @@
 
 ## 上线前人工检查（非代码）
 
-- [ ] **Caddy 边界：三子域公网可达面实测** —— 代码已就位并接进部署路径。**2026-07-09 补修**（`deploy.sh` 原先根本不调 `configure-caddy.sh`，只有一次性的 `server-bootstrap.sh` 会调，所以配好 `.env.deploy` 也不会生效）：现在每次部署都会在**备份与拉镜像之前**重新生成 + `caddy validate` + `reload`。用户确认生产已配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（2026-07-09）。**仍待线上实测**：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401。注意该步骤会**覆盖** `/etc/caddy/Caddyfile`，手工改动会丢失。
+- [x] **Caddy 边界：New API 管理面暴露** —— 2026-07-09 owner 决策：**不在 Caddy 层保护 newapi 子域**。New API 在 Cloudflare 后面，IP 白名单不可用（`remote_ip` 是 CF 边缘 IP）；owner 判断该管理后台不需要额外门禁。`configure-caddy.sh` 保留默认 fail-closed，通过显式开关 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true` 退出（`d160558` 之后新增）。**残留风险（已知情接受）**：管理后台公网可达，管理接口仅由 New API 自身 root 登录保护；如需加固可在 Cloudflare 层（WAF/Access）做。api2 仍只放行 `/v1*`，此项不受影响。
 - [ ] `/opt/apipool-v2/.env.deploy` 权限 600、密钥真随机、GHCR 仓库 private
 - [ ] New API root 密码强度、`payment_compliance` 已确认
 - [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production` —— P1-3 修复后生产运行时会强制验签，此项降为建议。

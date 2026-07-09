@@ -83,7 +83,8 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 
 `newapi.apipool.dev` 仅运营访问：
 
-- New API 运营登录之外，再加一层边界（Basic Auth 或 IP 白名单）。**由 `deploy/configure-caddy.sh` 强制**：两者都未配置时脚本 fail-closed 退出 78，绝不生成裸奔的管理面 vhost。
+- New API 运营登录之外，可再加一层边界（Basic Auth 或 IP 白名单）。**由 `deploy/configure-caddy.sh` 默认强制**：两者都未配置时脚本 fail-closed 退出 78。
+  - **退出开关**：`APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true` 显式接受「管理后台公网开放」，跳过守卫（仍打印警告）。**当前生产采用此项**（owner 决策，2026-07-09）：New API 在 Cloudflare 后面，IP 白名单不可用（`remote_ip` 是 CF IP），且 owner 判断不需要 Caddy 层门禁；管理接口仍由 New API 自身 root 登录保护，如需加固可在 Cloudflare 层做。
   - `APIPOOL_NEWAPI_BASIC_AUTH_USER` + `APIPOOL_NEWAPI_BASIC_AUTH_HASH`（哈希用 `caddy hash-password --plaintext '<password>'` 生成）
   - `APIPOOL_NEWAPI_ALLOWED_IPS`（空格分隔的 IP/CIDR）
   - **写进 `.env.deploy` 时这两个值必须用单引号包起来**：`deploy/live-smoke.sh` 会 `source` 该文件，bcrypt 哈希里的 `$` 会被 shell 展开（`$2a$14$...` → `a4`，basic_auth 谁也登不上），空格分隔的 IP 白名单里第二个 IP 会被当成命令执行、在 `set -e` 下直接中断部署。`configure-caddy.sh` 自己按字面量读取该文件，加不加引号都能正确解析。

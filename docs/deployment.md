@@ -42,9 +42,13 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
   - `app.apipool.dev` → `127.0.0.1:3000`（门户，无额外保护）
   - `api2.apipool.dev` → `127.0.0.1:3001`，**只放行 `/v1*` 数据面**，其余路径（含
     `/api/*` 管理接口）返回 404
-  - `newapi.apipool.dev` → `127.0.0.1:3001`，**整个 vhost 受 Basic Auth 与/或
-    IP 白名单保护**；两者都未配置时 `configure-caddy.sh` fail-closed 退出 78，
-    部署在动任何东西之前中止
+  - `newapi.apipool.dev` → `127.0.0.1:3001`。默认要求在 `.env.deploy` 配 Basic
+    Auth 与/或 IP 白名单，否则 `configure-caddy.sh` fail-closed 退出 78，部署在
+    动任何东西之前中止。**本项目在 Cloudflare 后面**，`remote_ip` 看到的是 CF 边缘
+    IP，故 IP 白名单在当前脚本下不可用（会误伤所有人）；如需保护用 Basic Auth，
+    或在 Cloudflare 层做。**当前生产已显式设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`**
+    （owner 决策，2026-07-09）：Caddy 层不加保护，管理后台公网可达，仅由 New API
+    自身 root 登录挡管理接口
 - 运行时配置：
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
@@ -185,10 +189,11 @@ ssh apipool_vps 'df -h /opt/apipool-v2 && free -h && docker system df'
 ```bash
 curl -fsS https://app.apipool.dev/ >/dev/null
 
-# newapi 运营面受 Basic Auth / IP 白名单保护：无凭据必须被拒（401 或 403），
-# 返回 200 说明保护没生效。健康检查改在服务器本机做（见「服务器运行态」）。
-newapi_code="$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/api/status)"
-case "$newapi_code" in 401|403) ;; *) echo "newapi 运营面未受保护: $newapi_code" >&2; exit 1 ;; esac
+# newapi 运营面：
+#   - 若配了 Basic Auth / IP 白名单：无凭据应 401/403
+#   - 若 APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true（当前生产）：预期 200（Caddy 层不拦，
+#     保护由 New API 自身登录或 Cloudflare 承担）
+curl -sS -o /dev/null -w 'newapi /api/status -> %{http_code}\n' https://newapi.apipool.dev/api/status
 
 # api2 只放行 /v1*：管理接口路径必须 404
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/api/status)" = "404"
@@ -212,7 +217,7 @@ cutover 后再回收给 v2。
 - `docker compose ps` 显示 `apipool-v2` 和 `new-api` 运行中。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
 - 外部 `https://app.apipool.dev/` 通过。
-- 外部 `https://newapi.apipool.dev/` 返回 401 或 403（受保护）；**返回 200 视为发布失败**。
+- 外部 `https://newapi.apipool.dev/`：配了保护时应 401/403；当前生产设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`，预期 200（Caddy 层不拦，属 owner 已知情决策）。
 - 外部 `https://api2.apipool.dev/api/status` 返回 404（管理接口未经 api2 暴露）。
 - 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回 401 认证错误；带 Key
   真实调用由 live smoke 验证。

@@ -330,3 +330,40 @@ test('the Caddy config is validated before it replaces the live file', async () 
   // 保留上一份配置以便人工回滚
   assert.match(script, /Caddyfile\.bak/);
 });
+
+test('the fail-closed guard can be explicitly opted out, but stays closed by default', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  async function printConfig(body: string) {
+    const dir = await mkdtemp(join(tmpdir(), 'apipool-optout-'));
+    const envFile = join(dir, '.env.deploy');
+    await writeFile(envFile, body, 'utf8');
+    return spawnSync('bash', ['deploy/configure-caddy.sh', '--print-config'], {
+      env: {
+        ...process.env,
+        APIPOOL_DEPLOY_ENV_FILE: envFile,
+        APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
+        APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
+        APIPOOL_NEWAPI_ALLOWED_IPS: '',
+        APIPOOL_NEWAPI_ALLOW_UNPROTECTED: '',
+      },
+      encoding: 'utf8',
+    });
+  }
+
+  // 默认（无保护、无开关）仍然 fail-closed
+  const closed = await printConfig('FOO=bar\n');
+  assert.equal(closed.status, 78);
+
+  // 显式开关：跳过守卫，生成不带 basic_auth / remote_ip 的 newapi vhost
+  const open = await printConfig('APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n');
+  assert.equal(open.status, 0);
+  const newapiBlock = open.stdout.split('newapi.apipool.dev {')[1].split('\n}')[0];
+  assert.doesNotMatch(newapiBlock, /basic_auth/);
+  assert.doesNotMatch(newapiBlock, /remote_ip/);
+  // 但仍保留 noindex，且 api2 仍只放行 /v1
+  assert.match(open.stdout, /X-Robots-Tag "noindex, nofollow"/);
+  assert.match(open.stdout, /handle \/v1\*/);
+});
