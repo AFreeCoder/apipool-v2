@@ -1342,3 +1342,23 @@ test('adjustQuota keeps a redemption creation failure retriable because nothing 
       !isQuotaAdjustmentReconciliationError(error)
   );
 });
+
+test('adjustQuota escalates a malformed redemption response because the code may already exist remotely', async () => {
+  // POST 已返回 = 远端确实创建过兑换码；响应解析失败不代表远端没发生副作用。
+  // 标成可重试的 failed 会让 admin 重试再造一张码。
+  const { client } = createMockedClient({
+    'POST /api/redemption/': () => ok([]),
+  });
+
+  await assert.rejects(
+    () =>
+      client.adjustQuota({
+        user: USER,
+        amountUsd: 1,
+        reason: 'recharge',
+        reference: 'recharge:order_3',
+      }),
+    (error: any) =>
+      isQuotaAdjustmentReconciliationError(error) && error.changeId === ''
+  );
+});

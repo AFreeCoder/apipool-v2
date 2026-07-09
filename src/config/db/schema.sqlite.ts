@@ -886,6 +886,10 @@ export const apipoolLedgerEntry = table(
       .references(() => user.id, { onDelete: 'cascade' }),
     newapiUserId: text('newapi_user_id').notNull(),
     newapiChangeId: text('newapi_change_id'),
+    // 「远端已尝试」的持久化标记，写在任何远端副作用之前。
+    // changeId 为空只证明码值没落库，不能证明远端没创建过兑换码——
+    // 只有该标记为 null 才是「远端什么都没发生」的证据（自动重试的前提）。
+    remoteAttemptAt: integer('remote_attempt_at', { mode: 'timestamp_ms' }),
     orderNo: text('order_no'),
     idempotencyKey: text('idempotency_key'),
     amountUsd: integer('amount_usd').notNull(),
@@ -908,6 +912,7 @@ export const apipoolLedgerEntry = table(
       table.createdAt
     ),
     index('idx_apipool_ledger_status').on(table.status),
+    index('idx_apipool_ledger_remote_attempt').on(table.remoteAttemptAt),
     uniqueIndex('idx_apipool_ledger_newapi_change').on(table.newapiChangeId),
     uniqueIndex('idx_apipool_ledger_order_no').on(table.orderNo),
     uniqueIndex('idx_apipool_ledger_idempotency').on(table.idempotencyKey),

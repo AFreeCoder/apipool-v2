@@ -44,11 +44,17 @@
 
 ## 5. 失败补偿
 
-- **兑换码生成前失败（绑定失败、New API 宕机）**：远端未发生任何事，ledger 保持 `pending`/`failed` 可自动重试；用户余额展示带"到账处理中"态；admin 后台提供按 ledger 行重试的入口。
-- **兑换码生成后失败（兑换请求超时、确认查询失败、进程被杀）**：**禁止自动重试**——「一码一兑」的幂等只对同一张码有效，重试会生成第二张码并双倍到账。码值在发出兑换请求前就写入 `ledger.newapiChangeId`，此后该行一律转 `reconciliation_required` 等人工核对。
-- **不变量**：ledger 行一旦带有 `newapiChangeId`，任何自动路径（webhook 重放、支付回跳、admin retry、processing 超时重夺）都不得再次调用加额。
-- **processing 卡死**：进程在 claim 后崩溃会把行留在 `processing`。超过 5 分钟且**未带码值**的行可被安全重夺重试；带码值的行升级为 `reconciliation_required`。
-- **远端成功但本地标记失败**：以兑换码 ID（`newapiChangeId`）反查——对账任务发现 New API 已兑换但 ledger 非 applied 时，补置 applied。
+**核心原则**：只有能**证明**远端未发生任何副作用时，才允许自动重试。「本地没记下码值」不是这样的证明。
+
+- **`POST /api/redemption/` 返回之前失败（绑定失败、New API 宕机、创建兑换码超时）**：创建兑换码**不发放额度**，最坏只在远端留下一张未兑换的孤儿码，用户余额不受影响。ledger 保持 `pending`/`failed` 可自动重试；用户余额展示带"到账处理中"态；admin 后台提供按 ledger 行重试的入口。
+- **`POST /api/redemption/` 返回之后的任何失败**（响应损坏、兑换请求超时、确认查询失败、进程被杀）：**禁止自动重试**——「一码一兑」的幂等只对同一张码有效，重试会生成第二张码，兑换成功即双倍到账。该行一律转 `reconciliation_required` 等人工核对。
+- **两个持久化证据**（缺一不可）：
+  - `ledger.remoteAttemptAt`：在**任何远端副作用之前**写入。为 null 才证明"远端从未被尝试"。
+  - `ledger.newapiChangeId`：在**发出兑换请求之前**写入。额度发放（topup）严格晚于它，故**额度已发放 ⇒ 码值必已落库**。
+- **不变量**：ledger 行只要带有 `newapiChangeId` **或** `remoteAttemptAt`，任何自动路径（webhook 重放、支付回跳、admin retry、processing 超时重夺）都不得再次调用加额。
+- **processing 卡死**：进程在 claim 后崩溃会把行留在 `processing`。超过 5 分钟且 `remoteAttemptAt` 与 `newapiChangeId` **均为 null** 的行才可安全重夺重试（证明崩溃发生在任何远端调用之前）；否则升级为 `reconciliation_required`。
+- **远端成功但本地标记失败**：以兑换码 ID（`newapiChangeId`）反查；若连码值都没落库（响应损坏 / 崩溃在落库前），按兑换码名反查——名称是 `reference` 的确定性短哈希 `r + sha256(reference)[0:18]`，可随时由 order_no 重算。
+- **已知残留**：创建兑换码超时且远端实际已创建时，重试会留下一张**未兑换的孤儿码**（面值等于充值额，码值已丢失，仅在 New API 管理后台可见）。它不影响用户余额，需 New API 管理员才能兑换。New API 无兑换码检索接口，门户侧无法自动清理；上线后按名称人工巡检。
 - **用户在 pending 期间发起调用**：允许失败（余额未到账即额度不足），文案提示充值到账中。
 
 ## 6. 对账

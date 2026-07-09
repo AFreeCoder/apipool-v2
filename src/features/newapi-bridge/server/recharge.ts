@@ -104,7 +104,11 @@ async function claimLedgerForRecharge(ledgerId: string) {
           inArray(apipoolLedgerEntry.status, CLAIMABLE_RECHARGE_STATUSES),
           and(
             eq(apipoolLedgerEntry.status, 'processing'),
-            lte(apipoolLedgerEntry.updatedAt, processingReclaimCutoff())
+            lte(apipoolLedgerEntry.updatedAt, processingReclaimCutoff()),
+            // 崩溃的 processing 行只有在「远端从未被尝试」时才可安全重夺。
+            // changeId 为空不足以证明这一点：进程可能死在
+            // 「兑换码已创建、码值尚未落库」之间。
+            isNull(apipoolLedgerEntry.remoteAttemptAt)
           )
         )
       )
@@ -128,14 +132,19 @@ async function unclaimedRechargeResult(
     };
   }
 
-  // 兑换码已发出但未确认：远端可能已入账，重试会再发一张码。
-  // 升级为人工核对，用 newapiChangeId 反查远端兑换状态。
+  // 远端已被尝试但结局未知（码值已落库，或进程死在创建兑换码之后）：
+  // 重试会再创建一张码。升级人工核对——码值在 newapiChangeId，
+  // 若连码值都没落库，可用 reference 的确定性短哈希在 New API 侧按名反查。
   // processing 且尚新 = 另一进程正在执行，交还 pending_retry 由其收敛。
   const stillRunning =
     current?.status === 'processing' &&
     current.updatedAt > processingReclaimCutoff();
 
-  if (current && current.newapiChangeId && !stillRunning) {
+  const remoteOutcomeUnknown = Boolean(
+    current?.newapiChangeId || current?.remoteAttemptAt
+  );
+
+  if (current && remoteOutcomeUnknown && !stillRunning) {
     await db()
       .update(apipoolLedgerEntry)
       .set({ status: 'reconciliation_required' })
@@ -174,6 +183,15 @@ async function executeRecharge(
       { id: input.userId, email: input.userEmail || '' },
       client
     );
+
+    // 在任何远端副作用之前落下持久化标记。进程若在
+    // 「兑换码已创建、码值尚未落库」之间被杀，靠它证明远端结局未知，
+    // 从而阻止 TTL 重夺把该行当成「什么都没发生」重试。
+    await db()
+      .update(apipoolLedgerEntry)
+      .set({ remoteAttemptAt: new Date() })
+      .where(eq(apipoolLedgerEntry.id, ledgerId));
+
     const remote = await client.adjustQuota({
       user: bindingToUserCredentials(binding),
       amountUsd,
@@ -230,8 +248,12 @@ async function executeRecharge(
       .update(apipoolLedgerEntry)
       .set({
         status: nextStatus,
-        // 落库码值，人工核对据此反查远端是否已兑换（docs/06 第 5 节）
-        ...(needsReconciliation ? { newapiChangeId: error.changeId } : {}),
+        // 落库码值，人工核对据此反查远端是否已兑换（docs/06 第 5 节）。
+        // 码值可能为空（兑换码创建后响应就损坏了），此时留空避免撞唯一索引，
+        // 人工按 reference 的确定性短哈希在 New API 侧按名反查。
+        ...(needsReconciliation && error.changeId
+          ? { newapiChangeId: error.changeId }
+          : {}),
       })
       .where(eq(apipoolLedgerEntry.id, ledgerId));
 

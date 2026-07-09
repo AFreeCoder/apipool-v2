@@ -796,7 +796,7 @@ test('recharge escalates an unconfirmed remote topup to reconciliation and never
   assert.equal(rows[0].status, 'reconciliation_required');
 });
 
-test('recharge reclaims a stale processing ledger that never dispatched a redemption', async () => {
+test('recharge reclaims a stale processing ledger that crashed before any remote attempt', async () => {
   const user = await insertUser('recharge_user_stale', 'stale@b.co');
   await insertActiveBinding(user);
   await insertRechargeLedger({
@@ -806,9 +806,12 @@ test('recharge reclaims a stale processing ledger that never dispatched a redemp
     amountUsd: 5,
     status: 'processing',
   });
-  // 进程在远端调用前崩溃：无 changeId，远端什么都没发生，重试安全
+  // 进程在 claim 之后、任何远端调用之前崩溃：remote_attempt_at 为 null
+  // 证明远端什么都没发生，重试安全
   await executeRaw(
-    `UPDATE apipool_ledger_entry SET updated_at = 0 WHERE id = 'ledger_stale_processing'`
+    `UPDATE apipool_ledger_entry
+     SET updated_at = 0, remote_attempt_at = NULL
+     WHERE id = 'ledger_stale_processing'`
   );
 
   const { client, getAdjustCalls } = createWorkingRemoteClient();
@@ -968,5 +971,77 @@ test('recharge never claims a ledger that already carries a redemption code', as
   assert.equal(result.outcome, 'failed');
   assert.equal(getAdjustCalls(), 0);
   const rows = await listLedgerByOrderNo('order_recharge_coded');
+  assert.equal(rows[0].status, 'reconciliation_required');
+});
+
+test('recharge marks the remote attempt durable before any remote side effect', async () => {
+  const user = await insertUser('recharge_user_marker', 'marker@b.co');
+  await insertActiveBinding(user);
+  const input = {
+    orderNo: 'order_recharge_marker',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 500,
+    currency: 'USD',
+  };
+
+  let markerAtCall: unknown;
+  const client = {
+    provisionUser: async (i: { username: string }) => ({
+      newapiUserId: `remote_${i.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (i: any) => {
+      // adjustQuota 的第一件事就是 POST /api/redemption/（远端副作用）。
+      // 在它被调用之前，ledger 必须已经留下「远端已尝试」的持久化证据。
+      const rows = await listLedgerByOrderNo(input.orderNo);
+      markerAtCall = rows[0].remoteAttemptAt;
+      await i.onRedemptionCreated?.('code-marker');
+      return { changeId: 'code-marker', balanceUsd: 5 };
+    },
+  } as any;
+
+  const result = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(result.outcome, 'applied');
+  assert.ok(
+    markerAtCall instanceof Date,
+    'remoteAttemptAt must be persisted before adjustQuota runs'
+  );
+});
+
+test('recharge escalates a stale processing ledger whose remote attempt outcome is unknown', async () => {
+  // 硬崩溃窗口：POST /api/redemption/ 已成功，进程在码值落库前被 SIGKILL。
+  // 行留在 processing 且 changeId 为 null——但远端已经多了一张兑换码，
+  // 「changeId IS NULL」不能证明远端什么都没发生。
+  const user = await insertUser('recharge_user_unknown', 'unknown@b.co');
+  await insertActiveBinding(user);
+  await insertRechargeLedger({
+    id: 'ledger_unknown_outcome',
+    userId: user.id,
+    orderNo: 'order_recharge_unknown_outcome',
+    amountUsd: 5,
+    status: 'processing',
+  });
+  await executeRaw(
+    `UPDATE apipool_ledger_entry
+     SET updated_at = 0, remote_attempt_at = 1
+     WHERE id = 'ledger_unknown_outcome'`
+  );
+
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const result = await modules.recharge.applyRechargeForOrder(
+    {
+      orderNo: 'order_recharge_unknown_outcome',
+      userId: user.id,
+      userEmail: user.email,
+      amount: 500,
+      currency: 'USD',
+    },
+    client
+  );
+
+  assert.equal(result.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 0);
+  const rows = await listLedgerByOrderNo('order_recharge_unknown_outcome');
   assert.equal(rows[0].status, 'reconciliation_required');
 });
