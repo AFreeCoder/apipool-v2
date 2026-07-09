@@ -446,12 +446,43 @@ export async function updateGroup(
   const current = await getGroupById(id);
   assertImmutableSlug(current?.slug, patch.slug, 'group');
 
-  const [result] = await db()
-    .update(catalogGroup)
-    .set(patch)
-    .where(eq(catalogGroup.id, id))
-    .returning();
-  return result;
+  // 改了 New API 映射 = 建 Key / 计费立刻走新分组，但缓存的倍率仍是旧分组的。
+  // 不失效就会让 /models 按旧倍率展示价格，与实际扣费不符。
+  // 失效后公开价自动转为「—」，直到重新跑一次价格同步确认（hide-until-confirmed）。
+  const remapped =
+    patch.newapiGroup !== undefined &&
+    patch.newapiGroup !== current?.newapiGroup;
+
+  if (!remapped) {
+    const [result] = await db()
+      .update(catalogGroup)
+      .set(patch)
+      .where(eq(catalogGroup.id, id))
+      .returning();
+    return result;
+  }
+
+  return await db().transaction(async (tx: any) => {
+    const [result] = await tx
+      .update(catalogGroup)
+      .set({
+        ...patch,
+        newapiGroupRatioBps: null,
+        newapiGroupRatioDecimal: null,
+        newapiGroupRatioRaw: null,
+        pricingSyncStatus: 'unknown',
+        pricingSyncedAt: null,
+      })
+      .where(eq(catalogGroup.id, id))
+      .returning();
+
+    await tx
+      .update(catalogModelListing)
+      .set({ priceDriftStatus: 'needs_live_check' })
+      .where(eq(catalogModelListing.groupId, id));
+
+    return result;
+  });
 }
 
 export async function deleteGroup(id: string): Promise<void> {
