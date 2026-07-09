@@ -160,7 +160,7 @@ export default async function ModelsPage({
 
   return (
     <div className="bg-background">
-      {/* 标题 + 筛选：首屏即见表格，不放 hero */}
+      {/* 标题 + 筛选：全量筛选清单平铺（供应商/分组/分类/能力/状态），不放 hero */}
       <section className="border-border border-b">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="text-primary font-mono text-xs tracking-widest uppercase">

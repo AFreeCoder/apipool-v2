@@ -1,16 +1,4 @@
-'use client';
-
-import { Check, ChevronDown } from 'lucide-react';
-
 import { Link } from '@/core/i18n/navigation';
-import { Button } from '@/shared/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu';
-import { cn } from '@/shared/lib/utils';
 
 export interface ModelFilterOption {
   slug: string;
@@ -28,9 +16,9 @@ export interface ModelFilterGroup {
 }
 
 /**
- * Single-row filter bar for /models (docs/05 §6: the table must be visible
- * in the first viewport). Each dimension is a dropdown of plain links, so
- * filter state keeps living in the URL exactly like the old pill rows.
+ * Stacked filter rows for /models: every dimension lists ALL of its options
+ * as flat pills (docs/05 §6 — 全量清单平铺，不用下拉收纳). Filter state lives
+ * in the URL, so each pill is a plain link and this stays a server component.
  */
 export function ModelFilters({
   groups,
@@ -46,55 +34,62 @@ export function ModelFilters({
   const hasAnyActive = groups.some((group) => group.activeName !== null);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-2">
       {groups.map((group) => (
-        <DropdownMenu key={group.key}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                'h-8 gap-1.5 px-2.5 text-xs',
-                group.activeName !== null && 'border-primary/50'
-              )}
+        <div key={group.key} className="flex flex-wrap items-center gap-1.5">
+          <span className="text-muted-foreground w-20 shrink-0 text-xs tracking-wide uppercase">
+            {group.label}
+          </span>
+          <FilterLink active={group.activeName === null} href={group.allHref}>
+            {allLabel}
+          </FilterLink>
+          {group.options.map((option) => (
+            <FilterLink
+              key={option.slug}
+              active={option.active}
+              href={option.href}
             >
-              <span className="text-muted-foreground">{group.label}</span>
-              <span className="font-medium">
-                {group.activeName ?? allLabel}
-              </span>
-              <ChevronDown className="size-3.5 opacity-60" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem asChild>
-              <Link className="w-full cursor-pointer" href={group.allHref}>
-                <span>{allLabel}</span>
-                {group.activeName === null && (
-                  <Check size={16} className="text-primary ml-auto" />
-                )}
-              </Link>
-            </DropdownMenuItem>
-            {group.options.map((option) => (
-              <DropdownMenuItem asChild key={option.slug}>
-                <Link className="w-full cursor-pointer" href={option.href}>
-                  <span>{option.name}</span>
-                  {option.active && (
-                    <Check size={16} className="text-primary ml-auto" />
-                  )}
-                </Link>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {option.name}
+            </FilterLink>
+          ))}
+        </div>
       ))}
       {hasAnyActive && (
-        <Link
-          href={clearHref}
-          className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 transition-colors hover:underline"
-        >
-          {clearLabel}
-        </Link>
+        <div className="pt-1">
+          <Link
+            href={clearHref}
+            className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 transition-colors hover:underline"
+          >
+            {clearLabel}
+          </Link>
+        </div>
       )}
     </div>
+  );
+}
+
+function FilterLink({
+  active,
+  href,
+  children,
+}: {
+  active: boolean;
+  href: string;
+  children: React.ReactNode;
+}) {
+  const base =
+    'focus-visible:ring-ring inline-flex min-h-8 items-center rounded-md px-2.5 py-1 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none sm:min-h-0';
+
+  return (
+    <Link
+      href={href}
+      className={
+        active
+          ? `${base} bg-primary text-primary-foreground font-medium`
+          : `${base} text-muted-foreground hover:text-foreground hover:bg-muted border`
+      }
+    >
+      {children}
+    </Link>
   );
 }
