@@ -6,6 +6,39 @@ if [ "${1:-}" = "--print-config" ]; then
   PRINT_CONFIG_ONLY=1
 fi
 
+# New API 运营面保护变量存放在 .env.deploy。**绝不 source 它**：
+#   - bcrypt 哈希含 `$`，`HASH=$2a$14$xxx` 经 shell 参数展开后变成 `a4`，
+#     生成的 basic_auth 谁也登不上去，而且静默无提示；
+#   - IP 白名单含空格，`IPS=1.2.3.4 5.6.7.8` 会让 shell 把第二个 IP 当命令执行，
+#     在 set -e 下直接中断部署（deploy/live-smoke.sh 也 source 同一个文件）。
+# 这里按字面量读取，加不加引号都能正确解析。
+ENV_FILE="${APIPOOL_DEPLOY_ENV_FILE:-${APIPOOL_DEPLOY_DIR:-/opt/apipool-v2}/.env.deploy}"
+
+read_env_value() {
+  key="$1"
+  [ -f "$ENV_FILE" ] || return 0
+
+  line="$(awk -v key="$key" '
+    {
+      entry = $0
+      sub(/^[ \t]*/, "", entry)
+      sub(/^export[ \t]+/, "", entry)
+      if (index(entry, key "=") == 1) last = entry
+    }
+    END { if (last != "") print last }
+  ' "$ENV_FILE")"
+
+  [ -n "$line" ] || return 0
+
+  value="${line#*=}"
+  case "$value" in
+    "'"*"'") value="${value#\'}"; value="${value%\'}" ;;
+    '"'*'"') value="${value#\"}"; value="${value%\"}" ;;
+  esac
+
+  printf '%s' "$value"
+}
+
 PORTAL_DOMAIN="${APIPOOL_PORTAL_DOMAIN:-app.apipool.dev}"
 API_DOMAIN="${APIPOOL_API_DOMAIN:-api2.apipool.dev}"
 NEWAPI_DOMAIN="${APIPOOL_NEWAPI_DOMAIN:-newapi.apipool.dev}"
@@ -15,9 +48,10 @@ NEWAPI_UPSTREAM="${APIPOOL_NEWAPI_UPSTREAM:-127.0.0.1:3001}"
 
 # New API 运营面保护（docs/07-runbook.md 第 2 节）：Basic Auth 与 IP 白名单
 # 至少配一项，否则拒绝生成配置——绝不产出裸奔的管理面 vhost。
-NEWAPI_BASIC_AUTH_USER="${APIPOOL_NEWAPI_BASIC_AUTH_USER:-}"
-NEWAPI_BASIC_AUTH_HASH="${APIPOOL_NEWAPI_BASIC_AUTH_HASH:-}"
-NEWAPI_ALLOWED_IPS="${APIPOOL_NEWAPI_ALLOWED_IPS:-}"
+# 环境变量优先；未设置时从 .env.deploy 按字面量读取
+NEWAPI_BASIC_AUTH_USER="${APIPOOL_NEWAPI_BASIC_AUTH_USER:-$(read_env_value APIPOOL_NEWAPI_BASIC_AUTH_USER)}"
+NEWAPI_BASIC_AUTH_HASH="${APIPOOL_NEWAPI_BASIC_AUTH_HASH:-$(read_env_value APIPOOL_NEWAPI_BASIC_AUTH_HASH)}"
+NEWAPI_ALLOWED_IPS="${APIPOOL_NEWAPI_ALLOWED_IPS:-$(read_env_value APIPOOL_NEWAPI_ALLOWED_IPS)}"
 
 has_basic_auth=0
 if [ -n "$NEWAPI_BASIC_AUTH_USER" ] && [ -n "$NEWAPI_BASIC_AUTH_HASH" ]; then

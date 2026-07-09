@@ -17,20 +17,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card';
+import { safeDecodedInternalPath } from '@/shared/lib/safe-path';
 
 const RESEND_COOLDOWN_SECONDS = 60;
-
-function safeDecodeCallbackUrl(raw?: string) {
-  if (!raw) return '/';
-  try {
-    const decoded = decodeURIComponent(raw);
-    // only allow internal redirects
-    if (decoded.startsWith('/')) return decoded;
-    return '/';
-  } catch {
-    return '/';
-  }
-}
 
 function stripLocalePrefix(path: string, locale: string) {
   if (!path?.startsWith('/')) return '/';
@@ -83,7 +72,10 @@ export function VerifyEmailPage({
   const lastSessionCheckAtRef = useRef(0);
 
   const nextUrl = useMemo(() => {
-    const decoded = safeDecodeCallbackUrl(callbackUrl);
+    // 必须先解码再校验：`%2F%2Fevil.com` 解码成 `//evil.com`，只判 startsWith('/')
+    // 会放行，随后 hardNavigateToNextUrl 的 location.assign 直接离站（默认 locale
+    // 下 base 为空串）。
+    const decoded = safeDecodedInternalPath(callbackUrl);
     // i18n router will prefix locale automatically; store locale-less paths
     return stripLocalePrefix(decoded, locale);
   }, [callbackUrl, locale]);

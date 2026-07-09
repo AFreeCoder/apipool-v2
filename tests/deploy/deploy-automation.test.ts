@@ -207,16 +207,65 @@ test('Caddy guards the New API operator surface with an IP allowlist', async () 
   assert.match(newapiBlock, /respond .*403/);
 });
 
-test('server bootstrap loads the deploy env before configuring Caddy', async () => {
-  // configure-caddy 现在 fail-closed；运营面保护变量存在 .env.deploy 里，
-  // bootstrap 不加载它就会在首次开机自举时直接卡死。
+test('server bootstrap never shell-sources the deploy env', async () => {
   const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
 
-  const envLoad = bootstrap.indexOf('. "$APP_DIR/.env.deploy"');
-  const caddyCall = bootstrap.indexOf('&& "$APP_DIR/deploy/configure-caddy.sh"');
-  assert.notEqual(envLoad, -1, 'bootstrap must source .env.deploy');
-  assert.notEqual(caddyCall, -1, 'bootstrap must invoke configure-caddy.sh');
-  assert.ok(envLoad < caddyCall, 'env must load before configure-caddy runs');
+  // `. .env.deploy` 会让 shell 展开值：bcrypt 哈希 `$2a$14$...` 变成 `a4`，
+  // 空格分隔的 IP 白名单里第二个 IP 被当成命令执行（set -e 下直接中断部署）。
+  assert.doesNotMatch(bootstrap, /^\s*\.\s+"\$APP_DIR\/\.env\.deploy"/m);
+  // 改为把文件路径交给 configure-caddy，由它按字面量读取
+  assert.match(bootstrap, /APIPOOL_DEPLOY_ENV_FILE=/);
+});
+
+test('Caddy config reads bcrypt hashes and IP lists from .env.deploy literally', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const hash = '$2a$14$Xy7QZ0abcdefghijklmnop';
+  const ips = '203.0.113.7 198.51.100.0/24';
+
+  for (const [label, body] of [
+    [
+      'quoted',
+      `APIPOOL_NEWAPI_BASIC_AUTH_USER='ops'\nAPIPOOL_NEWAPI_BASIC_AUTH_HASH='${hash}'\nAPIPOOL_NEWAPI_ALLOWED_IPS='${ips}'\n`,
+    ],
+    [
+      'unquoted',
+      `APIPOOL_NEWAPI_BASIC_AUTH_USER=ops\nAPIPOOL_NEWAPI_BASIC_AUTH_HASH=${hash}\nAPIPOOL_NEWAPI_ALLOWED_IPS=${ips}\n`,
+    ],
+  ] as const) {
+    const dir = await mkdtemp(join(tmpdir(), 'apipool-env-'));
+    const envFile = join(dir, '.env.deploy');
+    await writeFile(envFile, body, 'utf8');
+
+    // 刻意不通过环境变量传值：要覆盖的正是「从文件读」这条真实路径
+    const { status, stdout, stderr } = spawnSync(
+      'bash',
+      ['deploy/configure-caddy.sh', '--print-config'],
+      {
+        env: {
+          ...process.env,
+          APIPOOL_DEPLOY_ENV_FILE: envFile,
+          // 置空 == 未设置（脚本用 ${VAR:-...}）：确保读的是文件而非环境变量
+          APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
+          APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
+          APIPOOL_NEWAPI_ALLOWED_IPS: '',
+        },
+        encoding: 'utf8',
+      }
+    );
+
+    assert.equal(status, 0, `${label}: ${stderr}`);
+    assert.ok(
+      stdout.includes(hash),
+      `${label}: bcrypt hash must survive verbatim, got:\n${stdout}`
+    );
+    assert.ok(
+      stdout.includes('remote_ip 203.0.113.7 198.51.100.0/24'),
+      `${label}: the whole IP allowlist must survive, got:\n${stdout}`
+    );
+  }
 });
 
 test('Caddy setup refuses to expose the New API operator surface unprotected', async () => {
@@ -229,4 +278,14 @@ test('Caddy setup refuses to expose the New API operator surface unprotected', a
 
   assert.notEqual(status, 0);
   assert.match(stderr, /basic auth|IP allowlist/i);
+});
+
+test('the deploy env example quotes values that would break a shell source', async () => {
+  const example = await readFile('deploy/env.production.example', 'utf8');
+
+  // deploy/live-smoke.sh 仍会 source .env.deploy：bcrypt 哈希的 `$` 会被展开，
+  // 空格分隔的 IP 白名单里第二个 IP 会被当命令执行（set -e 下中断部署）。
+  assert.match(example, /APIPOOL_NEWAPI_BASIC_AUTH_HASH='/);
+  assert.match(example, /APIPOOL_NEWAPI_ALLOWED_IPS='/);
+  assert.match(example, /单引号/);
 });

@@ -86,7 +86,8 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - New API 运营登录之外，再加一层边界（Basic Auth 或 IP 白名单）。**由 `deploy/configure-caddy.sh` 强制**：两者都未配置时脚本 fail-closed 退出 78，绝不生成裸奔的管理面 vhost。
   - `APIPOOL_NEWAPI_BASIC_AUTH_USER` + `APIPOOL_NEWAPI_BASIC_AUTH_HASH`（哈希用 `caddy hash-password --plaintext '<password>'` 生成）
   - `APIPOOL_NEWAPI_ALLOWED_IPS`（空格分隔的 IP/CIDR）
-  - 两项均配则同时生效（先过 IP 白名单，再过 Basic Auth）。变量写在 `/opt/apipool-v2/.env.deploy`，`server-bootstrap.sh` 会在调用 Caddy 配置前载入。
+  - **写进 `.env.deploy` 时这两个值必须用单引号包起来**：`deploy/live-smoke.sh` 会 `source` 该文件，bcrypt 哈希里的 `$` 会被 shell 展开（`$2a$14$...` → `a4`，basic_auth 谁也登不上），空格分隔的 IP 白名单里第二个 IP 会被当成命令执行、在 `set -e` 下直接中断部署。`configure-caddy.sh` 自己按字面量读取该文件，加不加引号都能正确解析。
+  - 两项均配则同时生效（先过 IP 白名单，再过 Basic Auth）。变量写在 `/opt/apipool-v2/.env.deploy`；`server-bootstrap.sh` 把该文件路径经 `APIPOOL_DEPLOY_ENV_FILE` 交给 `configure-caddy.sh`，由后者按字面量读取（不 source）。
 - `X-Robots-Tag: noindex, nofollow`。
 - 不出现在公开导航、文档、sitemap、客服文案中。
 - 门户桥接流量走 `NEWAPI_BASE_URL` 内部地址。

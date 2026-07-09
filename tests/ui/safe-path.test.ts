@@ -28,3 +28,30 @@ test('safeInternalPath rejects header-splitting characters', () => {
   assert.equal(safeInternalPath('/dashboard\nSet-Cookie: x=1'), '/');
   assert.equal(safeInternalPath('/dashboard\r\nLocation: //evil.com'), '/');
 });
+
+test('safeDecodedInternalPath decodes once before validating', async () => {
+  const { safeDecodedInternalPath } = await import('@/shared/lib/safe-path');
+
+  assert.equal(safeDecodedInternalPath('%2Fdashboard'), '/dashboard');
+  assert.equal(safeDecodedInternalPath('/dashboard'), '/dashboard');
+});
+
+test('safeDecodedInternalPath rejects url-encoded protocol-relative urls', async () => {
+  const { safeDecodedInternalPath } = await import('@/shared/lib/safe-path');
+
+  // verify-email 只判断 decodeURIComponent 之后 startsWith('/')，
+  // `%2F%2Fevil.com` 解码成 `//evil.com` 就放行了，随后 location.assign 离站。
+  assert.equal(safeDecodedInternalPath('%2F%2Fevil.com'), '/');
+  assert.equal(safeDecodedInternalPath('//evil.com'), '/');
+  assert.equal(safeDecodedInternalPath('%2F%5Cevil.com'), '/');
+  assert.equal(safeDecodedInternalPath('https://evil.com'), '/');
+  assert.equal(safeDecodedInternalPath('%09//evil.com'), '/');
+});
+
+test('safeDecodedInternalPath survives malformed encodings', async () => {
+  const { safeDecodedInternalPath } = await import('@/shared/lib/safe-path');
+
+  assert.equal(safeDecodedInternalPath('%E0%A4%A'), '/');
+  assert.equal(safeDecodedInternalPath(undefined), '/');
+  assert.equal(safeDecodedInternalPath(''), '/');
+});

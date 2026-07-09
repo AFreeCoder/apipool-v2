@@ -18,3 +18,23 @@ export function safeInternalPath(raw?: string | null): string {
 
   return raw;
 }
+
+/**
+ * 同上，但先做一次 URL 解码。
+ *
+ * 回跳参数常以 `%2Fdashboard` 的形式出现；只在解码前校验会漏掉
+ * `%2F%2Fevil.com`（解码后是 `//evil.com`，浏览器当外站）。
+ * 解码失败（畸形百分号序列）一律回退站内根路径。
+ */
+export function safeDecodedInternalPath(raw?: string | null): string {
+  if (!raw) return '/';
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return '/';
+  }
+
+  return safeInternalPath(decoded);
+}

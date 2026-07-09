@@ -87,3 +87,36 @@ test('auth pages sanitize the callback url through the shared helper', async () 
     assert.doesNotMatch(source, /function safeInternalPath/);
   }
 });
+
+test('verify-email routes its callback through the shared safe-path helper', async () => {
+  const source = await readFile('src/shared/blocks/sign/verify-email.tsx', 'utf8');
+
+  // 这里的 nextUrl 会喂给 window.location.assign(`${base}${nextUrl}`)，
+  // 默认 locale 下 base 是空串——`//evil.com` 会直接离站。
+  assert.match(source, /safeDecodedInternalPath/);
+  assert.doesNotMatch(
+    source,
+    /function safeDecodeCallbackUrl/,
+    'the local weak validator must not come back'
+  );
+  assert.doesNotMatch(
+    source,
+    /decoded\.startsWith\('\/'\)/,
+    'startsWith("/") alone lets protocol-relative urls through'
+  );
+});
+
+test('no auth surface keeps a private copy of the callback validator', async () => {
+  for (const file of [
+    'src/shared/blocks/sign/verify-email.tsx',
+    'src/app/[locale]/(auth)/sign-in/page.tsx',
+    'src/app/[locale]/(auth)/sign-up/page.tsx',
+  ]) {
+    const source = await readFile(file, 'utf8');
+    assert.doesNotMatch(
+      source,
+      /function safe(InternalPath|DecodeCallbackUrl)/,
+      `${file} must reuse src/shared/lib/safe-path.ts`
+    );
+  }
+});
