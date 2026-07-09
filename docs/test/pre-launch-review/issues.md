@@ -8,8 +8,8 @@
 ## 上线门禁 · 资损与安全（最高优先）
 
 - [x] **P0-7 checkout metadata 可覆盖 `order_no`/`user_id`，webhook 不校验 session 归属与金额** —— 2026-07-09 已修复，回链提交 `dbc4b25 fix(payment): reject client-supplied checkout metadata (P0-7)`。移除 `CheckoutRequestBody.metadata` 入参（metadata 全部服务端构造）+ 新增 `assertPaymentSessionMatchesOrder` 纵深防御（仅拒绝「实付+折扣 < 订单金额」，且仅校验支付成功的 session）。**遗留**：webhook 守卫未跑真实 Stripe 回调，须在测试模式充值时复验（见下人工检查项）；`themes/default/blocks/pricing.tsx` 仍在发送已被忽略的 affiliate metadata，若复活该 block 需重新接线。
-- [ ] **P0-1 充值歧义失败标 pending 可重试，可能重复加额或产生对账缺口**——`recharge.ts` catch 漏 `isQuotaAdjustmentReconciliationError` 判定；topup 请求超时同样落 pending。修法：歧义失败一律置 `reconciliation_required` 并落 changeId；利用确定性兑换码名（`r`+sha256(reference)[0:18]）在建码前先查同名码——docs/06:47-48 本就如此要求，现码未遵守。
-- [ ] **P1-1↑（升为门禁）ledger 卡 `processing` 无任何恢复路径**——claim 状态集不含 processing，崩溃/滚动部署后永久卡死，用户已付款且无自动或 API 恢复手段。三选一：TTL reclaim / admin 强制 reclaim / 监控告警 + 手工 SOP。（`recharge.ts:51`、`:111-115`）
+- [x] **P0-1 充值歧义失败标 pending 可重试，可能重复加额或产生对账缺口** —— 2026-07-09 已修复，回链提交 `a64d39e fix(recharge): never auto-retry once a redemption code exists (P0-1, P1-1)`。**未采用**原设想的「建码前先查同名码」——New API 无实测过的兑换码检索端点（docs/04 只验证过 `POST /api/redemption/`），不臆造端点。改为：码值在发出兑换请求前经 `onRedemptionCreated` 回调落库，此后任何失败（含进程被杀）一律转 `reconciliation_required`；claim 谓词加 `newapiChangeId IS NULL` 作为全局不变量。docs/06 §5 已同步改写。
+- [x] **P1-1↑（升为门禁）ledger 卡 `processing` 无任何恢复路径** —— 2026-07-09 已修复，同提交 `a64d39e`。processing 超时 5 分钟且**未带码值**的行可安全重夺重试（远端未发生任何事）；**带码值**的升级 `reconciliation_required` 人工核对；仍在执行的新鲜 processing 行照旧返回 `pending_retry`。
 - [ ] **P0-2 New API 管理后台公网可达**——`configure-caddy.sh:19-35` 两子域无 Basic Auth / IP 白名单，`api2` 未限 `/v1`。修复后需实测三子域可达面。
 
 ## 上线门禁 · 计费一致性
@@ -117,7 +117,8 @@
 - [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production`
 - [ ] Stripe dashboard 只勾选代码已映射的 5 种事件（P1-2 修复前尤其重要）
 - [ ] Stripe/Creem 密钥填 admin settings 并跑一笔测试模式全链路——同时复验 P0-7 新增的 webhook 守卫 `assertPaymentSessionMatchesOrder` 不误拒真实回调（含折扣码场景）
-- [ ] 告警三条（webhook 失败 / ledger pending 超时 / bridge unauthorized）接监控或明确接受裸奔——P1-1 的 processing 卡死也依赖这里发现
+- [ ] 告警三条（webhook 失败 / ledger pending 超时 / bridge unauthorized）接监控或明确接受裸奔——**新增第四条**：`ledger.status = 'reconciliation_required'` 必须告警，P0-1 修复后所有歧义失败都汇入该状态，需人工按 `newapiChangeId` 反查远端兑换状态后手工结清
+- [ ] 真实 New API 上复验兑换码窗口（P0-1）：兑换请求超时 / 确认查询失败时，ledger 应落 `reconciliation_required` 且带码值，重放不再加额
 - [ ] 备份 restore 演练（`backup.sh` 只备份未演练；`deploy.sh` 明确"数据库不自动回滚"）
 - [ ] 域名规划确认（app/api2/newapi 子域 vs apipool.dev 上游站冲突）
 - [ ] libsql 运行时 `PRAGMA foreign_keys` 实测一次
