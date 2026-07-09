@@ -12,6 +12,10 @@
 - [x] **P1-1↑（升为门禁）ledger 卡 `processing` 无任何恢复路径** —— 2026-07-09 已修复，同提交 `a64d39e`。processing 超时 5 分钟且**未带码值**的行可安全重夺重试（远端未发生任何事）；**带码值**的升级 `reconciliation_required` 人工核对；仍在执行的新鲜 processing 行照旧返回 `pending_retry`。
 - [x] **P0-2 New API 管理后台公网可达** —— 2026-07-09 已修复，回链提交 `0e4be8d fix(deploy): stop exposing the New API operator surface publicly (P0-2)`。api2 只放行 `/v1*` 其余 404；newapi 加 IP 白名单 + Basic Auth（可叠加）；`configure-caddy.sh` fail-closed（两种保护都没配则退出 78）；新增 `--print-config` 干跑模式使配置生成逻辑可被测试真实执行；`server-bootstrap.sh` 调用前载入 `.env.deploy`。**遗留**：本地无 caddy，Caddyfile 语法由部署时 `caddy validate` 把关；**上线后必须按 runbook 第 2 节实测三子域可达面**（见下人工检查项）。
 
+## 已知残留（P0-1 修复后的边界，非阻塞）
+
+- [ ] **孤儿兑换码**：`POST /api/redemption/` 超时且远端实际已创建时，重试会在 New API 留下一张未兑换的兑换码（面值 = 充值额，码值已丢失，仅管理后台可见，需管理员才能兑换）。不影响用户余额。New API 无兑换码检索接口，无法自动清理——上线后按确定性名称 `r + sha256("recharge:" + orderNo)[0:18]` 人工巡检。详见 `docs/06-payments-ledger.md` 第 5 节。
+
 ## 上线门禁 · 计费一致性
 
 - [x] **P0-3 分组重映射 `newapiGroup` 后公开价仍用旧倍率，与实际计费不一致** —— 2026-07-09 已修复，回链提交 `2ed9cc0 fix(catalog): invalidate cached group pricing on New API remap (P0-3)`。`updateGroup` 检测到映射变化时，在同一事务里清空倍率三字段 + 置 `pricingSyncStatus='unknown'` + 该组 listing drift 打回 `needs_live_check`，公开价隐藏为「—」直到重跑价格同步。只改名称/排序不触发失效。

@@ -294,6 +294,24 @@
 - 所有验证均在单元层（真实代码 + 注入依赖 + 真 SQLite），**未跑真实 Stripe 回调、未跑真实 New API、本地无 caddy**。
 - 上线前必须：① 测试模式跑一笔完整充值，复验 webhook 守卫不误拒（含折扣码场景）与兑换码窗口行为；② 按 runbook 第 2 节实测三子域可达面；③ **新增告警项**：`ledger.status = 'reconciliation_required'` 必须接监控——P0-1 修复后所有歧义失败都汇入该状态，需人工按 `newapiChangeId` 反查远端兑换状态后手工结清。这是本次修复引入的新运维负担。
 
+### Codex 对抗式评审（2026-07-09，分支 diff）与裁决
+
+Codex 判定 `needs-attention / no-ship`，1 条 critical：`recharge.ts` 的 reclaim 谓词把 `newapiChangeId IS NULL` 当作"远端什么都没发生"的证明，但进程可能死在 `POST /api/redemption/` 已成功、码值尚未落库之间。
+
+**裁决：设计缺陷成立，严重度高估，其中一条路径描述有误。已按正确原语修复（`28d3c4e`）。**
+
+| Codex 论点 | 复核 |
+| --- | --- |
+| reclaim 用 `changeId IS NULL` 作"远端无副作用"的证明不成立 | **成立**。这正是 P0-1 里批判过的"看起来安全的重试"，在 TTL 重夺上又犯了一次 |
+| 后果可能是"重复到账" | **高估**。额度发放（`POST /api/user/topup`）严格晚于码值落库，故**额度已发放 ⇒ changeId 必已落库**；TTL 重夺只可能命中未发放的行，用户仍只到账一次。请求层对 POST 从不自动重试，窗口不会被放大 |
+| "回调写库失败会留下 `processing + changeId=null`" | **不成立**。`redemptionDispatched = true` 置位在 `await db()` 之前，写库失败抛错后落 `reconciliation_required`（非可 claim 状态） |
+| "唯一冲突导致无限 pending" | 未复现。New API 生成的是新码值，`newapiChangeId` 不冲突；若 New API 拒绝重名，则创建失败 → pending 循环，但**失败安全**（不发放） |
+| 真实残留损害 | **孤儿兑换码**：远端多一张未兑换的码，码值已丢失、仅管理后台可见、需 New API 管理员才能兑换（而这种人本可直接改额度）。属会计漂移，非用户可触发的资损 |
+
+**修复（`28d3c4e`）**：新增 `ledger.remoteAttemptAt`（迁移 0011），在**任何远端副作用之前**写入；claim 只重夺 `remoteAttemptAt` 与 `newapiChangeId` 均为 null 的陈旧 `processing` 行，否则升级 `reconciliation_required`。顺带堵住同源的洞——`POST /api/redemption/` **返回之后**才抛的 `malformed_response` 原先标成可重试的 `failed`，admin 重试会再造一张码；现改为"请求一旦返回，此后任何失败都结局未知"，一律升级人工核对（码值未解析出时留空 `changeId` 避免撞唯一索引，人工按确定性兑换码名反查）。`docs/06` 第 5 节改写为上述口径并记录孤儿码残留。
+
+**教训**：两轮下来同一个错误犯了两次——"我没记下证据"被当成"事情没发生"。资金链路里，自动重试的前提必须是**先落一个可证明的前置标记**，而不是事后看某个字段是否为空。
+
 ### 下一批建议
 
 P0-4（docs 搜索 404）、P0-6（EN 页中文折扣标签）+ P1-9~P1-13（dashboard 三态 / not-found / callbackUrl / 删除确认）可打包为"上线体验补齐"分支；P1-14/15 错误码化一次做完；P0-5/P1-17 随品牌资产批次。
