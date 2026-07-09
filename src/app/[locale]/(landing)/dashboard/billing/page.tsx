@@ -69,10 +69,17 @@ export function mapApplyStatus(locale: string, ledgerStatus: string) {
 
 export default async function BillingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ checkout?: string }>;
 }) {
   const { locale } = await params;
+  // 支付取消/失败会带 ?checkout=canceled|failed 跳回这里；没有提示的话
+  // 用户只会看到余额没变，不知道发生了什么。
+  const { checkout } = await searchParams;
+  const checkoutNotice =
+    checkout === 'canceled' || checkout === 'failed' ? checkout : null;
   setRequestLocale(locale);
   const pageT = await getTranslations({
     locale,
@@ -113,6 +120,14 @@ export default async function BillingPage({
 
   return (
     <div className="space-y-8">
+      {checkoutNotice ? (
+        <div
+          role="status"
+          className="border-border bg-muted text-muted-foreground rounded-xl border px-4 py-3 text-sm"
+        >
+          {pageT(`checkoutNotice.${checkoutNotice}`)}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

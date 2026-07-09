@@ -205,7 +205,9 @@ export async function createTopUpCheckoutResponse(input: {
       user_id: user.id,
     },
     successUrl: `${configs.app_url}/api/payment/callback?order_no=${orderNo}`,
-    cancelUrl: `${callbackBaseUrl}/pricing`,
+    // /pricing 是 redirect 到 /models 的占位桩：取消支付后落在模型列表页会
+    // 脱离充值上下文。回到账单页并带上状态，便于页面给出提示。
+    cancelUrl: `${callbackBaseUrl}/dashboard/billing?checkout=canceled`,
   };
 
   // checkout with predefined product

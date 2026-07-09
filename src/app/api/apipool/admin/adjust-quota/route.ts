@@ -6,6 +6,7 @@ import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr } from '@/shared/lib/resp';
 import { findUserById, getUserInfo } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
+import { parseQuotaAdjustmentAmount } from '@/features/newapi-bridge/lib/quota-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,14 +27,18 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const portalUserId = String(body.portalUserId || '');
-    const amountUsd = Number(body.amountUsd);
     const reason = String(body.reason || '').trim();
     const idempotencyKey = String(body.idempotencyKey || '').trim();
 
     if (!portalUserId) return withNoStore(respErr('portalUserId is required'));
-    if (!Number.isFinite(amountUsd) || amountUsd === 0) {
-      return withNoStore(respErr('amountUsd must be a non-zero number'));
+
+    let amountUsd: number;
+    try {
+      ({ amountUsd } = parseQuotaAdjustmentAmount(body.amountUsd));
+    } catch (error: any) {
+      return withNoStore(respErr(error?.message || 'invalid amountUsd'));
     }
+
     if (!reason) return withNoStore(respErr('reason is required'));
 
     const portalUser = await findUserById(portalUserId);

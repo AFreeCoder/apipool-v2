@@ -18,6 +18,8 @@ import {
   type PaymentSession,
 } from './types';
 
+import { UnhandledPaymentEventError } from './errors';
+
 /**
  * Stripe payment provider configs
  * @docs https://stripe.com/docs
@@ -369,7 +371,7 @@ export class StripeProvider implements PaymentProvider {
       case 'customer.subscription.deleted':
         return PaymentEventType.SUBSCRIBE_CANCELED;
       default:
-        throw new Error(`Unknown Stripe event type: ${eventType}`);
+        throw new UnhandledPaymentEventError('stripe', eventType);
     }
   }
 

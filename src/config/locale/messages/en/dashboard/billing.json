@@ -46,5 +46,9 @@
       "tokens": "Tokens",
       "spend": "Spend"
     }
+  },
+  "checkoutNotice": {
+    "canceled": "Checkout canceled. Nothing was charged — you can top up again whenever you like.",
+    "failed": "We could not confirm your payment. If you were charged, contact support and we will settle it manually."
   }
 }

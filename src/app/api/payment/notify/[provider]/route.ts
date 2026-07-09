@@ -1,3 +1,4 @@
+import { isUnhandledPaymentEvent } from '@/extensions/payment/errors';
 import {
   PaymentEventType,
   SubscriptionCycleType,
@@ -224,6 +225,14 @@ export async function POST(
       message: 'success',
     });
   } catch (err: any) {
+    // 验签通过但本站不处理的事件类型：以 200 应答。回 500 会让 Stripe 按重试
+    // 策略反复投递数天，持续失败可能触发 endpoint 告警/禁用，届时真正的支付
+    // 成功事件也一并收不到。验签失败仍走下面的 500——那不是「不处理」是「不可信」。
+    if (isUnhandledPaymentEvent(err)) {
+      console.log('skip unhandled payment event', err.message);
+      return Response.json({ message: 'ignored' });
+    }
+
     console.log('handle payment notify failed', err);
     return Response.json(
       {

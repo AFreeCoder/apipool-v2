@@ -321,3 +321,43 @@ test('checkout handler rejects invalid custom top-up requests before order or pa
     assert.equal(createPaymentCalls.length, 0, JSON.stringify(body));
   }
 });
+
+test('checkout refuses subscription pricing items so recharge can never silently skip quota', async () => {
+  // applyApipoolRecharge 对 SUBSCRIPTION 直接跳过（payment.ts）。若将来在
+  // pricing.json 加一个带 interval 的套餐，用户按月扣钱但 quota 一分不加。
+  const { deps, createdOrders, createPaymentCalls } = createCheckoutDeps();
+
+  const response = await createTopUpCheckoutResponse({
+    body: { product_id: 'sub_monthly', currency: 'USD', locale: 'en' },
+    pricingItems: [
+      {
+        ...pricingItemsFixture[0],
+        product_id: 'sub_monthly',
+        interval: 'month',
+      } as any,
+    ],
+    deps,
+  });
+  const payload = await parseResponse(response);
+
+  assert.equal(payload.code, -1);
+  assert.match(payload.message, /one-time/i);
+  assert.equal(createdOrders.length, 0);
+  assert.equal(createPaymentCalls.length, 0);
+});
+
+test('a canceled checkout returns to billing instead of a redirect stub', async () => {
+  const { deps, createPaymentCalls } = createCheckoutDeps();
+
+  await createTopUpCheckoutResponse({
+    body: { product_id: 'topup_10', currency: 'USD', locale: 'en' },
+    pricingItems: pricingItemsFixture,
+    deps,
+  });
+
+  // /pricing 是 redirect 到 /models 的占位桩：取消支付后落在模型列表页，
+  // 脱离充值上下文且没有任何提示
+  const { cancelUrl } = createPaymentCalls[0].order;
+  assert.match(cancelUrl, /\/dashboard\/billing/);
+  assert.match(cancelUrl, /checkout=canceled/);
+});

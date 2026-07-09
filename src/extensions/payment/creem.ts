@@ -15,6 +15,9 @@ import {
   SubscriptionStatus,
 } from './types';
 
+import { timingSafeEqualHex } from './signature';
+import { UnhandledPaymentEventError } from './errors';
+
 /**
  * Creem payment provider configs
  * @docs https://docs.creem.io/
@@ -148,7 +151,7 @@ export class CreemProvider implements PaymentProvider {
         this.configs.signingSecret
       );
 
-      if (computedSignature !== signature) {
+      if (!timingSafeEqualHex(computedSignature, signature)) {
         throw new Error('Invalid webhook signature');
       }
 
@@ -314,7 +317,7 @@ export class CreemProvider implements PaymentProvider {
         // subscription.trialing
         // refund.created
         // dispute.created
-        throw new Error(`Not handle creem event type: ${eventType}`);
+        throw new UnhandledPaymentEventError('creem', eventType);
     }
   }
 
