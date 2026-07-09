@@ -312,6 +312,29 @@ Codex 判定 `needs-attention / no-ship`，1 条 critical：`recharge.ts` 的 re
 
 **教训**：两轮下来同一个错误犯了两次——"我没记下证据"被当成"事情没发生"。资金链路里，自动重试的前提必须是**先落一个可证明的前置标记**，而不是事后看某个字段是否为空。
 
+### 第二批修复（2026-07-09）：对外功能硬伤与品牌门禁
+
+全部 P0 至此清零。424 tests pass / tsc 0 error / eslint clean，**三项均已起服务 live 复验**（前一批的资金与部署项仍待线上验证）。
+
+| 项 | 提交 | live 验证证据 |
+| --- | --- | --- |
+| P0-6 | `ca16f71` | 五折夹具下 EN 显示 `50% off`、ZH 显示 `5 折 (50%)` |
+| P0-4 | `75e675e` | `/api/docs/search` 返回 200；en 查 "API key" 命中高亮；zh 查「模型」9 条、「快速接入」1 条 |
+| P0-5 | `d4daa72` | head 注入 `rel="icon"` 与 `rel="apple-touch-icon"`；`/icon.svg`、`/apple-icon.png` 均 200 |
+
+**实现要点与偏离**：
+
+- **P0-6**：服务层 `pricePresentation` 改为只回传结构化 `discountBps`，文案由页面按 locale 渲染。`ModelsTable` 收到的是 `t.raw('table')` 纯字符串对象、无 ICU 插值能力，故把格式化函数从持有 `t` 的作用域传入（tsc 当场报出 `t` 不在作用域）。admin 侧仍用 `formatDiscountRate`（后台单语，未列入本次范围）。
+- **P0-4**：**引入了新依赖** `@orama/tokenizers`（132K）。orama 内置分词器的 `SUPPORTED_LANGUAGES` 不含中文，只建英文索引等于把 404 换成"中文搜不到"——这是半个修复。已先核实 fumadocs 未内置中文分词，再按其官方方案引入。
+- **P0-5**：用 App Router 的 `icon.svg` / `apple-icon.png` 文件约定（Next 自动注入 link），而非填 `app_favicon` env。图标是品牌绿 `#216d51` 的终端提示符字形，与 `theme.css` 的 `--primary` 一致；属**占位资源**，正式设计到位后替换。
+
+**验证过程中的两个坑**：
+
+1. **`/models` 的价格一直显示"—"，一度以为修复没生效**。逐层排查后确认：真实查询函数 `getPublicListingsUncached` 直接调用时返回 `discountBps: 5000, showPrice: true`，即数据链路正常——是 dev server 在吐缓存页。`rm -rf .next/cache` 不够，清掉整个 `.next` 才看到真实渲染。**教训**：验证 SSR 页面时，先证明数据层正确，再怀疑渲染层，最后才怀疑缓存；反过来会浪费很多轮。
+2. 本地 dev 库（`data/local.db`）落后于迁移，缺 `catalog_model_price` 表。跑 `pnpm db:migrate` 补齐——顺带**验证了 P0-1 修复引入的迁移 0011 能干净应用**（`remote_attempt_at` 列已建）。为验证 P0-6 造的五折夹具已在验证后清理，dev 库恢复原状。
+
+**顺带印证的已知问题**：有效价 $0.075 在页面上显示为 `$0.07`，即 P1-6（`toFixed(2)` 误差 ±7%），仍待修。
+
 ### 下一批建议
 
-P0-4（docs 搜索 404）、P0-6（EN 页中文折扣标签）+ P1-9~P1-13（dashboard 三态 / not-found / callbackUrl / 删除确认）可打包为"上线体验补齐"分支；P1-14/15 错误码化一次做完；P0-5/P1-17 随品牌资产批次。
+**全部 P0 已清零**（2026-07-09）。下一批建议：P1-9~P1-13（余额误显 $0.00 / 删除确认 / dashboard 三态 / not-found / callbackUrl）打包为"控制台体验补齐"分支；P1-14/15 错误码化一次做完；P1-2/P1-3（webhook 事件与 PayPal 验签）随支付批次；P1-17（OG 图）与正式 logo 随品牌资产批次。

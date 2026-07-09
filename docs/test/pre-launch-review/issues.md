@@ -22,12 +22,12 @@
 
 ## 上线门禁 · 对外功能硬伤
 
-- [ ] **P0-4 文档搜索指向不存在的 `/api/docs/search`**（静态推断，修复后需起服务 live 复验）
-- [ ] **P0-6 英文 /models 页折扣标签硬编码中文「X 折」**（`pricing.ts:122` `formatDiscountRate`）
+- [x] **P0-4 文档搜索指向不存在的 `/api/docs/search`** —— 2026-07-09 已修复，回链提交 `75e675e feat(docs): serve the docs search API the layout already points at (P0-4)`。新增 `src/app/api/docs/search/route.ts`（`createFromSource(docsSource)`）+ 引入 `@orama/tokenizers` 给 zh 挂 mandarin 分词器（orama 内置分词器不支持中文，否则整句成一个 token = 搜不到）。**已 live 复验**：接口 200；en 查 "API key" 命中高亮；zh 查「模型」9 条、「快速接入」1 条。
+- [x] **P0-6 英文 /models 页折扣标签硬编码中文「X 折」** —— 2026-07-09 已修复，回链提交 `ca16f71 fix(catalog): localize the discount label on the public models page (P0-6)`。`pricePresentation` 改为只回传结构化 `discountBps`，页面按 locale 渲染。**已 live 复验**（五折夹具）：EN 显示 `50% off`，ZH 显示 `5 折 (50%)`。**遗留**：admin 侧仍用 `formatDiscountRate`（后台单语，非本次范围）。
 
 ## 发布门禁 · 品牌资产
 
-- [ ] **P0-5↓ 全站无 favicon**（静态推断 `/favicon.ico` 404，修复后 live 复验）——性质为品牌硬伤，非资损/安全/功能硬坏
+- [x] **P0-5↓ 全站无 favicon** —— 2026-07-09 已修复，回链提交 `d4daa72 feat(brand): ship a favicon so the browser tab carries the brand (P0-5)`。用 App Router 文件约定补 `src/app/icon.svg`（品牌绿 #216d51 终端提示符）+ `apple-icon.png`。**已 live 复验**：head 注入 `rel="icon"` 与 `rel="apple-touch-icon"`，两个资源均 200。**遗留**：这是占位品牌资源，正式设计到位后替换。
 - [ ] P1-17 无 OG / Twitter 分享图
 - [ ] 正式 logo（当前仍缺品牌资源）
 
@@ -127,7 +127,7 @@
 - [ ] 域名规划确认（app/api2/newapi 子域 vs apipool.dev 上游站冲突）
 - [ ] libsql 运行时 `PRAGMA foreign_keys` 实测一次
 - [ ] ads/analytics/affiliate 若启用，grep 复核其只读公开配置键
-- [ ] P0-4 / P0-5 修复后起服务 live 复验（`/api/docs/search` 与 `/favicon.ico`）
+- [x] P0-4 / P0-5 / P0-6 已起服务 live 复验（2026-07-09）
 
 ## 已知遗留复核
 
