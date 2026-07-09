@@ -1417,6 +1417,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       amountUsd: number;
       reason: string;
       reference: string;
+      /**
+       * 正向调额时在「兑换码已生成、尚未发出兑换请求」的窗口回调一次。
+       * 调用方应在此持久化码值：之后的任何崩溃都不得再自动重试。
+       */
+      onRedemptionCreated?: (code: string) => Promise<void> | void;
     }): Promise<{ changeId: string; balanceUsd?: number }> {
       return withQuotaAdjustmentLock(input.user.newapiUserId, async () => {
         if (input.amountUsd === 0) {
@@ -1482,12 +1487,19 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
           });
         }
 
-        await request('/api/user/topup', {
-          method: 'POST',
-          auth: userAuth(input.user),
-          body: { key: code },
-        });
+        // 先把码值交给调用方落库，再发出兑换请求。否则进程在兑换飞行途中被杀
+        // 时无人知道远端是否已入账，重试会生成第二张码并双倍到账。
+        await input.onRedemptionCreated?.(code);
+
+        // 兑换码已生成 = 远端可能已被兑换。此后任何失败（兑换请求超时、
+        // 确认查询失败）都必须带着码值升级为人工核对：重试会生成第二张码，
+        // 「一码一兑」的幂等跨码不设防，会双倍到账（docs/06 第 5 节）。
         try {
+          await request('/api/user/topup', {
+            method: 'POST',
+            auth: userAuth(input.user),
+            body: { key: code },
+          });
           const quota = await getQuotaForUser(input.user);
           return { changeId: code, balanceUsd: quota.balanceUsd };
         } catch (error: any) {

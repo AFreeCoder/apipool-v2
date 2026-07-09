@@ -44,8 +44,11 @@
 
 ## 5. 失败补偿
 
-- **加额失败（New API 宕机/超时）**：ledger 保持 `pending`/`failed`，用户余额展示带"到账处理中"态；admin 后台提供按 ledger 行重试的入口；恢复后重试从第 3 步继续（若兑换码已生成则只重试兑换）。
-- **远端成功但本地标记失败**：以兑换码 ID 反查——对账任务发现 New API 已兑换但 ledger 非 applied 时，补置 applied。
+- **兑换码生成前失败（绑定失败、New API 宕机）**：远端未发生任何事，ledger 保持 `pending`/`failed` 可自动重试；用户余额展示带"到账处理中"态；admin 后台提供按 ledger 行重试的入口。
+- **兑换码生成后失败（兑换请求超时、确认查询失败、进程被杀）**：**禁止自动重试**——「一码一兑」的幂等只对同一张码有效，重试会生成第二张码并双倍到账。码值在发出兑换请求前就写入 `ledger.newapiChangeId`，此后该行一律转 `reconciliation_required` 等人工核对。
+- **不变量**：ledger 行一旦带有 `newapiChangeId`，任何自动路径（webhook 重放、支付回跳、admin retry、processing 超时重夺）都不得再次调用加额。
+- **processing 卡死**：进程在 claim 后崩溃会把行留在 `processing`。超过 5 分钟且**未带码值**的行可被安全重夺重试；带码值的行升级为 `reconciliation_required`。
+- **远端成功但本地标记失败**：以兑换码 ID（`newapiChangeId`）反查——对账任务发现 New API 已兑换但 ledger 非 applied 时，补置 applied。
 - **用户在 pending 期间发起调用**：允许失败（余额未到账即额度不足），文案提示充值到账中。
 
 ## 6. 对账
