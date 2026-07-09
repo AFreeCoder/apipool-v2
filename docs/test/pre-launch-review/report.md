@@ -373,6 +373,25 @@ Codex 判定 `needs-attention / no-ship`，1 条 critical：`recharge.ts` 的 re
 - **需设计或有回归风险**（4 项）：dashboard 同步新鲜度策略、key 状态写库时机、死翻译资产清理（themes/default 多个 block 引用）、ShipAny credits 停写。
 - **埋雷非现行故障**（5 项）：对账 `creditsAmount<=0` 盲区与 LIMIT 100、smoke 负数、admin 详情页 lazy provision、掩码格式不一致。
 
+### 更正：P1-18 的限流已撤销（2026-07-09）
+
+用户质疑「按 IP 限流是需求吗，谁提的」。**没有人提。** P1-18 是本次审查自身的安全 agent 生成的发现，写进本报告后被当作待办执行，**不是产品需求，也不是外部安全要求**。
+
+复查后确认该修复得不偿失，已撤销、恢复原状：
+
+- `/api/user/is-email-verified` 由 verify-email 页的「继续」按钮触发（`handleContinue`，用户点击，**不是轮询**）。
+- `enforceMinIntervalRateLimit` 的 429 响应体是 `{error, message}`，**没有 `data` 字段**。而客户端读的是 `json?.data?.emailVerified` → undefined → `verified=false` → 弹出 `verify_email_not_verified_yet`。**结果是向一个已经验证过邮箱的用户提示「邮箱尚未验证」。** 用户 1 秒内点两下「继续」就会命中。
+- 限流键为 `prefix|method|path|ip|cookieHash`，`ip` 取自 `x-forwarded-for`。生产经 Caddy 反代时有该头；一旦缺失（直接跑容器、反代配错），匿名请求 `ip=''`、`cookieHash='no-cookie'`，**所有人共用同一个每秒一次的桶**。
+- 而泄漏面本就很窄：`isEmailVerified` 对「邮箱不存在」与「存在但未验证」同返 false，只能确认「某邮箱是已验证用户」。
+
+为这样一个窄泄漏面，换来一条会误导真实用户的假消息 + 一处依赖反代配置的脆弱性，不划算。
+
+**若确实要防枚举**，正确做法是在 Caddy 边缘按 IP 限流（不进业务逻辑，429 由边缘返回，不会被客户端误读为业务结果），或者先让客户端正确处理 429 再加限流。
+
+P1-19（checkout 限流）**保留**：其 429 会被 `top-up-packages` 的 `payload.code !== 0` 分支当成普通错误展示，不会被误读为业务结果；且刷单会产生真实的 Stripe session 成本。已加测试锁住「is-email-verified 有意不限流」这个决定。
+
+**教训**：审查报告里的每一条「建议修法」都只是建议，不是需求。落地前必须验证它在真实调用链上的下游影响——这次是我自己写的报告，自己照着做，没有在改之前追一遍客户端怎么消费这个响应。
+
 ### 下一批建议
 
 **全部 P0 与全部 P1 已清零**（2026-07-09）。剩余工作：① 19 项 P2（原因见上，多数阻塞于真实环境或需产品决策）；② `issues.md` 的上线前人工检查清单，其中最要紧的是 Caddy 三子域可达面实测、Stripe 测试模式跑一笔完整充值复验 webhook 守卫、以及给 `reconciliation_required` 接告警；③ 正式品牌资产替换占位 favicon 与 OG 图。

@@ -59,7 +59,7 @@
 ### SEO 与安全加固
 
 - [x] P1-16 /models canonical 指向站点根、无页面级 metadata —— 已修复（`36ca198`）：generateMetadata + en/zh metadata 词条
-- [x] P1-18 `is-email-verified` 匿名可探测——泄漏面为"某邮箱是否为已验证用户"（不存在与未验证同返 false），非完整用户枚举；仍需限流 + 无差别响应 —— 已修复（`36ca198`）：**不能加登录门槛**——verify-email 页正是在无 session 时调它检测跨浏览器验证。改为按 IP 限流（1s）
+- [ ] P1-18 `is-email-verified` 匿名可探测 —— **已撤销修复，维持原状（2026-07-09）**。曾加过按 IP 限流（`36ca198`），复查发现得不偿失：该端点由 verify-email 页的「继续」按钮触发（用户点击，非轮询），而 429 响应体没有 `data` 字段，客户端读 `json.data.emailVerified` 得到 undefined → 向**已验证**的用户提示「邮箱尚未验证」。另外限流键依赖 `x-forwarded-for`，该头缺失时所有匿名请求共用同一个每秒一次的桶。泄漏面本就很窄（不存在与未验证同返 false），不值得为此换一条误导真实用户的假消息。**若要防枚举**：在 Caddy 边缘按 IP 限流（不进业务逻辑），或先让客户端正确处理 429。**注**：这条发现来自本次审查自身的安全 agent，并非产品需求或外部安全要求。
 - [x] P1-19 checkout 等敏感路由无速率限制（Caddy 边缘亦无兜底） —— 已修复（`36ca198`）：checkout 加 2s 最小间隔
 
 ## P2 建议
@@ -115,12 +115,13 @@
 
 ## 上线前人工检查（非代码）
 
-- [ ] **Caddy 边界修复后三子域公网可达面实测**（P0-2 已改代码，此项仍待线上验证）。`.env.deploy` 需配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（`caddy hash-password --plaintext '<pw>'`）或 `APIPOOL_NEWAPI_ALLOWED_IPS`，否则部署会 fail-closed 退出 78。预期：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401 或 403
+- [ ] **Caddy 边界修复后三子域公网可达面实测**（P0-2 已改代码，此项仍待线上验证）。`.env.deploy` 需配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（`caddy hash-password --plaintext '<pw>'`）或 `APIPOOL_NEWAPI_ALLOWED_IPS`，否则部署会 fail-closed 退出 78。预期：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401 或 403 —— **用户决定延后处理（2026-07-09）**，代码已就位（`0e4be8d`），部署前需先在 `.env.deploy` 配好保护变量，否则脚本会 fail-closed 退出 78。
 - [ ] `/opt/apipool-v2/.env.deploy` 权限 600、密钥真随机、GHCR 仓库 private
 - [ ] New API root 密码强度、`payment_compliance` 已确认
 - [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production` —— P1-3 修复后生产运行时会强制验签，此项降为建议。
 - [ ] Stripe dashboard 事件订阅 —— P1-2 修复后**不再是硬性要求**（未知事件回 200 skip），但仍建议只勾选需要的事件以减少噪音。
-- [ ] Stripe/Creem 密钥填 admin settings 并跑一笔测试模式全链路——同时复验 P0-7 新增的 webhook 守卫 `assertPaymentSessionMatchesOrder` 不误拒真实回调（含折扣码场景）
+- [x] Stripe 密钥填 admin settings 并跑一笔测试模式全链路 —— **用户确认线上已配置并跑通（2026-07-09）**。
+- [ ] **重跑一次 Stripe 测试模式全链路（本分支合并部署后）** —— 上述验证跑在 `main`(ede2dc4) 上，而四个改动支付链路的提交（`dbc4b25` metadata、`a64d39e`/`28d3c4e` 充值、`532f507` webhook）**均未合并**。需复验：① `assertPaymentSessionMatchesOrder` 不误拒真实回调（**务必覆盖带折扣码的订单**，实付 < 订单金额靠 discountAmount 补齐）；② checkout 不再接受 metadata 后前端充值不受影响；③ webhook 未知事件返回 200 而非 500。
 - [ ] 告警三条（webhook 失败 / ledger pending 超时 / bridge unauthorized）接监控或明确接受裸奔——**新增第四条**：`ledger.status = 'reconciliation_required'` 必须告警，P0-1 修复后所有歧义失败都汇入该状态，需人工按 `newapiChangeId` 反查远端兑换状态后手工结清
 - [ ] 真实 New API 上复验兑换码窗口（P0-1）：兑换请求超时 / 确认查询失败时，ledger 应落 `reconciliation_required` 且带码值，重放不再加额
 - [ ] 备份 restore 演练（`backup.sh` 只备份未演练；`deploy.sh` 明确"数据库不自动回滚"）
