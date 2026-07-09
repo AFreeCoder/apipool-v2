@@ -13,6 +13,7 @@ import {
 } from '@/extensions/payment/types';
 import { getSnowId, getUuid } from '@/shared/lib/hash';
 import { Configs, getAllConfigs } from '@/shared/models/config';
+import { assertPaymentSessionMatchesOrder } from '@/shared/services/payment-guards';
 
 import {
   calculateCreditExpirationTime,
@@ -182,6 +183,8 @@ export async function handleCheckoutSuccess({
       throw new Error('subscription id or subscription info not found');
     }
   }
+
+  assertPaymentSessionMatchesOrder({ order, session });
 
   // payment success
   if (session.paymentStatus === PaymentStatus.SUCCESS) {

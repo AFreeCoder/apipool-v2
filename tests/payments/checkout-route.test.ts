@@ -127,7 +127,6 @@ test('checkout handler creates a custom top-up order from server-side cents and 
       custom_amount_usd: 120,
       currency: 'USD',
       locale: 'en',
-      metadata: { source: 'billing-page' },
     },
     pricingItems: pricingItemsFixture,
     deps,
@@ -154,7 +153,6 @@ test('checkout handler creates a custom top-up order from server-side cents and 
   assert.deepEqual(providerOrder.price, { amount: 12000, currency: 'usd' });
   assert.equal(providerOrder.metadata.order_no, 'order_checkout_test');
   assert.equal(providerOrder.metadata.user_id, 'user_checkout');
-  assert.equal(providerOrder.metadata.source, 'billing-page');
   assert.equal(
     providerOrder.successUrl,
     'https://app.apipool.dev/api/payment/callback?order_no=order_checkout_test'
@@ -259,6 +257,38 @@ test('checkout handler creates preset top-up orders from pricing config, not cli
     amount: 5000,
     currency: 'usd',
   });
+});
+
+test('checkout handler ignores client metadata so reserved order identity cannot be overridden', async () => {
+  const { deps, createdOrders, createPaymentCalls } = createCheckoutDeps();
+
+  const response = await createTopUpCheckoutResponse({
+    body: {
+      product_id: 'topup_10',
+      currency: 'USD',
+      locale: 'en',
+      // A real attacker posts raw JSON, so the extra field bypasses the type.
+      metadata: {
+        order_no: 'order_of_a_bigger_unpaid_order',
+        user_id: 'someone_else',
+        app_name: 'spoofed',
+      },
+    } as any,
+    pricingItems: pricingItemsFixture,
+    deps,
+  });
+  const payload = await parseResponse(response);
+
+  assert.equal(payload.code, 0);
+  assert.equal(createdOrders.length, 1);
+  assert.equal(createPaymentCalls.length, 1);
+
+  // The provider session must carry the order identity minted server-side,
+  // otherwise a $10 payment can settle a $50 order via the webhook lookup.
+  const providerOrder = createPaymentCalls[0].order;
+  assert.equal(providerOrder.metadata.order_no, 'order_checkout_test');
+  assert.equal(providerOrder.metadata.user_id, 'user_checkout');
+  assert.equal(providerOrder.metadata.app_name, 'APIPool');
 });
 
 test('checkout handler rejects invalid custom top-up requests before order or payment creation', async () => {
