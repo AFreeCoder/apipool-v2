@@ -801,3 +801,45 @@ test('editing a group without changing its New API mapping keeps synced pricing 
   const listingRow = await readListingRow(listing.id);
   assert.equal(listingRow.priceDriftStatus, 'matched');
 });
+
+test('deleting a model also removes its base price row', async () => {
+  const { model } = await createModelListing('delete-with-price');
+
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPrice)
+    .values({
+      id: 'price_delete_model',
+      modelId: model.id,
+      baseInputMicroUsd: 150000,
+      baseOutputMicroUsd: 600000,
+      source: 'manual',
+      syncStatus: 'synced',
+      driftStatus: 'matched',
+    });
+
+  await modules.service.deleteModel(model.id);
+
+  // 事务里显式删掉，不依赖 FK cascade —— libsql 运行时是否开启
+  // PRAGMA foreign_keys 从未验证过（OQ-1）
+  const prices = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogModelPrice)
+    .where(eq(modules.schema.catalogModelPrice.modelId, model.id));
+  assert.equal(prices.length, 0);
+});
+
+test('capability and category writes are transactional so a failure cannot clear them', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(
+    'src/features/api-catalog/server/catalog-service.ts',
+    'utf8'
+  );
+
+  // delete + insert 非事务时，insert 失败会把模型的能力清空 → 模型从公开页消失
+  for (const fn of ['setModelCapabilities', 'setModelCategories']) {
+    const body = source.split(`export async function ${fn}(`)[1].split('}\n')[0];
+    assert.match(body, /transaction/, `${fn} must run in a transaction`);
+  }
+});

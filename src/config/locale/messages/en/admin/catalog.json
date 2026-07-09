@@ -32,7 +32,9 @@
     "discountNote": "Discount Note",
     "description": "Description",
     "createdAt": "Created At",
-    "actions": "Actions"
+    "actions": "Actions",
+    "smokeTested": "Smoke tested",
+    "smokeTestedTip": "Only smoke-tested listings are eligible for the deploy smoke test."
   },
   "actions": {
     "edit": "Edit",
@@ -54,7 +56,8 @@
     "deleteFailed": "Delete failed",
     "missingRecord": "Record is missing",
     "missingBasePrice": "Missing model base input/output prices. Save the model base prices before creating a group discount.",
-    "invalidPrice": "Price must be a non-negative finite number"
+    "invalidPrice": "Price must be a non-negative finite number",
+    "duplicateListing": "This model already has a listing in the selected group. Edit the existing one instead."
   },
   "vendors": {
     "list": {
@@ -349,5 +352,8 @@
         "cancel": "Back to List"
       }
     }
+  },
+  "messages": {
+    "priceHiddenAfterSave": "Saved. The public price is hidden until you run a price sync for this model."
   }
 }

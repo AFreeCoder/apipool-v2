@@ -168,6 +168,32 @@ async function seedQueryFixtures() {
     sortOrder: 91,
     status: 'active',
   });
+  // 新建分组默认 allowCreateKey=true、newapiGroup=''：没有映射就必然建 Key 失败
+  await modules.service.createGroup({
+    slug: 'unmapped-group',
+    name: 'Unmapped Group',
+    userDescription: 'Admin has not filled in the New API mapping yet.',
+    newapiGroup: '',
+    allowCreateKey: true,
+    sortOrder: 17,
+    status: 'active',
+  });
+  // 价格同步已证明远端不存在这个分组
+  const missingRemote = await modules.service.createGroup({
+    slug: 'missing-remote-group',
+    name: 'Missing Remote Group',
+    userDescription: 'Mapped to a New API group that does not exist.',
+    newapiGroup: 'newapi-gone',
+    allowCreateKey: true,
+    sortOrder: 18,
+    status: 'active',
+  });
+  await modules
+    .db()
+    .update(modules.schema.catalogGroup)
+    .set({ pricingSyncStatus: 'missing_remote_group' })
+    .where(eq(modules.schema.catalogGroup.id, missingRemote.id));
+
   await modules.service.createGroup({
     slug: 'empty-key-group',
     name: 'Empty Key Group',
@@ -686,6 +712,8 @@ test('getFilterDimensions returns all active admin-configured dimensions in sort
       'official',
       'partner',
       'empty-key-group',
+      'unmapped-group',
+      'missing-remote-group',
       'read-only-route',
       'capability-only-group',
       'cross-hidden-group',
@@ -733,6 +761,10 @@ test('getGroupsForKeyCreation returns active key-capable groups regardless of li
   ]);
   assert.equal(slugs.includes('disabled-route'), false);
   assert.equal(slugs.includes('read-only-route'), false);
+  // 没填 New API 映射的分组进下拉 = 用户选中后 100% 报 group not available
+  assert.equal(slugs.includes('unmapped-group'), false);
+  // 远端分组已被证明不存在，映射非空也没用
+  assert.equal(slugs.includes('missing-remote-group'), false);
 
   for (const group of groups) {
     assert.deepEqual(

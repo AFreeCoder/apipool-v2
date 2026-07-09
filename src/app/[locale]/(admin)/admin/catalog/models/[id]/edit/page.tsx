@@ -51,7 +51,9 @@ export default async function CatalogModelEditPage({
   const missingRecordMessage = t('errors.missingRecord');
   const updateFailedMessage = t('errors.updateFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
-  const successMessage = t('models.edit.success');
+  // 保存模型会把该模型所有 listing 的 priceDriftStatus 打回 needs_live_check，
+  // 公开价随即隐藏为「—」。不提示的话运营改个名字就以为没事发生。
+  const successMessage = `${t('models.edit.success')} ${t('messages.priceHiddenAfterSave')}`;
   const config = await getModelAdminConfig(id);
 
   if (!config) {
@@ -212,7 +214,7 @@ export default async function CatalogModelEditPage({
             imageOutputMicroUsd: microUsdToDollars(
               basePrice?.baseImageOutputMicroUsd ?? listing?.imageOutputMicroUsd
             ),
-            discountFold: bpsToDiscountFold(listing?.discountRateBps) || '10',
+            discountFold: bpsToDiscountFold(listing?.discountRateBps) || '',
             discountNote: listing?.discountNote ?? '',
             description: listing?.description ?? '',
           }}

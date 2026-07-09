@@ -688,6 +688,8 @@ export async function updateModel(
 
 export async function deleteModel(id: string): Promise<void> {
   await db().transaction(async (tx: any) => {
+    // 显式删净所有子表，事务自包含、不依赖 FK cascade 的开关状态
+    await tx.delete(catalogModelPrice).where(eq(catalogModelPrice.modelId, id));
     await tx
       .delete(catalogModelListing)
       .where(eq(catalogModelListing.modelId, id));
@@ -741,18 +743,24 @@ export async function deleteListing(id: string): Promise<void> {
   await db().delete(catalogModelListing).where(eq(catalogModelListing.id, id));
 }
 
+// delete + insert 必须同事务：insert 失败会把模型的能力/分类清空，
+// 而缺能力的模型会从公开页与建 Key 候选里静默消失。
 export async function setModelCapabilities(
   modelId: string,
   capabilityIds: string[]
 ): Promise<void> {
-  await syncModelCapabilities(db(), modelId, capabilityIds);
+  await db().transaction(async (tx: any) => {
+    await syncModelCapabilities(tx, modelId, capabilityIds);
+  });
 }
 
 export async function setModelCategories(
   modelId: string,
   categoryIds: string[]
 ): Promise<void> {
-  await syncModelCategories(db(), modelId, categoryIds);
+  await db().transaction(async (tx: any) => {
+    await syncModelCategories(tx, modelId, categoryIds);
+  });
 }
 
 export async function upsertModelAdminConfig(

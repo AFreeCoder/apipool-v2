@@ -2,7 +2,7 @@ import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
 import { resolveEffectiveCatalogPrice } from '@/features/api-catalog/lib/pricing';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -447,7 +447,13 @@ export async function getGroupsForKeyCreationUncached(): Promise<
     .where(
       and(
         eq(catalogGroup.status, 'active'),
-        eq(catalogGroup.allowCreateKey, true)
+        eq(catalogGroup.allowCreateKey, true),
+        // 新建分组默认 allowCreateKey=true 且 newapiGroup=''：admin 还没填映射
+        // 就进了下拉，用户选中后 createPortalApiKey 必然抛 group not available。
+        ne(catalogGroup.newapiGroup, ''),
+        // 价格同步已经证明远端不存在这个分组；映射非空也没用。
+        // 'unknown'（从未同步）必须放行——初始 seed 的分组就是 unknown。
+        ne(catalogGroup.pricingSyncStatus, 'missing_remote_group')
       )
     )
     .orderBy(asc(catalogGroup.sortOrder));

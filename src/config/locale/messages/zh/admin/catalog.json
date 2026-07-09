@@ -32,7 +32,9 @@
     "discountNote": "折扣说明",
     "description": "说明",
     "createdAt": "创建时间",
-    "actions": "操作"
+    "actions": "操作",
+    "smokeTested": "已冒烟验证",
+    "smokeTestedTip": "只有通过冒烟验证的售卖项才会进入部署冒烟测试的候选。"
   },
   "actions": {
     "edit": "编辑",
@@ -54,7 +56,8 @@
     "deleteFailed": "删除失败",
     "missingRecord": "记录不存在",
     "missingBasePrice": "缺少模型基准输入/输出价格，请先在模型表单保存基准价格后再新增分组折扣",
-    "invalidPrice": "价格必须是非负有限数字"
+    "invalidPrice": "价格必须是非负有限数字",
+    "duplicateListing": "该模型在所选分组下已存在售卖项，请直接编辑已有的那条。"
   },
   "vendors": {
     "list": {
@@ -349,5 +352,8 @@
         "cancel": "返回列表"
       }
     }
+  },
+  "messages": {
+    "priceHiddenAfterSave": "已保存。公开价已隐藏，需重新运行一次价格同步才会恢复展示。"
   }
 }

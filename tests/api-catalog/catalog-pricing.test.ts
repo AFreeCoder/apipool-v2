@@ -259,3 +259,21 @@ test('public pricing never emits a Chinese-only discount label', async () => {
     'the English discount label must not contain Chinese characters'
   );
 });
+
+test('公开价保留有效小数，低价模型不被 toFixed(2) 抹平', async () => {
+  const { formatMicroUsdPerMillion } = await import(
+    '@/features/api-catalog/lib/catalog'
+  );
+
+  // toFixed(2) 会把 $0.0375 显示成 $0.04（+6.7%）、$0.075 显示成 $0.07（−6.7%），
+  // 与账单口径对不上。flash / mini 档常见就是这些定价。
+  assert.equal(formatMicroUsdPerMillion(37500), '$0.0375');
+  assert.equal(formatMicroUsdPerMillion(75000), '$0.075');
+  assert.equal(formatMicroUsdPerMillion(127500), '$0.1275');
+
+  // 常规价格仍保留两位，不因此变成 $0.15 → $0.15
+  assert.equal(formatMicroUsdPerMillion(150000), '$0.15');
+  assert.equal(formatMicroUsdPerMillion(600000), '$0.60');
+  assert.equal(formatMicroUsdPerMillion(3000000), '$3.00');
+  assert.equal(formatMicroUsdPerMillion(0), '$0.00');
+});
