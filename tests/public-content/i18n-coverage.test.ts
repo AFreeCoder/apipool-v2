@@ -223,11 +223,14 @@ test('locale detector banner copy comes from the target common locale namespace'
 });
 
 test('locale switchers strip any existing locale prefix before navigating', async () => {
-  const [selectorSource, detectorSource, indexingSource] = await Promise.all([
-    readFile('src/shared/blocks/common/locale-selector.tsx', 'utf8'),
-    readFile('src/shared/blocks/common/locale-detector.tsx', 'utf8'),
-    readFile('src/features/apipool-ui/lib/indexing.ts', 'utf8'),
-  ]);
+  const [switcherSource, selectorSource, signUserSource, detectorSource, indexingSource] =
+    await Promise.all([
+      readFile('src/shared/blocks/common/use-locale-switcher.ts', 'utf8'),
+      readFile('src/shared/blocks/common/locale-selector.tsx', 'utf8'),
+      readFile('src/shared/blocks/sign/sign-user.tsx', 'utf8'),
+      readFile('src/shared/blocks/common/locale-detector.tsx', 'utf8'),
+      readFile('src/features/apipool-ui/lib/indexing.ts', 'utf8'),
+    ]);
 
   assert.match(
     indexingSource,
@@ -238,8 +241,11 @@ test('locale switchers strip any existing locale prefix before navigating', asyn
     /export function localizePathForLocale\(pathname: string, locale: string\)/
   );
 
-  assert.match(selectorSource, /localizePathForLocale\(href, value\)/);
-  assert.match(selectorSource, /window\.location\.assign/);
+  // 切换逻辑收敛在共享 hook 里；两个入口（头部选择器、头像菜单）都必须走它。
+  assert.match(switcherSource, /localizePathForLocale\(href, value\)/);
+  assert.match(switcherSource, /window\.location\.assign/);
+  assert.match(selectorSource, /useLocaleSwitcher\(\)/);
+  assert.match(signUserSource, /useLocaleSwitcher\(\)/);
   assert.match(detectorSource, /localizePathForLocale\(href, locale\)/);
   assert.match(detectorSource, /window\.location\.replace/);
 });

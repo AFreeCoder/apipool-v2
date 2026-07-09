@@ -2,6 +2,28 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
+/* docs/05：全站单一 token 来源。fumadocs 的 fd 色板全部映射到
+   theme.css 的站点 token，浅/深模式随 .dark 下的站点变量自动切换，
+   避免文档壳与主站呈现两套配色。 */
+:root {
+  --color-fd-background: var(--background);
+  --color-fd-foreground: var(--foreground);
+  --color-fd-card: var(--card);
+  --color-fd-card-foreground: var(--card-foreground);
+  --color-fd-popover: var(--popover);
+  --color-fd-popover-foreground: var(--popover-foreground);
+  --color-fd-primary: var(--primary);
+  --color-fd-primary-foreground: var(--primary-foreground);
+  --color-fd-secondary: var(--secondary);
+  --color-fd-secondary-foreground: var(--secondary-foreground);
+  --color-fd-muted: var(--muted);
+  --color-fd-muted-foreground: var(--muted-foreground);
+  --color-fd-accent: var(--accent);
+  --color-fd-accent-foreground: var(--accent-foreground);
+  --color-fd-border: var(--border);
+  --color-fd-ring: var(--ring);
+}
+
 body {
   background-color: var(--background);
 }

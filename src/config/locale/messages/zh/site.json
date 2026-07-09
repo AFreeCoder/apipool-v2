@@ -2,11 +2,19 @@
   "nav": {
     "models": "模型与价格",
     "docs": "文档",
-    "console": "控制台"
+    "console": "控制台",
+    "getStarted": "开始使用"
+  },
+  "userMenu": {
+    "apiKeys": "API 密钥",
+    "balance": "余额",
+    "usage": "用量"
   },
   "mobile": {
     "openMenu": "打开菜单",
-    "menu": "菜单"
+    "menu": "菜单",
+    "theme": "主题",
+    "language": "语言"
   },
   "footer": {
     "description": "一个 API 端点调用前沿模型，价格透明、用量可见、无需订阅。",

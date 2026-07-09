@@ -88,6 +88,9 @@ export interface UserNav extends Nav {
   show_name?: boolean;
   show_credits?: boolean;
   show_sign_out?: boolean;
+  // theme + language submenus inside the avatar dropdown, so headers can
+  // stay free of standalone toggler buttons
+  show_preferences?: boolean;
 }
 
 // pagination props for pagination component, used to list data

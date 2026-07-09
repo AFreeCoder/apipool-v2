@@ -18,6 +18,11 @@ const DISMISSED_KEY = 'locale-suggestion-dismissed';
 const DISMISSED_EXPIRY_DAYS = 1; // Expiry in days
 const PREFERRED_LOCALE_KEY = 'locale';
 
+/**
+ * Suggests switching to the browser language. Rendered as a slim in-flow bar
+ * above the header — never `position: fixed` — so it can't cover statically
+ * positioned page chrome (the old fixed banner hid the auth pages' header).
+ */
 export function LocaleDetector() {
   if (envConfigs.locale_detect_enabled !== 'true') {
     return null;
@@ -28,8 +33,6 @@ export function LocaleDetector() {
   const searchParams = useSearchParams();
   const [showBanner, setShowBanner] = useState(false);
   const [browserLocale, setBrowserLocale] = useState<string | null>(null);
-  const [bannerHeight, setBannerHeight] = useState(0);
-  const bannerRef = useRef<HTMLDivElement>(null);
   const hasCheckedRef = useRef(false);
 
   const detectBrowserLocale = (): string | null => {
@@ -110,88 +113,6 @@ export function LocaleDetector() {
     }
   }, [currentLocale, switchToLocale]);
 
-  // Adjust header and layout spacing when banner visibility changes
-  useEffect(() => {
-    if (showBanner && bannerRef.current) {
-      const bannerHeight = bannerRef.current.offsetHeight;
-
-      setBannerHeight(bannerHeight);
-
-      // Adjust header if exists
-      const header = document.querySelector('header');
-      if (header) {
-        header.style.top = `${bannerHeight}px`;
-      }
-
-      // Adjust sidebar container (fixed positioned sidebar)
-      const sidebarContainer = document.querySelector(
-        '[data-slot="sidebar-container"]'
-      );
-      if (sidebarContainer) {
-        (sidebarContainer as HTMLElement).style.top = `${bannerHeight}px`;
-        (sidebarContainer as HTMLElement).style.height =
-          `calc(100vh - ${bannerHeight}px)`;
-      }
-
-      // Adjust sidebar wrapper (for dashboard/sidebar layouts)
-      const sidebarWrapper = document.querySelector(
-        '[data-slot="sidebar-wrapper"]'
-      );
-      if (sidebarWrapper) {
-        (sidebarWrapper as HTMLElement).style.paddingTop = `${bannerHeight}px`;
-      }
-    } else {
-      setBannerHeight(0);
-    }
-
-    return () => {
-      // Reset positions when component unmounts or banner is hidden
-      const header = document.querySelector('header');
-      if (header) {
-        header.style.top = '0px';
-      }
-
-      const sidebarContainer = document.querySelector(
-        '[data-slot="sidebar-container"]'
-      );
-      if (sidebarContainer) {
-        (sidebarContainer as HTMLElement).style.top = '0px';
-        (sidebarContainer as HTMLElement).style.height = '100vh';
-      }
-
-      const sidebarWrapper = document.querySelector(
-        '[data-slot="sidebar-wrapper"]'
-      );
-      if (sidebarWrapper) {
-        (sidebarWrapper as HTMLElement).style.paddingTop = '0px';
-      }
-    };
-  }, [showBanner]);
-
-  useEffect(() => {
-    if (!showBanner || !bannerRef.current) {
-      return;
-    }
-
-    const updateHeight = () => {
-      if (bannerRef.current) {
-        setBannerHeight(bannerRef.current.offsetHeight);
-      }
-    };
-
-    updateHeight();
-
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(bannerRef.current);
-
-    window.addEventListener('resize', updateHeight);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateHeight);
-    };
-  }, [showBanner]);
-
   const handleSwitch = () => {
     if (browserLocale) {
       switchToLocale(browserLocale);
@@ -201,30 +122,6 @@ export function LocaleDetector() {
   const handleDismiss = () => {
     setDismissed();
     setShowBanner(false);
-    setBannerHeight(0);
-
-    // Reset header position
-    const header = document.querySelector('header');
-    if (header) {
-      header.style.top = '0px';
-    }
-
-    // Reset sidebar container
-    const sidebarContainer = document.querySelector(
-      '[data-slot="sidebar-container"]'
-    );
-    if (sidebarContainer) {
-      (sidebarContainer as HTMLElement).style.top = '0px';
-      (sidebarContainer as HTMLElement).style.height = '100vh';
-    }
-
-    // Reset sidebar wrapper padding
-    const sidebarWrapper = document.querySelector(
-      '[data-slot="sidebar-wrapper"]'
-    );
-    if (sidebarWrapper) {
-      (sidebarWrapper as HTMLElement).style.paddingTop = '0px';
-    }
   };
 
   if (!showBanner || !browserLocale) {
@@ -236,41 +133,27 @@ export function LocaleDetector() {
   const bannerCopy = getLocaleDetectorCopy(browserLocale, targetLocaleName);
 
   return (
-    <>
-      <div
-        ref={bannerRef}
-        className="from-primary to-primary/80 text-primary-foreground fixed top-0 right-0 left-0 z-[51] hidden bg-gradient-to-r shadow-lg md:block"
-      >
-        <div className="container py-2.5">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-1 items-center gap-3">
-              <span className="text-sm">{bannerCopy.title}</span>
-            </div>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <Button
-                onClick={handleSwitch}
-                variant="secondary"
-                size="sm"
-                className="bg-background text-xs"
-              >
-                {bannerCopy.switchTo}
-              </Button>
-              <button
-                onClick={handleDismiss}
-                className="bg-primary/10 flex-shrink-0 rounded p-1 transition-colors"
-                aria-label={bannerCopy.close}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+    <div className="border-border bg-muted text-muted-foreground border-b">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8">
+        <span className="text-xs sm:text-sm">{bannerCopy.title}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            onClick={handleSwitch}
+            variant="ghost"
+            size="sm"
+            className="text-primary h-7 px-2 text-xs font-medium"
+          >
+            {bannerCopy.switchTo}
+          </Button>
+          <button
+            onClick={handleDismiss}
+            className="hover:bg-border rounded p-1 transition-colors"
+            aria-label={bannerCopy.close}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
-      <div
-        aria-hidden="true"
-        style={{ height: bannerHeight }}
-        className="pointer-events-none"
-      />
-    </>
+    </div>
   );
 }

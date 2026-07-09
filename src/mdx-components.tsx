@@ -1,4 +1,5 @@
 import React from 'react';
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
 
@@ -82,6 +83,13 @@ export function withNoFollow(
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   const mergedComponents = {
     ...defaultMdxComponents,
+    // docs/05 §5：代码块深底。shiki 两模式都输出深色主题，
+    // keepBackground 保留其背景色，浅色页面上也呈现“终端”对比。
+    pre: (props: React.ComponentProps<typeof Pre>) => (
+      <CodeBlock keepBackground {...props}>
+        <Pre>{props.children}</Pre>
+      </CodeBlock>
+    ),
     a: CustomLink,
     img: (props: React.ComponentProps<'img'>) => {
       const { src } = props;

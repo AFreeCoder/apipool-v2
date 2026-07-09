@@ -2,11 +2,19 @@
   "nav": {
     "models": "Models & Pricing",
     "docs": "Docs",
-    "console": "Console"
+    "console": "Console",
+    "getStarted": "Get started"
+  },
+  "userMenu": {
+    "apiKeys": "API keys",
+    "balance": "Balance",
+    "usage": "Usage"
   },
   "mobile": {
     "openMenu": "Open menu",
-    "menu": "Menu"
+    "menu": "Menu",
+    "theme": "Theme",
+    "language": "Language"
   },
   "footer": {
     "description": "One API endpoint for frontier models. Transparent pricing, real usage data, no subscriptions.",
