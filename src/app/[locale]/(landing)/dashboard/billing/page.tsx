@@ -17,6 +17,10 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import enBillingMessages from '@/config/locale/messages/en/dashboard/billing.json';
 import zhBillingMessages from '@/config/locale/messages/zh/dashboard/billing.json';
+import {
+  formatConsoleDateTime,
+  formatConsoleNumber,
+} from '@/features/api-console/lib/datetime';
 import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
@@ -190,7 +194,7 @@ export default async function BillingPage({
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {new Date(entry.createdAt).toLocaleString()}
+                      {formatConsoleDateTime(entry.createdAt, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatLedgerUsdAmount(entry.amountUsd)}
@@ -259,7 +263,7 @@ export default async function BillingPage({
                 {charges.map((charge) => (
                   <tr key={charge.id} className="border-b last:border-b-0">
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {new Date(charge.createdAt).toLocaleString()}
+                      {formatConsoleDateTime(charge.createdAt, locale)}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {charge.keyMasked}
@@ -268,7 +272,7 @@ export default async function BillingPage({
                       {charge.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {charge.tokenCount.toLocaleString()}
+                      {formatConsoleNumber(charge.tokenCount, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(charge.spendUsd)}

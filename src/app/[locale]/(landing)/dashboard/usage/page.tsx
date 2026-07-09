@@ -7,6 +7,10 @@ import {
 import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
+import {
+  formatConsoleDateTime,
+  formatConsoleNumber,
+} from '@/features/api-console/lib/datetime';
 import { getUserInfo } from '@/shared/models/user';
 
 export default async function UsagePage({
@@ -40,7 +44,7 @@ export default async function UsagePage({
   const usageHeaderDescription =
     usage.summary.status === 'ready' && usage.summary.syncedAt
       ? t('lastSynced', {
-          date: new Date(usage.summary.syncedAt).toLocaleString(),
+          date: formatConsoleDateTime(usage.summary.syncedAt, locale),
         })
       : usageSyncDescription;
 
@@ -56,15 +60,15 @@ export default async function UsagePage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label={t('stats.requests')}
-          value={usage.summary.requestCount.toLocaleString()}
+          value={formatConsoleNumber(usage.summary.requestCount, locale)}
         />
         <StatCard
           label={t('stats.inputTokens')}
-          value={usage.summary.inputTokens.toLocaleString()}
+          value={formatConsoleNumber(usage.summary.inputTokens, locale)}
         />
         <StatCard
           label={t('stats.outputTokens')}
-          value={usage.summary.outputTokens.toLocaleString()}
+          value={formatConsoleNumber(usage.summary.outputTokens, locale)}
         />
         <StatCard
           label={t('stats.spend')}
@@ -106,10 +110,10 @@ export default async function UsagePage({
                       {model.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {model.requests.toLocaleString()}
+                      {formatConsoleNumber(model.requests, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {model.tokens.toLocaleString()}
+                      {formatConsoleNumber(model.tokens, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(model.spendUsd)}
@@ -159,7 +163,7 @@ export default async function UsagePage({
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {log.createdAt.toLocaleString()}
+                      {formatConsoleDateTime(log.createdAt, locale)}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {log.keyMasked}
@@ -168,10 +172,10 @@ export default async function UsagePage({
                       {log.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {log.inputTokens.toLocaleString()}
+                      {formatConsoleNumber(log.inputTokens, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {log.outputTokens.toLocaleString()}
+                      {formatConsoleNumber(log.outputTokens, locale)}
                     </td>
                   </tr>
                 ))}

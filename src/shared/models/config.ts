@@ -134,6 +134,47 @@ export async function getAllConfigs(): Promise<Configs> {
   return configs;
 }
 
+/**
+ * 注入 <head>/<body> 脚本的服务（ads / analytics / affiliate / 客服）所需的键。
+ *
+ * root layout 原先直接把 getAllConfigs() 递给它们——那个对象含 stripe_secret_key、
+ * NEWAPI_ADMIN_TOKEN 等全部密钥。今天这些服务只读公开 ID，但只要有人多读一个键
+ * 就会把密钥拼进页面脚本。这里显式收窄，让密钥根本不进入调用面。
+ */
+const SCRIPT_INJECTION_CONFIG_KEYS = [
+  'adsense_code',
+  'google_analytics_id',
+  'openpanel_client_id',
+  'plausible_domain',
+  'plausible_src',
+  'clarity_id',
+  'vercel_analytics_enabled',
+  'affonso_enabled',
+  'affonso_id',
+  'affonso_cookie_duration',
+  'promotekit_enabled',
+  'promotekit_id',
+  'crisp_enabled',
+  'crisp_website_id',
+  'tawk_enabled',
+  'tawk_property_id',
+  'tawk_widget_id',
+] as const;
+
+export async function getScriptInjectionConfigs(): Promise<Configs> {
+  const allConfigs = await getAllConfigs();
+  const configs: Record<string, string> = {};
+
+  for (const key of SCRIPT_INJECTION_CONFIG_KEYS) {
+    const value = allConfigs[key];
+    if (value !== undefined && value !== null) {
+      configs[key] = String(value);
+    }
+  }
+
+  return configs;
+}
+
 export async function getPublicConfigs(): Promise<Configs> {
   let allConfigs = await getAllConfigs();
 

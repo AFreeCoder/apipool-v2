@@ -6,7 +6,7 @@ import NextTopLoader from 'nextjs-toploader';
 
 import { envConfigs } from '@/config';
 import { UtmCapture } from '@/shared/blocks/common/utm-capture';
-import { getAllConfigs } from '@/shared/models/config';
+import { getScriptInjectionConfigs } from '@/shared/models/config';
 import { getAdsService } from '@/shared/services/ads';
 import { getAffiliateService } from '@/shared/services/affiliate';
 import { getAnalyticsService } from '@/shared/services/analytics';
@@ -60,7 +60,8 @@ export default async function RootLayout({
   let customerServiceBodyScripts = null;
 
   if (isProduction || isDebug) {
-    const configs = await getAllConfigs();
+    // 只给脚本注入服务它们需要的公开键；getAllConfigs() 含全部密钥
+    const configs = await getScriptInjectionConfigs();
 
     const [adsService, analyticsService, affiliateService, customerService] =
       await Promise.all([

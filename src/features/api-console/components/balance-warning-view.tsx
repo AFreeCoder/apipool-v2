@@ -33,7 +33,7 @@ export function BalanceWarningView({
   return (
     <div
       role="status"
-      className="bg-background flex flex-col gap-3 rounded-xl border border-amber-200 px-5 py-4 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60"
+      className="bg-background border-chart-3/40 flex flex-col gap-3 rounded-xl border px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="font-medium">{message}</div>
       <LinkComponent
