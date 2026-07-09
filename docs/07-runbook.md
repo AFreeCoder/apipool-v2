@@ -83,10 +83,25 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 
 `newapi.apipool.dev` 仅运营访问：
 
-- New API 运营登录之外，再加一层边界（Basic Auth 或 IP 白名单）。
+- New API 运营登录之外，再加一层边界（Basic Auth 或 IP 白名单）。**由 `deploy/configure-caddy.sh` 强制**：两者都未配置时脚本 fail-closed 退出 78，绝不生成裸奔的管理面 vhost。
+  - `APIPOOL_NEWAPI_BASIC_AUTH_USER` + `APIPOOL_NEWAPI_BASIC_AUTH_HASH`（哈希用 `caddy hash-password --plaintext '<password>'` 生成）
+  - `APIPOOL_NEWAPI_ALLOWED_IPS`（空格分隔的 IP/CIDR）
+  - 两项均配则同时生效（先过 IP 白名单，再过 Basic Auth）。变量写在 `/opt/apipool-v2/.env.deploy`，`server-bootstrap.sh` 会在调用 Caddy 配置前载入。
 - `X-Robots-Tag: noindex, nofollow`。
 - 不出现在公开导航、文档、sitemap、客服文案中。
 - 门户桥接流量走 `NEWAPI_BASE_URL` 内部地址。
+
+`api2.apipool.dev` 与 New API 管理面共用同一个上游容器（`127.0.0.1:3001`），因此 Caddy **只放行 `/v1*` 数据面**，其余路径（含 `/api/*` 管理接口）一律返回 404。
+
+上线前实测三个子域的可达面（预期结果）：
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://api2.apipool.dev/v1/models   # 401（需 sk- key），非 404
+curl -sS -o /dev/null -w '%{http_code}\n' https://api2.apipool.dev/api/status  # 404
+curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          # 401 或 403，绝不是 200
+```
+
+预跑生成的配置（无需 root，不改系统）：`bash deploy/configure-caddy.sh --print-config`。
 
 ## 3. 部署验收顺序（不可跳步，后步通过不能替代前步失败）
 

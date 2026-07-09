@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -149,17 +150,83 @@ test('systemd timer runs daily backup at 04:00 Asia/Shanghai', async () => {
   );
 });
 
-test('Caddy setup routes public subdomains to local containers without Caddy auth', async () => {
-  const script = await readFile('deploy/configure-caddy.sh', 'utf8');
+function printCaddyConfig(env: Record<string, string>) {
+  return spawnSync('bash', ['deploy/configure-caddy.sh', '--print-config'], {
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+  });
+}
+
+const NEWAPI_BASIC_AUTH = {
+  APIPOOL_NEWAPI_BASIC_AUTH_USER: 'ops',
+  APIPOOL_NEWAPI_BASIC_AUTH_HASH: '$2a$14$hashplaceholder',
+};
+
+test('Caddy setup keeps the portal and the data plane reachable', async () => {
+  const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
+  const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
+
+  assert.equal(status, 0);
+  assert.match(stdout, /app\.apipool\.dev/);
+  assert.match(stdout, /api2\.apipool\.dev/);
+  assert.match(stdout, /newapi\.apipool\.dev/);
+  assert.match(stdout, /reverse_proxy 127\.0\.0\.1:3000/);
+  assert.match(stdout, /X-Robots-Tag "noindex, nofollow"/);
+  assert.match(bootstrap, /configure-caddy\.sh/);
+});
+
+test('Caddy exposes only the /v1 data plane on the public API domain', async () => {
+  // api2 与 New API 管理面同一个上游；不限路径就等于把 /api/* 管理接口也代理出去
+  const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
+  assert.equal(status, 0);
+
+  const apiBlock = stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
+  assert.match(apiBlock, /handle \/v1\*/);
+  assert.match(apiBlock, /respond .*404/);
+  // vhost 顶层（单层缩进）不得有裸 reverse_proxy——那会绕过 /v1 路径限制
+  assert.doesNotMatch(apiBlock, /^\treverse_proxy/m);
+});
+
+test('Caddy guards the New API operator surface with basic auth', async () => {
+  const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
+  assert.equal(status, 0);
+
+  const newapiBlock = stdout.split('newapi.apipool.dev {')[1];
+  assert.match(newapiBlock, /basic_auth/);
+  assert.match(newapiBlock, /ops \$2a\$14\$hashplaceholder/);
+});
+
+test('Caddy guards the New API operator surface with an IP allowlist', async () => {
+  const { status, stdout } = printCaddyConfig({
+    APIPOOL_NEWAPI_ALLOWED_IPS: '203.0.113.7 198.51.100.0/24',
+  });
+  assert.equal(status, 0);
+
+  const newapiBlock = stdout.split('newapi.apipool.dev {')[1];
+  assert.match(newapiBlock, /remote_ip 203\.0\.113\.7 198\.51\.100\.0\/24/);
+  assert.match(newapiBlock, /respond .*403/);
+});
+
+test('server bootstrap loads the deploy env before configuring Caddy', async () => {
+  // configure-caddy 现在 fail-closed；运营面保护变量存在 .env.deploy 里，
+  // bootstrap 不加载它就会在首次开机自举时直接卡死。
   const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
 
-  assert.match(script, /app\.apipool\.dev/);
-  assert.match(script, /api2\.apipool\.dev/);
-  assert.match(script, /newapi\.apipool\.dev/);
-  assert.match(script, /reverse_proxy \$PORTAL_UPSTREAM/);
-  assert.match(script, /reverse_proxy \$API_UPSTREAM/);
-  assert.match(script, /reverse_proxy \$NEWAPI_UPSTREAM/);
-  assert.doesNotMatch(script, /basicauth/);
-  assert.match(script, /X-Robots-Tag "noindex, nofollow"/);
-  assert.match(bootstrap, /configure-caddy\.sh/);
+  const envLoad = bootstrap.indexOf('. "$APP_DIR/.env.deploy"');
+  const caddyCall = bootstrap.indexOf('&& "$APP_DIR/deploy/configure-caddy.sh"');
+  assert.notEqual(envLoad, -1, 'bootstrap must source .env.deploy');
+  assert.notEqual(caddyCall, -1, 'bootstrap must invoke configure-caddy.sh');
+  assert.ok(envLoad < caddyCall, 'env must load before configure-caddy runs');
+});
+
+test('Caddy setup refuses to expose the New API operator surface unprotected', async () => {
+  // runbook 第 2 节要求运营面「再加一层边界」；脚本必须无法产出裸奔的 vhost
+  const { status, stderr } = printCaddyConfig({
+    APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
+    APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
+    APIPOOL_NEWAPI_ALLOWED_IPS: '',
+  });
+
+  assert.notEqual(status, 0);
+  assert.match(stderr, /basic auth|IP allowlist/i);
 });

@@ -46,6 +46,16 @@ chown -R 1001:1001 "$APP_DIR/data/portal"
 chmod 700 "$APP_DIR/backups"
 
 chmod 0755 "$APP_DIR/deploy/backup.sh" "$APP_DIR/deploy/deploy.sh"
+
+# configure-caddy.sh fail-closed：New API 运营面保护变量（Basic Auth / IP 白名单）
+# 存放在 .env.deploy，必须在调用前载入，否则 Caddy 配置会被拒绝生成。
+if [ -f "$APP_DIR/.env.deploy" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$APP_DIR/.env.deploy"
+  set +a
+fi
+
 [ -f "$APP_DIR/deploy/configure-caddy.sh" ] && chmod 0755 "$APP_DIR/deploy/configure-caddy.sh" && "$APP_DIR/deploy/configure-caddy.sh"
 install -m 0644 "$APP_DIR/deploy/systemd/apipool-v2-backup.service" /etc/systemd/system/apipool-v2-backup.service
 install -m 0644 "$APP_DIR/deploy/systemd/apipool-v2-backup.timer" /etc/systemd/system/apipool-v2-backup.timer
