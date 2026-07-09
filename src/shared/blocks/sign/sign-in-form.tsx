@@ -65,7 +65,7 @@ export function SignInForm({
     }
 
     if (!email || !password) {
-      toast.error('email and password are required');
+      toast.error(t('sign_in_required_fields'));
       return;
     }
 
@@ -118,13 +118,13 @@ export function SignInForm({
               return;
             }
 
-            toast.error(e?.error?.message || 'sign in failed');
+            toast.error(t('sign_in_failed'));
             setLoading(false);
           },
         }
       );
     } catch (e: any) {
-      toast.error(e?.message || 'sign in failed');
+      toast.error(t('sign_in_failed'));
       setLoading(false);
     }
   };

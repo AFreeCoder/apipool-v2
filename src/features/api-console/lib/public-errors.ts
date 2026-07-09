@@ -1,6 +1,3 @@
-const USAGE_SYNC_ERROR =
-  'Usage sync is temporarily unavailable. Showing the latest available portal data.';
-
 const INTERNAL_ERROR_PATTERNS = [
   /\bnew\s*api\b/i,
   /\bnewapi\b/i,
@@ -58,6 +55,17 @@ export function getPublicPortalErrorMessage(
   return message;
 }
 
-export function getPublicUsageSyncErrorMessage(error: unknown) {
-  return getPublicPortalErrorMessage(error, USAGE_SYNC_ERROR);
+/**
+ * 用量同步失败时可安全展示给用户的文案。
+ *
+ * 内部错误（桥接错误、SQL 约束等）没有这样的文案，返回 undefined —— 页面会退回
+ * 到 dashboard/common.json 里已本地化的 usageSync 词条。原先在这里返回一句英文
+ * 兜底，会盖掉成套的中文文案，恰恰在用户最需要读懂提示的时刻。
+ */
+export function getPublicUsageSyncErrorMessage(
+  error: unknown
+): string | undefined {
+  const message = getErrorMessage(error);
+  if (!message || isInternalPortalError(error)) return undefined;
+  return message;
 }

@@ -972,7 +972,8 @@ test('getPortalUsage reports an unknown balance when the signup binding is tempo
   // 击穿 isLowBalance 专门设计的「undefined 不告警」（balance-warning-view.ts）。
   assert.equal(usage.summary.balanceUsd, undefined);
   assert.equal(usage.summary.status, 'failed');
-  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/i);
+  // 桥接错误无可安全展示的文案 → undefined，页面显示已本地化的 usageSync.failed
+  assert.equal(usage.summary.errorMessage, undefined);
 });
 
 test('createPortalApiKey keeps a retriable local key row when remote creation fails', async () => {
@@ -2345,7 +2346,7 @@ test('getPortalUsage returns stale when an old usable cache exists and sync fail
   assert.equal(usage.summary.status, 'stale');
   assert.equal(usage.summary.requestCount, 1);
   assert.equal(usage.logs.length, 1);
-  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/);
+  assert.equal(usage.summary.errorMessage, undefined);
 });
 
 test('getPortalUsage returns syncing snapshot without duplicate remote reads', async () => {
@@ -2445,6 +2446,6 @@ test('getPortalUsage returns failed when initial usage sync has no cached data',
 
   assert.equal(usage.summary.status, 'failed');
   assert.equal(usage.summary.requestCount, 0);
-  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/);
+  assert.equal(usage.summary.errorMessage, undefined);
   assert.deepEqual(usage.logs, []);
 });

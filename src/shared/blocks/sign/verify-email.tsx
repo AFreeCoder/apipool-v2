@@ -223,7 +223,7 @@ export function VerifyEmailPage({
 
   const handleResend = async () => {
     if (!email) {
-      toast.error('email is required');
+      toast.error(t('verify_email_required_field'));
       return;
     }
     if (loading) return;
@@ -248,7 +248,7 @@ export function VerifyEmailPage({
       markSentNow(email);
       setCooldownSeconds(getCooldownRemainingSeconds(email));
     } catch (e: any) {
-      toast.error(e?.message || 'send verification email failed');
+      toast.error(t('resend_verification_failed'));
     } finally {
       setLoading(false);
     }

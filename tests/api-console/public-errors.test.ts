@@ -43,14 +43,12 @@ test('public portal errors keep safe validation copy', () => {
   );
 });
 
-test('usage sync errors use customer-safe copy', () => {
+test('usage sync errors never leak internals and defer to localized copy', () => {
   const message = getPublicUsageSyncErrorMessage(
     new Error('NEWAPI_ADMIN_TOKEN is not configured')
   );
 
-  assert.equal(
-    message,
-    'Usage sync is temporarily unavailable. Showing the latest available portal data.'
-  );
-  assert.doesNotMatch(message, /new\s*api|newapi|NEWAPI/i);
+  // 返回 undefined 而不是一句英文兜底：页面据此退回 dashboard/common.json 的
+  // usageSync 词条（中英各一套）。安全属性不变——没有文案就没有可泄漏的细节。
+  assert.equal(message, undefined);
 });

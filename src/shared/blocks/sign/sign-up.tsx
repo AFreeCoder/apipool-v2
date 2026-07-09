@@ -96,7 +96,7 @@ export function SignUp({
     }
 
     if (!email || !password || !name) {
-      toast.error('email, password and name are required');
+      toast.error(t('sign_up_required_fields'));
       return;
     }
 
@@ -145,13 +145,13 @@ export function SignUp({
             router.push(callbackUrl);
           },
           onError: (e: any) => {
-            toast.error(e?.error?.message || 'sign up failed');
+            toast.error(t('sign_up_failed'));
             setLoading(false);
           },
         }
       );
     } catch (e: any) {
-      toast.error(e?.message || 'sign up failed');
+      toast.error(t('sign_up_failed'));
       setLoading(false);
     }
   };

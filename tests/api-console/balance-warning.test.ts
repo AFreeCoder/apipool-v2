@@ -131,3 +131,37 @@ test('BalanceWarning renders nothing when balance is above threshold or missing'
     null
   );
 });
+
+test('bridge failures fall back to localized copy instead of an English sentence', async () => {
+  const { getPublicUsageSyncErrorMessage } = await import(
+    '@/features/api-console/lib/public-errors'
+  );
+  const { getUsageSyncDescription } = await import(
+    '@/features/api-console/lib/status'
+  );
+
+  // 内部错误没有可安全展示给用户的文案 → 返回 undefined，让页面用 i18n 词条。
+  // 原先返回英文兜底句，会盖掉 dashboard/common.json 里成套的中文 usageSync 文案，
+  // 恰恰在用户最需要读懂提示的时刻。
+  const bridgeError = { code: 'timeout', message: 'New API request timed out' };
+  assert.equal(getPublicUsageSyncErrorMessage(bridgeError), undefined);
+
+  assert.equal(
+    getUsageSyncDescription(
+      { status: 'failed', errorMessage: undefined } as any,
+      { failed: '用量同步暂不可用，请稍后再试。' }
+    ),
+    '用量同步暂不可用，请稍后再试。'
+  );
+});
+
+test('a safe non-internal message still reaches the user', async () => {
+  const { getPublicUsageSyncErrorMessage } = await import(
+    '@/features/api-console/lib/public-errors'
+  );
+
+  assert.equal(
+    getPublicUsageSyncErrorMessage(new Error('Rate limit exceeded')),
+    'Rate limit exceeded'
+  );
+});
