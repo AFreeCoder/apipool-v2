@@ -5,10 +5,10 @@ import { getTranslations } from 'next-intl/server';
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { LocaleSelector, ThemeToggler } from '@/shared/blocks/common';
-import { SignUser } from '@/shared/blocks/sign/sign-user';
 import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
 
+import { HeaderAuthCluster } from './header-auth-cluster';
 import { MobileNav } from './mobile-nav';
 
 export async function SiteShell({ children }: { children: ReactNode }) {
@@ -26,6 +26,9 @@ export async function SiteShell({ children }: { children: ReactNode }) {
             items={nav}
             openLabel={t('mobile.openMenu')}
             menuTitle={t('mobile.menu')}
+            consoleItem={{ href: '/dashboard', label: t('nav.console') }}
+            themeLabel={t('mobile.theme')}
+            languageLabel={t('mobile.language')}
           />
           <Link
             href="/"
@@ -45,22 +48,34 @@ export async function SiteShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center justify-end gap-2">
-            {/* Theme + language live in the mobile drawer below lg to keep the
-                compact header from overflowing. */}
-            <div className="hidden items-center gap-1 lg:flex">
-              <ThemeToggler />
-              <LocaleSelector type="button" />
-            </div>
-            <SignUser
-              signButtonSize="sm"
-              userNav={{ items: [], show_name: true, show_sign_out: true }}
+            {/* Two controls max: CTA + avatar. Theme/language live in the
+                avatar menu (signed in) and the footer (signed out). */}
+            <HeaderAuthCluster
+              consoleLabel={t('nav.console')}
+              getStartedLabel={t('nav.getStarted')}
+              userNav={{
+                items: [
+                  {
+                    title: t('userMenu.apiKeys'),
+                    url: '/dashboard/api-keys',
+                    icon: 'KeyRound',
+                  },
+                  {
+                    title: t('userMenu.balance'),
+                    url: '/dashboard/billing',
+                    icon: 'Wallet',
+                  },
+                  {
+                    title: t('userMenu.usage'),
+                    url: '/dashboard/usage',
+                    icon: 'Activity',
+                  },
+                ],
+                show_name: true,
+                show_preferences: true,
+                show_sign_out: true,
+              }}
             />
-            <Button asChild variant="outline">
-              <Link href="/dashboard">
-                {t('nav.console')}
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
           </div>
         </div>
       </header>
@@ -130,9 +145,15 @@ export async function SiteShell({ children }: { children: ReactNode }) {
           <span>
             {t('footer.copyright', { brand: APIPOOL_CONFIG.brandName })}
           </span>
-          <span className="font-mono text-xs tracking-widest uppercase">
-            {t('footer.tagline')}
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="font-mono text-xs tracking-widest uppercase">
+              {t('footer.tagline')}
+            </span>
+            <div className="flex items-center gap-2">
+              <LocaleSelector type="button" />
+              <ThemeToggler type="toggle" className="h-8" />
+            </div>
+          </div>
         </div>
       </footer>
     </div>

@@ -2,11 +2,23 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Fragment } from 'react/jsx-runtime';
-import { Coins, LayoutDashboard, Loader2, LogOut, User } from 'lucide-react';
+import {
+  Check,
+  Coins,
+  Languages,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  SunDim,
+  User,
+} from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
 
 import { authClient, signOut, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
+import { localeNames } from '@/config/locale';
+import { useLocaleSwitcher } from '@/shared/blocks/common/use-locale-switcher';
 import {
   Avatar,
   AvatarFallback,
@@ -18,6 +30,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu';
 import { useAppContext } from '@/shared/contexts/app';
@@ -36,14 +51,18 @@ function extractSessionUser(data: any): UserType | null {
 export function SignUser({
   isScrolled,
   signButtonSize = 'sm',
+  signButtonVariant = 'outline',
   userNav,
 }: {
   isScrolled?: boolean;
   signButtonSize?: 'default' | 'sm' | 'lg' | 'icon';
+  signButtonVariant?: 'default' | 'outline' | 'ghost';
   userNav?: UserNav;
 }) {
   const t = useTranslations('common.sign');
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
+  const { currentLocale, switchLocale } = useLocaleSwitcher();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -224,6 +243,52 @@ export function SignUser({
               </>
             )}
 
+            {userNav?.show_preferences && (
+              <>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer gap-2">
+                    <SunDim className="text-muted-foreground size-4" />
+                    {t('theme_title')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {(['light', 'dark', 'system'] as const).map((value) => (
+                      <DropdownMenuItem
+                        key={value}
+                        className="cursor-pointer"
+                        onClick={() => setTheme(value)}
+                      >
+                        <span>{t(`theme_${value}`)}</span>
+                        {theme === value && (
+                          <Check size={16} className="text-primary ml-auto" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer gap-2">
+                    <Languages className="text-muted-foreground size-4" />
+                    {t('language_title')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {Object.keys(localeNames).map((locale) => (
+                      <DropdownMenuItem
+                        key={locale}
+                        className="cursor-pointer"
+                        onClick={() => switchLocale(locale)}
+                      >
+                        <span>{localeNames[locale]}</span>
+                        {locale === currentLocale && (
+                          <Check size={16} className="text-primary ml-auto" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+              </>
+            )}
+
             {userNav?.show_sign_out && (
               <DropdownMenuItem
                 className="w-full cursor-pointer"
@@ -249,7 +314,7 @@ export function SignUser({
             asChild
             // docs/05 §5：每屏主按钮 ≤1。首屏已有 hero CTA，
             // header 的 Sign In 让出视觉权重。
-            variant="outline"
+            variant={signButtonVariant}
             size={signButtonSize}
             className={cn(
               'ml-4 cursor-pointer ring-0',

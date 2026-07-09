@@ -5,7 +5,6 @@ import { Monitor, Moon, SunDim } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 import { AnimatedThemeToggler } from '@/shared/components/magicui/animated-theme-toggler';
-import { Button } from '@/shared/components/ui/button';
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -15,7 +14,7 @@ export function ThemeToggler({
   type = 'icon',
   className,
 }: {
-  type?: 'icon' | 'button' | 'toggle';
+  type?: 'icon' | 'toggle';
   className?: string;
 }) {
   const { theme, setTheme } = useTheme();
@@ -32,13 +31,7 @@ export function ThemeToggler({
     return null;
   }
 
-  if (type === 'button') {
-    return (
-      <Button variant="outline" size="sm" className="hover:bg-primary/10">
-        <SunDim />
-      </Button>
-    );
-  } else if (type === 'toggle') {
+  if (type === 'toggle') {
     return (
       <ToggleGroup
         type="single"

@@ -2,12 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Check, Globe, Languages } from 'lucide-react';
-import { useLocale } from 'next-intl';
-import { useSearchParams } from 'next/navigation';
 
-import { usePathname } from '@/core/i18n/navigation';
 import { localeNames } from '@/config/locale';
-import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { Button } from '@/shared/components/ui/button';
 import {
   DropdownMenu,
@@ -15,33 +11,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu';
-import { cacheSet } from '@/shared/lib/cache';
+
+import { useLocaleSwitcher } from './use-locale-switcher';
 
 export function LocaleSelector({
   type = 'icon',
 }: {
   type?: 'icon' | 'button';
 }) {
-  const currentLocale = useLocale();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const { currentLocale, switchLocale } = useLocaleSwitcher();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  const handleSwitchLanguage = (value: string) => {
-    if (value !== currentLocale) {
-      // Update localStorage to sync with locale detector
-      cacheSet('locale', value);
-      const query = searchParams?.toString?.() ?? '';
-      const href = query
-        ? `${pathname}?${query}`
-        : pathname;
-      window.location.assign(localizePathForLocale(href, value));
-    }
-  };
 
   // Return a placeholder during SSR to avoid hydration mismatch
   if (!mounted) {
@@ -84,7 +67,7 @@ export function LocaleSelector({
         {Object.keys(localeNames).map((locale) => (
           <DropdownMenuItem
             key={locale}
-            onClick={() => handleSwitchLanguage(locale)}
+            onClick={() => switchLocale(locale)}
           >
             <span>{localeNames[locale]}</span>
             {locale === currentLocale && (
