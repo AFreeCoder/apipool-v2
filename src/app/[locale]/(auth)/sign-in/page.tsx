@@ -5,13 +5,8 @@ import { defaultLocale } from '@/config/locale';
 import { redirect } from '@/core/i18n/navigation';
 import { SignIn } from '@/shared/blocks/sign/sign-in';
 import { getPublicConfigs } from '@/shared/models/config';
+import { safeInternalPath } from '@/shared/lib/safe-path';
 import { getSignUser } from '@/shared/models/user';
-
-function safeInternalPath(raw?: string) {
-  if (!raw) return '/';
-  if (!raw.startsWith('/')) return '/';
-  return raw;
-}
 
 function stripLocalePrefix(path: string, locale: string) {
   if (!path?.startsWith('/')) return '/';
@@ -70,7 +65,7 @@ export default async function SignInPage({
   return (
     <SignIn
       configs={configs}
-      callbackUrl={callbackUrl || '/'}
+      callbackUrl={safeInternalPath(callbackUrl)}
       defaultEmail={email || ''}
     />
   );

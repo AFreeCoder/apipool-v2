@@ -96,7 +96,7 @@ export function SignUp({
     }
 
     if (!email || !password || !name) {
-      toast.error('email, password and name are required');
+      toast.error(t('sign_up_required_fields'));
       return;
     }
 
@@ -145,13 +145,13 @@ export function SignUp({
             router.push(callbackUrl);
           },
           onError: (e: any) => {
-            toast.error(e?.error?.message || 'sign up failed');
+            toast.error(t('sign_up_failed'));
             setLoading(false);
           },
         }
       );
     } catch (e: any) {
-      toast.error(e?.message || 'sign up failed');
+      toast.error(t('sign_up_failed'));
       setLoading(false);
     }
   };
@@ -246,7 +246,7 @@ export function SignUp({
             <p className="text-muted-foreground text-center text-xs">
               {t('already_have_account')}{' '}
               <Link
-                href="/sign-in"
+                href={`/sign-in${callbackUrl && callbackUrl !== '/' ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ''}`}
                 className="text-foreground hover:text-primary cursor-pointer underline underline-offset-2 transition-colors"
               >
                 {t('sign_in_title')}

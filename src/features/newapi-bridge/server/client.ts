@@ -1417,6 +1417,11 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       amountUsd: number;
       reason: string;
       reference: string;
+      /**
+       * 正向调额时在「兑换码已生成、尚未发出兑换请求」的窗口回调一次。
+       * 调用方应在此持久化码值：之后的任何崩溃都不得再自动重试。
+       */
+      onRedemptionCreated?: (code: string) => Promise<void> | void;
     }): Promise<{ changeId: string; balanceUsd?: number }> {
       return withQuotaAdjustmentLock(input.user.newapiUserId, async () => {
         if (input.amountUsd === 0) {
@@ -1466,6 +1471,8 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
           .update(input.reference)
           .digest('hex')
           .slice(0, 18)}`;
+        // 创建兑换码本身不发放额度；这一步失败（含超时）时远端最多留下一张
+        // 未兑换的孤儿码，用户余额不受影响，因此仍可安全重试。
         const codes = await request<any>('/api/redemption/', {
           method: 'POST',
           body: {
@@ -1474,25 +1481,34 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
             count: 1,
           },
         });
-        const code = Array.isArray(codes) ? codes[0] : undefined;
-        if (typeof code !== 'string' || code.length === 0) {
-          throw new NewApiBridgeError({
-            code: 'malformed_response',
-            message: 'New API did not return a redemption code',
-          });
-        }
 
-        await request('/api/user/topup', {
-          method: 'POST',
-          auth: userAuth(input.user),
-          body: { key: code },
-        });
+        // 请求已返回 = 远端确实创建过兑换码。从这里开始，任何失败的结局都
+        // 无法自动判定：重试会再创建一张码，而「一码一兑」的幂等跨码不设防，
+        // 兑换成功后会双倍到账。一律带着码值升级人工核对（docs/06 第 5 节）。
+        let code: string | undefined;
         try {
+          code = Array.isArray(codes) ? codes[0] : undefined;
+          if (typeof code !== 'string' || code.length === 0) {
+            throw new NewApiBridgeError({
+              code: 'malformed_response',
+              message: 'New API did not return a redemption code',
+            });
+          }
+
+          // 先把码值交给调用方落库，再发出兑换请求
+          await input.onRedemptionCreated?.(code);
+
+          await request('/api/user/topup', {
+            method: 'POST',
+            auth: userAuth(input.user),
+            body: { key: code },
+          });
           const quota = await getQuotaForUser(input.user);
           return { changeId: code, balanceUsd: quota.balanceUsd };
         } catch (error: any) {
           throw new NewApiQuotaAdjustmentReconciliationError({
-            changeId: code,
+            // 码值可能还没解析出来；此时按兑换码名反查（reference 的确定性短哈希）
+            changeId: typeof code === 'string' ? code : '',
             message: error?.message || 'Quota adjustment confirmation failed',
           });
         }

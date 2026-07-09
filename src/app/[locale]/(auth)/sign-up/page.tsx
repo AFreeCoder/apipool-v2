@@ -5,13 +5,8 @@ import { defaultLocale } from '@/config/locale';
 import { redirect } from '@/core/i18n/navigation';
 import { SignUp } from '@/shared/blocks/sign/sign-up';
 import { getPublicConfigs } from '@/shared/models/config';
+import { safeInternalPath } from '@/shared/lib/safe-path';
 import { getSignUser } from '@/shared/models/user';
-
-function safeInternalPath(raw?: string) {
-  if (!raw) return '/';
-  if (!raw.startsWith('/')) return '/';
-  return raw;
-}
 
 function stripLocalePrefix(path: string, locale: string) {
   if (!path?.startsWith('/')) return '/';
@@ -63,5 +58,5 @@ export default async function SignUpPage({
   // (provider API keys, client secrets, etc.) into the page HTML/RSC payload.
   const configs = await getPublicConfigs();
 
-  return <SignUp configs={configs} callbackUrl={callbackUrl || '/'} />;
+  return <SignUp configs={configs} callbackUrl={safeInternalPath(callbackUrl)} />;
 }

@@ -127,7 +127,6 @@ test('checkout handler creates a custom top-up order from server-side cents and 
       custom_amount_usd: 120,
       currency: 'USD',
       locale: 'en',
-      metadata: { source: 'billing-page' },
     },
     pricingItems: pricingItemsFixture,
     deps,
@@ -154,7 +153,6 @@ test('checkout handler creates a custom top-up order from server-side cents and 
   assert.deepEqual(providerOrder.price, { amount: 12000, currency: 'usd' });
   assert.equal(providerOrder.metadata.order_no, 'order_checkout_test');
   assert.equal(providerOrder.metadata.user_id, 'user_checkout');
-  assert.equal(providerOrder.metadata.source, 'billing-page');
   assert.equal(
     providerOrder.successUrl,
     'https://app.apipool.dev/api/payment/callback?order_no=order_checkout_test'
@@ -261,6 +259,38 @@ test('checkout handler creates preset top-up orders from pricing config, not cli
   });
 });
 
+test('checkout handler ignores client metadata so reserved order identity cannot be overridden', async () => {
+  const { deps, createdOrders, createPaymentCalls } = createCheckoutDeps();
+
+  const response = await createTopUpCheckoutResponse({
+    body: {
+      product_id: 'topup_10',
+      currency: 'USD',
+      locale: 'en',
+      // A real attacker posts raw JSON, so the extra field bypasses the type.
+      metadata: {
+        order_no: 'order_of_a_bigger_unpaid_order',
+        user_id: 'someone_else',
+        app_name: 'spoofed',
+      },
+    } as any,
+    pricingItems: pricingItemsFixture,
+    deps,
+  });
+  const payload = await parseResponse(response);
+
+  assert.equal(payload.code, 0);
+  assert.equal(createdOrders.length, 1);
+  assert.equal(createPaymentCalls.length, 1);
+
+  // The provider session must carry the order identity minted server-side,
+  // otherwise a $10 payment can settle a $50 order via the webhook lookup.
+  const providerOrder = createPaymentCalls[0].order;
+  assert.equal(providerOrder.metadata.order_no, 'order_checkout_test');
+  assert.equal(providerOrder.metadata.user_id, 'user_checkout');
+  assert.equal(providerOrder.metadata.app_name, 'APIPool');
+});
+
 test('checkout handler rejects invalid custom top-up requests before order or payment creation', async () => {
   for (const body of [
     { custom_amount_usd: 0, currency: 'USD' },
@@ -290,4 +320,44 @@ test('checkout handler rejects invalid custom top-up requests before order or pa
     assert.equal(updatedOrders.length, 0, JSON.stringify(body));
     assert.equal(createPaymentCalls.length, 0, JSON.stringify(body));
   }
+});
+
+test('checkout refuses subscription pricing items so recharge can never silently skip quota', async () => {
+  // applyApipoolRecharge 对 SUBSCRIPTION 直接跳过（payment.ts）。若将来在
+  // pricing.json 加一个带 interval 的套餐，用户按月扣钱但 quota 一分不加。
+  const { deps, createdOrders, createPaymentCalls } = createCheckoutDeps();
+
+  const response = await createTopUpCheckoutResponse({
+    body: { product_id: 'sub_monthly', currency: 'USD', locale: 'en' },
+    pricingItems: [
+      {
+        ...pricingItemsFixture[0],
+        product_id: 'sub_monthly',
+        interval: 'month',
+      } as any,
+    ],
+    deps,
+  });
+  const payload = await parseResponse(response);
+
+  assert.equal(payload.code, -1);
+  assert.match(payload.message, /one-time/i);
+  assert.equal(createdOrders.length, 0);
+  assert.equal(createPaymentCalls.length, 0);
+});
+
+test('a canceled checkout returns to billing instead of a redirect stub', async () => {
+  const { deps, createPaymentCalls } = createCheckoutDeps();
+
+  await createTopUpCheckoutResponse({
+    body: { product_id: 'topup_10', currency: 'USD', locale: 'en' },
+    pricingItems: pricingItemsFixture,
+    deps,
+  });
+
+  // /pricing 是 redirect 到 /models 的占位桩：取消支付后落在模型列表页，
+  // 脱离充值上下文且没有任何提示
+  const { cancelUrl } = createPaymentCalls[0].order;
+  assert.match(cancelUrl, /\/dashboard\/billing/);
+  assert.match(cancelUrl, /checkout=canceled/);
 });

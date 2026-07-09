@@ -945,7 +945,7 @@ test('getPortalUsage lazily provisions missing signup binding and returns zero b
   assert.equal(usage.summary.status, 'empty');
 });
 
-test('getPortalUsage returns zero balance instead of a dash when signup binding is temporarily unavailable', async () => {
+test('getPortalUsage reports an unknown balance when the signup binding is temporarily unavailable', async () => {
   const portalUser = await insertUser(
     'portal_user_usage_lazy_signup_down',
     'lazy-down@example.com'
@@ -968,10 +968,12 @@ test('getPortalUsage returns zero balance instead of a dash when signup binding 
   );
 
   assert.equal(provisionCalls, 1);
-  assert.equal(usage.summary.balanceUsd, 0);
-  assert.equal(usage.summary.quotaRemaining, 0);
+  // 同步失败 != 余额为零。写成 0 会让控制台显示 $0.00 并误弹「余额不足，去充值」，
+  // 击穿 isLowBalance 专门设计的「undefined 不告警」（balance-warning-view.ts）。
+  assert.equal(usage.summary.balanceUsd, undefined);
   assert.equal(usage.summary.status, 'failed');
-  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/i);
+  // 桥接错误无可安全展示的文案 → undefined，页面显示已本地化的 usageSync.failed
+  assert.equal(usage.summary.errorMessage, undefined);
 });
 
 test('createPortalApiKey keeps a retriable local key row when remote creation fails', async () => {
@@ -2344,7 +2346,7 @@ test('getPortalUsage returns stale when an old usable cache exists and sync fail
   assert.equal(usage.summary.status, 'stale');
   assert.equal(usage.summary.requestCount, 1);
   assert.equal(usage.logs.length, 1);
-  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/);
+  assert.equal(usage.summary.errorMessage, undefined);
 });
 
 test('getPortalUsage returns syncing snapshot without duplicate remote reads', async () => {
@@ -2444,6 +2446,6 @@ test('getPortalUsage returns failed when initial usage sync has no cached data',
 
   assert.equal(usage.summary.status, 'failed');
   assert.equal(usage.summary.requestCount, 0);
-  assert.match(usage.summary.errorMessage || '', /temporarily unavailable/);
+  assert.equal(usage.summary.errorMessage, undefined);
   assert.deepEqual(usage.logs, []);
 });

@@ -353,7 +353,7 @@ test('catalog pricing sync and drift admin routes require permissions and call p
   assert.doesNotMatch(driftRoute, /newapiGroup/);
 });
 
-test('catalog listing child pages expose per-model group discount CRUD without smoke toggle', async () => {
+test('catalog listing child pages expose per-model group discount CRUD with the smoke toggle', async () => {
   const listPage = await readFile(listingPagePath('list'), 'utf8');
   const newPage = await readFile(listingPagePath('new'), 'utf8');
   const editPage = await readFile(listingPagePath('edit'), 'utf8');
@@ -413,8 +413,9 @@ test('catalog listing child pages expose per-model group discount CRUD without s
     assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
     assert.match(source, typedFieldPattern('description', 'textarea'));
-    assert.doesNotMatch(source, switchFieldPattern('smokeTested'));
-    assert.doesNotMatch(source, /t\(['"]fields\.smokeTestedTip['"]\)/);
+    // smokeTested 是运维标记：没有入口时新模型永远进不了部署冒烟候选池
+    assert.match(source, switchFieldPattern('smokeTested'));
+    assert.match(source, /t\(['"]fields\.smokeTestedTip['"]\)/);
     for (const hiddenField of [
       'inputMicroUsd',
       'outputMicroUsd',
@@ -582,10 +583,10 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
   assert.match(zh.models.delete.description, /分组折扣/);
   assert.equal(en.fields.groupSlug, 'Group ID');
   assert.equal(zh.fields.groupSlug, '分组 ID');
-  assert.equal(en.fields.smokeTested, undefined);
-  assert.equal(zh.fields.smokeTested, undefined);
-  assert.equal(en.fields.smokeTestedTip, undefined);
-  assert.equal(zh.fields.smokeTestedTip, undefined);
+  assert.ok(en.fields.smokeTested);
+  assert.ok(zh.fields.smokeTested);
+  assert.ok(en.fields.smokeTestedTip);
+  assert.ok(zh.fields.smokeTestedTip);
   assert.ok(en.listings.delete);
   assert.ok(zh.listings.delete);
   assert.ok(en.errors.missingBasePrice);
@@ -594,4 +595,81 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
   assert.equal(zh.fields.pricingStatus, undefined);
 
   assert.deepEqual(collectKeyPaths(en).sort(), collectKeyPaths(zh).sort());
+});
+
+test('listing forms expose the smoke-tested switch so new models can enter the smoke candidate pool', async () => {
+  const { readFile } = await import('node:fs/promises');
+
+  // ede2dc4 把开关从两个表单都删掉且无替代入口，新模型的 smoke_tested 永远是
+  // false → getSmokeTestedCallableModelIdsByGroup 返回空 → 部署冒烟直接抛错。
+  for (const page of [
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx',
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/[listingId]/edit/page.tsx',
+  ]) {
+    const source = await readFile(page, 'utf8');
+    assert.match(source, /name: 'smokeTested'/, `${page} needs the switch`);
+    assert.match(
+      source,
+      /smokeTested: data\.get\('smokeTested'\) === 'true'/,
+      `${page} must read the switch instead of hardcoding`
+    );
+    assert.doesNotMatch(source, /smokeTested: false,/);
+  }
+});
+
+test('creating a duplicate listing surfaces a translated message, not a raw constraint error', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const page = await readFile(
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx',
+    'utf8'
+  );
+
+  assert.match(page, /uniq_listing_model_group/);
+  assert.match(page, /duplicateListingMessage/);
+
+  for (const locale of ['en', 'zh']) {
+    const messages = JSON.parse(
+      await readFile(
+        `src/config/locale/messages/${locale}/admin/catalog.json`,
+        'utf8'
+      )
+    );
+    assert.ok(messages.errors?.duplicateListing, `${locale} duplicateListing`);
+    assert.ok(messages.fields?.smokeTested, `${locale} fields.smokeTested`);
+  }
+});
+
+test('saving a model warns that the public price is now hidden until a price sync runs', async () => {
+  const { readFile } = await import('node:fs/promises');
+
+  for (const page of [
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/edit/page.tsx',
+    'src/app/[locale]/(admin)/admin/catalog/models/new/page.tsx',
+  ]) {
+    const source = await readFile(page, 'utf8');
+    assert.match(source, /messages\.priceHiddenAfterSave/, page);
+  }
+
+  for (const locale of ['en', 'zh']) {
+    const messages = JSON.parse(
+      await readFile(
+        `src/config/locale/messages/${locale}/admin/catalog.json`,
+        'utf8'
+      )
+    );
+    assert.ok(messages.messages?.priceHiddenAfterSave, locale);
+  }
+});
+
+test('an unset group discount stays null instead of being written back as 10000 bps', async () => {
+  const { readFile } = await import('node:fs/promises');
+
+  for (const page of [
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/edit/page.tsx',
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx',
+  ]) {
+    const source = await readFile(page, 'utf8');
+    // `|| '10'` 会把「没有折扣」写成「十折」——语义等价但脏了数据
+    assert.doesNotMatch(source, /bpsToDiscountFold\([^)]*\) \|\| '10'/, page);
+  }
 });

@@ -68,7 +68,9 @@ export async function GET(req: Request) {
         : `${envConfigs.app_url}/settings/payments`);
   } catch (e: any) {
     console.log('checkout callback failed:', e);
-    redirectUrl = `${envConfigs.app_url}/pricing`;
+    // /pricing 是 redirect 到 /models 的占位桩：支付出问题时把用户丢到模型
+    // 列表页且没有任何提示。回账单页并带上状态，页面据此提示联系客服。
+    redirectUrl = `${envConfigs.app_url}/dashboard/billing?checkout=failed`;
   }
 
   redirect(redirectUrl);

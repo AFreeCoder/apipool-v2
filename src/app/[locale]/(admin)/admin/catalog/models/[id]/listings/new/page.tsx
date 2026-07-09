@@ -49,6 +49,7 @@ export default async function CatalogModelListingNewPage({
   const missingBasePriceMessage = t('errors.missingBasePrice');
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
+  const duplicateListingMessage = t('errors.duplicateListing');
   const successMessage = t('listings.new.success');
   const [model, config] = await Promise.all([
     getModelById(id),
@@ -114,6 +115,12 @@ export default async function CatalogModelListingNewPage({
         type: 'textarea',
         title: t('fields.description'),
       },
+      {
+        name: 'smokeTested',
+        type: 'switch',
+        title: t('fields.smokeTested'),
+        tip: t('fields.smokeTestedTip'),
+      },
     ],
     passby: {
       model,
@@ -123,9 +130,10 @@ export default async function CatalogModelListingNewPage({
     data: {
       groupId: groups[0]?.id ?? '',
       statusId: statuses[0]?.id ?? '',
-      discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '10',
+      discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '',
       discountNote: '',
       description: '',
+      smokeTested: 'false',
     },
     submit: {
       button: {
@@ -174,7 +182,7 @@ export default async function CatalogModelListingNewPage({
               (data.get('discountNote') as string | null)?.trim() || null,
             description:
               (data.get('description') as string | null)?.trim() || null,
-            smokeTested: false,
+            smokeTested: data.get('smokeTested') === 'true',
             featured: false,
             sortOrder: 0,
           } as NewListing;
@@ -182,7 +190,17 @@ export default async function CatalogModelListingNewPage({
           throw new Error(invalidPriceMessage);
         }
 
-        const result = await createListing(newListing);
+        let result;
+        try {
+          result = await createListing(newListing);
+        } catch (error: any) {
+          // uniq_listing_model_group：同一模型在同一分组只能有一条售卖项。
+          // 不捕获的话 admin 看到的是原始 SQLite 约束错误（生产还会被脱敏成通用错误）。
+          if (/uniq_listing_model_group|UNIQUE constraint/i.test(String(error?.message))) {
+            throw new Error(duplicateListingMessage);
+          }
+          throw error;
+        }
 
         if (!result) {
           throw new Error(createFailedMessage);

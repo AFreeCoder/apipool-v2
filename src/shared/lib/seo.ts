@@ -1,7 +1,9 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { envConfigs } from '@/config';
-import { defaultLocale } from '@/config/locale';
+import { defaultLocale, locales } from '@/config/locale';
+
+const DEFAULT_PREVIEW_IMAGE = '/og.png';
 
 // get metadata for page component
 export function getMetadata(
@@ -60,7 +62,12 @@ export function getMetadata(
       defaultMetadata.description;
 
     // image url
-    let imageUrl = options.imageUrl || envConfigs.app_preview_image;
+    // 项目自有的分享卡片图。app_preview_image 默认留空（brand-assets 守卫要求
+    // 默认配置不指向占位品牌图），但完全不出 og:image 会让所有社媒/IM 分享
+    // 都没有配图。注意：文件约定 opengraph-image 在这里不生效——
+    // [locale]/layout.tsx 的 generateMetadata 定义了 openGraph，会整体覆盖它。
+    let imageUrl =
+      options.imageUrl || envConfigs.app_preview_image || DEFAULT_PREVIEW_IMAGE;
     if (imageUrl) {
       imageUrl = imageUrl.startsWith('http')
         ? imageUrl
@@ -88,6 +95,9 @@ export function getMetadata(
         defaultMetadata.keywords,
       alternates: {
         canonical: canonicalUrl,
+        // 每个页面声明自己的多语言版本。原先在 root layout 手写 <link
+        // rel="alternate">，对所有页面都指向首页——错误的 hreflang 比没有更糟。
+        languages: await getAlternateLanguages(options.canonicalUrl || ''),
       },
 
       openGraph: {
@@ -153,4 +163,14 @@ async function getCanonicalUrl(canonicalUrl: string, locale: string) {
   }
 
   return canonicalUrl;
+}
+
+async function getAlternateLanguages(path: string) {
+  const languages: Record<string, string> = {};
+
+  for (const locale of locales) {
+    languages[locale] = await getCanonicalUrl(path, locale);
+  }
+
+  return languages;
 }

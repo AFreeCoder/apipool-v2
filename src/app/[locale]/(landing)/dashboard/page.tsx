@@ -19,6 +19,10 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { Button } from '@/shared/components/ui/button';
+import {
+  formatConsoleDateTime,
+  formatConsoleNumber,
+} from '@/features/api-console/lib/datetime';
 import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
@@ -103,18 +107,19 @@ export default async function DashboardPage({
         />
         <StatCard
           label={t('stats.requests')}
-          value={usage.summary.requestCount.toLocaleString()}
+          value={formatConsoleNumber(usage.summary.requestCount, locale)}
           help={usageSyncDescription}
           icon={<Activity className="text-muted-foreground size-4" />}
         />
         <StatCard
           label={t('stats.tokens')}
-          value={(
-            usage.summary.inputTokens + usage.summary.outputTokens
-          ).toLocaleString()}
+          value={formatConsoleNumber(
+            usage.summary.inputTokens + usage.summary.outputTokens,
+            locale
+          )}
           help={t('stats.tokensHelp', {
-            input: usage.summary.inputTokens.toLocaleString(),
-            output: usage.summary.outputTokens.toLocaleString(),
+            input: formatConsoleNumber(usage.summary.inputTokens, locale),
+            output: formatConsoleNumber(usage.summary.outputTokens, locale),
           })}
           icon={<BarChart3 className="text-muted-foreground size-4" />}
         />
@@ -177,16 +182,16 @@ export default async function DashboardPage({
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {log.createdAt.toLocaleString()}
+                      {formatConsoleDateTime(log.createdAt, locale)}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {log.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {log.inputTokens.toLocaleString()}
+                      {formatConsoleNumber(log.inputTokens, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {log.outputTokens.toLocaleString()}
+                      {formatConsoleNumber(log.outputTokens, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(log.spendUsd)}

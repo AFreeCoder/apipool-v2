@@ -139,12 +139,14 @@ function ScenarioVignette({
     return (
       <div className="grid h-36 grid-cols-3 gap-2 rounded-lg border p-3">
         {[
-          'from-emerald-200 to-teal-400',
-          'from-stone-200 to-emerald-300',
-          'from-teal-300 to-emerald-500',
-          'from-emerald-300 to-stone-300',
-          'from-teal-200 to-emerald-400',
-          'from-emerald-400 to-teal-600',
+          // docs/05 §8：页面不得出现 token 之外的颜色。用 primary 的透明度
+          // 阶梯代替 emerald/teal 硬编码色。
+          'from-primary/20 to-primary/60',
+          'from-muted to-primary/40',
+          'from-primary/40 to-primary/80',
+          'from-primary/30 to-muted',
+          'from-primary/25 to-primary/55',
+          'from-primary/50 to-primary',
         ].map((gradient, index) => (
           <div
             key={index}

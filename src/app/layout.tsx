@@ -5,9 +5,8 @@ import { getLocale, setRequestLocale } from 'next-intl/server';
 import NextTopLoader from 'nextjs-toploader';
 
 import { envConfigs } from '@/config';
-import { locales } from '@/config/locale';
 import { UtmCapture } from '@/shared/blocks/common/utm-capture';
-import { getAllConfigs } from '@/shared/models/config';
+import { getScriptInjectionConfigs } from '@/shared/models/config';
 import { getAdsService } from '@/shared/services/ads';
 import { getAffiliateService } from '@/shared/services/affiliate';
 import { getAnalyticsService } from '@/shared/services/analytics';
@@ -39,7 +38,6 @@ export default async function RootLayout({
   const isDebug = process.env.NEXT_PUBLIC_DEBUG === 'true';
 
   // app url
-  const appUrl = envConfigs.app_url || '';
 
   // ads components
   let adsMetaTags = null;
@@ -62,7 +60,8 @@ export default async function RootLayout({
   let customerServiceBodyScripts = null;
 
   if (isProduction || isDebug) {
-    const configs = await getAllConfigs();
+    // 只给脚本注入服务它们需要的公开键；getAllConfigs() 含全部密钥
+    const configs = await getScriptInjectionConfigs();
 
     const [adsService, analyticsService, affiliateService, customerService] =
       await Promise.all([
@@ -105,19 +104,8 @@ export default async function RootLayout({
         ) : null}
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-        {/* inject locales */}
-        {locales ? (
-          <>
-            {locales.map((loc) => (
-              <link
-                key={loc}
-                rel="alternate"
-                hrefLang={loc}
-                href={`${appUrl}${loc === 'en' ? '' : `/${loc}`}`}
-              />
-            ))}
-          </>
-        ) : null}
+        {/* hreflang 由各页面的 generateMetadata 产出（alternates.languages）：
+            手写在这里会让所有页面都声明「另一语言版本是首页」 */}
 
         {/* inject ads meta tags */}
         {adsMetaTags}

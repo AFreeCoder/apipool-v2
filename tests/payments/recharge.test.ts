@@ -746,3 +746,302 @@ test('order transaction does not grant credit when paid-order optimistic lock is
     .where(eq(modules.schema.credit.orderNo, orderNo));
   assert.equal(credits.length, 0);
 });
+
+function createReconciliationRemoteClient() {
+  let adjustCalls = 0;
+  const client = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (input: { reference: string }) => {
+      adjustCalls += 1;
+      const error: any = new Error('topup dispatched but unconfirmed');
+      error.reconciliationRequired = true;
+      error.changeId = `code-${input.reference}`;
+      error.code = 'remote_error';
+      throw error;
+    },
+  } as any;
+  return { client, getAdjustCalls: () => adjustCalls };
+}
+
+test('recharge escalates an unconfirmed remote topup to reconciliation and never retries it', async () => {
+  const user = await insertUser('recharge_user_unconfirmed', 'unconf@b.co');
+  await insertActiveBinding(user);
+  const input = {
+    orderNo: 'order_recharge_unconfirmed',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 10000,
+    currency: 'USD',
+  };
+  const { client, getAdjustCalls } = createReconciliationRemoteClient();
+
+  const result = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(result.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 1);
+
+  let rows = await listLedgerByOrderNo(input.orderNo);
+  assert.equal(rows[0].status, 'reconciliation_required');
+  // 兑换码值必须落库，人工核对靠它反查远端是否已兑换（docs/06 第 5 节）
+  assert.equal(rows[0].newapiChangeId, 'code-recharge:order_recharge_unconfirmed');
+
+  // 用户刷新支付回跳页 / webhook 重放 / admin retry 都不得再次加额
+  const replay = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(replay.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 1);
+
+  rows = await listLedgerByOrderNo(input.orderNo);
+  assert.equal(rows[0].status, 'reconciliation_required');
+});
+
+test('recharge reclaims a stale processing ledger that crashed before any remote attempt', async () => {
+  const user = await insertUser('recharge_user_stale', 'stale@b.co');
+  await insertActiveBinding(user);
+  await insertRechargeLedger({
+    id: 'ledger_stale_processing',
+    userId: user.id,
+    orderNo: 'order_recharge_stale',
+    amountUsd: 5,
+    status: 'processing',
+  });
+  // 进程在 claim 之后、任何远端调用之前崩溃：remote_attempt_at 为 null
+  // 证明远端什么都没发生，重试安全
+  await executeRaw(
+    `UPDATE apipool_ledger_entry
+     SET updated_at = 0, remote_attempt_at = NULL
+     WHERE id = 'ledger_stale_processing'`
+  );
+
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const result = await modules.recharge.applyRechargeForOrder(
+    {
+      orderNo: 'order_recharge_stale',
+      userId: user.id,
+      userEmail: user.email,
+      amount: 500,
+      currency: 'USD',
+    },
+    client
+  );
+
+  assert.equal(result.outcome, 'applied');
+  assert.equal(getAdjustCalls(), 1);
+  const rows = await listLedgerByOrderNo('order_recharge_stale');
+  assert.equal(rows[0].status, 'applied');
+});
+
+test('recharge escalates a stale processing ledger that already dispatched a redemption', async () => {
+  const user = await insertUser('recharge_user_stale_code', 'stalecode@b.co');
+  await insertActiveBinding(user);
+  await insertRechargeLedger({
+    id: 'ledger_stale_with_code',
+    userId: user.id,
+    orderNo: 'order_recharge_stale_code',
+    amountUsd: 5,
+    status: 'processing',
+  });
+  // 进程在兑换码已发出后崩溃：远端可能已入账，绝不能自动重试
+  await executeRaw(
+    `UPDATE apipool_ledger_entry
+     SET updated_at = 0, newapi_change_id = 'code-dispatched'
+     WHERE id = 'ledger_stale_with_code'`
+  );
+
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const result = await modules.recharge.applyRechargeForOrder(
+    {
+      orderNo: 'order_recharge_stale_code',
+      userId: user.id,
+      userEmail: user.email,
+      amount: 500,
+      currency: 'USD',
+    },
+    client
+  );
+
+  assert.equal(result.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 0);
+  const rows = await listLedgerByOrderNo('order_recharge_stale_code');
+  assert.equal(rows[0].status, 'reconciliation_required');
+});
+
+test('recharge leaves a freshly claimed processing ledger alone', async () => {
+  const user = await insertUser('recharge_user_fresh', 'fresh@b.co');
+  await insertActiveBinding(user);
+  await insertRechargeLedger({
+    id: 'ledger_fresh_processing',
+    userId: user.id,
+    orderNo: 'order_recharge_fresh',
+    amountUsd: 5,
+    status: 'processing',
+  });
+
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const result = await modules.recharge.applyRechargeForOrder(
+    {
+      orderNo: 'order_recharge_fresh',
+      userId: user.id,
+      userEmail: user.email,
+      amount: 500,
+      currency: 'USD',
+    },
+    client
+  );
+
+  assert.equal(result.outcome, 'pending_retry');
+  assert.equal(result.detail, 'concurrent recharge in progress');
+  assert.equal(getAdjustCalls(), 0);
+});
+
+test('recharge persists the redemption code before redeeming it so a crash cannot retry blindly', async () => {
+  const user = await insertUser('recharge_user_precommit', 'precommit@b.co');
+  await insertActiveBinding(user);
+  const input = {
+    orderNo: 'order_recharge_precommit',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 500,
+    currency: 'USD',
+  };
+
+  let adjustCalls = 0;
+  let changeIdAtDispatch: string | null | undefined;
+  const client = {
+    provisionUser: async (i: { username: string }) => ({
+      newapiUserId: `remote_${i.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (i: any) => {
+      adjustCalls += 1;
+      // 兑换码已生成，尚未发出兑换请求
+      await i.onRedemptionCreated?.('code-precommit');
+      const rows = await listLedgerByOrderNo(input.orderNo);
+      changeIdAtDispatch = rows[0].newapiChangeId;
+      // 模拟兑换请求飞行途中进程被杀：普通错误，非 reconciliation
+      throw new Error('process killed mid-topup');
+    },
+  } as any;
+
+  const result = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(result.outcome, 'failed');
+  assert.equal(adjustCalls, 1);
+
+  // 码值必须在发出兑换请求之前落库，否则崩溃后无从判断远端是否已入账
+  assert.equal(changeIdAtDispatch, 'code-precommit');
+
+  let rows = await listLedgerByOrderNo(input.orderNo);
+  assert.equal(rows[0].status, 'reconciliation_required');
+  assert.equal(rows[0].newapiChangeId, 'code-precommit');
+
+  const replay = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(replay.outcome, 'failed');
+  assert.equal(adjustCalls, 1);
+});
+
+test('recharge never claims a ledger that already carries a redemption code', async () => {
+  const user = await insertUser('recharge_user_coded', 'coded@b.co');
+  await insertActiveBinding(user);
+  await insertRechargeLedger({
+    id: 'ledger_pending_with_code',
+    userId: user.id,
+    orderNo: 'order_recharge_coded',
+    amountUsd: 5,
+    status: 'pending',
+  });
+  await executeRaw(
+    `UPDATE apipool_ledger_entry
+     SET newapi_change_id = 'code-orphaned'
+     WHERE id = 'ledger_pending_with_code'`
+  );
+
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const result = await modules.recharge.applyRechargeForOrder(
+    {
+      orderNo: 'order_recharge_coded',
+      userId: user.id,
+      userEmail: user.email,
+      amount: 500,
+      currency: 'USD',
+    },
+    client
+  );
+
+  assert.equal(result.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 0);
+  const rows = await listLedgerByOrderNo('order_recharge_coded');
+  assert.equal(rows[0].status, 'reconciliation_required');
+});
+
+test('recharge marks the remote attempt durable before any remote side effect', async () => {
+  const user = await insertUser('recharge_user_marker', 'marker@b.co');
+  await insertActiveBinding(user);
+  const input = {
+    orderNo: 'order_recharge_marker',
+    userId: user.id,
+    userEmail: user.email,
+    amount: 500,
+    currency: 'USD',
+  };
+
+  let markerAtCall: unknown;
+  const client = {
+    provisionUser: async (i: { username: string }) => ({
+      newapiUserId: `remote_${i.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (i: any) => {
+      // adjustQuota 的第一件事就是 POST /api/redemption/（远端副作用）。
+      // 在它被调用之前，ledger 必须已经留下「远端已尝试」的持久化证据。
+      const rows = await listLedgerByOrderNo(input.orderNo);
+      markerAtCall = rows[0].remoteAttemptAt;
+      await i.onRedemptionCreated?.('code-marker');
+      return { changeId: 'code-marker', balanceUsd: 5 };
+    },
+  } as any;
+
+  const result = await modules.recharge.applyRechargeForOrder(input, client);
+  assert.equal(result.outcome, 'applied');
+  assert.ok(
+    markerAtCall instanceof Date,
+    'remoteAttemptAt must be persisted before adjustQuota runs'
+  );
+});
+
+test('recharge escalates a stale processing ledger whose remote attempt outcome is unknown', async () => {
+  // 硬崩溃窗口：POST /api/redemption/ 已成功，进程在码值落库前被 SIGKILL。
+  // 行留在 processing 且 changeId 为 null——但远端已经多了一张兑换码，
+  // 「changeId IS NULL」不能证明远端什么都没发生。
+  const user = await insertUser('recharge_user_unknown', 'unknown@b.co');
+  await insertActiveBinding(user);
+  await insertRechargeLedger({
+    id: 'ledger_unknown_outcome',
+    userId: user.id,
+    orderNo: 'order_recharge_unknown_outcome',
+    amountUsd: 5,
+    status: 'processing',
+  });
+  await executeRaw(
+    `UPDATE apipool_ledger_entry
+     SET updated_at = 0, remote_attempt_at = 1
+     WHERE id = 'ledger_unknown_outcome'`
+  );
+
+  const { client, getAdjustCalls } = createWorkingRemoteClient();
+  const result = await modules.recharge.applyRechargeForOrder(
+    {
+      orderNo: 'order_recharge_unknown_outcome',
+      userId: user.id,
+      userEmail: user.email,
+      amount: 500,
+      currency: 'USD',
+    },
+    client
+  );
+
+  assert.equal(result.outcome, 'failed');
+  assert.equal(getAdjustCalls(), 0);
+  const rows = await listLedgerByOrderNo('order_recharge_unknown_outcome');
+  assert.equal(rows[0].status, 'reconciliation_required');
+});

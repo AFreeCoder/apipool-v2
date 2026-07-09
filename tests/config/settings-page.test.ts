@@ -148,7 +148,7 @@ async function loadCollectNonEmptyConfigs(source: string) {
   new Function('exports', 'module', output)(module.exports, module);
   return module.exports.collectNonEmptyConfigs as (
     data: FormData,
-    settings: { name: string }[]
+    settings: { name: string; type?: string }[]
   ) => Record<string, string>;
 }
 
@@ -238,12 +238,13 @@ test('settings page exports a collector that skips empty submitted values', asyn
   formData.set('email_verification_enabled', 'false');
   formData.set('ignored', 'value');
 
+  // 密钥字段总是渲染为空白，空 = 未修改；跳过，否则每次保存都抹掉已存密钥
   assert.deepEqual(
     collectNonEmptyConfigs(formData, [
-      { name: 'google_client_id' },
-      { name: 'google_client_secret' },
-      { name: 'github_client_secret' },
-      { name: 'email_verification_enabled' },
+      { name: 'google_client_id', type: 'text' },
+      { name: 'google_client_secret', type: 'password' },
+      { name: 'github_client_secret', type: 'password' },
+      { name: 'email_verification_enabled', type: 'text' },
     ]),
     {
       google_client_id: 'google-client-id',
@@ -263,7 +264,7 @@ test('settings collector rejects malformed Stripe secret values', async () => {
   assert.throws(
     () =>
       collectNonEmptyConfigs(formData, [
-        { name: 'stripe_secret_key' },
+        { name: 'stripe_secret_key', type: 'password' },
         { name: 'stripe_enabled' },
       ]),
     /Stripe Secret Key must be a Stripe secret or restricted key/
@@ -275,7 +276,7 @@ test('settings collector rejects malformed Stripe secret values', async () => {
   assert.throws(
     () =>
       collectNonEmptyConfigs(invalidWebhookSecretData, [
-        { name: 'stripe_signing_secret' },
+        { name: 'stripe_signing_secret', type: 'password' },
       ]),
     /Stripe Signing Secret must be a Stripe webhook signing secret/
   );
@@ -287,8 +288,8 @@ test('settings collector rejects malformed Stripe secret values', async () => {
 
   assert.deepEqual(
     collectNonEmptyConfigs(validData, [
-      { name: 'stripe_secret_key' },
-      { name: 'stripe_signing_secret' },
+      { name: 'stripe_secret_key', type: 'password' },
+      { name: 'stripe_signing_secret', type: 'password' },
       { name: 'stripe_enabled' },
     ]),
     {
@@ -333,4 +334,22 @@ test('admin sidebar links to auth and email settings with matching locale shapes
   const settingsEn = JSON.parse(await readFile(settingsEnPath, 'utf8'));
   const settingsZh = JSON.parse(await readFile(settingsZhPath, 'utf8'));
   assert.deepEqual(collectKeyPaths(settingsEn), collectKeyPaths(settingsZh));
+});
+
+test('a cleared non-secret setting is written back as empty so it can be removed', async () => {
+  const source = await readFile(settingsPagePath, 'utf8');
+  const collectNonEmptyConfigs = await loadCollectNonEmptyConfigs(source);
+
+  const formData = new FormData();
+  formData.set('stripe_promotion_codes', '');
+  formData.set('google_client_secret', '');
+
+  // 非密钥字段回填了现有值，空 = 用户主动清空；否则作废的配置永远删不掉
+  assert.deepEqual(
+    collectNonEmptyConfigs(formData, [
+      { name: 'stripe_promotion_codes', type: 'text' },
+      { name: 'google_client_secret', type: 'password' },
+    ]),
+    { stripe_promotion_codes: '' }
+  );
 });

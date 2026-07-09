@@ -714,3 +714,132 @@ test('deleteModel removes catalog model relations even without sqlite foreign ke
   assert.deepEqual(capabilityRows, []);
   assert.deepEqual(categoryRows, []);
 });
+
+async function readGroupRow(id: string) {
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogGroup)
+    .where(eq(modules.schema.catalogGroup.id, id));
+  return row;
+}
+
+async function readListingRow(id: string) {
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogModelListing)
+    .where(eq(modules.schema.catalogModelListing.id, id));
+  return row;
+}
+
+async function seedSyncedGroupPricing(groupId: string, listingId: string) {
+  await modules
+    .db()
+    .update(modules.schema.catalogGroup)
+    .set({
+      newapiGroupRatioBps: 10000,
+      newapiGroupRatioDecimal: '1',
+      newapiGroupRatioRaw: '1.0',
+      pricingSyncStatus: 'synced',
+      pricingSyncedAt: new Date(),
+    })
+    .where(eq(modules.schema.catalogGroup.id, groupId));
+
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ priceDriftStatus: 'matched' })
+    .where(eq(modules.schema.catalogModelListing.id, listingId));
+}
+
+test('remapping a group to another New API group invalidates its cached ratio and listing prices', async () => {
+  const { group, listing } = await createModelListing('remap');
+  await seedSyncedGroupPricing(group.id, listing.id);
+
+  // 建 Key 与计费立刻走新映射，展示价却仍按旧倍率算 → 用户按页面价估算会扣错钱
+  await modules.service.updateGroup(group.id, {
+    slug: group.slug,
+    name: group.name,
+    newapiGroup: 'another-gateway',
+    allowCreateKey: true,
+    sortOrder: 30,
+    status: 'active',
+  });
+
+  const groupRow = await readGroupRow(group.id);
+  assert.equal(groupRow.newapiGroup, 'another-gateway');
+  assert.equal(groupRow.newapiGroupRatioBps, null);
+  assert.equal(groupRow.newapiGroupRatioDecimal, null);
+  assert.equal(groupRow.newapiGroupRatioRaw, null);
+  assert.equal(groupRow.pricingSyncStatus, 'unknown');
+  assert.equal(groupRow.pricingSyncedAt, null);
+
+  // 公开价转为「—」，直到重新跑一次价格同步确认
+  const listingRow = await readListingRow(listing.id);
+  assert.equal(listingRow.priceDriftStatus, 'needs_live_check');
+});
+
+test('editing a group without changing its New API mapping keeps synced pricing intact', async () => {
+  const { group, listing } = await createModelListing('rename-only');
+  await seedSyncedGroupPricing(group.id, listing.id);
+
+  await modules.service.updateGroup(group.id, {
+    slug: group.slug,
+    name: 'Renamed Group',
+    newapiGroup: 'rename-only-gateway',
+    allowCreateKey: true,
+    sortOrder: 31,
+    status: 'active',
+  });
+
+  const groupRow = await readGroupRow(group.id);
+  assert.equal(groupRow.name, 'Renamed Group');
+  assert.equal(groupRow.newapiGroupRatioBps, 10000);
+  assert.equal(groupRow.pricingSyncStatus, 'synced');
+
+  const listingRow = await readListingRow(listing.id);
+  assert.equal(listingRow.priceDriftStatus, 'matched');
+});
+
+test('deleting a model also removes its base price row', async () => {
+  const { model } = await createModelListing('delete-with-price');
+
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPrice)
+    .values({
+      id: 'price_delete_model',
+      modelId: model.id,
+      baseInputMicroUsd: 150000,
+      baseOutputMicroUsd: 600000,
+      source: 'manual',
+      syncStatus: 'synced',
+      driftStatus: 'matched',
+    });
+
+  await modules.service.deleteModel(model.id);
+
+  // 事务里显式删掉，不依赖 FK cascade —— libsql 运行时是否开启
+  // PRAGMA foreign_keys 从未验证过（OQ-1）
+  const prices = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogModelPrice)
+    .where(eq(modules.schema.catalogModelPrice.modelId, model.id));
+  assert.equal(prices.length, 0);
+});
+
+test('capability and category writes are transactional so a failure cannot clear them', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(
+    'src/features/api-catalog/server/catalog-service.ts',
+    'utf8'
+  );
+
+  // delete + insert 非事务时，insert 失败会把模型的能力清空 → 模型从公开页消失
+  for (const fn of ['setModelCapabilities', 'setModelCategories']) {
+    const body = source.split(`export async function ${fn}(`)[1].split('}\n')[0];
+    assert.match(body, /transaction/, `${fn} must run in a transaction`);
+  }
+});

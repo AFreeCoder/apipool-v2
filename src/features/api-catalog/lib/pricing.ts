@@ -53,7 +53,12 @@ export type NormalizedGroupRatio = NormalizedDecimal & {
 export type PricePresentation = {
   showPrice: boolean;
   showStrikethrough: boolean;
-  discountLabel?: string;
+  /**
+   * 折后价占原价的比例，单位 bps（9000 = 九折 = 立减 10%）。
+   * 只回传结构化数据，文案由页面按 locale 渲染——服务层产出的预格式化字符串
+   * 会把中文「折」直接漏到英文站。
+   */
+  discountBps?: number;
   note?: string;
 };
 
@@ -334,8 +339,8 @@ export function resolveEffectiveCatalogPrice(
     pricePresentation: {
       showPrice: true,
       showStrikethrough,
-      discountLabel: showStrikethrough
-        ? formatEffectiveDiscountLabel(effectiveInput, listInput)
+      discountBps: showStrikethrough
+        ? computeEffectiveDiscountBps(effectiveInput, listInput)
         : undefined,
       note: input.discountNote || undefined,
     },
@@ -380,12 +385,12 @@ function scaleMicroUsd(value: number | null | undefined, bps: number) {
   return Math.round((value * bps) / 10_000);
 }
 
-function formatEffectiveDiscountLabel(
+function computeEffectiveDiscountBps(
   effective: number | null,
   list: number | null
 ) {
   if (!effective || !list || effective >= list) return undefined;
-  return formatDiscountRate(Math.round((effective / list) * 10000));
+  return Math.round((effective / list) * 10000);
 }
 
 function supportsImageEndpoint(value: string[] | string | null | undefined) {
@@ -396,6 +401,6 @@ function supportsImageEndpoint(value: string[] | string | null | undefined) {
   );
 }
 
-function formatDecimal(value: number): string {
+export function formatDecimal(value: number): string {
   return String(Number(value.toFixed(4)));
 }

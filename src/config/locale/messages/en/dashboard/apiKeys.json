@@ -47,6 +47,15 @@
     "disableUnavailable": "Key cannot be disabled in this state",
     "cleanup": "Clean up failed key",
     "delete": "Delete key",
-    "deleteUnavailable": "Key cannot be deleted in this state"
+    "deleteUnavailable": "Key cannot be deleted in this state",
+    "confirmDelete": {
+      "title": "Delete this API key?",
+      "description": "This revokes the key immediately and cannot be undone. Any application still using it will start failing with 401.",
+      "confirm": "Delete key",
+      "cancel": "Cancel",
+      "cleanupTitle": "Clean up this key?",
+      "cleanupDescription": "This removes the failed key from your list and deletes it remotely if it exists. It cannot be undone.",
+      "cleanupConfirm": "Clean up"
+    }
   }
 }

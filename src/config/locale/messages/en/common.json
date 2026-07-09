@@ -45,7 +45,13 @@
     "back_to_sign_in": "Back to Sign In",
     "agree_terms": "By continuing, you agree to our <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>.",
     "region_notice_title": "Important Notice",
-    "region_notice": "{brand} does not provide services to users in mainland China. By continuing, you confirm that you are not located in mainland China and that your use of the service complies with the laws of your region. If you topped up by mistake from an unsupported region, contact {email} for a refund."
+    "region_notice": "{brand} does not provide services to users in mainland China. By continuing, you confirm that you are not located in mainland China and that your use of the service complies with the laws of your region. If you topped up by mistake from an unsupported region, contact {email} for a refund.",
+    "sign_in_required_fields": "Email and password are required.",
+    "sign_up_required_fields": "Name, email and password are required.",
+    "sign_in_failed": "Sign in failed. Check your email and password, then try again.",
+    "sign_up_failed": "Sign up failed. Please try again.",
+    "verify_email_required_field": "Email is required.",
+    "resend_verification_failed": "Could not send the verification email. Please try again."
   },
   "payment": {
     "choose_payment_method": "Choose Payment Method",

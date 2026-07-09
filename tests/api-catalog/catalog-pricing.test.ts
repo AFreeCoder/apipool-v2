@@ -145,7 +145,13 @@ test('effective price inherits matched New API group ratio for public presentati
   assert.equal(effective.effectiveOutputMicroUsd, 300000);
   assert.equal(effective.pricePresentation.showPrice, true);
   assert.equal(effective.pricePresentation.showStrikethrough, true);
-  assert.equal(effective.pricePresentation.discountLabel, '5 折 (50%)');
+  // 折扣以结构化 bps 回传，由页面按 locale 渲染；服务层不产出任何语言的文案
+  assert.equal(effective.pricePresentation.discountBps, 5000);
+  assert.equal(
+    (effective.pricePresentation as any).discountLabel,
+    undefined,
+    'pricePresentation must not carry a pre-formatted, single-language label'
+  );
   assert.equal(effective.pricePresentation.note, 'Official group ratio');
 });
 
@@ -164,7 +170,7 @@ test('unmatched listing multiplier remains hidden from public confirmed pricing'
   assert.equal(effective.publicConfirmed, false);
   assert.equal(effective.pricePresentation.showPrice, false);
   assert.equal(effective.pricePresentation.showStrikethrough, false);
-  assert.equal(effective.pricePresentation.discountLabel, undefined);
+  assert.equal(effective.pricePresentation.discountBps, undefined);
   assert.equal(effective.pricePresentation.note, undefined);
 });
 
@@ -218,4 +224,56 @@ test('quota spend uses the same effective micro-USD integers as public pricing',
     }),
     112500
   );
+});
+
+test('public pricing never emits a Chinese-only discount label', async () => {
+  const { readFile } = await import('node:fs/promises');
+
+  // /models 是核心营销页；折扣标签一旦硬编码「折」，英文站会直接显示中文
+  const page = await readFile(
+    'src/app/[locale]/(landing)/models/page.tsx',
+    'utf8'
+  );
+  assert.doesNotMatch(page, /discountLabel/);
+  assert.match(page, /discountBps/);
+
+  for (const locale of ['en', 'zh']) {
+    const messages = JSON.parse(
+      await readFile(
+        `src/config/locale/messages/${locale}/pages/models.json`,
+        'utf8'
+      )
+    );
+    assert.ok(
+      messages.table?.discount,
+      `${locale}/pages/models.json must define table.discount`
+    );
+  }
+
+  const en = JSON.parse(
+    await readFile('src/config/locale/messages/en/pages/models.json', 'utf8')
+  );
+  assert.doesNotMatch(
+    en.table.discount,
+    /折/,
+    'the English discount label must not contain Chinese characters'
+  );
+});
+
+test('公开价保留有效小数，低价模型不被 toFixed(2) 抹平', async () => {
+  const { formatMicroUsdPerMillion } = await import(
+    '@/features/api-catalog/lib/catalog'
+  );
+
+  // toFixed(2) 会把 $0.0375 显示成 $0.04（+6.7%）、$0.075 显示成 $0.07（−6.7%），
+  // 与账单口径对不上。flash / mini 档常见就是这些定价。
+  assert.equal(formatMicroUsdPerMillion(37500), '$0.0375');
+  assert.equal(formatMicroUsdPerMillion(75000), '$0.075');
+  assert.equal(formatMicroUsdPerMillion(127500), '$0.1275');
+
+  // 常规价格仍保留两位，不因此变成 $0.15 → $0.15
+  assert.equal(formatMicroUsdPerMillion(150000), '$0.15');
+  assert.equal(formatMicroUsdPerMillion(600000), '$0.60');
+  assert.equal(formatMicroUsdPerMillion(3000000), '$3.00');
+  assert.equal(formatMicroUsdPerMillion(0), '$0.00');
 });

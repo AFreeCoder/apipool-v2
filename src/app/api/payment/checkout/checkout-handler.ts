@@ -14,13 +14,17 @@ import { getUserInfo } from '@/shared/models/user';
 import { getPaymentService } from '@/shared/services/payment';
 import type { PricingItem } from '@/shared/types/blocks/pricing';
 
+/**
+ * 注意：不接受客户端 metadata。支付 session 的 metadata 由服务端独立构造，
+ * 其中 order_no 是 webhook 回查订单的唯一依据（notify/[provider]/route.ts）。
+ * 一旦允许客户端写入，攻击者可用小额 checkout 覆盖 order_no 结算大额订单。
+ */
 type CheckoutRequestBody = {
   product_id?: string;
   custom_amount_usd?: unknown;
   currency?: string;
   locale?: string;
   payment_provider?: string;
-  metadata?: Record<string, unknown>;
 };
 
 export type CheckoutHandlerDeps = {
@@ -81,14 +85,8 @@ export async function createTopUpCheckoutResponse(input: {
   deps?: Partial<CheckoutHandlerDeps>;
 }) {
   const deps = { ...defaultDeps, ...(input.deps || {}) };
-  const {
-    product_id,
-    custom_amount_usd,
-    currency,
-    locale,
-    payment_provider,
-    metadata,
-  } = input.body;
+  const { product_id, custom_amount_usd, currency, locale, payment_provider } =
+    input.body;
 
   let checkout;
   try {
@@ -205,10 +203,11 @@ export async function createTopUpCheckoutResponse(input: {
       app_name: configs.app_name,
       order_no: orderNo,
       user_id: user.id,
-      ...(metadata || {}),
     },
     successUrl: `${configs.app_url}/api/payment/callback?order_no=${orderNo}`,
-    cancelUrl: `${callbackBaseUrl}/pricing`,
+    // /pricing 是 redirect 到 /models 的占位桩：取消支付后落在模型列表页会
+    // 脱离充值上下文。回到账单页并带上状态，便于页面给出提示。
+    cancelUrl: `${callbackBaseUrl}/dashboard/billing?checkout=canceled`,
   };
 
   // checkout with predefined product

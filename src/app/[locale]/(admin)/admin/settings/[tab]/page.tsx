@@ -36,9 +36,19 @@ function toFormFieldType(type: string): FormField['type'] {
     : 'text';
 }
 
+/**
+ * 从表单收集要写入的配置。
+ *
+ * 密钥字段（type='password'）总是渲染为空白（见下方 `value: isPassword ? ''`），
+ * 所以「空」意味着「没改」，必须跳过——否则每次保存设置都会抹掉 stripe_secret_key
+ * 之类的已存密钥。
+ *
+ * 其余字段会回填现有值，「空」意味着「用户清空了它」，必须写入空串，
+ * 否则作废的配置项（如已停用的 promotion code）永远无法从 UI 删除。
+ */
 export function collectNonEmptyConfigs(
   data: FormData,
-  settings: Pick<Setting, 'name'>[]
+  settings: Pick<Setting, 'name' | 'type'>[]
 ) {
   const configs: Record<string, string> = {};
   const validators: Record<
@@ -65,6 +75,9 @@ export function collectNonEmptyConfigs(
 
     const trimmedValue = value.trim();
     if (!trimmedValue) {
+      // 密钥字段空白 = 未修改；其余字段空白 = 主动清空
+      if (setting.type === 'password') continue;
+      configs[setting.name] = '';
       continue;
     }
 

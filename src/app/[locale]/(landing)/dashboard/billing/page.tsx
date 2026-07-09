@@ -17,6 +17,10 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import enBillingMessages from '@/config/locale/messages/en/dashboard/billing.json';
 import zhBillingMessages from '@/config/locale/messages/zh/dashboard/billing.json';
+import {
+  formatConsoleDateTime,
+  formatConsoleNumber,
+} from '@/features/api-console/lib/datetime';
 import { getUserInfo } from '@/shared/models/user';
 
 const EMPTY_USAGE: PortalUsageView = {
@@ -69,10 +73,17 @@ export function mapApplyStatus(locale: string, ledgerStatus: string) {
 
 export default async function BillingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ checkout?: string }>;
 }) {
   const { locale } = await params;
+  // 支付取消/失败会带 ?checkout=canceled|failed 跳回这里；没有提示的话
+  // 用户只会看到余额没变，不知道发生了什么。
+  const { checkout } = await searchParams;
+  const checkoutNotice =
+    checkout === 'canceled' || checkout === 'failed' ? checkout : null;
   setRequestLocale(locale);
   const pageT = await getTranslations({
     locale,
@@ -113,6 +124,14 @@ export default async function BillingPage({
 
   return (
     <div className="space-y-8">
+      {checkoutNotice ? (
+        <div
+          role="status"
+          className="border-border bg-muted text-muted-foreground rounded-xl border px-4 py-3 text-sm"
+        >
+          {pageT(`checkoutNotice.${checkoutNotice}`)}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -175,7 +194,7 @@ export default async function BillingPage({
                     className="border-b last:border-b-0"
                   >
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {new Date(entry.createdAt).toLocaleString()}
+                      {formatConsoleDateTime(entry.createdAt, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatLedgerUsdAmount(entry.amountUsd)}
@@ -244,7 +263,7 @@ export default async function BillingPage({
                 {charges.map((charge) => (
                   <tr key={charge.id} className="border-b last:border-b-0">
                     <td className="text-muted-foreground px-4 py-2.5">
-                      {new Date(charge.createdAt).toLocaleString()}
+                      {formatConsoleDateTime(charge.createdAt, locale)}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {charge.keyMasked}
@@ -253,7 +272,7 @@ export default async function BillingPage({
                       {charge.modelId}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {charge.tokenCount.toLocaleString()}
+                      {formatConsoleNumber(charge.tokenCount, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatUsdAmount(charge.spendUsd)}

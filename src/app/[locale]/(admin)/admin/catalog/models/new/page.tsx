@@ -45,7 +45,9 @@ export default async function CatalogModelNewPage({
 
   const t = await getTranslations('admin.catalog');
   const createFailedMessage = t('errors.createFailed');
-  const successMessage = t('models.new.success');
+  // 保存模型会把该模型所有 listing 的 priceDriftStatus 打回 needs_live_check，
+  // 公开价随即隐藏为「—」。不提示的话运营改个名字就以为没事发生。
+  const successMessage = `${t('models.new.success')} ${t('messages.priceHiddenAfterSave')}`;
   const invalidPriceMessage = t('errors.invalidPrice');
   const [vendors, groups, categories, capabilities, statuses] =
     await Promise.all([

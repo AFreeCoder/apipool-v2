@@ -247,9 +247,12 @@ export function SignUser({
         <div className="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
           <Button
             asChild
+            // docs/05 §5：每屏主按钮 ≤1。首屏已有 hero CTA，
+            // header 的 Sign In 让出视觉权重。
+            variant="outline"
             size={signButtonSize}
             className={cn(
-              'border-foreground/10 ml-4 cursor-pointer ring-0',
+              'ml-4 cursor-pointer ring-0',
               isScrolled && 'lg:hidden'
             )}
             onClick={() => setIsShowSignModal(true)}

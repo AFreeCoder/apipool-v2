@@ -438,8 +438,9 @@ function toPortalUsageViewFromSnapshot(
 ): PortalUsageView {
   return {
     summary: {
-      balanceUsd: snapshot.balanceUsd ?? 0,
-      quotaRemaining: snapshot.quotaRemaining ?? 0,
+      // snapshot 里没有余额 = 从未成功同步过，保持 undefined 让 UI 显示「—」
+      balanceUsd: snapshot.balanceUsd ?? undefined,
+      quotaRemaining: snapshot.quotaRemaining ?? undefined,
       requestCount: snapshot.requestCount,
       inputTokens: snapshot.inputTokens,
       outputTokens: snapshot.outputTokens,
@@ -457,10 +458,15 @@ function emptyPortalUsageView(
   status: PortalUsageView['summary']['status'] = 'empty',
   errorMessage?: string
 ): PortalUsageView {
+  // 同步失败 != 余额为零：我们根本没读到远端余额。写 0 会让控制台显示
+  // $0.00 并误弹「余额不足，去充值」（isLowBalance 对 undefined 不告警）。
+  // status='empty' 是「从未同步过的新用户」，其余额确实是 0，提示充值正确。
+  const unknownBalance = status === 'failed' || status === 'stale';
+
   return {
     summary: {
-      balanceUsd: 0,
-      quotaRemaining: 0,
+      balanceUsd: unknownBalance ? undefined : 0,
+      quotaRemaining: unknownBalance ? undefined : 0,
       requestCount: 0,
       inputTokens: 0,
       outputTokens: 0,

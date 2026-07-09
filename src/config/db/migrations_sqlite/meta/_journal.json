@@ -78,6 +78,13 @@
       "when": 1783526400000,
       "tag": "0010_usage_log_cache_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1783572397378,
+      "tag": "0011_ledger_remote_attempt_marker",
+      "breakpoints": true
     }
   ]
 }

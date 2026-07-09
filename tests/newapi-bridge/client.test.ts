@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   createNewApiClient,
+  isQuotaAdjustmentReconciliationError,
   NewApiBridgeError,
 } from '@/features/newapi-bridge/server/client';
 
@@ -1299,5 +1300,65 @@ test('malformed envelope maps to malformed_response', async () => {
     () => client.getQuota(USER),
     (error: any) =>
       error instanceof NewApiBridgeError && error.code === 'malformed_response'
+  );
+});
+
+test('adjustQuota escalates a failed topup to reconciliation so the code is never re-issued', async () => {
+  // 兑换码一旦生成，远端就可能已被兑换。此后任何失败都必须带着码值升级为
+  // 人工核对，否则重试会生成第二张码并双倍到账（P0-7 姊妹问题 P0-1）。
+  const { client } = createMockedClient({
+    'POST /api/redemption/': () => ok(['code-abc']),
+    'POST /api/user/topup': () => fail('gateway timeout'),
+  });
+
+  await assert.rejects(
+    () =>
+      client.adjustQuota({
+        user: USER,
+        amountUsd: 1,
+        reason: 'recharge',
+        reference: 'recharge:order_1',
+      }),
+    (error: any) =>
+      isQuotaAdjustmentReconciliationError(error) && error.changeId === 'code-abc'
+  );
+});
+
+test('adjustQuota keeps a redemption creation failure retriable because nothing was granted', async () => {
+  const { client } = createMockedClient({
+    'POST /api/redemption/': () => fail('redemption service down'),
+  });
+
+  await assert.rejects(
+    () =>
+      client.adjustQuota({
+        user: USER,
+        amountUsd: 1,
+        reason: 'recharge',
+        reference: 'recharge:order_2',
+      }),
+    (error: any) =>
+      error instanceof NewApiBridgeError &&
+      !isQuotaAdjustmentReconciliationError(error)
+  );
+});
+
+test('adjustQuota escalates a malformed redemption response because the code may already exist remotely', async () => {
+  // POST 已返回 = 远端确实创建过兑换码；响应解析失败不代表远端没发生副作用。
+  // 标成可重试的 failed 会让 admin 重试再造一张码。
+  const { client } = createMockedClient({
+    'POST /api/redemption/': () => ok([]),
+  });
+
+  await assert.rejects(
+    () =>
+      client.adjustQuota({
+        user: USER,
+        amountUsd: 1,
+        reason: 'recharge',
+        reference: 'recharge:order_3',
+      }),
+    (error: any) =>
+      isQuotaAdjustmentReconciliationError(error) && error.changeId === ''
   );
 });

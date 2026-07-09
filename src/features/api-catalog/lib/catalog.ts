@@ -125,8 +125,18 @@ export function buildModelFilterHref(
   return query ? `/models?${query}` : '/models';
 }
 
+// 至少两位小数（$0.15、$3.00 这类常规价保持原样），但不抹平更精细的定价：
+// toFixed(2) 会把 $0.0375 显示成 $0.04（+6.7%）、$0.075 显示成 $0.07（−6.7%），
+// 与账单口径对不上。flash / mini 档常见就是这些价位。
 export function formatMicroUsdPerMillion(micro: number): string {
-  return `$${(micro / 1_000_000).toFixed(2)}`;
+  const dollars = micro / 1_000_000;
+  const precise = Number(dollars.toFixed(4));
+
+  return `$${precise.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+    useGrouping: false,
+  })}`;
 }
 
 export const publicModels: ApiModel[] = [

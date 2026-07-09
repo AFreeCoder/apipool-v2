@@ -3,6 +3,7 @@ import {
   formatMicroUsdPerMillion,
   parseModelFilters,
 } from '@/features/api-catalog/lib/catalog';
+import { formatDecimal } from '@/features/api-catalog/lib/pricing';
 import type { ListingRow } from '@/features/api-catalog/lib/types';
 import {
   getFilterDimensions,
@@ -11,6 +12,7 @@ import {
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
+import { getMetadata } from '@/shared/lib/seo';
 import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
@@ -36,6 +38,13 @@ function localizeCatalogDimension(
 ) {
   return messages[dimension]?.[slug] ?? fallback;
 }
+
+// /models 是唯一核心可索引的营销页。没有页面级 metadata 时 canonical 回退到
+// 站点根，搜索引擎会把它归并到首页，社交分享也拿不到页面标题。
+export const generateMetadata = getMetadata({
+  metadataKey: 'pages.models.metadata',
+  canonicalUrl: '/models',
+});
 
 export default async function ModelsPage({
   params,
@@ -192,7 +201,17 @@ export default async function ModelsPage({
               </Button>
             </div>
           ) : (
-            <ModelsTable listings={localizedListings} labels={t.raw('table')} />
+            <ModelsTable
+              listings={localizedListings}
+              labels={t.raw('table')}
+              formatDiscount={(discountBps) =>
+                t('table.discount', {
+                  fold: formatDecimal(discountBps / 1000),
+                  percent: formatDecimal(discountBps / 100),
+                  off: formatDecimal((10000 - discountBps) / 100),
+                })
+              }
+            />
           )}
           <p className="text-muted-foreground mt-3 text-xs">
             {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
@@ -232,9 +251,13 @@ function FilterLink({
 function ModelsTable({
   listings,
   labels,
+  formatDiscount,
 }: {
   listings: ListingRow[];
   labels: Record<string, string>;
+  // 折扣文案按 locale 渲染：中文是「9 折 (90%)」，英文是「10% off」。
+  // 服务层只回传 discountBps，绝不产出预格式化的单语字符串。
+  formatDiscount: (discountBps: number) => string;
 }) {
   if (listings.length === 0) return null;
 
@@ -372,11 +395,13 @@ function ModelsTable({
                       >
                         {listing.statusName}
                       </Badge>
-                      {listing.pricePresentation?.discountLabel && (
+                      {listing.pricePresentation?.discountBps ? (
                         <div className="text-muted-foreground mt-1 text-xs">
-                          {listing.pricePresentation.discountLabel}
+                          {formatDiscount(
+                            listing.pricePresentation.discountBps
+                          )}
                         </div>
-                      )}
+                      ) : null}
                       {listing.pricePresentation?.note && (
                         <div className="text-muted-foreground mt-1 text-xs">
                           {listing.pricePresentation.note}

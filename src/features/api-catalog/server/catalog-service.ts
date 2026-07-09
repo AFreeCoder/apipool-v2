@@ -446,12 +446,43 @@ export async function updateGroup(
   const current = await getGroupById(id);
   assertImmutableSlug(current?.slug, patch.slug, 'group');
 
-  const [result] = await db()
-    .update(catalogGroup)
-    .set(patch)
-    .where(eq(catalogGroup.id, id))
-    .returning();
-  return result;
+  // 改了 New API 映射 = 建 Key / 计费立刻走新分组，但缓存的倍率仍是旧分组的。
+  // 不失效就会让 /models 按旧倍率展示价格，与实际扣费不符。
+  // 失效后公开价自动转为「—」，直到重新跑一次价格同步确认（hide-until-confirmed）。
+  const remapped =
+    patch.newapiGroup !== undefined &&
+    patch.newapiGroup !== current?.newapiGroup;
+
+  if (!remapped) {
+    const [result] = await db()
+      .update(catalogGroup)
+      .set(patch)
+      .where(eq(catalogGroup.id, id))
+      .returning();
+    return result;
+  }
+
+  return await db().transaction(async (tx: any) => {
+    const [result] = await tx
+      .update(catalogGroup)
+      .set({
+        ...patch,
+        newapiGroupRatioBps: null,
+        newapiGroupRatioDecimal: null,
+        newapiGroupRatioRaw: null,
+        pricingSyncStatus: 'unknown',
+        pricingSyncedAt: null,
+      })
+      .where(eq(catalogGroup.id, id))
+      .returning();
+
+    await tx
+      .update(catalogModelListing)
+      .set({ priceDriftStatus: 'needs_live_check' })
+      .where(eq(catalogModelListing.groupId, id));
+
+    return result;
+  });
 }
 
 export async function deleteGroup(id: string): Promise<void> {
@@ -657,6 +688,8 @@ export async function updateModel(
 
 export async function deleteModel(id: string): Promise<void> {
   await db().transaction(async (tx: any) => {
+    // 显式删净所有子表，事务自包含、不依赖 FK cascade 的开关状态
+    await tx.delete(catalogModelPrice).where(eq(catalogModelPrice.modelId, id));
     await tx
       .delete(catalogModelListing)
       .where(eq(catalogModelListing.modelId, id));
@@ -710,18 +743,24 @@ export async function deleteListing(id: string): Promise<void> {
   await db().delete(catalogModelListing).where(eq(catalogModelListing.id, id));
 }
 
+// delete + insert 必须同事务：insert 失败会把模型的能力/分类清空，
+// 而缺能力的模型会从公开页与建 Key 候选里静默消失。
 export async function setModelCapabilities(
   modelId: string,
   capabilityIds: string[]
 ): Promise<void> {
-  await syncModelCapabilities(db(), modelId, capabilityIds);
+  await db().transaction(async (tx: any) => {
+    await syncModelCapabilities(tx, modelId, capabilityIds);
+  });
 }
 
 export async function setModelCategories(
   modelId: string,
   categoryIds: string[]
 ): Promise<void> {
-  await syncModelCategories(db(), modelId, categoryIds);
+  await db().transaction(async (tx: any) => {
+    await syncModelCategories(tx, modelId, categoryIds);
+  });
 }
 
 export async function upsertModelAdminConfig(

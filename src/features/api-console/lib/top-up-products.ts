@@ -158,10 +158,14 @@ export function resolveTopUpCheckout(input: {
   });
   const interval = (pricingItem.interval ||
     PaymentInterval.ONE_TIME) as PaymentInterval;
-  const type =
-    interval === PaymentInterval.ONE_TIME
-      ? PaymentType.ONE_TIME
-      : PaymentType.SUBSCRIPTION;
+
+  // 充值只接受一次性套餐。applyApipoolRecharge 对 SUBSCRIPTION 直接跳过，
+  // 一旦 pricing.json 里出现带 interval 的套餐，用户会按月扣钱而 quota 一分不加。
+  if (interval !== PaymentInterval.ONE_TIME) {
+    throw new Error('top-up products must be one-time purchases');
+  }
+
+  const type = PaymentType.ONE_TIME;
 
   return {
     productId: pricingItem.product_id,
