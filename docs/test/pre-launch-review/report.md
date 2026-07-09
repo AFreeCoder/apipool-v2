@@ -335,6 +335,44 @@ Codex 判定 `needs-attention / no-ship`，1 条 critical：`recharge.ts` 的 re
 
 **顺带印证的已知问题**：有效价 $0.075 在页面上显示为 `$0.07`，即 P1-6（`toFixed(2)` 误差 ±7%），仍待修。
 
+### 第三批修复（2026-07-09）：全部 P1 + 多数 P2
+
+**19 项 P1 全部完成**，P2 完成 17 项、如实标注 19 项未做及原因。473 tests pass / tsc 0 error / eslint clean。逐条回链见 `issues.md`。
+
+| 批次 | 提交 | 覆盖 |
+| --- | --- | --- |
+| 控制台体验 | `8cecd4b` | P1-9~P1-13 + **开放重定向** |
+| 支付 | `532f507` | P1-2、P1-3 + 4 项 P2 |
+| 目录与定价 | `29f29a7` | P1-4~P1-8 + 4 项 P2 |
+| SEO 与安全 | `36ca198` | P1-16~P1-19 + hreflang / sitemap |
+| i18n | `1b5e8b5` | P1-14、P1-15 |
+| 视觉与配置 | `29d121b` | 9 项 P2 |
+
+#### 报告建议是错的、按实际情况改了的三处
+
+1. **P1-18「is-email-verified 加鉴权」——不能加。** 该端点恰恰在「当前浏览器没有 session」时被调用，用于发现用户在另一个浏览器完成了邮箱验证。加登录门槛会直接打断这个流程。改为按客户端 IP 限流（1s），把批量枚举速度压下来。
+2. **P1-9「failed/无 snapshot 一律 undefined」——要分情况。** `status='empty'` 是「从未同步过的新用户」，其余额确实是 $0，显示 $0.00 并提示充值是**正确**的产品行为；只有 `failed`/`stale`（我们试过但没读到）才该显示「—」且不告警。一刀切会让新用户看到「—」。
+3. **P2「admin settings 空值即清空」——会抹掉所有密钥。** 密钥字段总是渲染为空白（`value: isPassword ? '' : ...`），空值意味着「未修改」。只有回填了现有值的非密钥字段才能把空当「清空」。`collectNonEmptyConfigs` 的跳过逻辑是有意的保护，不是缺陷。
+
+#### 实现受阻于外部依赖的技术选择
+
+- **P1-17 OG 图不能用 `opengraph-image` 文件约定**：`[locale]/layout.tsx` 的 `generateMetadata` 定义了 `openGraph` 对象，会整体覆盖文件约定注入的图片（实测：文件返回 200 但 head 里没有 `og:image`）。改用 `seo.ts` 内的 `DEFAULT_PREVIEW_IMAGE` 兜底，同时不动 `app_preview_image` 默认值——`brand-assets.test.ts` 明确要求默认配置不指向占位品牌图。
+- **P1-4 建 Key 分组过滤不能排除 `pricingSyncStatus='unknown'`**：初始 seed 的分组就是 `unknown`，排除它会让上线当天没人能建 Key。只排除空映射与已证明远端不存在的 `missing_remote_group`。
+
+#### 修复过程中新发现
+
+- **开放重定向（报告未发现）**：`sign-in`/`sign-up` 各自复制的 `safeInternalPath` 只判首字符是否为 `/`，`//evil.com` 会通过；传给客户端组件的 `callbackUrl` 完全未净化。已抽出共享 helper 收敛（拒绝协议相对 URL、反斜杠变体、控制字符）。
+- **OQ-1 实证关闭**：libsql 默认 `PRAGMA foreign_keys = 1`，插入孤儿行被 `SQLITE_CONSTRAINT_FOREIGNKEY` 拒绝。此前「FK 未验证、靠软删除规避」的假设不成立。
+- **第 3~5 条固化缺陷的测试**：本轮又遇到三条——`without smoke toggle`、`fields.smokeTested === undefined`（P1-5），以及 usage sync 的英文兜底断言（P1-15）。加上前两轮的 `without Caddy auth`、checkout metadata 透传、`returns zero balance instead of a dash`，**共五条测试把缺陷写成了期望**。修复时都必须先读懂它们守护的真实意图，再判断是改代码还是改测试。
+
+#### 未做的 19 项 P2 及原因（详见 `issues.md`）
+
+- **阻塞于真实 New API 验证**（3 项）：负向调额的 read-modify-write 与部分字段 PUT、Key 禁用后重新启用。本地无实例，盲改会打断现有可用功能。
+- **需产品决策**（3 项）：法律页是否允许收录、复制掩码 Key 按钮去留、DB 驱动文案是否双语化。
+- **属功能开发而非缺陷修复**（4 项）：对账/重试 admin 界面、忘记密码接 Resend、分组列表加列、字典删除引用明细。
+- **需设计或有回归风险**（4 项）：dashboard 同步新鲜度策略、key 状态写库时机、死翻译资产清理（themes/default 多个 block 引用）、ShipAny credits 停写。
+- **埋雷非现行故障**（5 项）：对账 `creditsAmount<=0` 盲区与 LIMIT 100、smoke 负数、admin 详情页 lazy provision、掩码格式不一致。
+
 ### 下一批建议
 
-**全部 P0 已清零**（2026-07-09）。下一批建议：P1-9~P1-13（余额误显 $0.00 / 删除确认 / dashboard 三态 / not-found / callbackUrl）打包为"控制台体验补齐"分支；P1-14/15 错误码化一次做完；P1-2/P1-3（webhook 事件与 PayPal 验签）随支付批次；P1-17（OG 图）与正式 logo 随品牌资产批次。
+**全部 P0 与全部 P1 已清零**（2026-07-09）。剩余工作：① 19 项 P2（原因见上，多数阻塞于真实环境或需产品决策）；② `issues.md` 的上线前人工检查清单，其中最要紧的是 Caddy 三子域可达面实测、Stripe 测试模式跑一笔完整充值复验 webhook 守卫、以及给 `reconciliation_required` 接告警；③ 正式品牌资产替换占位 favicon 与 OG 图。

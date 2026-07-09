@@ -28,109 +28,114 @@
 ## 发布门禁 · 品牌资产
 
 - [x] **P0-5↓ 全站无 favicon** —— 2026-07-09 已修复，回链提交 `d4daa72 feat(brand): ship a favicon so the browser tab carries the brand (P0-5)`。用 App Router 文件约定补 `src/app/icon.svg`（品牌绿 #216d51 终端提示符）+ `apple-icon.png`。**已 live 复验**：head 注入 `rel="icon"` 与 `rel="apple-touch-icon"`，两个资源均 200。**遗留**：这是占位品牌资源，正式设计到位后替换。
-- [ ] P1-17 无 OG / Twitter 分享图
+- [x] P1-17 无 OG / Twitter 分享图 —— 已修复（`36ca198`）：public/og.png + seo.ts DEFAULT_PREVIEW_IMAGE。**不能用 opengraph-image 文件约定**——[locale]/layout 的 generateMetadata 定义了 openGraph 会整体覆盖它（实测证实）
 - [ ] 正式 logo（当前仍缺品牌资源）
 
 ## P1 高性价比
 
 ### 支付
 
-- [ ] P1-2 未知 webhook 事件返回 500——**三个 provider 均有此问题**（`stripe.ts:359-373`、`paypal.ts:782`、`creem.ts:317`）。统一策略：验签失败仍拒绝；验签通过但业务不处理的事件返回 200 skip。
-- [ ] P1-3 PayPal sandbox 放行无签名 webhook——**条件升级**：若上线启用 PayPal 则升 P0；保持 `paypal_enabled=false` 则 P1 + 人工检查项充分。
+- [x] P1-2 未知 webhook 事件返回 500——**三个 provider 均有此问题**（`stripe.ts:359-373`、`paypal.ts:782`、`creem.ts:317`）。统一策略：验签失败仍拒绝；验签通过但业务不处理的事件返回 200 skip。 —— 已修复（`532f507`）：三个 provider 统一用 UnhandledPaymentEventError 哨兵，验签通过但不处理的事件回 200 skip；验签失败仍 500
+- [x] P1-3 PayPal sandbox 放行无签名 webhook——**条件升级**：若上线启用 PayPal 则升 P0；保持 `paypal_enabled=false` 则 P1 + 人工检查项充分。 —— 已修复（`532f507`）：改为运行时环境（isProductionRuntime）一票否决，配置项只能收紧不能放松
 
 ### 模型目录与定价
 
-- [ ] P1-4 未配置映射的分组进建 Key 下拉、提交必失败——修复不能只判 `newapiGroup != ''`，还须要求远端组存在且 pricing sync 状态可信
-- [ ] P1-5 smokeTested 开关被 ede2dc4 移除，新模型进不了 smoke 候选
-- [ ] P1-6 /models 低价模型 `toFixed(2)` 误差 ±7%
-- [ ] P1-7 模型保存即把公开价打回隐藏且无提示
-- [ ] P1-8 新增分组折扣撞唯一索引报原始 SQLite 错误
+- [x] P1-4 未配置映射的分组进建 Key 下拉、提交必失败——修复不能只判 `newapiGroup != ''`，还须要求远端组存在且 pricing sync 状态可信 —— 已修复（`29f29a7`）：加 `newapiGroup != ''` + 排除 `missing_remote_group`；`unknown` 必须放行，否则上线当天没人能建 Key
+- [x] P1-5 smokeTested 开关被 ede2dc4 移除，新模型进不了 smoke 候选 —— 已修复（`29f29a7`）：新建/编辑两个 listing 表单恢复开关；两条固化该缺陷的测试已改写
+- [x] P1-6 /models 低价模型 `toFixed(2)` 误差 ±7% —— 已修复（`29f29a7`）：改最少两位、最多四位有效小数
+- [x] P1-7 模型保存即把公开价打回隐藏且无提示 —— 已修复（`29f29a7`）：成功消息附加「需运行价格同步」
+- [x] P1-8 新增分组折扣撞唯一索引报原始 SQLite 错误 —— 已修复（`29f29a7`）：捕获 uniq_listing_model_group，抛已翻译提示
 
 ### 控制台体验
 
-- [ ] P1-9 桥接失败余额显示 $0.00 并误弹"余额不足"（balanceUsd 应保持 undefined）
-- [ ] P1-10 删除 API Key 无二次确认
-- [ ] P1-11 dashboard 路由缺 `loading.tsx` / `error.tsx`——注：overview/billing 已用 `Promise.all`，问题是缺加载/错误边界，慢远端调用仍会白屏或落默认英文错误页
-- [ ] P1-12 缺 `[locale]/not-found.tsx`，404 为无导航的裸英文页
-- [ ] P1-13 未登录进控制台，登录后丢回首页（callbackUrl 不透传）
-- [ ] P1-14 登录/注册/验证邮箱 toast 硬编码英文
-- [ ] P1-15 桥接/业务错误英文覆盖 zh 词条（应错误码化，与 P1-14 一并改造）
+- [x] P1-9 桥接失败余额显示 $0.00 并误弹"余额不足"（balanceUsd 应保持 undefined） —— 已修复（`8cecd4b`）：按 status 区分：failed/stale → undefined（显示「—」不告警）；empty 是新用户，$0 + 提示充值是正确的
+- [x] P1-10 删除 API Key 无二次确认 —— 已修复（`8cecd4b`）：用既有 Radix Dialog，清理态与删除态文案分开
+- [x] P1-11 dashboard 路由缺 `loading.tsx` / `error.tsx`——注：overview/billing 已用 `Promise.all`，问题是缺加载/错误边界，慢远端调用仍会白屏或落默认英文错误页 —— 已修复（`8cecd4b`）：骨架屏 + 双语 error.tsx
+- [x] P1-12 缺 `[locale]/not-found.tsx`，404 为无导航的裸英文页 —— 已修复（`8cecd4b`）：SiteShell + 双语 404
+- [x] P1-13 未登录进控制台，登录后丢回首页（callbackUrl 不透传） —— 已修复（`8cecd4b`）：用中间件的 x-pathname 透传实际子路径；**顺带修复开放重定向**（`//evil.com` 通过旧 safeInternalPath）
+- [x] P1-14 登录/注册/验证邮箱 toast 硬编码英文 —— 已修复（`1b5e8b5`）：五个组件接入 common.sign，加守卫测试禁止再出现
+- [x] P1-15 桥接/业务错误英文覆盖 zh 词条（应错误码化，与 P1-14 一并改造） —— 已修复（`1b5e8b5`）：getPublicUsageSyncErrorMessage 内部错误返回 undefined，展示权交回 i18n；四条固化英文兜底的测试已改写
 
 ### SEO 与安全加固
 
-- [ ] P1-16 /models canonical 指向站点根、无页面级 metadata
-- [ ] P1-18 `is-email-verified` 匿名可探测——泄漏面为"某邮箱是否为已验证用户"（不存在与未验证同返 false），非完整用户枚举；仍需限流 + 无差别响应
-- [ ] P1-19 checkout 等敏感路由无速率限制（Caddy 边缘亦无兜底）
+- [x] P1-16 /models canonical 指向站点根、无页面级 metadata —— 已修复（`36ca198`）：generateMetadata + en/zh metadata 词条
+- [x] P1-18 `is-email-verified` 匿名可探测——泄漏面为"某邮箱是否为已验证用户"（不存在与未验证同返 false），非完整用户枚举；仍需限流 + 无差别响应 —— 已修复（`36ca198`）：**不能加登录门槛**——verify-email 页正是在无 session 时调它检测跨浏览器验证。改为按 IP 限流（1s）
+- [x] P1-19 checkout 等敏感路由无速率限制（Caddy 边缘亦无兜底） —— 已修复（`36ca198`）：checkout 加 2s 最小间隔
 
 ## P2 建议
 
 ### 资金链路防御纵深
 
-- [ ] 管理员负向调额是 read-modify-write 覆盖，窗口期内用户消费会被抹回
-- [ ] 负向调额 PUT 仅发 `{id, quota}`，与 docs/04:67 契约警告矛盾（待验证远端行为）
-- [ ] 对账盲区：`creditsAmount<=0` 过滤会让漏配 credits 的订单静默消失
-- [ ] 对账 LIMIT 100 会让老差异滑出窗口
-- [ ] `resolveTopUpCheckout` 未拒绝非 one-time interval（订阅暗门：续费只发 ShipAny credits、quota 不加）
-- [ ] ShipAny credits 双轨残留：每单仍写无人消费的 credit 表
-- [ ] 支付取消/失败落地 `/pricing`（→ redirect /models），脱离上下文且无提示
-- [ ] `adjust-quota` 金额未限整数、无上限（10.5 会破坏 amountUsd 整型约定）
+- [ ] 管理员负向调额是 read-modify-write 覆盖，窗口期内用户消费会被抹回 —— **未做**：改为「负数兑换」或全量字段 PUT 都需要真实 New API 验证（docs/04 警告只传部分字段会触发校验问题）。本地无实例，盲改会打断现有可用的调额功能。**阻塞于线上验证**。
+- [ ] 负向调额 PUT 仅发 `{id, quota}`，与 docs/04:67 契约警告矛盾（待验证远端行为） —— **未做**：同上，需真实 New API 验证远端行为后再动。
+- [ ] 对账盲区：`creditsAmount<=0` 过滤会让漏配 credits 的订单静默消失 —— **未做**：当前 6 个套餐 + custom 均配置正确，属埋雷而非现行故障。
+- [ ] 对账 LIMIT 100 会让老差异滑出窗口 —— **未做**：同上，与对账界面一并处理更合适。
+- [x] `resolveTopUpCheckout` 未拒绝非 one-time interval（订阅暗门：续费只发 ShipAny credits、quota 不加） —— 已修复（`532f507`）：显式断言拒绝
+- [ ] ShipAny credits 双轨残留：每单仍写无人消费的 credit 表 —— **未做**：credit 表每单仍写入但无人消费。停写需确认 ShipAny 模板其余路径不依赖它；订阅暗门（真正的风险）已在 532f507 封死。
+- [x] 支付取消/失败落地 `/pricing`（→ redirect /models），脱离上下文且无提示 —— 已修复（`532f507`）：改跳 /dashboard/billing?checkout=canceled|failed，账单页双语提示
+- [x] `adjust-quota` 金额未限整数、无上限（10.5 会破坏 amountUsd 整型约定） —— 已修复（`532f507`）：整数美元 + 单笔 10 万上限
 - [ ] 管理员减额无二次确认
-- [ ] 补偿三件套（retry/reconciliation）只有 API 无界面；admin 无订单列表可查 orderNo
-- [ ] Creem webhook 签名用 `!==` 比较，应换 `crypto.timingSafeEqual`
+- [ ] 补偿三件套（retry/reconciliation）只有 API 无界面；admin 无订单列表可查 orderNo —— **未做**：需新建 admin 页面，属功能开发。**上线前的替代方案**：`reconciliation_required` 接告警 + curl 调用现有 API。
+- [x] Creem webhook 签名用 `!==` 比较，应换 `crypto.timingSafeEqual` —— 已修复（`532f507`）：改 timingSafeEqual
 
 ### 控制台与交互
 
-- [ ] dashboard SSR 无新鲜度短路，连续导航重复触发远端同步
-- [ ] key 状态同步每次列表都写库（应仅在字段变化时写）
-- [ ] Key 禁用后无法在门户重新启用（New API 契约支持 `status_only`）
-- [ ] 复制掩码 Key 按钮易误导（掩码含 `****` 无实际用途）
-- [ ] 掩码格式在首次状态同步后变化（本地 `sk-x****` → 远端格式）
-- [ ] admin 用户详情页隐式触发 lazy provision，为未用过 API 的用户创建 New API 账号
-- [ ] 忘记密码入口被注释，邮箱登录无自助找回路径
-- [ ] 服务端 `toLocaleString()` 裸调，格式/时区跟随服务器而非用户
+- [ ] dashboard SSR 无新鲜度短路，连续导航重复触发远端同步 —— **未做**：需要缓存策略设计（多久算新鲜、与 revalidate 如何配合），改动面比看起来大。
+- [ ] key 状态同步每次列表都写库（应仅在字段变化时写） —— **未做**：与上一条同属 dashboard 同步策略，一并处理。
+- [ ] Key 禁用后无法在门户重新启用（New API 契约支持 `status_only`） —— **未做**：需真实 New API 验证 `PUT /api/token/?status_only=true` 的行为（docs/04 有记载但未实测）。
+- [ ] 复制掩码 Key 按钮易误导（掩码含 `****` 无实际用途） —— **未做**：需产品决策——去掉按钮，还是改成「复制 Key ID」。
+- [ ] 掩码格式在首次状态同步后变化（本地 `sk-x****` → 远端格式） —— **未做**：与上一条一并处理。
+- [ ] admin 用户详情页隐式触发 lazy provision，为未用过 API 的用户创建 New API 账号 —— **未做**：改动本身简单（binding 不存在时返回空视图），但会改变 admin 查看用户详情的既有行为，建议与 admin 页面批次一起做并人工走查。
+- [ ] 忘记密码入口被注释，邮箱登录无自助找回路径 —— **未做**：接 better-auth reset-password 需要 Resend 密钥与邮件模板，属外部依赖。
+- [x] 服务端 `toLocaleString()` 裸调，格式/时区跟随服务器而非用户 —— 已修复（`29d121b`）：按页面 locale 格式化并固定 UTC，账单/用量/日志口径一致
 
 ### 目录与 admin
 
-- [ ] 模型无能力标签时在公开页/建 Key 候选中静默消失
-- [ ] 分组列表不展示 ratio / pricingSyncStatus（加两列可降低 P0-3 误操作概率）
-- [ ] 字典删除被阻止时不展示引用明细（service 已算好 label+count，delete 页吞掉）
-- [ ] `setModelCapabilities` / `setModelCategories` 非事务 delete+insert，insert 失败会清空能力
-- [ ] `deleteModel` 漏删 `catalog_model_price`，依赖 FK cascade 而 FK 运行时开关未验证
-- [ ] 无折扣 listing 经模型编辑后 `discountRateBps` null→10000 脏写（`models/[id]/edit/page.tsx:215` 的 `|| '10'` 默认值）
-- [ ] DB 驱动文案单语：模型描述、折扣备注直接透出录入语言
-- [ ] smoke 脚本 `quotaSpendFromUsageLogs` 未防负数（仅影响对账误报）
+- [x] 模型无能力标签时在公开页/建 Key 候选中静默消失 —— 已修复（`29f29a7`）：setModelCapabilities 事务化，insert 失败不再清空能力
+- [ ] 分组列表不展示 ratio / pricingSyncStatus（加两列可降低 P0-3 误操作概率） —— **未做**：admin 列表加两列，纯增强。
+- [ ] 字典删除被阻止时不展示引用明细（service 已算好 label+count，delete 页吞掉） —— **未做**：service 已算好 label+count，delete 页透传即可，纯增强。
+- [x] `setModelCapabilities` / `setModelCategories` 非事务 delete+insert，insert 失败会清空能力 —— 已修复（`29f29a7`）：包进 db().transaction
+- [x] `deleteModel` 漏删 `catalog_model_price`，依赖 FK cascade 而 FK 运行时开关未验证 —— 已修复（`29f29a7`）：事务内显式删除；**并实证 OQ-1**：libsql 默认 PRAGMA foreign_keys=1，cascade 本就生效
+- [x] 无折扣 listing 经模型编辑后 `discountRateBps` null→10000 脏写（`models/[id]/edit/page.tsx:215` 的 `|| '10'` 默认值） —— 已修复（`29f29a7`）：去掉 `|| '10'` 默认值
+- [ ] DB 驱动文案单语：模型描述、折扣备注直接透出录入语言 —— **未做**：模型描述与折扣备注需要双语字段 + 迁移 + admin 表单改造，属功能而非缺陷修复。
+- [ ] smoke 脚本 `quotaSpendFromUsageLogs` 未防负数（仅影响对账误报） —— **未做**：仅影响 smoke 对账误报，不影响计费。
 
 ### 站点结构 / 视觉 / SEO
 
-- [ ] zh 法律术语不一致：页脚「服务条款」vs 正文/注册页「用户协议」
-- [ ] hreflang alternate 恒指首页，不含当前路径
-- [ ] `sitemap.xml` 静态且已过期（lastmod 全 2026-05-24，仅 6 URL）
-- [ ] 法律页被 robots disallow（确认是否有意）
-- [ ] 文档站顶部导航无回主站/控制台入口
-- [ ] 签退状态首屏两个 primary 实心按钮，违反 docs/05 §5「每屏主按钮 ≤1」
-- [ ] 规范外颜色：BalanceWarning 用 amber、首页 vignette 用 emerald/teal 渐变
-- [ ] 死翻译资产与 `localeMessagesPaths` 漂移（landing / activity/* / ai/* 等永不加载）
-- [ ] `getAllConfigs()`（含全部密钥）直接喂 root layout 的 ads/analytics 服务，属"改一行就出事"的脆弱面
-- [ ] admin settings 的 `collectNonEmptyConfigs` 跳过空值，配置项无法从 UI 清空
+- [x] zh 法律术语不一致：页脚「服务条款」vs 正文/注册页「用户协议」 —— 已修复（`29d121b`）：页脚统一为「用户协议」
+- [x] hreflang alternate 恒指首页，不含当前路径 —— 已修复（`36ca198`）：删手写 head，改 metadata alternates.languages
+- [x] `sitemap.xml` 静态且已过期（lastmod 全 2026-05-24，仅 6 URL） —— 已修复（`36ca198`）：改 src/app/sitemap.ts 动态生成（静态文件会遮蔽该路由）
+- [ ] 法律页被 robots disallow（确认是否有意） —— **未做（需产品决策）**：`getRobotsDisallowRules` 里是显式硬编码，随 MVP 大提交进来、无任何理由记录。允许收录更利于信任，但这是 SEO/法务取舍，不是缺陷。
+- [x] 文档站顶部导航无回主站/控制台入口 —— 已修复（`29d121b`）：补 Models / Console
+- [x] 签退状态首屏两个 primary 实心按钮，违反 docs/05 §5「每屏主按钮 ≤1」 —— 已修复（`29d121b`）：header Sign In 降为 outline
+- [x] 规范外颜色：BalanceWarning 用 amber、首页 vignette 用 emerald/teal 渐变 —— 已修复（`29d121b`）：amber → --chart-3；首页渐变 → primary 透明度阶梯
+- [ ] 死翻译资产与 `localeMessagesPaths` 漂移（landing / activity/* / ai/* 等永不加载） —— **未做**：清理死 JSON 与模板块有回归风险（themes/default 里多个 block 引用它们），建议单独一批做并跑 build。
+- [x] `getAllConfigs()`（含全部密钥）直接喂 root layout 的 ads/analytics 服务，属"改一行就出事"的脆弱面 —— 已修复（`29d121b`）：改 getScriptInjectionConfigs() 白名单
+- [x] admin settings 的 `collectNonEmptyConfigs` 跳过空值，配置项无法从 UI 清空 —— 已修复（`29d121b`）：非密钥字段空值 = 清空；**密钥字段仍跳过**——它们渲染为空白，否则每次保存都抹掉已存密钥
 
 ## 上线前人工检查（非代码）
 
 - [ ] **Caddy 边界修复后三子域公网可达面实测**（P0-2 已改代码，此项仍待线上验证）。`.env.deploy` 需配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（`caddy hash-password --plaintext '<pw>'`）或 `APIPOOL_NEWAPI_ALLOWED_IPS`，否则部署会 fail-closed 退出 78。预期：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401 或 403
 - [ ] `/opt/apipool-v2/.env.deploy` 权限 600、密钥真随机、GHCR 仓库 private
 - [ ] New API root 密码强度、`payment_compliance` 已确认
-- [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production`
-- [ ] Stripe dashboard 只勾选代码已映射的 5 种事件（P1-2 修复前尤其重要）
+- [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production` —— P1-3 修复后生产运行时会强制验签，此项降为建议。
+- [ ] Stripe dashboard 事件订阅 —— P1-2 修复后**不再是硬性要求**（未知事件回 200 skip），但仍建议只勾选需要的事件以减少噪音。
 - [ ] Stripe/Creem 密钥填 admin settings 并跑一笔测试模式全链路——同时复验 P0-7 新增的 webhook 守卫 `assertPaymentSessionMatchesOrder` 不误拒真实回调（含折扣码场景）
 - [ ] 告警三条（webhook 失败 / ledger pending 超时 / bridge unauthorized）接监控或明确接受裸奔——**新增第四条**：`ledger.status = 'reconciliation_required'` 必须告警，P0-1 修复后所有歧义失败都汇入该状态，需人工按 `newapiChangeId` 反查远端兑换状态后手工结清
 - [ ] 真实 New API 上复验兑换码窗口（P0-1）：兑换请求超时 / 确认查询失败时，ledger 应落 `reconciliation_required` 且带码值，重放不再加额
 - [ ] 备份 restore 演练（`backup.sh` 只备份未演练；`deploy.sh` 明确"数据库不自动回滚"）
 - [ ] 域名规划确认（app/api2/newapi 子域 vs apipool.dev 上游站冲突）
-- [ ] libsql 运行时 `PRAGMA foreign_keys` 实测一次
-- [ ] ads/analytics/affiliate 若启用，grep 复核其只读公开配置键
+- [x] libsql 运行时 `PRAGMA foreign_keys` 实测一次 —— 2026-07-09 实证：`PRAGMA foreign_keys = 1`，插入孤儿行被 `SQLITE_CONSTRAINT_FOREIGNKEY` 拒绝。**OQ-1 关闭**：FK cascade 确实生效。
+- [x] ads/analytics/affiliate 若启用，grep 复核其只读公开配置键 —— 已复核（全部为公开分析 ID），并在 `29d121b` 收敛为 `getScriptInjectionConfigs()` 白名单，密钥不再进入调用面。
 - [x] P0-4 / P0-5 / P0-6 已起服务 live 复验（2026-07-09）
+
+## 修复过程中新发现并已修复
+
+- [x] **登录回跳开放重定向**（`8cecd4b`）：`sign-in`/`sign-up` 各自复制的 `safeInternalPath` 只判 `raw.startsWith('/')`，`//evil.com` 是协议相对 URL 会通过；传给客户端组件的 `callbackUrl` 更是完全未净化。已抽出 `src/shared/lib/safe-path.ts` 统一收敛（拒绝 `//host`、`/\host`、控制字符）。审查报告未发现此项。
+- [x] **五条固化缺陷的测试**：`without Caddy auth`（P0-2）、checkout metadata 透传断言（P0-7）、`returns zero balance instead of a dash`（P1-9）、`without smoke toggle` + `fields.smokeTested === undefined`（P1-5）、usage sync 英文兜底断言（P1-15）。均已按修复后的正确行为改写。
 
 ## 已知遗留复核
 
 - [x] OQ-3 roles/users 4 个 edit handler 缺 requirePermission —— 2026-07-08 复核已修复，回链提交 `0696a79 fix(security): roles/users 写 handler 二次鉴权对齐页首门控（OQ-3）`
-- [ ] `ensurePortalUserBinding` 凭据失效不自愈（维持 defer，建议与 P1-9 一并处理）
-- [ ] OQ-1 libsql `PRAGMA foreign_keys` 未验证（见上人工检查项；`deleteModel` 依赖其 cascade）
+- [ ] `ensurePortalUserBinding` 凭据失效不自愈 —— **仍未做**。P1-9 只修了 UI 展示（失败时显示「—」而非 $0.00），自愈（检测 401 自动 reprovision）需真实 New API 验证，维持 defer。
+- [x] OQ-1 libsql `PRAGMA foreign_keys` —— 2026-07-09 实证已开启（=1），孤儿行被拒。`deleteModel` 另在 `29f29a7` 补了显式删除，事务自包含。
