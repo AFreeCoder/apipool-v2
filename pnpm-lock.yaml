@@ -48,6 +48,9 @@ importers:
       '@openrouter/ai-sdk-provider':
         specifier: ^1.2.0
         version: 1.2.0(ai@5.0.39(zod@4.1.5))(zod@4.1.5)
+      '@orama/tokenizers':
+        specifier: ^3.1.18
+        version: 3.1.18
       '@paypal/checkout-server-sdk':
         specifier: ^1.0.3
         version: 1.0.3
@@ -1712,6 +1715,14 @@ packages:
 
   '@orama/orama@3.1.14':
     resolution: {integrity: sha512-Iq4RxYC7y0pA/hLgcUGpYYs5Vze4qNmJk0Qi1uIrg2bHGpm6A06nbjWcH9h4HQsddkDFFlanLj/zYBH3Sxdb4w==}
+    engines: {node: '>= 20.0.0'}
+
+  '@orama/orama@3.1.18':
+    resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
+    engines: {node: '>= 20.0.0'}
+
+  '@orama/tokenizers@3.1.18':
+    resolution: {integrity: sha512-Ra4dFddWZ7hCGPAehnd/6QZjlzQvczYSt1y1Fq4HteJqRu2yvfR6fXvxiUnKi+HIgJYPxKhebJEjvJdF8LYQWg==}
     engines: {node: '>= 20.0.0'}
 
   '@paypal/checkout-server-sdk@1.0.3':
@@ -7492,6 +7503,12 @@ snapshots:
   '@opentelemetry/api@1.9.0': {}
 
   '@orama/orama@3.1.14': {}
+
+  '@orama/orama@3.1.18': {}
+
+  '@orama/tokenizers@3.1.18':
+    dependencies:
+      '@orama/orama': 3.1.18
 
   '@paypal/checkout-server-sdk@1.0.3':
     dependencies:
