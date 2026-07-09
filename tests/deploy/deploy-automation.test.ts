@@ -313,3 +313,20 @@ test('re-applying the Caddy config does not reinstall caddy on every deploy', as
   // 每次部署跑 `apt-get install -y caddy` 会在部署中途升级 caddy 版本
   assert.match(script, /command -v caddy/);
 });
+
+test('the Caddy config is validated before it replaces the live file', async () => {
+  const script = await readFile('deploy/configure-caddy.sh', 'utf8');
+
+  // 先写 /etc/caddy/Caddyfile 再 validate 的话，validate 失败会在磁盘上留下
+  // 一份坏配置（set -e 直接退出），之后任何 reload / 重启都会让 Caddy 起不来。
+  assert.doesNotMatch(script, /printf[^\n]*>\/etc\/caddy\/Caddyfile/);
+  assert.match(script, /caddy validate --config "\$STAGED_CADDYFILE"/);
+
+  const validateAt = script.indexOf('caddy validate --config "$STAGED_CADDYFILE"');
+  const installAt = script.indexOf('install -m 0644 "$STAGED_CADDYFILE" /etc/caddy/Caddyfile');
+  assert.notEqual(installAt, -1, 'the staged file must be installed atomically');
+  assert.ok(validateAt < installAt, 'validation must precede installation');
+
+  // 保留上一份配置以便人工回滚
+  assert.match(script, /Caddyfile\.bak/);
+});

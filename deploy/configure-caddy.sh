@@ -133,9 +133,22 @@ if ! command -v caddy >/dev/null 2>&1; then
   apt-get install -y caddy
 fi
 
-printf '%s\n' "$CADDYFILE" >/etc/caddy/Caddyfile
+# 先在临时文件上校验，通过后才原子替换。
+# 若直接写 /etc/caddy/Caddyfile 再 validate，validate 失败时脚本退出（set -e），
+# 磁盘上却已留下一份坏配置——此后任何 reload / 重启都会让 Caddy 起不来，全站不可达。
+STAGED_CADDYFILE="$(mktemp)"
+trap 'rm -f "$STAGED_CADDYFILE"' EXIT
 
-caddy fmt --overwrite /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile
+printf '%s\n' "$CADDYFILE" >"$STAGED_CADDYFILE"
+caddy fmt --overwrite "$STAGED_CADDYFILE"
+caddy validate --config "$STAGED_CADDYFILE" --adapter caddyfile
+
+# 保留上一份配置，便于人工回滚
+if [ -f /etc/caddy/Caddyfile ]; then
+  cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+fi
+
+install -m 0644 "$STAGED_CADDYFILE" /etc/caddy/Caddyfile
+
 systemctl enable --now caddy
 systemctl reload caddy

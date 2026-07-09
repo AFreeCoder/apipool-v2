@@ -36,9 +36,15 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 - 持久化数据：
   - `data/portal/`：门户 SQLite 数据
   - `data/new-api/`：New API SQLite 数据
-- 反向代理：Caddy，`app.apipool.dev` 到 `127.0.0.1:3000`，
-  `api2.apipool.dev` 到 `127.0.0.1:3001`，
-  `newapi.apipool.dev` 到 `127.0.0.1:3001`
+- 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
+  **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + `reload`**
+  （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）：
+  - `app.apipool.dev` → `127.0.0.1:3000`（门户，无额外保护）
+  - `api2.apipool.dev` → `127.0.0.1:3001`，**只放行 `/v1*` 数据面**，其余路径（含
+    `/api/*` 管理接口）返回 404
+  - `newapi.apipool.dev` → `127.0.0.1:3001`，**整个 vhost 受 Basic Auth 与/或
+    IP 白名单保护**；两者都未配置时 `configure-caddy.sh` fail-closed 退出 78，
+    部署在动任何东西之前中止
 - 运行时配置：
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
@@ -104,6 +110,8 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `Dockerfile`
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
+- `deploy/configure-caddy.sh`
+- `deploy/server-bootstrap.sh`
 - `deploy/backup.sh`
 - `deploy/entrypoint.sh`
 - `deploy/live-smoke.sh`
@@ -147,6 +155,7 @@ ssh apipool_vps 'tar -tzf "$(ls -t /opt/apipool-v2/backups/pre-deploy-*.tar.gz |
 ssh apipool_vps 'cd /opt/apipool-v2 && printf "IMAGE_TAG=<previous-sha-tag>\nDEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)\n" > release.env && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml pull && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml up -d --remove-orphans'
 ```
 
+- Caddy 配置回滚：`ssh apipool_vps 'cp -a /etc/caddy/Caddyfile.bak /etc/caddy/Caddyfile && caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy'`。
 - 数据恢复：只在确认持久化数据或 schema 状态需要恢复时，从
   `/opt/apipool-v2/backups/` 选择归档人工恢复。
 - 需要新确认的操作：数据库恢复、删除数据、破坏性迁移回滚、重建环境、轮换凭据。
@@ -175,7 +184,15 @@ ssh apipool_vps 'df -h /opt/apipool-v2 && free -h && docker system df'
 
 ```bash
 curl -fsS https://app.apipool.dev/ >/dev/null
-curl -fsS https://newapi.apipool.dev/api/status >/dev/null
+
+# newapi 运营面受 Basic Auth / IP 白名单保护：无凭据必须被拒（401 或 403），
+# 返回 200 说明保护没生效。健康检查改在服务器本机做（见「服务器运行态」）。
+newapi_code="$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/api/status)"
+case "$newapi_code" in 401|403) ;; *) echo "newapi 运营面未受保护: $newapi_code" >&2; exit 1 ;; esac
+
+# api2 只放行 /v1*：管理接口路径必须 404
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/api/status)" = "404"
+
 APIPOOL_API_ENDPOINT=https://api2.apipool.dev
 test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIPOOL_API_ENDPOINT/v1/models")" = "401"
 ```
@@ -194,7 +211,9 @@ cutover 后再回收给 v2。
 - 服务器 `/opt/apipool-v2/release.env` 中的 `IMAGE_TAG` 是目标 `sha-<commit>`。
 - `docker compose ps` 显示 `apipool-v2` 和 `new-api` 运行中。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
-- 外部 `https://app.apipool.dev/` 和 `https://newapi.apipool.dev/api/status` 通过。
+- 外部 `https://app.apipool.dev/` 通过。
+- 外部 `https://newapi.apipool.dev/` 返回 401 或 403（受保护）；**返回 200 视为发布失败**。
+- 外部 `https://api2.apipool.dev/api/status` 返回 404（管理接口未经 api2 暴露）。
 - 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回 401 认证错误；带 Key
   真实调用由 live smoke 验证。
 - 新的 `pre-deploy-*.tar.gz` 存在并能列出内容。
