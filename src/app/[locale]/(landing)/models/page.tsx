@@ -12,6 +12,7 @@ import {
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
+import { getMetadata } from '@/shared/lib/seo';
 import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
@@ -37,6 +38,13 @@ function localizeCatalogDimension(
 ) {
   return messages[dimension]?.[slug] ?? fallback;
 }
+
+// /models 是唯一核心可索引的营销页。没有页面级 metadata 时 canonical 回退到
+// 站点根，搜索引擎会把它归并到首页，社交分享也拿不到页面标题。
+export const generateMetadata = getMetadata({
+  metadataKey: 'pages.models.metadata',
+  canonicalUrl: '/models',
+});
 
 export default async function ModelsPage({
   params,

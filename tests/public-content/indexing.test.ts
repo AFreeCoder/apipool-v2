@@ -71,26 +71,36 @@ test('robots sitemap uses the centralized APIPool site URL', async () => {
 });
 
 test('public sitemap only exposes APIPool MVP public entrypoints', async () => {
-  const sitemap = await readFile(
-    join(process.cwd(), 'public/sitemap.xml'),
-    'utf8'
-  );
-  const locs = Array.from(sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)).map(
-    (match) => match[1]
-  );
+  // 原先是手工维护的 public/sitemap.xml（lastmod 停在 2026-05-24，必然漂移，
+  // 而且静态文件会遮蔽 app/sitemap.ts）。改为断言动态生成的结果。
+  const { default: sitemap } = await import('@/app/sitemap');
+  const entries = sitemap();
+  const locs = entries.map((entry) => entry.url);
 
-  assert.match(sitemap, /https:\/\/apipool\.dev\//);
-  assert.match(sitemap, /https:\/\/apipool\.dev\/models/);
-  assert.match(sitemap, /https:\/\/apipool\.dev\/docs/);
-  assert.doesNotMatch(sitemap, /your-domain\.com/);
+  assert.ok(locs.includes('https://apipool.dev/'));
+  assert.ok(locs.includes('https://apipool.dev/models'));
+  assert.ok(locs.includes('https://apipool.dev/docs'));
+  assert.ok(locs.includes('https://apipool.dev/zh/models'));
+
   assert.deepEqual(
     locs.map((loc) => new URL(loc).origin),
     locs.map(() => 'https://apipool.dev')
   );
   for (const loc of locs) {
+    assert.doesNotMatch(loc, /your-domain\.com/);
     assert.doesNotMatch(
       new URL(loc).pathname,
-      /^\/(blog|showcases|dashboard|admin|api)(\/|$)/
+      /^\/(zh\/)?(blog|showcases|dashboard|admin|api)(\/|$)/
     );
+    // 法律页在 robots 的 disallow 列表里，两处口径必须一致
+    assert.doesNotMatch(
+      new URL(loc).pathname,
+      /(privacy-policy|terms-of-service)/
+    );
+  }
+
+  // lastModified 必须是动态的，不能又变成硬编码日期
+  for (const entry of entries) {
+    assert.ok(entry.lastModified instanceof Date);
   }
 });
