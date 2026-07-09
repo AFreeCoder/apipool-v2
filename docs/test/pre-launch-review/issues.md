@@ -121,9 +121,10 @@
 - [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production` —— P1-3 修复后生产运行时会强制验签，此项降为建议。
 - [ ] Stripe dashboard 事件订阅 —— P1-2 修复后**不再是硬性要求**（未知事件回 200 skip），但仍建议只勾选需要的事件以减少噪音。
 - [x] Stripe 密钥填 admin settings 并跑一笔测试模式全链路 —— **用户确认线上已配置并跑通（2026-07-09）**。
-- [ ] **重跑一次 Stripe 测试模式全链路（本分支合并部署后）** —— 上述验证跑在 `main`(ede2dc4) 上，而四个改动支付链路的提交（`dbc4b25` metadata、`a64d39e`/`28d3c4e` 充值、`532f507` webhook）**均未合并**。需复验：① `assertPaymentSessionMatchesOrder` 不误拒真实回调（**务必覆盖带折扣码的订单**，实付 < 订单金额靠 discountAmount 补齐）；② checkout 不再接受 metadata 后前端充值不受影响；③ webhook 未知事件返回 200 而非 500。
+- [x] **Stripe 测试模式全链路（部署后，含改动的支付路径）** —— **用户 2026-07-09 在已部署的 `e9e3e73` 上人工测试 Stripe 支付成功**。覆盖：checkout（已不收客户端 metadata）→ Stripe 回调 → `assertPaymentSessionMatchesOrder` 金额守卫不误拒全价支付 → recharge 入账 → 余额更新。**折扣码子项标为 N/A**：当前无折扣码，Stripe 侧也未启用折扣逻辑，「实付 < 订单、靠 discountAmount 补差」这一特例不存在，无需覆盖。
+- [x] **生产 live smoke 充值到调用闭环** —— 2026-07-09 在 `e9e3e73` 上 `deploy/live-smoke.sh` **12/12 全过**：管理员调额到账（走改动过的 `client.adjustQuota`，真实 New API v1.0.0-rc.20）→ 建 Key（分组 `discount-1`）→ 真实 `/v1` 调用 HTTP 200 → 用量可见 → **价格对账 `result=matched`**（expectedQuota=actualQuota=2405，含缓存 token 场景，验证 P0-6/P1-6 未引入计费偏差）→ 禁用 Key → 调用被拒 401。**未覆盖**：支付 webhook → `recharge.ts` 那条（live smoke 走管理员调额，非 Stripe webhook），该路径由上一条用户人工 Stripe 测试覆盖。
 - [ ] 告警三条（webhook 失败 / ledger pending 超时 / bridge unauthorized）接监控或明确接受裸奔——**新增第四条**：`ledger.status = 'reconciliation_required'` 必须告警，P0-1 修复后所有歧义失败都汇入该状态，需人工按 `newapiChangeId` 反查远端兑换状态后手工结清
-- [ ] 真实 New API 上复验兑换码窗口（P0-1）：兑换请求超时 / 确认查询失败时，ledger 应落 `reconciliation_required` 且带码值，重放不再加额
+- [ ] 真实 New API 上复验兑换码**失败窗口**（P0-1）：正常路径已在 live smoke 验过（调额成功入账）；但**兑换请求超时 / 确认查询失败**这条异常路径无法在冒烟里主动触发，仍未实测——届时 ledger 应落 `reconciliation_required` 且带码值、重放不再加额。属难以主动构造的边界，建议接告警后靠真实发生时观测。
 - [ ] 备份 restore 演练（`backup.sh` 只备份未演练；`deploy.sh` 明确"数据库不自动回滚"）
 - [ ] 域名规划确认（app/api2/newapi 子域 vs apipool.dev 上游站冲突）
 - [x] libsql 运行时 `PRAGMA foreign_keys` 实测一次 —— 2026-07-09 实证：`PRAGMA foreign_keys = 1`，插入孤儿行被 `SQLITE_CONSTRAINT_FOREIGNKEY` 拒绝。**OQ-1 关闭**：FK cascade 确实生效。
