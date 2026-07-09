@@ -126,8 +126,12 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 77
 fi
 
-apt-get update
-apt-get install -y caddy
+# 只在 caddy 缺失时安装。deploy.sh 每次部署都会重新应用配置，
+# 若无条件跑 apt install，会在部署中途把 caddy 升级到新版本。
+if ! command -v caddy >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y caddy
+fi
 
 printf '%s\n' "$CADDYFILE" >/etc/caddy/Caddyfile
 

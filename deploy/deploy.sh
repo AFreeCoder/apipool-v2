@@ -22,7 +22,7 @@ flock -n 9 || {
 
 cd "$APP_DIR"
 
-for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh; do
+for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh deploy/configure-caddy.sh; do
   if [ ! -e "$required" ]; then
     echo "[deploy] missing $APP_DIR/$required" >&2
     exit 66
@@ -37,6 +37,15 @@ old_tag=""
 if [ -f "$RELEASE_FILE" ]; then
   old_tag="$(sed -n 's/^IMAGE_TAG=//p' "$RELEASE_FILE" | tail -1)"
 fi
+
+# 重新生成并校验 Caddy 配置。放在动任何东西之前：configure-caddy.sh 是
+# fail-closed 的（New API 运营面未配保护时退出 78），在这里失败等于零副作用
+# 中止；放到后面则会留下已备份、已换镜像的半成品状态。
+#
+# 没有这一步，运维在 .env.deploy 里配好 Basic Auth 也不会生效——
+# /etc/caddy/Caddyfile 会一直停留在最初 server-bootstrap 生成的那份。
+echo "[deploy] applying Caddy configuration"
+APIPOOL_DEPLOY_ENV_FILE="$APP_DIR/$ENV_FILE" ./deploy/configure-caddy.sh
 
 ./deploy/backup.sh pre-deploy
 

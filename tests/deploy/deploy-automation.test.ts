@@ -289,3 +289,27 @@ test('the deploy env example quotes values that would break a shell source', asy
   assert.match(example, /APIPOOL_NEWAPI_ALLOWED_IPS='/);
   assert.match(example, /单引号/);
 });
+
+test('deploy regenerates the Caddy config so operator protections actually take effect', async () => {
+  const deploy = await readFile('deploy/deploy.sh', 'utf8');
+
+  // configure-caddy.sh 原本只被一次性的 server-bootstrap.sh 调用；deploy.sh 与
+  // GitHub Actions 都不碰它。结果是：在 .env.deploy 里配好 Basic Auth 之后，
+  // 线上 /etc/caddy/Caddyfile 仍是最初自举生成的那份，newapi 子域继续裸奔。
+  const caddyCall = deploy.indexOf('deploy/configure-caddy.sh');
+  const firstMutation = deploy.indexOf('./deploy/backup.sh pre-deploy');
+
+  assert.notEqual(caddyCall, -1, 'deploy.sh must (re)apply the Caddy config');
+  assert.ok(
+    caddyCall < firstMutation,
+    'Caddy must be validated before deploy touches backups or containers'
+  );
+  assert.match(deploy, /APIPOOL_DEPLOY_ENV_FILE=/);
+});
+
+test('re-applying the Caddy config does not reinstall caddy on every deploy', async () => {
+  const script = await readFile('deploy/configure-caddy.sh', 'utf8');
+
+  // 每次部署跑 `apt-get install -y caddy` 会在部署中途升级 caddy 版本
+  assert.match(script, /command -v caddy/);
+});

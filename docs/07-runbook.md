@@ -104,6 +104,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 
 预跑生成的配置（无需 root，不改系统）：`bash deploy/configure-caddy.sh --print-config`。
 
+**Caddy 配置何时生效**：`deploy/deploy.sh` 在每次部署开始时（备份与拉镜像**之前**）重新生成并 `caddy validate` 配置，然后 `systemctl reload caddy`。因此在 `.env.deploy` 里改动保护变量后，**下一次部署即生效**，无需手工操作。放在最前面是为了让 fail-closed（退出 78）成为零副作用中止，而不是留下半成品状态。
+
+- 只在 caddy 缺失时才 `apt install`，避免每次部署顺带升级版本。
+- **该步骤会覆盖 `/etc/caddy/Caddyfile`**。任何手工改动都会丢失，请改到 `configure-caddy.sh` 里。
+- 想立即生效而不等下次部署：在 VPS 上执行
+  `cd /opt/apipool-v2 && APIPOOL_DEPLOY_ENV_FILE=/opt/apipool-v2/.env.deploy ./deploy/configure-caddy.sh`。
+
 ## 3. 部署验收顺序（不可跳步，后步通过不能替代前步失败）
 
 1. **New API 健康检查**：内部地址 `GET /api/status` 返回 `success=true`。
