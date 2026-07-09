@@ -10,9 +10,11 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // 页头走文档流（而非 absolute 罩在视口上），这样语言建议条等
+  // 流内横幅出现时页头会被自然下推，不会与横幅互相叠压。
   return (
-    <div className="flex h-screen w-screen items-center justify-center">
-      <div className="absolute top-4 left-4">
+    <div className="flex min-h-screen flex-col">
+      <header className="flex items-center justify-between px-4 py-4 sm:px-6">
         <BrandLogo
           brand={{
             title: envConfigs.app_name,
@@ -25,12 +27,14 @@ export default function AuthLayout({
             className: '',
           }}
         />
+        <div className="flex items-center gap-4">
+          <ThemeToggler />
+          <LocaleSelector type="button" />
+        </div>
+      </header>
+      <div className="flex w-full flex-1 items-center justify-center px-4 pb-16">
+        {children}
       </div>
-      <div className="absolute top-4 right-4 flex items-center gap-4">
-        <ThemeToggler />
-        <LocaleSelector type="button" />
-      </div>
-      <div className="w-full px-4">{children}</div>
     </div>
   );
 }

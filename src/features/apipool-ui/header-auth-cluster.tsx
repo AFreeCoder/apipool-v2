@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 
 import { Link, usePathname } from '@/core/i18n/navigation';
@@ -31,6 +32,13 @@ export function HeaderAuthCluster({
   const pathname = usePathname();
   const inConsole = pathname.startsWith('/dashboard');
 
+  // isCheckSign 的初始值依赖仅存在于服务端的 envConfigs.auth_secret，
+  // 两端首次渲染会分叉；挂载后再渲染登出态 CTA，避免 hydration mismatch。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const cta = user ? (
     inConsole ? null : (
       <Button asChild variant="outline" size="sm">
@@ -57,7 +65,7 @@ export function HeaderAuthCluster({
         signButtonVariant="ghost"
         userNav={userNav}
       />
-      {!user && !isCheckSign && cta}
+      {mounted && !user && !isCheckSign && cta}
     </div>
   );
 }
