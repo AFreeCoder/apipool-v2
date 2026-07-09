@@ -39,6 +39,7 @@
     "context": "Context",
     "input": "Input·1M",
     "output": "Output·1M",
-    "status": "Status"
+    "status": "Status",
+    "discount": "{off}% off"
   }
 }

@@ -39,6 +39,7 @@
     "context": "上下文",
     "input": "输入·1M",
     "output": "输出·1M",
-    "status": "状态"
+    "status": "状态",
+    "discount": "{fold} 折 ({percent}%)"
   }
 }

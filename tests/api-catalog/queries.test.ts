@@ -662,7 +662,7 @@ test('public listings expose effective price only after matched New API group ra
   assert.deepEqual(seeded.pricePresentation, {
     showPrice: true,
     showStrikethrough: true,
-    discountLabel: '5 折 (50%)',
+    discountBps: 5000,
     note: 'Official ratio',
   });
 });
