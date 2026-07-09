@@ -246,7 +246,7 @@ export function SignUp({
             <p className="text-muted-foreground text-center text-xs">
               {t('already_have_account')}{' '}
               <Link
-                href="/sign-in"
+                href={`/sign-in${callbackUrl && callbackUrl !== '/' ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ''}`}
                 className="text-foreground hover:text-primary cursor-pointer underline underline-offset-2 transition-colors"
               >
                 {t('sign_in_title')}

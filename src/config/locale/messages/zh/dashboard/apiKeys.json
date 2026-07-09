@@ -47,6 +47,15 @@
     "disableUnavailable": "当前状态无法停用 Key",
     "cleanup": "清理失败 Key",
     "delete": "删除 Key",
-    "deleteUnavailable": "当前状态无法删除 Key"
+    "deleteUnavailable": "当前状态无法删除 Key",
+    "confirmDelete": {
+      "title": "确定删除这个 API Key？",
+      "description": "密钥会被立即吊销且无法恢复。仍在使用它的应用会开始返回 401。",
+      "confirm": "删除密钥",
+      "cancel": "取消",
+      "cleanupTitle": "确定清理这个密钥？",
+      "cleanupDescription": "会把这个失败的密钥从列表移除，并尽力删除远端记录。此操作无法撤销。",
+      "cleanupConfirm": "清理"
+    }
   }
 }

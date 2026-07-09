@@ -21,6 +21,7 @@ export const localeMessagesPaths = [
   'pages/home',
   'pages/models',
   'pages/pricing',
+  'pages/errors',
   'dashboard/common',
   'dashboard/overview',
   'dashboard/billing',

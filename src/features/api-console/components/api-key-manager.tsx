@@ -21,6 +21,14 @@ import { useTranslations } from 'next-intl';
 
 import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
 import { Button } from '@/shared/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog';
 import { Input } from '@/shared/components/ui/input';
 import {
   Select,
@@ -147,6 +155,8 @@ export function ApiKeyManager({
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  // 删除会吊销远端 token 且完整 key 无法找回：必须显式确认，不能单击图标即删
+  const [pendingDelete, setPendingDelete] = useState<ApiKeyRow | null>(null);
   const groupOptions = buildGroupSelectOptions(groups);
   const selectedGroupLabel =
     groupOptions.find((group) => group.value === selectedGroupSlug)?.label ??
@@ -227,6 +237,13 @@ export function ApiKeyManager({
       return;
     }
     setKeys((prev) => applyApiKeyMutationResult(prev, payload.data.key));
+  }
+
+  function requestDeleteKey(id: string) {
+    const target = keys.find((key) => key.id === id);
+    if (!target) return;
+    setNotice(null);
+    setPendingDelete(target);
   }
 
   async function deleteKey(id: string) {
@@ -411,7 +428,7 @@ export function ApiKeyManager({
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => deleteKey(key.id)}
+                        onClick={() => requestDeleteKey(key.id)}
                         disabled={!canDelete}
                         title={
                           canCleanup
@@ -434,6 +451,73 @@ export function ApiKeyManager({
           </TableBody>
         </Table>
       </div>
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          {pendingDelete ? (
+            <DeleteKeyConfirmation
+              target={pendingDelete}
+              t={t}
+              onCancel={() => setPendingDelete(null)}
+              onConfirm={async () => {
+                const id = pendingDelete.id;
+                setPendingDelete(null);
+                await deleteKey(id);
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function DeleteKeyConfirmation({
+  target,
+  t,
+  onCancel,
+  onConfirm,
+}: {
+  target: ApiKeyRow;
+  t: ReturnType<typeof useTranslations<'dashboard.apiKeys'>>;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // 清理（失败/卡死态）与删除（活跃 key）都不可逆，但文案不同：
+  // 前者是恢复手段，后者会立刻断掉仍在调用的应用。
+  const isCleanup =
+    !canDeleteKeyStatus(target.status) && canCleanupKeyStatus(target.status);
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          {isCleanup
+            ? t('table.confirmDelete.cleanupTitle')
+            : t('table.confirmDelete.title')}
+        </DialogTitle>
+        <DialogDescription>
+          {isCleanup
+            ? t('table.confirmDelete.cleanupDescription')
+            : t('table.confirmDelete.description')}
+        </DialogDescription>
+      </DialogHeader>
+      <p className="text-muted-foreground font-mono text-xs">
+        {target.displayName}
+      </p>
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>
+          {t('table.confirmDelete.cancel')}
+        </Button>
+        <Button variant="destructive" onClick={onConfirm}>
+          {isCleanup
+            ? t('table.confirmDelete.cleanupConfirm')
+            : t('table.confirmDelete.confirm')}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
