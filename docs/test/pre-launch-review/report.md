@@ -262,3 +262,38 @@
 - 已勾选的 OQ-3 补上回链：提交 `0696a79 fix(security): roles/users 写 handler 二次鉴权对齐页首门控（OQ-3）`。
 
 按本项目文档规范，过程文档冻结不回填，故上述修正以追加形式记录于此；`issues.md` 作为"半活"清单已就地更新为最新口径。
+
+---
+
+## 修复进展（2026-07-09，分支 `fix/pre-launch-p0`）
+
+全部门禁项已修复，416 tests pass / tsc 0 error / eslint clean。逐项回链见 `issues.md`。
+
+| 项 | 提交 | 关键说明 |
+| --- | --- | --- |
+| P0-7 | `dbc4b25` | 删除 `CheckoutRequestBody.metadata` 入参 + 新增 `payment-guards.ts` 纵深防御 |
+| P0-1 + P1-1 | `a64d39e` | 兑换码落库先于兑换请求；带码值的 ledger 永不自动重试 |
+| P0-2 | `0e4be8d` | api2 只放行 `/v1*`；newapi 加 Basic Auth / IP 白名单；脚本 fail-closed |
+| P0-3 | `2ed9cc0` | 分组重映射时事务内失效倍率缓存与 listing drift |
+
+### 实现与原建议的偏离（重要）
+
+- **P0-7**：报告建议"忽略保留 key 或做命名空间"，实际**直接删除 `metadata` 入参**。依据：真实充值入口 `top-up-packages.tsx` 不传该字段，唯一传它的 `themes/default/blocks/pricing.tsx` 无任何路由引用（死代码）。副作用：若将来复活该 block，affiliate 追踪需重新接线。
+- **P0-1**：报告建议"利用确定性兑换码名，建码前先查同名码"。**未采用**——`docs/04` 只实测过 `POST /api/redemption/`，New API 没有可用于按码名反查的验证过的端点，不臆造端点。改为在 `client.adjustQuota` 新增 `onRedemptionCreated` 回调，在**发出兑换请求之前**把码值交给调用方落库；此后任何失败（含进程被 SIGKILL）都转 `reconciliation_required`。并确立全局不变量：**ledger 一旦带 `newapiChangeId`，claim 谓词永不选中它**，四条自动路径（webhook 重放 / 支付回跳 / admin retry / processing 超时重夺）均无法再次加额。`docs/06` 第 5 节已按实际口径改写。
+- **P1-1**：processing TTL（5 分钟）重夺**只对未带码值的行生效**；带码值的卡死行升级 `reconciliation_required`，仍在执行的新鲜行照旧 `pending_retry`。
+
+### 修复过程中被 TDD 抓住的两个自引入缺陷
+
+1. **P0-7 守卫位置错误**：`assertPaymentSessionMatchesOrder` 最初放在 `paymentStatus === SUCCESS` 判断之前。Stripe 的 `checkout.session.completed` 在异步支付未付款时也映射为 CHECKOUT_SUCCESS，金额为 0，会被判"少付"抛错，打断原本的 FAILED / PROCESSING 落库路径。**对策**：把前提条件放进守卫内部，调用点位置不再影响正确性。
+2. **P1-1 TTL 重夺重新打开了 P0-1 的窗口**：初版只看 `updatedAt` 超时就重夺，但"崩溃发生在 topup 飞行途中、码已发出却未落库"的行没有 changeId，会被判为"安全重试"→ 再发一张码 → 双倍到账。**对策**：`onRedemptionCreated` 预落库，把该窗口消除。
+
+教训：涉及资金的守卫，前提条件要内聚在守卫里；"看起来安全的重试"必须先证明远端未发生任何事。
+
+### 已修项的遗留验证（全部转入 `issues.md` 人工检查清单）
+
+- 所有验证均在单元层（真实代码 + 注入依赖 + 真 SQLite），**未跑真实 Stripe 回调、未跑真实 New API、本地无 caddy**。
+- 上线前必须：① 测试模式跑一笔完整充值，复验 webhook 守卫不误拒（含折扣码场景）与兑换码窗口行为；② 按 runbook 第 2 节实测三子域可达面；③ **新增告警项**：`ledger.status = 'reconciliation_required'` 必须接监控——P0-1 修复后所有歧义失败都汇入该状态，需人工按 `newapiChangeId` 反查远端兑换状态后手工结清。这是本次修复引入的新运维负担。
+
+### 下一批建议
+
+P0-4（docs 搜索 404）、P0-6（EN 页中文折扣标签）+ P1-9~P1-13（dashboard 三态 / not-found / callbackUrl / 删除确认）可打包为"上线体验补齐"分支；P1-14/15 错误码化一次做完；P0-5/P1-17 随品牌资产批次。

@@ -10,11 +10,11 @@
 - [x] **P0-7 checkout metadata 可覆盖 `order_no`/`user_id`，webhook 不校验 session 归属与金额** —— 2026-07-09 已修复，回链提交 `dbc4b25 fix(payment): reject client-supplied checkout metadata (P0-7)`。移除 `CheckoutRequestBody.metadata` 入参（metadata 全部服务端构造）+ 新增 `assertPaymentSessionMatchesOrder` 纵深防御（仅拒绝「实付+折扣 < 订单金额」，且仅校验支付成功的 session）。**遗留**：webhook 守卫未跑真实 Stripe 回调，须在测试模式充值时复验（见下人工检查项）；`themes/default/blocks/pricing.tsx` 仍在发送已被忽略的 affiliate metadata，若复活该 block 需重新接线。
 - [x] **P0-1 充值歧义失败标 pending 可重试，可能重复加额或产生对账缺口** —— 2026-07-09 已修复，回链提交 `a64d39e fix(recharge): never auto-retry once a redemption code exists (P0-1, P1-1)`。**未采用**原设想的「建码前先查同名码」——New API 无实测过的兑换码检索端点（docs/04 只验证过 `POST /api/redemption/`），不臆造端点。改为：码值在发出兑换请求前经 `onRedemptionCreated` 回调落库，此后任何失败（含进程被杀）一律转 `reconciliation_required`；claim 谓词加 `newapiChangeId IS NULL` 作为全局不变量。docs/06 §5 已同步改写。
 - [x] **P1-1↑（升为门禁）ledger 卡 `processing` 无任何恢复路径** —— 2026-07-09 已修复，同提交 `a64d39e`。processing 超时 5 分钟且**未带码值**的行可安全重夺重试（远端未发生任何事）；**带码值**的升级 `reconciliation_required` 人工核对；仍在执行的新鲜 processing 行照旧返回 `pending_retry`。
-- [ ] **P0-2 New API 管理后台公网可达**——`configure-caddy.sh:19-35` 两子域无 Basic Auth / IP 白名单，`api2` 未限 `/v1`。修复后需实测三子域可达面。
+- [x] **P0-2 New API 管理后台公网可达** —— 2026-07-09 已修复，回链提交 `0e4be8d fix(deploy): stop exposing the New API operator surface publicly (P0-2)`。api2 只放行 `/v1*` 其余 404；newapi 加 IP 白名单 + Basic Auth（可叠加）；`configure-caddy.sh` fail-closed（两种保护都没配则退出 78）；新增 `--print-config` 干跑模式使配置生成逻辑可被测试真实执行；`server-bootstrap.sh` 调用前载入 `.env.deploy`。**遗留**：本地无 caddy，Caddyfile 语法由部署时 `caddy validate` 把关；**上线后必须按 runbook 第 2 节实测三子域可达面**（见下人工检查项）。
 
 ## 上线门禁 · 计费一致性
 
-- [ ] **P0-3 分组重映射 `newapiGroup` 后公开价仍用旧倍率，与实际计费不一致**——`updateGroup` 不重置 ratio 缓存 / `pricingSyncStatus` / listing drift。
+- [x] **P0-3 分组重映射 `newapiGroup` 后公开价仍用旧倍率，与实际计费不一致** —— 2026-07-09 已修复，回链提交 `2ed9cc0 fix(catalog): invalidate cached group pricing on New API remap (P0-3)`。`updateGroup` 检测到映射变化时，在同一事务里清空倍率三字段 + 置 `pricingSyncStatus='unknown'` + 该组 listing drift 打回 `needs_live_check`，公开价隐藏为「—」直到重跑价格同步。只改名称/排序不触发失效。
 
 ## 上线门禁 · 对外功能硬伤
 
@@ -111,7 +111,7 @@
 
 ## 上线前人工检查（非代码）
 
-- [ ] Caddy 边界修复后三子域公网可达面实测
+- [ ] **Caddy 边界修复后三子域公网可达面实测**（P0-2 已改代码，此项仍待线上验证）。`.env.deploy` 需配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（`caddy hash-password --plaintext '<pw>'`）或 `APIPOOL_NEWAPI_ALLOWED_IPS`，否则部署会 fail-closed 退出 78。预期：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401 或 403
 - [ ] `/opt/apipool-v2/.env.deploy` 权限 600、密钥真随机、GHCR 仓库 private
 - [ ] New API root 密码强度、`payment_compliance` 已确认
 - [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production`
