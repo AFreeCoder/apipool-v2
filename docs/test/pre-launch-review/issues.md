@@ -115,7 +115,7 @@
 
 ## 上线前人工检查（非代码）
 
-- [ ] **Caddy 边界修复后三子域公网可达面实测**（P0-2 已改代码，此项仍待线上验证）。`.env.deploy` 需配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（`caddy hash-password --plaintext '<pw>'`）或 `APIPOOL_NEWAPI_ALLOWED_IPS`，否则部署会 fail-closed 退出 78。预期：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401 或 403 —— **用户决定延后处理（2026-07-09）**，代码已就位（`0e4be8d`），部署前需先在 `.env.deploy` 配好保护变量，否则脚本会 fail-closed 退出 78。
+- [ ] **Caddy 边界：三子域公网可达面实测** —— 代码已就位并接进部署路径。**2026-07-09 补修**（`deploy.sh` 原先根本不调 `configure-caddy.sh`，只有一次性的 `server-bootstrap.sh` 会调，所以配好 `.env.deploy` 也不会生效）：现在每次部署都会在**备份与拉镜像之前**重新生成 + `caddy validate` + `reload`。用户确认生产已配 `APIPOOL_NEWAPI_BASIC_AUTH_USER/HASH`（2026-07-09）。**仍待线上实测**：`api2/v1/models`→401、`api2/api/status`→404、`newapi/`→401。注意该步骤会**覆盖** `/etc/caddy/Caddyfile`，手工改动会丢失。
 - [ ] `/opt/apipool-v2/.env.deploy` 权限 600、密钥真随机、GHCR 仓库 private
 - [ ] New API root 密码强度、`payment_compliance` 已确认
 - [ ] 支付配置：`paypal_enabled=false` 或 `paypal_environment=production` —— P1-3 修复后生产运行时会强制验签，此项降为建议。
