@@ -132,6 +132,9 @@
 
 ## 修复过程中新发现并已修复
 
+- [x] **verify-email 开放重定向**（`e14358f`，Codex 第二轮评审 high）：`safeDecodeCallbackUrl` 只判 `decodeURIComponent` 后 `startsWith('/')`，`//evil.com` 与 `%2F%2Fevil.com` 通过后经 `location.assign` 离站（默认 locale 下 `base` 为空串）。上一轮抽出 `safe-path.ts` 时漏了这个副本。新增 `safeDecodedInternalPath` + 守卫测试（禁止任何 auth 界面私藏回跳校验）。
+- [x] **`source .env.deploy` 破坏 Caddy 保护配置**（`e14358f`，Codex 第二轮评审 high）：实测 bcrypt 哈希 `$2a$14$...` 被 shell 展开成 `a4`（basic_auth 静默失效），多 IP 白名单第二个 IP 被当命令执行（`set -e` 下中断部署）。改为 `configure-caddy.sh` 按字面量读取；`live-smoke.sh` 仍 source 同一文件，故 env 示例与 runbook 强制单引号并加测试。
+
 - [x] **登录回跳开放重定向**（`8cecd4b`）：`sign-in`/`sign-up` 各自复制的 `safeInternalPath` 只判 `raw.startsWith('/')`，`//evil.com` 是协议相对 URL 会通过；传给客户端组件的 `callbackUrl` 更是完全未净化。已抽出 `src/shared/lib/safe-path.ts` 统一收敛（拒绝 `//host`、`/\host`、控制字符）。审查报告未发现此项。
 - [x] **五条固化缺陷的测试**：`without Caddy auth`（P0-2）、checkout metadata 透传断言（P0-7）、`returns zero balance instead of a dash`（P1-9）、`without smoke toggle` + `fields.smokeTested === undefined`（P1-5）、usage sync 英文兜底断言（P1-15）。均已按修复后的正确行为改写。
 

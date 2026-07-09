@@ -392,6 +392,42 @@ P1-19（checkout 限流）**保留**：其 429 会被 `top-up-packages` 的 `pay
 
 **教训**：审查报告里的每一条「建议修法」都只是建议，不是需求。落地前必须验证它在真实调用链上的下游影响——这次是我自己写的报告，自己照着做，没有在改之前追一遍客户端怎么消费这个响应。
 
+### Codex 对抗式评审第二轮（2026-07-09，分支 diff vs main）与裁决
+
+**两条 high 全部独立实证成立，已修复（`e14358f`）。** 另修正一次评审目标选择错误。
+
+#### 评审目标被未跟踪文件劫持（先纠正流程）
+
+首次以默认目标运行时，报告写着 `Target: working tree diff`、结论 `approve / No material findings`。但当时工作区只有 `docs/test/ui-review/` 下 13 个未跟踪文件（另一条工作线的 UI 审计产物），**21 个提交一个都没被审**。该 `approve` 是对空集的判断，不可采信。改用 `--base main` 强制分支评审后才拿到真实结论。
+
+#### finding 1：verify-email 仍是开放重定向（high，成立）
+
+上一轮把 `sign-in`/`sign-up` 收敛到共享 `safeInternalPath`，**漏了 `verify-email.tsx`**——它保留着本地的 `safeDecodeCallbackUrl`，只判断 `decodeURIComponent` 之后 `startsWith('/')`。
+
+独立验证的利用链：`callbackUrl` 来自 `searchParams`（用户可控）→ `safeDecodeCallbackUrl` 放行 `//evil.com` 与 `%2F%2Fevil.com` → `hardNavigateToNextUrl` 执行 `window.location.assign(\`${base}${nextUrl}\`)`，**默认 locale（en）下 `base` 是空串** → 直接离站。zh 下 `base='/zh'` 拼成路径，不可利用；默认语言恰恰是可利用的那个。
+
+修法：新增 `safeDecodedInternalPath`（先解码一次再走 `safeInternalPath`），verify-email 改用它；加守卫测试禁止任何 auth 界面再私藏一份回跳校验。复查确认 `sign-modal` / `payment-modal` 的 `callbackUrl` 是常量 `'/'`，不可利用。
+
+#### finding 2：`source .env.deploy` 会破坏 Caddy 保护配置（high，成立且更糟）
+
+**实测而非推断**：
+
+| 写法 | `source` 之后的实际值 |
+| --- | --- |
+| `HASH=$2a$14$Xy7...` | `a4` —— shell 把 `$2`/`$14` 当位置参数展开。basic_auth 生成成功但**谁也登不上，且静默无提示** |
+| `IPS=203.0.113.7 198.51.100.0/24` | shell 把 `198.51.100.0/24` **当命令执行**，`set -Eeuo pipefail` 下退出 1 → **部署中断** |
+
+修法：`configure-caddy.sh` 自己按字面量读取 `.env.deploy`（awk 取最后一次赋值、剥离成对引号），环境变量优先；新增 `APIPOOL_DEPLOY_ENV_FILE` 让测试能覆盖真实的「从文件读」路径。`server-bootstrap.sh` 不再 `source`。
+
+**Codex 未提但由此引出的风险**：`deploy/live-smoke.sh` 同样 `source` 该文件，且由 `deploy.sh` 在部署后调用。所以光把 `source` 从 bootstrap 拿掉不够——**文件本身必须 shell-safe**。`env.production.example` 与 runbook 已要求这两个值用单引号，并加了守卫测试。
+
+测试写临时 `.env.deploy`（含 bcrypt `$` 与多 IP），跑 `--print-config` 断言原样输出，引号/无引号两种写法都验；旧 `source` 实现下会得到 `HASH=a4`、`IPS` 为空，断言必然失败——已确认非空转。
+
+#### 教训
+
+- **共享 helper 抽出来之后，必须 grep 全仓找完所有旧副本**。上一轮抽了 `safe-path.ts`，却只替换了当时正在改的两个文件，`verify-email` 的那份副本原地留了下来。守卫测试要针对「不得再有私有副本」这条不变量，而不是针对某几个文件。
+- **shell 的 `source` 不是 dotenv 解析器**。凡是值里可能出现 `$`、空格、引号的配置，`source` 都会静默改写或直接执行它。这类问题不能靠读代码判断，必须实测。
+
 ### 下一批建议
 
 **全部 P0 与全部 P1 已清零**（2026-07-09）。剩余工作：① 19 项 P2（原因见上，多数阻塞于真实环境或需产品决策）；② `issues.md` 的上线前人工检查清单，其中最要紧的是 Caddy 三子域可达面实测、Stripe 测试模式跑一笔完整充值复验 webhook 守卫、以及给 `reconciliation_required` 接告警；③ 正式品牌资产替换占位 favicon 与 OG 图。
