@@ -5,6 +5,8 @@ import { lookupPortalUserByEmail } from '@/features/api-console/server/quota-adm
 import { Search, Send } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
+import { Link } from '@/core/i18n/navigation';
+
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Textarea } from '@/shared/components/ui/textarea';
@@ -18,13 +20,17 @@ function createRequestId() {
 
 export function QuotaAdjustmentForm({
   initialPortalUserId = '',
+  initialResolvedUser = '',
 }: {
   initialPortalUserId?: string;
+  /** 从用户列表/详情页带 ?portalUserId= 直达时的身份回显：只有裸 UUID
+      的话，管理员无法确认自己调的是谁。 */
+  initialResolvedUser?: string;
 }) {
   const t = useTranslations('admin.apipoolAdjustments.form');
   const [email, setEmail] = useState('');
   const [portalUserId, setPortalUserId] = useState(initialPortalUserId);
-  const [resolvedUser, setResolvedUser] = useState('');
+  const [resolvedUser, setResolvedUser] = useState(initialResolvedUser);
   const [direction, setDirection] = useState<'increase' | 'decrease'>(
     'increase'
   );
@@ -96,12 +102,16 @@ export function QuotaAdjustmentForm({
       responseReceived = true;
       const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
-      setMessage(
-        t('messages.ledgerStatus', {
-          id: payload.data.ledger.id,
-          status: payload.data.ledger.status,
-        })
-      );
+      const ledger = payload.data.ledger;
+      const parts = [
+        t('messages.ledgerStatus', { id: ledger.id, status: ledger.status }),
+      ];
+      // 「status failed」本身不说明任何事，真实原因（例如扣减会使余额为负）
+      // 只在审计里，route 已把它一并带回。
+      if (ledger.failureReason) {
+        parts.push(t('messages.failureReason', { reason: ledger.failureReason }));
+      }
+      setMessage(parts.join(' '));
       requestDraftRef.current = null;
     } catch (error: any) {
       if (responseReceived) {
@@ -195,6 +205,15 @@ export function QuotaAdjustmentForm({
               : t('buttons.applyIncrease')}
         </Button>
         {message && <p className="text-muted-foreground text-sm">{message}</p>}
+        {/* 调完之后没有任何地方能核对结果：详情页才有余额与调额账本。 */}
+        {portalUserId.trim() && (
+          <Link
+            href={`/admin/users/${portalUserId.trim()}/detail`}
+            className="text-primary text-sm underline-offset-4 hover:underline"
+          >
+            {t('links.viewUser')}
+          </Link>
+        )}
       </div>
     </div>
   );

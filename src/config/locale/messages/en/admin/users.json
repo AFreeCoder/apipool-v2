@@ -156,8 +156,8 @@
       }
     },
     "ledger": {
-      "title": "Quota Adjustment History",
-      "description": "Manual admin adjustments only.",
+      "title": "Balance ledger",
+      "description": "Manual admin adjustments and paid top-ups for this user.",
       "columns": {
         "created_at": "Time",
         "amount": "Amount",
@@ -165,7 +165,23 @@
         "reason": "Reason",
         "newapi_change": "New API Change",
         "audit": "Audit",
-        "operator": "Operator"
+        "operator": "Operator",
+        "source": "Source",
+        "order_no": "Order",
+        "actions": "Actions"
+      },
+      "resolve": {
+        "trigger": "Reconcile",
+        "title": "Reconcile this ledger entry",
+        "description": "The remote outcome is unknown, so new adjustments for this user are blocked. Check the redemption code in New API first, then record what you found. This decision is audited.",
+        "changeIdLabel": "Redemption code / change id",
+        "noteLabel": "What did you verify?",
+        "notePlaceholder": "e.g. redemption code was already redeemed, quota landed on the account",
+        "confirmApplied": "Quota landed — mark applied",
+        "markVoid": "Nothing landed — void it",
+        "cancel": "Cancel",
+        "noteRequired": "Record what you verified before resolving.",
+        "failed": "Could not resolve the entry. It may have been settled already."
       }
     },
     "status": {
@@ -207,6 +223,10 @@
         "username_sync_failed": "Username Sync Failed",
         "conflict_requires_review": "Needs Review",
         "disabled": "Disabled"
+      },
+      "ledger_source": {
+        "manual_adjustment": "Manual adjustment",
+        "recharge": "Top-up"
       }
     }
   },

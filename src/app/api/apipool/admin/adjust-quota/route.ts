@@ -1,5 +1,8 @@
 import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
-import { adjustPortalQuota } from '@/features/newapi-bridge/server/portal';
+import {
+  adjustPortalQuota,
+  getAdjustmentFailureReason,
+} from '@/features/newapi-bridge/server/portal';
 
 import { PERMISSIONS } from '@/core/rbac';
 import { withNoStore } from '@/shared/lib/http-cache';
@@ -52,7 +55,14 @@ export async function POST(req: Request) {
       idempotencyKey: idempotencyKey || undefined,
     });
 
-    return withNoStore(respData({ ledger }));
+    // 失败时把审计里的真实原因一并回传：受众是管理员，
+    // 只给一个英文 `failed` 等于什么都没说。
+    const failureReason =
+      ledger.status === 'applied'
+        ? null
+        : await getAdjustmentFailureReason(ledger.id);
+
+    return withNoStore(respData({ ledger: { ...ledger, failureReason } }));
   } catch (error: any) {
     return withNoStore(
       respErr(

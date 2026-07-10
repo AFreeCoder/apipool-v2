@@ -2311,8 +2311,14 @@ async function seedAdjustmentLedgerRow(input: {
   }
 }
 
+let countingClientSeq = 0;
+
 function createCountingRemoteClient() {
   let adjustCalls = 0;
+  // changeId 上有唯一索引：夹具若对每个实例返回同一个码值，第二次落库会撞
+  // 索引并被正确地判为「远端已动、结局未知」，看起来像被测代码的 bug。
+  countingClientSeq += 1;
+  const changeId = `change_counting_${countingClientSeq}`;
   return {
     client: {
       provisionUser: async (input: { username: string }) => ({
@@ -2322,7 +2328,7 @@ function createCountingRemoteClient() {
       ensureUserGroup: async () => {},
       adjustQuota: async () => {
         adjustCalls += 1;
-        return { changeId: 'change_should_not_happen', balanceUsd: 25 };
+        return { changeId, balanceUsd: 25 };
       },
     } as any,
     getAdjustCalls: () => adjustCalls,
@@ -2506,6 +2512,180 @@ test('adjustPortalQuota escalates a dispatched negative quota write whose respon
 
   // 写已发出 ⇒ 结局未知，绝不能落终态 failed（重试会二次扣减）
   assert.equal(ledger.status, 'reconciliation_required');
+});
+
+test('the admin ledger view surfaces recharge entries next to manual adjustments', async () => {
+  const portalUser = await insertUser('portal_user_ledger_mix', 'lmix@t.co');
+  const operator = await insertUser('operator_ledger_mix', 'oplm@t.co');
+  const { apipoolLedgerEntry } = await import('@/config/db/schema');
+
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_mix_manual',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'applied',
+    remoteAttemptAt: new Date(),
+  });
+  // 用户投诉「付了钱没到账」时，管理员必须能在详情页看到这一行
+  await modules.db().insert(apipoolLedgerEntry).values({
+    id: 'ledger_mix_recharge',
+    portalUserId: portalUser.id,
+    operatorUserId: portalUser.id,
+    newapiUserId: 'remote_seeded',
+    orderNo: 'order_mix_1',
+    idempotencyKey: null,
+    amountUsd: 50,
+    source: 'recharge',
+    status: 'reconciliation_required',
+    executor: 'internal_quota_executor',
+    reason: 'recharge order order_mix_1',
+  });
+
+  const rows = await modules.portal.listAdjustmentLedgerByPortalUser(
+    portalUser.id
+  );
+  const ids = rows.map((row: any) => row.id);
+  assert.ok(ids.includes('ledger_mix_manual'));
+  assert.ok(
+    ids.includes('ledger_mix_recharge'),
+    'recharge ledger rows must be visible to admins'
+  );
+
+  const recharge = rows.find((row: any) => row.id === 'ledger_mix_recharge');
+  assert.equal(recharge.source, 'recharge');
+  assert.equal(recharge.orderNo, 'order_mix_1');
+});
+
+test('resolveQuotaAdjustment confirms a stuck row and unblocks further adjustments', async () => {
+  const portalUser = await insertUser('portal_user_resolve_ok', 'rslv@t.co');
+  const operator = await insertUser('operator_resolve_ok', 'oprv@t.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_resolve_confirm',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'reconciliation_required',
+    remoteAttemptAt: new Date(),
+  });
+
+  // 解封前：任何新调额都被守卫挡住
+  const blocked = createCountingRemoteClient();
+  await assert.rejects(
+    modules.portal.adjustPortalQuota({
+      portalUser,
+      operatorUserId: operator.id,
+      amountUsd: 5,
+      reason: 'before resolve',
+      idempotencyKey: 'portal-adjustment:before-resolve',
+      client: blocked.client,
+    }),
+    /unresolved/i
+  );
+  assert.equal(blocked.getAdjustCalls(), 0);
+
+  const resolved = await modules.portal.resolveQuotaAdjustment({
+    ledgerId: 'ledger_resolve_confirm',
+    operatorUserId: operator.id,
+    resolution: 'confirm_applied',
+    note: 'verified in New API: redemption redeemed, quota landed',
+  });
+  assert.equal(resolved.status, 'applied');
+
+  // 解封后：新调额恢复可用
+  const after = createCountingRemoteClient();
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 5,
+    reason: 'after resolve',
+    idempotencyKey: 'portal-adjustment:after-resolve',
+    client: after.client,
+  });
+  assert.equal(ledger.status, 'applied');
+  assert.equal(after.getAdjustCalls(), 1);
+});
+
+test('resolveQuotaAdjustment can void a stuck row and records who decided it', async () => {
+  const portalUser = await insertUser('portal_user_resolve_void', 'rsvd@t.co');
+  const operator = await insertUser('operator_resolve_void', 'oprvd@t.co');
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_resolve_void',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'reconciliation_required',
+    remoteAttemptAt: new Date(),
+  });
+
+  const resolved = await modules.portal.resolveQuotaAdjustment({
+    ledgerId: 'ledger_resolve_void',
+    operatorUserId: operator.id,
+    resolution: 'mark_void',
+    note: 'verified in New API: nothing landed',
+  });
+  assert.equal(resolved.status, 'failed');
+
+  // 人工裁决必须留痕：谁、何时、依据什么、原状态是什么
+  const audits = await modules
+    .db()
+    .select()
+    .from(modules.newApiBridgeAuditLog)
+    .where(
+      eq(modules.newApiBridgeAuditLog.action, 'newapi.quota.adjust_resolve')
+    );
+  const audit = audits.find((row: any) =>
+    String(row.requestBody).includes('ledger_resolve_void')
+  );
+  assert.ok(audit, 'resolution must be audited');
+  assert.equal(audit.operatorUserId, operator.id);
+  assert.match(String(audit.requestBody), /reconciliation_required/);
+  assert.match(String(audit.requestBody), /nothing landed/);
+});
+
+test('resolveQuotaAdjustment refuses rows that are already settled', async () => {
+  const portalUser = await insertUser('portal_user_resolve_done', 'rsdn@t.co');
+  const operator = await insertUser('operator_resolve_done', 'oprdn@t.co');
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_already_applied',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'applied',
+    remoteAttemptAt: new Date(),
+  });
+
+  await assert.rejects(
+    modules.portal.resolveQuotaAdjustment({
+      ledgerId: 'ledger_already_applied',
+      operatorUserId: operator.id,
+      resolution: 'mark_void',
+      note: 'should not be possible',
+    }),
+    /not awaiting reconciliation/i
+  );
+});
+
+test('resolveQuotaAdjustment requires an operator note as the reconciliation evidence', async () => {
+  const portalUser = await insertUser('portal_user_resolve_note', 'rsnt@t.co');
+  const operator = await insertUser('operator_resolve_note', 'oprnt@t.co');
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_resolve_no_note',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'reconciliation_required',
+    remoteAttemptAt: new Date(),
+  });
+
+  await assert.rejects(
+    modules.portal.resolveQuotaAdjustment({
+      ledgerId: 'ledger_resolve_no_note',
+      operatorUserId: operator.id,
+      resolution: 'confirm_applied',
+      note: '   ',
+    }),
+    /note is required/i
+  );
 });
 
 test('adjustPortalQuota marks remote-applied confirmation failures for reconciliation', async () => {

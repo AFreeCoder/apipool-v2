@@ -36,7 +36,12 @@
       "noUserFound": "未找到邮箱为 {email} 的用户",
       "lookupFailed": "查询失败",
       "adjustmentFailed": "调整失败",
-      "ledgerStatus": "账本记录 {id} 当前状态为 {status}。"
+      "ledgerStatus": "账本记录 {id} 当前状态为 {status}。",
+      "failureReason": "原因：{reason}",
+      "resolvedFromLink": "调整对象：{user}"
+    },
+    "links": {
+      "viewUser": "查看用户详情"
     }
   }
 }

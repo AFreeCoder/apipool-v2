@@ -2248,6 +2248,7 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
       newapiChangeId: apipoolLedgerEntry.newapiChangeId,
       amountUsd: apipoolLedgerEntry.amountUsd,
       source: apipoolLedgerEntry.source,
+      orderNo: apipoolLedgerEntry.orderNo,
       status: apipoolLedgerEntry.status,
       reason: apipoolLedgerEntry.reason,
       rollbackStatus: apipoolLedgerEntry.rollbackStatus,
@@ -2259,10 +2260,12 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
     })
     .from(apipoolLedgerEntry)
     .leftJoin(userTable, eq(apipoolLedgerEntry.operatorUserId, userTable.id))
+    // 充值行必须一起展示：用户投诉「付了钱没到账」时，只看人工调额
+    // 等于看不见任何证据（pending / reconciliation_required 全在充值行上）。
     .where(
       and(
         eq(apipoolLedgerEntry.portalUserId, portalUserId),
-        eq(apipoolLedgerEntry.source, 'manual_adjustment')
+        inArray(apipoolLedgerEntry.source, ['manual_adjustment', 'recharge'])
       )
     )
     .orderBy(desc(apipoolLedgerEntry.createdAt));
@@ -2283,7 +2286,10 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
     .where(
       and(
         eq(newApiBridgeAuditLog.portalUserId, portalUserId),
-        eq(newApiBridgeAuditLog.action, 'newapi.quota.adjust')
+        inArray(newApiBridgeAuditLog.action, [
+          'newapi.quota.adjust',
+          'newapi.recharge.apply',
+        ])
       )
     )
     .orderBy(desc(newApiBridgeAuditLog.createdAt));
@@ -2312,6 +2318,7 @@ export async function listAdjustmentLedgerByPortalUser(portalUserId: string) {
     newapiChangeId: row.newapiChangeId,
     amountUsd: row.amountUsd,
     source: row.source,
+    orderNo: row.orderNo,
     status: row.status,
     reason: row.reason,
     rollbackStatus: row.rollbackStatus,
@@ -2448,6 +2455,111 @@ async function triageUnresolvedAdjustments(dbOrTx: any, portalUserId: string) {
   }
 
   return { blockingLedgerId: null, reclaimable };
+}
+
+/**
+ * 未结清调额的人工裁决出口。守卫是 fail-closed 的：一条 `reconciliation_required`
+ * 或带远端标记的陈旧 `pending` 会永久挡住该用户的后续调额。没有这个出口，
+ * 解封就只能靠改数据库——一次网络超时即成事故。
+ *
+ * 门户**无法**替管理员判断远端到底有没有入账（New API 没有可查兑换状态的接口，
+ * 见 docs/04），所以这里不做任何远端调用：管理员按 `newapiChangeId` 去 New API
+ * 侧核对后，把结论连同依据（note）写回来，全过程留审计。
+ */
+export async function resolveQuotaAdjustment(input: {
+  ledgerId: string;
+  operatorUserId: string;
+  resolution: 'confirm_applied' | 'mark_void';
+  note: string;
+}) {
+  const note = input.note?.trim();
+  if (!note) {
+    throw new Error('A reconciliation note is required');
+  }
+
+  const [entry] = await db()
+    .select()
+    .from(apipoolLedgerEntry)
+    .where(eq(apipoolLedgerEntry.id, input.ledgerId));
+
+  if (!entry) {
+    throw new Error('Ledger entry not found');
+  }
+  if (!UNRESOLVED_ADJUSTMENT_STATUSES.includes(entry.status)) {
+    throw new Error(
+      `Ledger entry ${input.ledgerId} is not awaiting reconciliation (status: ${entry.status})`
+    );
+  }
+
+  const nextStatus =
+    input.resolution === 'confirm_applied' ? 'applied' : 'failed';
+
+  // 条件更新：并发裁决只有一个能落地，另一个会看到「已结清」而不是静默覆盖
+  const [updated] = await db()
+    .update(apipoolLedgerEntry)
+    .set({ status: nextStatus, rollbackStatus: 'not_required' })
+    .where(
+      and(
+        eq(apipoolLedgerEntry.id, input.ledgerId),
+        inArray(apipoolLedgerEntry.status, UNRESOLVED_ADJUSTMENT_STATUSES)
+      )
+    )
+    .returning();
+
+  if (!updated) {
+    throw new Error(
+      `Ledger entry ${input.ledgerId} is not awaiting reconciliation`
+    );
+  }
+
+  await recordAudit({
+    portalUserId: entry.portalUserId,
+    operatorUserId: input.operatorUserId,
+    action: 'newapi.quota.adjust_resolve',
+    targetType: 'newapi_user',
+    targetId: entry.newapiUserId,
+    status: 'success',
+    idempotencyKey: entry.idempotencyKey || undefined,
+    requestBody: {
+      ledgerId: input.ledgerId,
+      previousStatus: entry.status,
+      resolution: input.resolution,
+      note,
+      newapiChangeId: entry.newapiChangeId,
+      amountUsd: entry.amountUsd,
+    },
+    responseBody: { status: nextStatus },
+  });
+
+  return updated;
+}
+
+/**
+ * 调额失败的真实原因只落在审计表里（例如「扣减会使余额为负」），
+ * ledger 行上只有一个 `failed`。管理员是这条错误的受众，把它取出来。
+ */
+export async function getAdjustmentFailureReason(
+  ledgerId: string
+): Promise<string | null> {
+  const [entry] = await db()
+    .select({ idempotencyKey: apipoolLedgerEntry.idempotencyKey })
+    .from(apipoolLedgerEntry)
+    .where(eq(apipoolLedgerEntry.id, ledgerId));
+
+  if (!entry?.idempotencyKey) return null;
+
+  const [audit] = await db()
+    .select({ errorMessage: newApiBridgeAuditLog.errorMessage })
+    .from(newApiBridgeAuditLog)
+    .where(
+      and(
+        eq(newApiBridgeAuditLog.idempotencyKey, entry.idempotencyKey),
+        eq(newApiBridgeAuditLog.status, 'failed')
+      )
+    )
+    .orderBy(desc(newApiBridgeAuditLog.createdAt));
+
+  return audit?.errorMessage || null;
 }
 
 export async function adjustPortalQuota(input: {

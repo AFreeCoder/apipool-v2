@@ -21,6 +21,9 @@ import {
 } from '@/features/newapi-bridge/server/admin-user-binding-actions';
 import { getTranslations } from 'next-intl/server';
 
+import { ResolveAdjustmentButton } from '@/features/api-console/components/admin/resolve-adjustment-button';
+import { resolveQuotaAdjustmentAction } from '@/features/newapi-bridge/server/admin-ledger-actions';
+
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { ConfirmActionButton } from '@/shared/blocks/common/confirm-action-button';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
@@ -38,6 +41,14 @@ import {
 import { findUserById, getUserInfo } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
 import { Crumb } from '@/shared/types/blocks/common';
+
+// 与 portal.ts 的 UNRESOLVED_ADJUSTMENT_STATUSES 对应：这些状态的行会挡住
+// 该用户的后续调额，必须暴露人工结清入口。
+const UNRESOLVED_LEDGER_STATUSES = [
+  'pending',
+  'processing',
+  'reconciliation_required',
+];
 
 type LoadResult<T> = {
   data: T;
@@ -197,9 +208,12 @@ export default async function AdminUserDetailPage({
     locale,
   });
   const currentUser = await getUserInfo();
-  const canAdjustApipoolQuota = currentUser
-    ? await hasPermission(currentUser.id, PERMISSIONS.APIPOOL_QUOTA_ADJUST)
-    : false;
+  const [canAdjustApipoolQuota, canWriteUsers] = currentUser
+    ? await Promise.all([
+        hasPermission(currentUser.id, PERMISSIONS.APIPOOL_QUOTA_ADJUST),
+        hasPermission(currentUser.id, PERMISSIONS.USERS_WRITE),
+      ])
+    : [false, false];
 
   const t = await getTranslations('admin.users');
   const targetUser = await findUserById(id);
@@ -222,6 +236,9 @@ export default async function AdminUserDetailPage({
     ]);
 
   const emptyValue = t('detail.empty.value');
+  const balanceUnavailable =
+    usageResult.data.summary.status === 'failed' ||
+    usageResult.data.summary.status === 'stale';
   const usageStatus = translateStatus(
     t,
     'detail.status.usage',
@@ -320,12 +337,42 @@ export default async function AdminUserDetailPage({
     },
   ];
 
+  const resolveLabels = {
+    trigger: t('detail.ledger.resolve.trigger'),
+    title: t('detail.ledger.resolve.title'),
+    description: t('detail.ledger.resolve.description'),
+    changeIdLabel: t('detail.ledger.resolve.changeIdLabel'),
+    noteLabel: t('detail.ledger.resolve.noteLabel'),
+    notePlaceholder: t('detail.ledger.resolve.notePlaceholder'),
+    confirmApplied: t('detail.ledger.resolve.confirmApplied'),
+    markVoid: t('detail.ledger.resolve.markVoid'),
+    cancel: t('detail.ledger.resolve.cancel'),
+    noteRequired: t('detail.ledger.resolve.noteRequired'),
+    failed: t('detail.ledger.resolve.failed'),
+  };
+
   const ledgerColumns = [
     {
       name: 'createdAt',
       title: t('detail.ledger.columns.created_at'),
       type: 'time' as const,
       placeholder: emptyValue,
+    },
+    {
+      name: 'source',
+      title: t('detail.ledger.columns.source'),
+      callback: (item: any) =>
+        translateStatus(t, 'detail.status.ledger_source', item.source, item.source),
+    },
+    {
+      name: 'orderNo',
+      title: t('detail.ledger.columns.order_no'),
+      callback: (item: any) =>
+        item.orderNo ? (
+          <span className="font-mono text-xs">{item.orderNo}</span>
+        ) : (
+          emptyValue
+        ),
     },
     {
       name: 'amountUsd',
@@ -382,6 +429,27 @@ export default async function AdminUserDetailPage({
           emptyValue
         ),
     },
+    // 卡在未结清状态的行会 fail-closed 地挡住该用户的后续调额。
+    // 没有这个入口，解封就只能靠人工改数据库。
+    ...(canAdjustApipoolQuota
+      ? [
+          {
+            name: 'actions',
+            title: t('detail.ledger.columns.actions'),
+            callback: (item: any) =>
+              UNRESOLVED_LEDGER_STATUSES.includes(item.status) ? (
+                <ResolveAdjustmentButton
+                  ledgerId={item.id}
+                  newapiChangeId={item.newapiChangeId}
+                  labels={resolveLabels}
+                  action={resolveQuotaAdjustmentAction}
+                />
+              ) : (
+                emptyValue
+              ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -459,6 +527,11 @@ export default async function AdminUserDetailPage({
               {bindingResult.data?.lastSyncError ? (
                 <DataNotice>{bindingResult.data.lastSyncError}</DataNotice>
               ) : null}
+              {/* The page only requires USERS_READ, but every action below is
+                  a USERS_WRITE server action. Rendering them for a read-only
+                  admin means the click is the first sign of the missing
+                  permission — and the thrown error is masked in production. */}
+              {canWriteUsers ? (
               <div className="flex flex-wrap gap-2">
                 {bindingResult.data?.status === 'disabled' ? (
                   // While disabled, retry/disable are both no-ops that only
@@ -532,6 +605,7 @@ export default async function AdminUserDetailPage({
                   </>
                 )}
               </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -546,21 +620,38 @@ export default async function AdminUserDetailPage({
               {usageResult.failed ? (
                 <DataNotice>{t('detail.errors.usage')}</DataNotice>
               ) : null}
+              {/* getPortalUsage 内部吞掉异常，failed 恒为 false；真正的
+                  原因只在 summary.errorMessage 里，不显示就永远看不到。 */}
+              {usageResult.data.summary.errorMessage ? (
+                <DataNotice>
+                  {usageResult.data.summary.errorMessage}
+                </DataNotice>
+              ) : null}
               <dl className="grid gap-4 md:grid-cols-3">
                 <Metric
                   label={t('detail.balance.fields.balance')}
-                  value={formatOptionalBalanceUsd(
-                    usageResult.data.summary.balanceUsd,
-                    t('detail.empty.not_initialized')
-                  )}
+                  value={
+                    // 同步失败/过期时余额未知：显示「—」而不是「未初始化」，
+                    // 后者会被误读成「该用户还没开通」。
+                    balanceUnavailable
+                      ? emptyValue
+                      : formatOptionalBalanceUsd(
+                          usageResult.data.summary.balanceUsd,
+                          t('detail.empty.not_initialized')
+                        )
+                  }
                 />
                 <Metric
                   label={t('detail.balance.fields.quota_remaining')}
-                  value={formatOptionalQuotaUnits(
-                    usageResult.data.summary.quotaRemaining,
-                    locale,
-                    t('detail.empty.not_initialized')
-                  )}
+                  value={
+                    balanceUnavailable
+                      ? emptyValue
+                      : formatOptionalQuotaUnits(
+                          usageResult.data.summary.quotaRemaining,
+                          locale,
+                          t('detail.empty.not_initialized')
+                        )
+                  }
                 />
                 <Metric
                   label={t('detail.balance.fields.status')}

@@ -36,7 +36,12 @@
       "noUserFound": "No user found for {email}",
       "lookupFailed": "Lookup failed",
       "adjustmentFailed": "Adjustment failed",
-      "ledgerStatus": "Ledger entry {id} is {status}."
+      "ledgerStatus": "Ledger entry {id} is {status}.",
+      "failureReason": "Reason: {reason}",
+      "resolvedFromLink": "Adjusting: {user}"
+    },
+    "links": {
+      "viewUser": "Open user detail"
     }
   }
 }

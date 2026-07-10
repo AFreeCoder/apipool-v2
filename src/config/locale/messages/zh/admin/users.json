@@ -156,8 +156,8 @@
       }
     },
     "ledger": {
-      "title": "调额历史",
-      "description": "仅展示管理员手动调额记录。",
+      "title": "余额账本",
+      "description": "该用户的管理员手动调额与付费充值记录。",
       "columns": {
         "created_at": "时间",
         "amount": "金额",
@@ -165,7 +165,23 @@
         "reason": "原因",
         "newapi_change": "New API 变更",
         "audit": "审计",
-        "operator": "操作人"
+        "operator": "操作人",
+        "source": "来源",
+        "order_no": "订单",
+        "actions": "操作"
+      },
+      "resolve": {
+        "trigger": "人工对账",
+        "title": "结清该账本记录",
+        "description": "这笔记录的远端结局未知，该用户的后续调额已被阻塞。请先在 New API 侧按兑换码核对，再把结论写下来。此裁决会被审计留痕。",
+        "changeIdLabel": "兑换码 / 变更 ID",
+        "noteLabel": "你核对到了什么？",
+        "notePlaceholder": "例如：兑换码已被兑换，额度已到账",
+        "confirmApplied": "额度已到账 — 标记为已应用",
+        "markVoid": "额度未到账 — 作废该记录",
+        "cancel": "取消",
+        "noteRequired": "请先写下核对依据再结清。",
+        "failed": "结清失败，该记录可能已被处理。"
       }
     },
     "status": {
@@ -207,6 +223,10 @@
         "username_sync_failed": "用户名同步失败",
         "conflict_requires_review": "需人工确认",
         "disabled": "已停用"
+      },
+      "ledger_source": {
+        "manual_adjustment": "手动调额",
+        "recharge": "充值"
       }
     }
   },

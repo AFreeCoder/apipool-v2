@@ -187,19 +187,29 @@ test('listAdjustmentLedgerByPortalUser returns manual adjustments with operator 
     user.id
   );
 
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0].id, 'admin_detail_manual_adjustment');
-  assert.equal(entries[0].source, 'manual_adjustment');
-  assert.equal(entries[0].amountUsd, 12.34);
-  assert.equal(entries[0].newapiUserId, 'remote_user_ledger');
-  assert.equal(entries[0].newapiChangeId, 'change_manual_adjustment');
-  assert.deepEqual(entries[0].audit, {
+  // 充值行必须一起可见：用户投诉「付了钱没到账」时，只看人工调额等于
+  // 看不到任何证据（原先这里断言 length === 1，把该缺陷写成了期望）。
+  assert.equal(entries.length, 2);
+  const recharge = entries.find((row: any) => row.source === 'recharge');
+  assert.ok(recharge, 'recharge ledger rows must be visible to admins');
+  assert.equal(recharge.orderNo, 'admin_detail_order');
+  assert.equal(recharge.amountUsd, 50);
+
+  const manual = entries.find(
+    (row: any) => row.id === 'admin_detail_manual_adjustment'
+  );
+  assert.ok(manual);
+  assert.equal(manual.source, 'manual_adjustment');
+  assert.equal(manual.amountUsd, 12.34);
+  assert.equal(manual.newapiUserId, 'remote_user_ledger');
+  assert.equal(manual.newapiChangeId, 'change_manual_adjustment');
+  assert.deepEqual(manual.audit, {
     id: 'admin_detail_manual_adjustment_audit',
     status: 'success',
     idempotencyKey: 'portal-adjustment:admin_detail_user_ledger:success',
     errorMessage: null,
   });
-  assert.deepEqual(entries[0].operator, {
+  assert.deepEqual(manual.operator, {
     id: operator.id,
     name: operator.name,
     email: operator.email,
@@ -395,7 +405,19 @@ test('admin user detail page keeps the required read-only data sources and i18n 
   assert.match(page, /detail\.ledger\.columns\.newapi_change/);
   assert.match(page, /detail\.ledger\.columns\.audit/);
   assert.match(page, /getTranslations\(['"]admin\.users['"]\)/);
-  assert.doesNotMatch(page, /[\u4e00-\u9fff]/);
+
+  // \u672a\u7ed3\u6e05\u7684\u8d26\u672c\u884c\u5fc5\u987b\u66b4\u9732\u4eba\u5de5\u7ed3\u6e05\u5165\u53e3\uff0c\u5426\u5219 fail-closed \u5b88\u536b\u53ea\u80fd\u9760\u6539\u5e93\u89e3\u5c01
+  assert.match(page, /ResolveAdjustmentButton/);
+  assert.match(page, /detail\.ledger\.columns\.source/);
+  // \u53ea\u8bfb\u7ba1\u7406\u5458\u4e0d\u8be5\u770b\u5230 USERS_WRITE \u7684\u6309\u94ae
+  assert.match(page, /canWriteUsers/);
+
+  // \u5b88\u536b\u9488\u5bf9\u7684\u662f\u786c\u7f16\u7801\u4e2d\u6587 UI \u6587\u6848\uff0c\u4e0d\u662f\u6ce8\u91ca\u3002\u5265\u6389\u6ce8\u91ca\u518d\u67e5\uff0c
+  // \u5426\u5219\u7528\u4e2d\u6587\u89e3\u91ca\u300c\u4e3a\u4ec0\u4e48\u8fd9\u4e48\u5199\u300d\u672c\u8eab\u4f1a\u8e29\u7ea2\u706f\u3002
+  const pageCode = page
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  assert.doesNotMatch(pageCode, /[\u4e00-\u9fff]/);
 });
 
 test('admin user detail page renders New API binding card and recovery actions', async () => {

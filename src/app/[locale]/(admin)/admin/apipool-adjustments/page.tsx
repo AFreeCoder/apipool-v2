@@ -3,6 +3,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
+import { findUserById } from '@/shared/models/user';
 import { Crumb } from '@/shared/types/blocks/common';
 
 export default async function ApipoolAdjustmentsPage({
@@ -23,6 +24,12 @@ export default async function ApipoolAdjustmentsPage({
 
   const t = await getTranslations('admin.apipoolAdjustments');
 
+  // 带 ?portalUserId= 直达时只显示裸 UUID，管理员无法确认调的是谁
+  const targetUser = portalUserId ? await findUserById(portalUserId) : null;
+  const resolvedUser = targetUser
+    ? `${targetUser.name} (${targetUser.email})`
+    : '';
+
   const crumbs: Crumb[] = [
     { title: t('page.crumbs.admin'), url: '/admin' },
     { title: t('page.crumbs.current'), is_active: true },
@@ -36,7 +43,10 @@ export default async function ApipoolAdjustmentsPage({
           title={t('page.title')}
           description={t('page.description')}
         />
-        <QuotaAdjustmentForm initialPortalUserId={portalUserId} />
+        <QuotaAdjustmentForm
+          initialPortalUserId={portalUserId}
+          initialResolvedUser={resolvedUser}
+        />
       </Main>
     </>
   );
