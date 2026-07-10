@@ -1,4 +1,4 @@
-import { formatDiscountRate } from '@/features/api-catalog/lib/pricing';
+import { formatDecimal } from '@/features/api-catalog/lib/pricing';
 import {
   getGroups,
   getListingsByModel,
@@ -52,12 +52,21 @@ export default async function AdminCatalogModelListingsPage({
   const statusNames = new Map(
     statuses.map((status) => [status.id, status.name])
   );
+  // 折扣文案按 locale 渲染：只从结构化 discountRateBps 生成，
+  // 中文「折」绝不漏进英文后台（对齐 /models 公开页 P0-6 方案）。
+  const renderDiscount = (bps: number | null) =>
+    bps === null
+      ? ''
+      : t('discount.value', {
+          fold: formatDecimal(bps / 1000),
+          percent: formatDecimal(bps / 100),
+        });
   const rows: ListingRow[] = listings.map((listing) => ({
     ...listing,
     groupSlug: groupById.get(listing.groupId)?.slug ?? listing.groupId,
     groupName: groupById.get(listing.groupId)?.name ?? listing.groupId,
     statusName: statusNames.get(listing.statusId) ?? listing.statusId,
-    discountRate: formatDiscountRate(listing.discountRateBps),
+    discountRate: renderDiscount(listing.discountRateBps),
   }));
 
   const crumbs: Crumb[] = [

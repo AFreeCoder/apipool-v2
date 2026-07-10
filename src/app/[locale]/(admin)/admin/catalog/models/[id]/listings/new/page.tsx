@@ -1,3 +1,4 @@
+import { collectErrorMessages } from '@/features/api-catalog/lib/errors';
 import {
   bpsToDiscountFold,
   discountFoldToBps,
@@ -54,7 +55,8 @@ export default async function CatalogModelListingNewPage({
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const duplicateListingMessage = t('errors.duplicateListing');
-  const successMessage = t('listings.new.success');
+  // 新 listing 的 priceDriftStatus 默认 unknown，公开页显示「—」，需先跑价格同步。
+  const successMessage = `${t('listings.new.success')} ${t('messages.priceHiddenAfterSave')}`;
   const [model, config] = await Promise.all([
     getModelById(id),
     getModelAdminConfig(id),
@@ -110,6 +112,9 @@ export default async function CatalogModelListingNewPage({
         // Fractional folds like 9.5 are legal; the browser default step=1
         // would reject them before the form is even submitted.
         attributes: { step: 'any' },
+        // 公开折扣当前由分组倍率决定，本字段仅作记录/预留（UI 只能产出
+        // inherit_group 策略，resolveEffectiveCatalogPrice 不读 discountRateBps）。
+        tip: t('fields.discountFoldTip'),
       },
       {
         name: 'discountNote',
@@ -210,10 +215,15 @@ export default async function CatalogModelListingNewPage({
         let result;
         try {
           result = await createListing(newListing);
-        } catch (error: any) {
+        } catch (error) {
           // uniq_listing_model_group：同一模型在同一分组只能有一条售卖项。
           // 不捕获的话 admin 看到的是原始 SQLite 约束错误（生产还会被脱敏成通用错误）。
-          if (/uniq_listing_model_group|UNIQUE constraint/i.test(String(error?.message))) {
+          // 约束文案落在 error.cause 里，必须走 collectErrorMessages 展开整条链。
+          if (
+            /uniq_listing_model_group|UNIQUE constraint/i.test(
+              collectErrorMessages(error)
+            )
+          ) {
             return {
               status: 'error' as const,
               message: duplicateListingMessage,

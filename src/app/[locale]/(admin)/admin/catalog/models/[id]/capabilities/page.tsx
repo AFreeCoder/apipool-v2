@@ -32,6 +32,9 @@ export default async function CatalogModelCapabilitiesPage({
   const missingRecordMessage = t('errors.missingRecord');
   const invalidSelectionMessage = t('models.capabilities.invalidSelection');
   const successMessage = t('models.capabilities.success');
+  // 0 能力的模型会被 mapListingRows 的 capabilities.length>0 过滤掉 → 从公开页
+  // 与建 Key 候选里静默消失。保存能成功，但成功消息必须点破这点。
+  const capabilitiesEmptyWarning = t('messages.capabilitiesEmptyWarning');
   const model = await getModelById(id);
 
   if (!model) {
@@ -116,9 +119,12 @@ export default async function CatalogModelCapabilitiesPage({
 
         revalidateCatalog();
 
+        const capabilityWarning =
+          capabilities.length === 0 ? ` ${capabilitiesEmptyWarning}` : '';
+
         return {
           status: 'success',
-          message: successMessage,
+          message: `${successMessage}${capabilityWarning}`,
           redirect_url: '/admin/catalog/models',
         };
       },

@@ -49,6 +49,7 @@ export type ModelAdminFormLabels = {
   modelId: string;
   displayName: string;
   vendor: string;
+  group: string;
   categories: string;
   capabilities: string;
   inputMicroUsd: string;
@@ -91,6 +92,7 @@ function parseMultiSelect(element: HTMLSelectElement) {
 export function ModelAdminForm({
   initial,
   vendors,
+  groups,
   categories,
   capabilities,
   labels,
@@ -101,7 +103,7 @@ export function ModelAdminForm({
   const [modelId, setModelId] = useState(initial.modelId);
   const [displayName, setDisplayName] = useState(initial.displayName);
   const [vendorId, setVendorId] = useState(initial.vendorId);
-  const [groupId] = useState(initial.groupId);
+  const [groupId, setGroupId] = useState(initial.groupId);
   const [statusId] = useState(initial.statusId);
   const [categoryIds, setCategoryIds] = useState(initial.categoryIds);
   const [capabilityIds, setCapabilityIds] = useState(initial.capabilityIds);
@@ -207,7 +209,7 @@ export function ModelAdminForm({
   return (
     <form onSubmit={submit} className="bg-card max-w-4xl rounded-lg border p-5">
       <div className="grid gap-5">
-        <div className="grid gap-4 md:grid-cols-1">
+        <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm">
             {labels.vendor}
             <select
@@ -230,6 +232,27 @@ export function ModelAdminForm({
             </select>
           </label>
 
+          <label className="grid gap-2 text-sm">
+            {labels.group}
+            <select
+              name="groupId"
+              value={groupId}
+              onChange={(event) => {
+                setGroupId(event.target.value);
+                setCandidates([]);
+                setHasSearched(false);
+                setSearchError('');
+              }}
+              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              required
+            >
+              {groups.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.title}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -381,7 +404,6 @@ export function ModelAdminForm({
           </label>
         </div>
 
-        <input type="hidden" name="groupId" value={groupId} />
         <input type="hidden" name="statusId" value={statusId} />
         <input type="hidden" name="discountFold" value={discountFold} />
         <input type="hidden" name="discountNote" value={discountNote} />

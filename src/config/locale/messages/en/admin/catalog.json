@@ -33,8 +33,13 @@
     "description": "Description",
     "createdAt": "Created At",
     "actions": "Actions",
+    "pricingStatus": "Pricing Status",
     "smokeTested": "Smoke tested",
-    "smokeTestedTip": "Only smoke-tested listings are eligible for the deploy smoke test."
+    "smokeTestedTip": "Only smoke-tested listings are eligible for the deploy smoke test.",
+    "discountFoldTip": "The public discount is currently driven by the group ratio; this field is recorded for reference only and does not change the public price."
+  },
+  "discount": {
+    "value": "{percent}% of list"
   },
   "actions": {
     "edit": "Edit",
@@ -57,7 +62,9 @@
     "missingRecord": "Record is missing",
     "missingBasePrice": "Missing model base input/output prices. Save the model base prices before creating a group discount.",
     "invalidPrice": "Price must be a non-negative finite number",
-    "duplicateListing": "This model already has a listing in the selected group. Edit the existing one instead."
+    "duplicateListing": "This model already has a listing in the selected group. Edit the existing one instead.",
+    "duplicateSlug": "This slug is already in use. Choose a different one.",
+    "duplicateModelId": "This model ID already exists. Edit the existing model instead."
   },
   "vendors": {
     "list": {
@@ -354,6 +361,7 @@
     }
   },
   "messages": {
-    "priceHiddenAfterSave": "Saved. The public price is hidden until you run a price sync for this model."
+    "priceHiddenAfterSave": "Saved. The public price is hidden until you run a price sync for this model.",
+    "capabilitiesEmptyWarning": "This model has no capabilities selected and will not appear on the public catalog or in key creation."
   }
 }

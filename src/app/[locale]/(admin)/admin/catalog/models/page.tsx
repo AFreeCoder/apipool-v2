@@ -1,3 +1,4 @@
+import { formatDecimal } from '@/features/api-catalog/lib/pricing';
 import {
   getModelAdminRows,
   ModelAdminRow,
@@ -29,6 +30,21 @@ export default async function AdminCatalogModelsPage({
   const t = await getTranslations('admin.catalog');
   const models = await getModelAdminRows();
 
+  // 折扣文案按 locale 渲染：服务层只回传结构化 discountRateBps，
+  // 中文「折」绝不漏进英文后台（对齐 /models 公开页 P0-6 方案）。
+  const renderDiscount = (bps: number | null) =>
+    bps === null
+      ? ''
+      : t('discount.value', {
+          fold: formatDecimal(bps / 1000),
+          percent: formatDecimal(bps / 100),
+        });
+
+  const rows = models.map((model) => ({
+    ...model,
+    discountRate: renderDiscount(model.discountRateBps),
+  }));
+
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
     { title: t('crumbs.catalog'), is_active: true },
@@ -45,6 +61,7 @@ export default async function AdminCatalogModelsPage({
       },
       { name: 'displayName', title: t('fields.displayName') },
       { name: 'vendorName', title: t('fields.vendor') },
+      { name: 'groupName', title: t('fields.group') },
       { name: 'categoryNames', title: t('fields.categories') },
       { name: 'capabilityNames', title: t('fields.capabilities') },
       {
@@ -65,6 +82,12 @@ export default async function AdminCatalogModelsPage({
       {
         name: 'imageOutputPrice',
         title: t('fields.imageOutputMicroUsd'),
+        className: 'font-mono text-xs',
+      },
+      { name: 'discountRate', title: t('fields.discountRate') },
+      {
+        name: 'pricingStatus',
+        title: t('fields.pricingStatus'),
         className: 'font-mono text-xs',
       },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },
@@ -100,7 +123,7 @@ export default async function AdminCatalogModelsPage({
         ],
       },
     ],
-    data: models,
+    data: rows,
   };
 
   return (

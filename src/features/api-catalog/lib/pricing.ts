@@ -121,12 +121,6 @@ export function bpsToDiscountFold(value: number | null | undefined): string {
   return formatDecimal(value / 1000);
 }
 
-export function formatDiscountRate(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '';
-
-  return `${formatDecimal(value / 1000)} 折 (${formatDecimal(value / 100)}%)`;
-}
-
 export function derivePricingFromNewApiPricing(
   pricing: NewApiPricingLike
 ): DerivedNewApiPricing {

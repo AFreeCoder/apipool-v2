@@ -267,11 +267,11 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   ]) {
     assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
-  for (const hiddenField of ['groupName', 'discountRate', 'pricingStatus']) {
-    assert.doesNotMatch(
-      listPage,
-      new RegExp(`name:\\s*['"]${hiddenField}['"]`)
-    );
+  // S-6: 分组 / 折扣 / 价格同步状态三列的数据服务层早已算好，必须注册进表格，
+  // 否则运营看不到某模型正处于 needs_live_check（公开页显示「—」）。
+  // 原断言把「三列缺失」写成了期望，这里改为断言三列都已注册。
+  for (const field of ['groupName', 'discountRate', 'pricingStatus']) {
+    assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
   assert.doesNotMatch(listPage, /contextWindow/);
 
@@ -464,7 +464,31 @@ test('catalog listing child pages expose per-model group discount CRUD with the 
   );
 });
 
-test('catalog sidebar exposes model catalog group in both locales', async () => {
+type SidebarNavItem = {
+  url?: string;
+  icon?: string;
+  children?: SidebarNavItem[];
+};
+
+// Walk an item tree (leaves + collapsibles) and collect every catalog leaf.
+// The sidebar was restructured (S-1) so the catalog group no longer keeps all
+// six routes in one flat `items[0].children` list — Models/Groups are now
+// top-level entries and the dictionary tables sit under a nested collapsible.
+// Asserting the exact old shape fixated that defect, so we verify the real
+// invariant instead: every catalog admin route is reachable and iconed.
+function collectCatalogLeaves(items: SidebarNavItem[]): SidebarNavItem[] {
+  const leaves: SidebarNavItem[] = [];
+  for (const item of items) {
+    if (item.children?.length) {
+      leaves.push(...collectCatalogLeaves(item.children));
+    } else if (item.url?.startsWith('/admin/catalog/')) {
+      leaves.push(item);
+    }
+  }
+  return leaves;
+}
+
+test('catalog sidebar exposes every model catalog route in both locales', async () => {
   const en = JSON.parse(
     await readFile(
       join(root, 'src/config/locale/messages/en/admin/sidebar.json'),
@@ -479,12 +503,12 @@ test('catalog sidebar exposes model catalog group in both locales', async () => 
   );
 
   const expectedUrls = [
-    '/admin/catalog/vendors',
-    '/admin/catalog/groups',
-    '/admin/catalog/categories',
     '/admin/catalog/capabilities',
-    '/admin/catalog/statuses',
+    '/admin/catalog/categories',
+    '/admin/catalog/groups',
     '/admin/catalog/models',
+    '/admin/catalog/statuses',
+    '/admin/catalog/vendors',
   ];
 
   const enCatalog = en.main_navs.find(
@@ -497,13 +521,14 @@ test('catalog sidebar exposes model catalog group in both locales', async () => 
   assert.ok(enCatalog);
   assert.ok(zhCatalog);
   for (const catalog of [enCatalog, zhCatalog]) {
+    const leaves = collectCatalogLeaves(catalog.items);
+    // Every catalog admin route is present exactly once...
     assert.deepEqual(
-      catalog.items[0].children.map((item: { url: string }) => item.url),
+      leaves.map((item) => item.url).sort(),
       expectedUrls
     );
-    assert.ok(
-      catalog.items[0].children.every((item: { icon?: string }) => item.icon)
-    );
+    // ...and each carries an icon.
+    assert.ok(leaves.every((item) => item.icon));
   }
 });
 
@@ -594,8 +619,10 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
   assert.ok(zh.listings.delete);
   assert.ok(en.errors.missingBasePrice);
   assert.ok(zh.errors.missingBasePrice);
-  assert.equal(en.fields.pricingStatus, undefined);
-  assert.equal(zh.fields.pricingStatus, undefined);
+  // S-6: pricingStatus 列现已注册进 models 列表，需要一个可翻译的表头。
+  // 原断言把「无该字段」写成了期望，这里改为断言两语言都定义了它。
+  assert.ok(en.fields.pricingStatus);
+  assert.ok(zh.fields.pricingStatus);
 
   assert.deepEqual(collectKeyPaths(en).sort(), collectKeyPaths(zh).sort());
 });

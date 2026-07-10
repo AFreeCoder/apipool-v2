@@ -33,8 +33,13 @@
     "description": "说明",
     "createdAt": "创建时间",
     "actions": "操作",
+    "pricingStatus": "定价状态",
     "smokeTested": "已冒烟验证",
-    "smokeTestedTip": "只有通过冒烟验证的售卖项才会进入部署冒烟测试的候选。"
+    "smokeTestedTip": "只有通过冒烟验证的售卖项才会进入部署冒烟测试的候选。",
+    "discountFoldTip": "当前公开折扣由分组倍率决定，本字段仅作记录/预留，不影响公开价。"
+  },
+  "discount": {
+    "value": "{fold} 折 ({percent}%)"
   },
   "actions": {
     "edit": "编辑",
@@ -57,7 +62,9 @@
     "missingRecord": "记录不存在",
     "missingBasePrice": "缺少模型基准输入/输出价格，请先在模型表单保存基准价格后再新增分组折扣",
     "invalidPrice": "价格必须是非负有限数字",
-    "duplicateListing": "该模型在所选分组下已存在售卖项，请直接编辑已有的那条。"
+    "duplicateListing": "该模型在所选分组下已存在售卖项，请直接编辑已有的那条。",
+    "duplicateSlug": "该标识已被占用，请换一个。",
+    "duplicateModelId": "该模型 ID 已存在，请直接编辑已有的模型。"
   },
   "vendors": {
     "list": {
@@ -354,6 +361,7 @@
     }
   },
   "messages": {
-    "priceHiddenAfterSave": "已保存。公开价已隐藏，需重新运行一次价格同步才会恢复展示。"
+    "priceHiddenAfterSave": "已保存。公开价已隐藏，需重新运行一次价格同步才会恢复展示。",
+    "capabilitiesEmptyWarning": "该模型未选择任何能力，不会在公开目录或建 Key 候选中展示。"
   }
 }

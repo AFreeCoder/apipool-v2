@@ -94,6 +94,9 @@ export default async function CatalogModelListingEditPage({
         // Fractional folds like 9.5 are legal; the browser default step=1
         // would reject them before the form is even submitted.
         attributes: { step: 'any' },
+        // 公开折扣当前由分组倍率决定，本字段仅作记录/预留（UI 只能产出
+        // inherit_group 策略，resolveEffectiveCatalogPrice 不读 discountRateBps）。
+        tip: t('fields.discountFoldTip'),
       },
       {
         name: 'discountNote',

@@ -1,3 +1,4 @@
+import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
 import {
   bpsToDiscountFold,
   discountFoldToBps,
@@ -55,6 +56,10 @@ export default async function CatalogModelEditPage({
   const missingRecordMessage = t('errors.missingRecord');
   const updateFailedMessage = t('errors.updateFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
+  const duplicateModelIdMessage = t('errors.duplicateModelId');
+  // 0 能力的模型会被 mapListingRows 的 capabilities.length>0 过滤掉 → 从公开页
+  // 与建 Key 候选里静默消失。保存能成功，但成功消息必须点破这点。
+  const capabilitiesEmptyWarning = t('messages.capabilitiesEmptyWarning');
   // 保存模型会把该模型所有 listing 的 priceDriftStatus 打回 needs_live_check，
   // 公开价随即隐藏为「—」。不提示的话运营改个名字就以为没事发生。
   const successMessage = `${t('models.edit.success')} ${t('messages.priceHiddenAfterSave')}`;
@@ -102,6 +107,8 @@ export default async function CatalogModelEditPage({
 
     const operator = await getUserInfo();
 
+    const capabilityIds = JSON.parse(data.get('capabilityIds') as string);
+
     try {
       const result = await upsertModelAdminConfig({
         modelId: model.id,
@@ -141,7 +148,7 @@ export default async function CatalogModelEditPage({
           featured: listing?.featured ?? false,
           sortOrder: listing?.sortOrder ?? 0,
         },
-        capabilityIds: JSON.parse(data.get('capabilityIds') as string),
+        capabilityIds,
       });
 
       if (!result) {
@@ -151,15 +158,23 @@ export default async function CatalogModelEditPage({
       if (error instanceof FormValidationError) {
         return { status: 'error' as const, message: error.message };
       }
+      // 撞 catalog_model.model_id 唯一索引（编辑可改 modelId）：给出可读提示
+      // 而非原始 SQLite 错误（生产还会被 Next.js 脱敏成通用英文）。约束文案在 cause 里。
+      if (isUniqueConstraintError(error)) {
+        return { status: 'error' as const, message: duplicateModelIdMessage };
+      }
       // 未知错误继续上抛：真 500 应进 error 边界，而不是伪装成业务错误。
       throw error;
     }
 
     revalidateCatalog();
 
+    const capabilityWarning =
+      capabilityIds.length === 0 ? ` ${capabilitiesEmptyWarning}` : '';
+
     return {
       status: 'success' as const,
-      message: successMessage,
+      message: `${successMessage}${capabilityWarning}`,
       redirect_url: '/admin/catalog/models',
     };
   };
@@ -191,6 +206,7 @@ export default async function CatalogModelEditPage({
             modelId: t('fields.modelId'),
             displayName: t('fields.displayName'),
             vendor: t('fields.vendor'),
+            group: t('fields.group'),
             categories: t('fields.categories'),
             capabilities: t('fields.capabilities'),
             inputMicroUsd: t('fields.inputMicroUsd'),

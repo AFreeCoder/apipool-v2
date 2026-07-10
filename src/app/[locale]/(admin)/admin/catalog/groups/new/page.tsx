@@ -1,3 +1,4 @@
+import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
 import {
   createGroup,
   NewCatalogGroup,
@@ -27,6 +28,7 @@ export default async function CatalogGroupNewPage({
 
   const t = await getTranslations('admin.catalog');
   const createFailedMessage = t('errors.createFailed');
+  const duplicateSlugMessage = t('errors.duplicateSlug');
   const successMessage = t('groups.new.success');
 
   const crumbs: Crumb[] = [
@@ -109,7 +111,17 @@ export default async function CatalogGroupNewPage({
           status: (data.get('status') as string) || 'active',
         } as NewCatalogGroup;
 
-        const result = await createGroup(newGroup);
+        let result;
+        try {
+          result = await createGroup(newGroup);
+        } catch (error) {
+          // 撞 slug 唯一索引：给出可读提示而非原始 SQLite 错误
+          // （生产还会被 Next.js 脱敏成通用英文）。约束文案在 error.cause 里。
+          if (isUniqueConstraintError(error)) {
+            return { status: 'error' as const, message: duplicateSlugMessage };
+          }
+          throw error;
+        }
 
         if (!result) {
           return { status: 'error' as const, message: createFailedMessage };

@@ -5,7 +5,6 @@ import {
   derivePricingFromNewApiPricing,
   discountFoldToBps,
   dollarsToMicroUsd,
-  formatDiscountRate,
   microUsdToDollars,
   normalizeDecimalString,
   normalizeGroupRatio,
@@ -65,8 +64,9 @@ test('catalog discount helpers support sub-1-fold discounts without floats in st
   assert.equal(discountFoldToBps('0.5'), 500);
   assert.equal(discountFoldToBps('0.05'), 50);
   assert.equal(bpsToDiscountFold(500), '0.5');
-  assert.equal(formatDiscountRate(500), '0.5 折 (5%)');
-  assert.equal(formatDiscountRate(null), '');
+  // 折扣文案不再由服务层预格式化（formatDiscountRate 已删除）：只保留结构化
+  // bps↔fold 转换，「折」的中文文案改由页面按 locale 词条渲染，避免漏进英文站。
+  assert.equal(bpsToDiscountFold(null), '');
   assert.throws(() => discountFoldToBps('0'), /between 0.01 and 10/);
   assert.throws(() => discountFoldToBps('11'), /between 0.01 and 10/);
 });
