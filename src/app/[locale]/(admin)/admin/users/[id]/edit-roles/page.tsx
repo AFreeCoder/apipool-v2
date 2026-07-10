@@ -29,6 +29,7 @@ export default async function UserEditRolesPage({
   });
 
   const t = await getTranslations('admin.users');
+  const savedMessage = t('messages.rolesSaved');
   const user = await findUserById(id);
   if (!user) {
     return <Empty message={t('empty.not_found')} />;
@@ -114,7 +115,7 @@ export default async function UserEditRolesPage({
 
         return {
           status: 'success',
-          message: 'roles updated',
+          message: savedMessage,
           redirect_url: '/admin/users',
         };
       },

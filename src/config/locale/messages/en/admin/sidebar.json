@@ -38,9 +38,19 @@
           "is_expand": true,
           "children": [
             {
+              "title": "General",
+              "url": "/admin/settings/general",
+              "icon": "Settings2"
+            },
+            {
               "title": "Auth",
               "url": "/admin/settings/auth",
               "icon": "KeyRound"
+            },
+            {
+              "title": "Payment",
+              "url": "/admin/settings/payment",
+              "icon": "CreditCard"
             },
             {
               "title": "Email",
@@ -135,12 +145,6 @@
           "title": "GitHub",
           "url": "https://github.com/AFreeCoder/APIPool_v2",
           "icon": "Github",
-          "target": "_blank"
-        },
-        {
-          "title": "Twitter",
-          "url": "https://apipool.dev",
-          "icon": "RiTwitterXFill",
           "target": "_blank"
         },
         {

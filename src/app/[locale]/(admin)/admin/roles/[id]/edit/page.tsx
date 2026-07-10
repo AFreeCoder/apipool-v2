@@ -24,6 +24,7 @@ export default async function RoleEditPage({
   });
 
   const t = await getTranslations('admin.roles');
+  const savedMessage = t('messages.roleSaved');
   const role = await getRoleById(id as string);
   if (!role) {
     return <Empty message={t('empty.not_found')} />;
@@ -88,7 +89,7 @@ export default async function RoleEditPage({
 
         return {
           status: 'success',
-          message: 'role updated',
+          message: savedMessage,
           redirect_url: '/admin/roles',
         };
       },

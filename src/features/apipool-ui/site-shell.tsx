@@ -48,8 +48,14 @@ export async function SiteShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center justify-end gap-2">
-            {/* Two controls max: CTA + avatar. Theme/language live in the
-                avatar menu (signed in) and the footer (signed out). */}
+            {/* Language gets a standalone header icon (like APIMart);
+                theme stays in the avatar menu / footer. On <lg the
+                drawer keeps its own language entry. */}
+            <LocaleSelector
+              type="icon"
+              label={t('mobile.language')}
+              className="text-muted-foreground hover:text-foreground hidden size-9 p-2 lg:inline-flex"
+            />
             <HeaderAuthCluster
               consoleLabel={t('nav.console')}
               getStartedLabel={t('nav.getStarted')}

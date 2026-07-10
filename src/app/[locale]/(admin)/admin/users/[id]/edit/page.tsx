@@ -24,6 +24,9 @@ export default async function UserEditPage({
   });
 
   const t = await getTranslations('admin.users');
+  // Captured at render time: the inline server action can only close over
+  // serializable values, not the translator itself.
+  const savedMessage = t('messages.userSaved');
   const user = await findUserById(id);
   if (!user) {
     return <Empty message={t('empty.not_found')} />;
@@ -87,7 +90,7 @@ export default async function UserEditPage({
 
         return {
           status: 'success',
-          message: 'user updated',
+          message: savedMessage,
           redirect_url: '/admin/users',
         };
       },

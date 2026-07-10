@@ -51,6 +51,9 @@
     },
     "placeholders": {
       "configured_password": "已配置，留空则保持不变。"
+    },
+    "messages": {
+      "saved": "设置已保存"
     }
   }
 }

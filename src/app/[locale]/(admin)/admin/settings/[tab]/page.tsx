@@ -111,6 +111,7 @@ export default async function SettingsPage({
   });
 
   const t = await getTranslations('admin.settings');
+  const savedMessage = t('edit.messages.saved');
   const tabs = await getSettingTabs(tab);
   const activeTab = tabs.find((item) => item.name === tab);
   if (!activeTab) {
@@ -184,7 +185,7 @@ export default async function SettingsPage({
 
         return {
           status: 'success',
-          message: 'settings updated',
+          message: savedMessage,
           redirect_url: `/admin/settings/${tab}`,
         };
       },

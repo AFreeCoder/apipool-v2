@@ -11,13 +11,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu';
+import { cn } from '@/shared/lib/utils';
 
 import { useLocaleSwitcher } from './use-locale-switcher';
 
 export function LocaleSelector({
   type = 'icon',
+  className,
+  label,
 }: {
   type?: 'icon' | 'button';
+  className?: string;
+  label?: string;
 }) {
   const { currentLocale, switchLocale } = useLocaleSwitcher();
   const [mounted, setMounted] = useState(false);
@@ -32,9 +37,11 @@ export function LocaleSelector({
       <Button
         variant={type === 'icon' ? 'ghost' : 'outline'}
         size={type === 'icon' ? 'icon' : 'sm'}
-        className={
-          type === 'icon' ? 'h-auto w-auto p-0' : 'hover:bg-primary/10'
-        }
+        className={cn(
+          type === 'icon' ? 'h-auto w-auto p-0' : 'hover:bg-primary/10',
+          className
+        )}
+        aria-label={label}
         disabled
       >
         {type === 'icon' ? (
@@ -53,11 +60,21 @@ export function LocaleSelector({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {type === 'icon' ? (
-          <Button variant="ghost" size="icon" className="h-auto w-auto p-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn('h-auto w-auto p-0', className)}
+            aria-label={label}
+          >
             <Languages size={18} />
           </Button>
         ) : (
-          <Button variant="outline" size="sm" className="hover:bg-primary/10">
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn('hover:bg-primary/10', className)}
+            aria-label={label}
+          >
             <Globe size={16} />
             {localeNames[currentLocale]}
           </Button>

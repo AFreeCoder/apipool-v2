@@ -60,12 +60,9 @@ export async function getSettingTabs(tab: string) {
       is_active: tab === 'storage',
     },
 
-    {
-      name: 'ai',
-      title: t('edit.tabs.ai'),
-      url: '/admin/settings/ai',
-      is_active: tab === 'ai',
-    },
+    // The 'ai' tab is intentionally not exposed: its fields feed
+    // shared/services/ai.ts which nothing imports, and on an AI API
+    // portal a dead "AI keys" tab is an operator trap.
     {
       name: 'analytics',
       title: t('edit.tabs.analytics'),
@@ -370,7 +367,7 @@ export async function getSettings() {
     },
     {
       name: 'email_auth_enabled',
-      title: 'Enabled',
+      title: 'Email Auth Enabled',
       type: 'switch',
       value: 'true',
       group: 'email_auth',
@@ -387,7 +384,7 @@ export async function getSettings() {
     },
     {
       name: 'google_auth_enabled',
-      title: 'Auth Enabled',
+      title: 'Google Auth Enabled',
       type: 'switch',
       value: 'false',
       group: 'google_auth',
@@ -395,7 +392,7 @@ export async function getSettings() {
     },
     {
       name: 'google_one_tap_enabled',
-      title: 'OneTap Enabled',
+      title: 'Google One Tap Enabled',
       type: 'switch',
       value: 'false',
       group: 'google_auth',
@@ -419,7 +416,7 @@ export async function getSettings() {
     },
     {
       name: 'github_auth_enabled',
-      title: 'Auth Enabled',
+      title: 'GitHub Auth Enabled',
       type: 'switch',
       group: 'github_auth',
       tab: 'auth',

@@ -855,6 +855,21 @@ export async function upsertModelAdminConfig(
       throw new Error('model base price was not saved');
     }
 
+    // The base price feeds every listing of this model, so all of them —
+    // not just the one edited below — must fall back to needs_live_check
+    // until the next pricing sync re-confirms the match. Otherwise a
+    // listing in another group keeps its 'matched' status and immediately
+    // shows "new base price × its ratio" while New API still bills the
+    // old model_ratio (same hide-until-confirmed contract as updateGroup).
+    await tx
+      .update(catalogModelListing)
+      .set({
+        priceDriftStatus: 'needs_live_check',
+        effectivePriceFormula: null,
+        effectivePriceSyncedAt: null,
+      })
+      .where(eq(catalogModelListing.modelId, model.id));
+
     const listingPatch = {
       modelId: model.id,
       groupId: input.listing.groupId,

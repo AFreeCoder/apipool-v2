@@ -91,6 +91,9 @@ export default async function CatalogModelListingEditPage({
         type: 'number',
         title: t('fields.discountRate'),
         validation: { min: 0.01, max: 10 },
+        // Fractional folds like 9.5 are legal; the browser default step=1
+        // would reject them before the form is even submitted.
+        attributes: { step: 'any' },
       },
       {
         name: 'discountNote',

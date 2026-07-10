@@ -29,6 +29,7 @@ export default async function RoleEditPermissionsPage({
   });
 
   const t = await getTranslations('admin.roles');
+  const savedMessage = t('messages.permissionsSaved');
   const role = await getRoleById(id);
   if (!role) {
     return <Empty message={t('empty.not_found')} />;
@@ -123,7 +124,7 @@ export default async function RoleEditPermissionsPage({
 
         return {
           status: 'success',
-          message: 'permissions updated',
+          message: savedMessage,
           redirect_url: '/admin/roles',
         };
       },

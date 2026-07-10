@@ -194,21 +194,22 @@ export async function assignPermissionsToRole(
   roleId: string,
   permissionIds: string[]
 ): Promise<void> {
-  // First, remove all existing permissions
-  await db().delete(rolePermission).where(eq(rolePermission.roleId, roleId));
+  // Delete + insert must be atomic: a failed insert (e.g. a stale
+  // permission id rejected by the FK) would otherwise leave the role
+  // with zero permissions — for admin roles that locks everyone out.
+  await db().transaction(async (tx: any) => {
+    await tx.delete(rolePermission).where(eq(rolePermission.roleId, roleId));
 
-  // Then, add new permissions
-  if (permissionIds.length > 0) {
-    await db()
-      .insert(rolePermission)
-      .values(
+    if (permissionIds.length > 0) {
+      await tx.insert(rolePermission).values(
         permissionIds.map((permissionId) => ({
           id: getUuid(),
           roleId,
           permissionId,
         }))
       );
-  }
+    }
+  });
 }
 
 /**

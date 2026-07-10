@@ -48,5 +48,9 @@
     "buttons": {
       "submit": "更新"
     }
+  },
+  "messages": {
+    "roleSaved": "角色已更新",
+    "permissionsSaved": "权限已更新"
   }
 }

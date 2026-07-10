@@ -51,6 +51,9 @@
     },
     "placeholders": {
       "configured_password": "Configured. Leave blank to keep unchanged."
+    },
+    "messages": {
+      "saved": "Settings saved"
     }
   }
 }

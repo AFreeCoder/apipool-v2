@@ -124,7 +124,10 @@ export function LocaleDetector() {
     setShowBanner(false);
   };
 
-  if (!showBanner || !browserLocale) {
+  // The admin shell's fixed sidebar spans the full viewport height and
+  // would cover the in-flow banner; the admin header already exposes an
+  // explicit locale switcher, so skip the suggestion there.
+  if (!showBanner || !browserLocale || pathname.startsWith('/admin')) {
     return null;
   }
 

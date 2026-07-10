@@ -21,6 +21,7 @@ import {
 import { getTranslations } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
+import { ConfirmActionButton } from '@/shared/blocks/common/confirm-action-button';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { Table } from '@/shared/blocks/table';
 import { TableCard } from '@/shared/blocks/table/table-card';
@@ -487,7 +488,13 @@ export default async function AdminUserDetailPage({
                     </Button>
                   </form>
                 ) : null}
-                <form
+                <ConfirmActionButton
+                  label={t('detail.binding.actions.disable')}
+                  title={t('detail.binding.disable_confirm.title')}
+                  description={t('detail.binding.disable_confirm.description')}
+                  confirmLabel={t('detail.binding.disable_confirm.confirm')}
+                  cancelLabel={t('detail.binding.disable_confirm.cancel')}
+                  errorMessage={t('detail.binding.disable_confirm.error')}
                   action={async () => {
                     'use server';
                     await disableNewapiUserBindingAction({
@@ -495,11 +502,7 @@ export default async function AdminUserDetailPage({
                       reason: 'admin detail action',
                     });
                   }}
-                >
-                  <Button type="submit" variant="destructive" size="sm">
-                    {t('detail.binding.actions.disable')}
-                  </Button>
-                </form>
+                />
               </div>
             </CardContent>
           </Card>

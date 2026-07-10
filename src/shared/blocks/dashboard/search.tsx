@@ -20,13 +20,15 @@ export function Search({ search }: { search: SearchType }) {
 
     const params = new URLSearchParams(searchParams.toString());
 
-    params.set(search.name, value);
-
     if (value) {
       params.set(search.name, value);
     } else {
       params.delete(search.name);
     }
+
+    // A new search always restarts from the first page; a stale `page`
+    // offset would silently return an empty list.
+    params.delete('page');
 
     router.push(`?${params.toString()}`);
   };

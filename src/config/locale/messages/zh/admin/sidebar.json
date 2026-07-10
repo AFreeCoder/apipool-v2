@@ -38,9 +38,19 @@
           "is_expand": true,
           "children": [
             {
+              "title": "通用",
+              "url": "/admin/settings/general",
+              "icon": "Settings2"
+            },
+            {
               "title": "认证",
               "url": "/admin/settings/auth",
               "icon": "KeyRound"
+            },
+            {
+              "title": "支付",
+              "url": "/admin/settings/payment",
+              "icon": "CreditCard"
             },
             {
               "title": "邮箱",
@@ -135,12 +145,6 @@
           "title": "GitHub",
           "url": "https://github.com/AFreeCoder/APIPool_v2",
           "icon": "Github",
-          "target": "_blank"
-        },
-        {
-          "title": "推特",
-          "url": "https://apipool.dev",
-          "icon": "RiTwitterXFill",
           "target": "_blank"
         },
         {

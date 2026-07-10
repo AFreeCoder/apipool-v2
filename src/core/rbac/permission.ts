@@ -1,4 +1,8 @@
+import { headers } from 'next/headers';
+
+import { defaultLocale } from '@/config/locale';
 import { redirect } from '@/core/i18n/navigation';
+import { safeInternalPath } from '@/shared/lib/safe-path';
 import { getSignUser } from '@/shared/models/user';
 import {
   hasAllPermissions,
@@ -260,7 +264,20 @@ export async function requireAdminAccess({
   const user = await getSignUser();
 
   if (!user) {
-    redirect({ href: '/sign-in', locale: locale || '' });
+    // Send the operator back to the admin page they asked for after
+    // signing in (deep links otherwise land on the site home). Mirrors
+    // the dashboard layout: proxy.ts writes the path into x-pathname.
+    const pathname = (await headers()).get('x-pathname') || '';
+    const safe = safeInternalPath(pathname);
+    const stripped =
+      locale && locale !== defaultLocale && safe.startsWith(`/${locale}/`)
+        ? safe.slice(locale.length + 1)
+        : safe;
+    const callbackUrl = stripped.startsWith('/admin') ? stripped : '/admin';
+    redirect({
+      href: `/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`,
+      locale: locale || '',
+    });
   }
 
   const allowed = await canAccessAdmin(user!.id);

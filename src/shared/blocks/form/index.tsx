@@ -43,6 +43,13 @@ function buildFieldSchema(field: FormFieldType) {
     // Accept both number (from initial data) and string (from input onChange)
     let schema = z.union([z.number(), z.string()]);
 
+    // An optional number left blank must not run the numeric refinements:
+    // Number('') is 0, which would fail a min constraint and block the
+    // whole form even though the field was never filled in.
+    const isBlankOptional = (val: unknown) =>
+      !field.validation?.required &&
+      (val === undefined || val === null || val === '');
+
     if (field.validation?.required) {
       schema = schema.refine(
         (val) => {
@@ -60,6 +67,7 @@ function buildFieldSchema(field: FormFieldType) {
     // Validate that the value can be converted to a valid number
     schema = schema.refine(
       (val) => {
+        if (isBlankOptional(val)) return true;
         const num = typeof val === 'number' ? val : Number(val);
         return !isNaN(num) && isFinite(num);
       },
@@ -73,6 +81,7 @@ function buildFieldSchema(field: FormFieldType) {
     if (field.validation?.min !== undefined) {
       schema = schema.refine(
         (val) => {
+          if (isBlankOptional(val)) return true;
           const num = typeof val === 'number' ? val : Number(val);
           return num >= field.validation!.min!;
         },
@@ -88,6 +97,7 @@ function buildFieldSchema(field: FormFieldType) {
     if (field.validation?.max !== undefined) {
       schema = schema.refine(
         (val) => {
+          if (isBlankOptional(val)) return true;
           const num = typeof val === 'number' ? val : Number(val);
           return num <= field.validation!.max!;
         },
@@ -280,7 +290,6 @@ export function Form({
       const formData = new FormData();
 
       Object.entries(data).forEach(([key, value]) => {
-        console.log('checkbox value', key, typeof value);
         // If it's an array, join with commas
         if (Array.isArray(value)) {
           // const joinedValue = value.join(",");

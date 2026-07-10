@@ -48,5 +48,9 @@
     "buttons": {
       "submit": "Update"
     }
+  },
+  "messages": {
+    "roleSaved": "Role updated",
+    "permissionsSaved": "Permissions updated"
   }
 }
