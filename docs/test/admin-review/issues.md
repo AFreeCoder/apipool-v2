@@ -1,10 +1,10 @@
 # 管理后台审查遗留清单
 
-- 基线：main @ 03a3e76 + 本轮工作区修复（未提交）
+- 基线：main @ 03a3e76
 - 来源：[report.md](report.md)（2026-07-09 管理后台三维度审查 + 实走）
 - 规则：条目被解决/升级时勾掉并回链对应 feature 或提交。已在 `docs/test/pre-launch-review/issues.md` 挂账的项不重复列出。
 
-## 本轮已修复（工作区，待提交）
+## 本轮已修复（F 批已合入 `30e3b09`，文档 `ae9ec47`）
 
 - [x] F-1（P0）`assignPermissionsToRole` 非事务 delete+insert 可清空角色权限锁死后台 —— 包事务
 - [x] F-2（P0）编辑模型只重置一条 listing 的 drift，其他分组公开价与计费脱钩 —— 事务内全量打回 `needs_live_check`
@@ -25,9 +25,9 @@
 
 ## 上线前建议完成
 
-- [ ] **R-1 管理员正向调额未接 `onRedemptionCreated`/`remoteAttemptAt`，崩溃窗口可双倍到账**（资金链路，按 P0-1 批次 TDD 流程做，~20 行照抄 recharge.ts）
-- [ ] **R-2 生产环境 admin 表单业务错误全部被脱敏成通用英文**（throw→return {status:'error'} 机械改造 ~12 文件；注意 pre-launch P1-8 的修复在生产实际无效）
-- [ ] **R-3 停用绑定无恢复路径**，被停用户充值落终态 failed（需真实 New API 验证恢复语义）
+- [x] **R-1 管理员正向调额未接 `onRedemptionCreated`/`remoteAttemptAt`，崩溃窗口可双倍到账** —— 2026-07-09 已修复，回链提交 `5537976`。远端副作用前落 `remoteAttemptAt`、码值经 `onRedemptionCreated` 预落库、码已发出后的失败一律升级 `reconciliation_required`；TDD 2 用例守护。
+- [x] **R-2 生产环境 admin 表单业务错误全部被脱敏成通用英文** —— 2026-07-09 已修复，回链提交 `2193a2d`。catalog 21 个 CRUD 页的业务错误全部改为 `return {status:'error', message}`（输入校验辅助函数改抛私有 `FormValidationError` 在 action 内捕获；未知错误继续上抛进 error 边界）；新增守卫测试 `catalog-admin-error-contract.test.ts` 禁止页面再出现 `throw new Error(`。pre-launch P1-8 的翻译提示自此在生产真正可见。
+- [x] **R-3 停用绑定无恢复路径**，被停用户充值落终态 failed —— 2026-07-09 已修复，回链提交 `5537976`。新增 `restoreNewapiUserBindingForAdmin`（翻出 disabled + 复用幂等重试管线），详情页停用态只显示「恢复绑定」；3 用例 + 浏览器实走通过；守卫扩展见 `abe41ce`。**遗留**：幂等接回同一远端用户依赖 `provisionUser` 的按名恢复语义，建议上线后在真实 New API 复验一次。
 - [ ] **R-4 用户编辑页头像上传必失败且清空原头像**（MVP 期移除字段，~5 行）
 - [ ] **R-5 `/admin` 落点绑最高危权限**，低权限角色进后台即 no-permission；调额页面包屑自环（与 S-2 overview 一并做最合算）
 - [ ] **R-6 调额页闭环断裂**：失败不给原因 / portalUserId 直达不回显身份 / 成功无详情页链接（≤50 行）
