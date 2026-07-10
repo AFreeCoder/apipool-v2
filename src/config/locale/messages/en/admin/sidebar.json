@@ -8,30 +8,65 @@
   },
   "main_navs": [
     {
-      "title": "System",
+      "title": "Operations",
       "items": [
         {
-          "title": "Users & Permissions",
-          "icon": "User",
-          "is_expand": true,
+          "title": "Quota Adjustments",
+          "url": "/admin/apipool-adjustments",
+          "icon": "Gauge"
+        },
+        {
+          "title": "Users",
+          "url": "/admin/users",
+          "icon": "User"
+        }
+      ]
+    },
+    {
+      "title": "Model Catalog",
+      "items": [
+        {
+          "title": "Models",
+          "url": "/admin/catalog/models",
+          "icon": "Bot"
+        },
+        {
+          "title": "Groups",
+          "url": "/admin/catalog/groups",
+          "icon": "Layers"
+        },
+        {
+          "title": "Dictionary",
+          "icon": "Boxes",
+          "is_expand": false,
           "children": [
             {
-              "title": "Users",
-              "url": "/admin/users",
-              "icon": "User"
+              "title": "Vendors",
+              "url": "/admin/catalog/vendors",
+              "icon": "Store"
             },
             {
-              "title": "Roles",
-              "url": "/admin/roles",
-              "icon": "Users"
+              "title": "Categories",
+              "url": "/admin/catalog/categories",
+              "icon": "Shapes"
             },
             {
-              "title": "Permissions",
-              "url": "/admin/permissions",
-              "icon": "ShieldCheck"
+              "title": "Capabilities",
+              "url": "/admin/catalog/capabilities",
+              "icon": "Tags"
+            },
+            {
+              "title": "Statuses",
+              "url": "/admin/catalog/statuses",
+              "icon": "BadgeCheck"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "title": "System",
+      "items": [
         {
           "title": "Settings",
           "icon": "Settings",
@@ -58,58 +93,16 @@
               "icon": "Mail"
             }
           ]
-        }
-      ]
-    },
-    {
-      "title": "Business",
-      "items": [
+        },
         {
-          "title": "APIPool Quota",
-          "url": "/admin/apipool-adjustments",
-          "icon": "Gauge"
-        }
-      ]
-    },
-    {
-      "title": "Model Catalog",
-      "items": [
+          "title": "Roles",
+          "url": "/admin/roles",
+          "icon": "Users"
+        },
         {
-          "title": "Model Catalog",
-          "icon": "Boxes",
-          "is_expand": true,
-          "children": [
-            {
-              "title": "Vendors",
-              "url": "/admin/catalog/vendors",
-              "icon": "Store"
-            },
-            {
-              "title": "Groups",
-              "url": "/admin/catalog/groups",
-              "icon": "Layers"
-            },
-            {
-              "title": "Categories",
-              "url": "/admin/catalog/categories",
-              "icon": "Shapes"
-            },
-            {
-              "title": "Capabilities",
-              "url": "/admin/catalog/capabilities",
-              "icon": "Tags"
-            },
-            {
-              "title": "Statuses",
-              "url": "/admin/catalog/statuses",
-              "icon": "BadgeCheck"
-            },
-            {
-              "title": "Models",
-              "url": "/admin/catalog/models",
-              "icon": "Bot"
-            }
-          ]
+          "title": "Permissions",
+          "url": "/admin/permissions",
+          "icon": "ShieldCheck"
         }
       ]
     }

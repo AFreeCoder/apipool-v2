@@ -36,20 +36,18 @@ export function MainHeader({
         </div>
         <div>
           {actions?.map((action, idx) => (
-            <Link
+            <Button
               key={idx}
-              href={action.url || ''}
-              target={action.target || '_self'}
+              asChild
+              onClick={action.onClick}
+              variant={action.variant || 'default'}
+              size={action.size || 'sm'}
             >
-              <Button
-                onClick={action.onClick}
-                variant={action.variant || 'default'}
-                size={action.size || 'sm'}
-              >
+              <Link href={action.url || ''} target={action.target || '_self'}>
                 {action.icon && <SmartIcon name={action.icon as string} />}
                 {action.title}
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           ))}
         </div>
       </div>

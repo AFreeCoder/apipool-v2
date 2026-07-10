@@ -69,6 +69,8 @@
     "close": "Close language suggestion"
   },
   "no_permission": {
-    "access_denied": "Access denied"
+    "access_denied": "Access denied",
+    "description": "You don't have permission to view this page.",
+    "back_home": "Back to home"
   }
 }

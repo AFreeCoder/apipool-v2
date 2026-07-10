@@ -69,6 +69,8 @@
     "close": "关闭语言提示"
   },
   "no_permission": {
-    "access_denied": "无权访问"
+    "access_denied": "无权访问",
+    "description": "你没有查看该页面的权限。",
+    "back_home": "返回首页"
   }
 }

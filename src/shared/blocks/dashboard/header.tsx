@@ -68,6 +68,7 @@ export function Header({
               {buttons.map((button, idx) => (
                 <Button
                   key={idx}
+                  asChild
                   variant={button.variant || 'outline'}
                   size="sm"
                 >

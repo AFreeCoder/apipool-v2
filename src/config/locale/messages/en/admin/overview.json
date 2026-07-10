@@ -1,0 +1,26 @@
+{
+  "page": {
+    "title": "Overview",
+    "description": "Operational signals that need an operator's attention.",
+    "crumb": "Overview"
+  },
+  "viewAction": "View",
+  "cards": {
+    "reconciliation": {
+      "title": "Reconciliation required",
+      "description": "Ledger entries whose remote result could not be confirmed. Resolve before any further quota changes."
+    },
+    "pendingAdjustments": {
+      "title": "Pending adjustments",
+      "description": "Manual quota adjustments still settling. New adjustments are blocked while any remain."
+    },
+    "syncIssues": {
+      "title": "Binding sync issues",
+      "description": "Users whose New API binding is stuck in a transitional state."
+    },
+    "priceDrift": {
+      "title": "Prices hidden",
+      "description": "Listings whose public price is withheld until a live price check passes."
+    }
+  }
+}

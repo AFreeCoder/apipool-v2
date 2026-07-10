@@ -8,30 +8,65 @@
   },
   "main_navs": [
     {
-      "title": "系统",
+      "title": "运营",
       "items": [
         {
-          "title": "用户与权限",
-          "icon": "User",
-          "is_expand": true,
+          "title": "APIPool 调额",
+          "url": "/admin/apipool-adjustments",
+          "icon": "Gauge"
+        },
+        {
+          "title": "用户",
+          "url": "/admin/users",
+          "icon": "User"
+        }
+      ]
+    },
+    {
+      "title": "模型目录",
+      "items": [
+        {
+          "title": "模型",
+          "url": "/admin/catalog/models",
+          "icon": "Bot"
+        },
+        {
+          "title": "分组",
+          "url": "/admin/catalog/groups",
+          "icon": "Layers"
+        },
+        {
+          "title": "字典",
+          "icon": "Boxes",
+          "is_expand": false,
           "children": [
             {
-              "title": "用户",
-              "url": "/admin/users",
-              "icon": "User"
+              "title": "供应商",
+              "url": "/admin/catalog/vendors",
+              "icon": "Store"
             },
             {
-              "title": "角色",
-              "url": "/admin/roles",
-              "icon": "Users"
+              "title": "分类",
+              "url": "/admin/catalog/categories",
+              "icon": "Shapes"
             },
             {
-              "title": "权限",
-              "url": "/admin/permissions",
-              "icon": "ShieldCheck"
+              "title": "能力",
+              "url": "/admin/catalog/capabilities",
+              "icon": "Tags"
+            },
+            {
+              "title": "状态",
+              "url": "/admin/catalog/statuses",
+              "icon": "BadgeCheck"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "title": "系统",
+      "items": [
         {
           "title": "设置",
           "icon": "Settings",
@@ -58,58 +93,16 @@
               "icon": "Mail"
             }
           ]
-        }
-      ]
-    },
-    {
-      "title": "业务",
-      "items": [
+        },
         {
-          "title": "APIPool 调额",
-          "url": "/admin/apipool-adjustments",
-          "icon": "Gauge"
-        }
-      ]
-    },
-    {
-      "title": "模型目录",
-      "items": [
+          "title": "角色",
+          "url": "/admin/roles",
+          "icon": "Users"
+        },
         {
-          "title": "模型目录",
-          "icon": "Boxes",
-          "is_expand": true,
-          "children": [
-            {
-              "title": "供应商",
-              "url": "/admin/catalog/vendors",
-              "icon": "Store"
-            },
-            {
-              "title": "分组",
-              "url": "/admin/catalog/groups",
-              "icon": "Layers"
-            },
-            {
-              "title": "分类",
-              "url": "/admin/catalog/categories",
-              "icon": "Shapes"
-            },
-            {
-              "title": "能力",
-              "url": "/admin/catalog/capabilities",
-              "icon": "Tags"
-            },
-            {
-              "title": "状态",
-              "url": "/admin/catalog/statuses",
-              "icon": "BadgeCheck"
-            },
-            {
-              "title": "模型",
-              "url": "/admin/catalog/models",
-              "icon": "Bot"
-            }
-          ]
+          "title": "权限",
+          "url": "/admin/permissions",
+          "icon": "ShieldCheck"
         }
       ]
     }

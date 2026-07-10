@@ -2,15 +2,32 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('admin root opens the APIPool operator flow by default', async () => {
+test('admin root renders an operations overview open to every admin.access role', async () => {
   const source = await readFile(
     'src/app/[locale]/(admin)/admin/page.tsx',
     'utf8'
   );
 
-  assert.match(source, /redirect/);
-  assert.match(source, /href:\s*['"]\/admin\/apipool-adjustments/);
-  assert.doesNotMatch(source, /href:\s*['"]\/admin\/users/);
+  // Regression: `/admin` used to unconditionally redirect to the quota
+  // adjustment page, which requires APIPOOL_QUOTA_ADJUST — so every low-power
+  // admin.access role (viewer/editor) hit no-permission on the first screen,
+  // and the "Admin" breadcrumb formed a self-loop. The landing must now be a
+  // real overview, not a redirect into a permission-gated page.
+  assert.doesNotMatch(
+    source,
+    /redirect\(\{\s*href:\s*['"]\/admin\/apipool-adjustments/,
+    'admin root must not redirect into the quota-gated adjustments page'
+  );
+  // Open to all admin.access: the page itself must not requirePermission (the
+  // layout already enforces admin.access). Per-card gating uses hasPermission.
+  assert.doesNotMatch(
+    source,
+    /requirePermission|requireAnyPermission|requireAllPermissions/,
+    'the overview must be reachable by any admin.access role'
+  );
+  // The overview signals must actually be wired in.
+  assert.match(source, /getAdminOverviewSignals/);
+  assert.match(source, /AdminOverview/);
 });
 
 test('legacy admin API key page redirects into APIPool operator flow', async () => {
