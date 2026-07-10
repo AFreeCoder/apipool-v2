@@ -434,14 +434,15 @@ test('admin binding actions are exported with USERS_WRITE permission checks', as
   assert.match(source, /export async function retryNewapiUserBindingAction/);
   assert.match(source, /export async function confirmNewapiUserConflictAction/);
   assert.match(source, /export async function disableNewapiUserBindingAction/);
+  assert.match(source, /export async function restoreNewapiUserBindingAction/);
   assert.match(source, /PERMISSIONS\.USERS_WRITE/);
   assert.match(source, /getUserInfo/);
   assert.match(source, /admin user session required/);
   assert.equal(
     (source.match(/operatorUserId:\s*currentUser\.id/g) || []).length,
-    3
+    4
   );
-  assert.equal((source.match(/await requirePermission/g) || []).length, 3);
+  assert.equal((source.match(/await requirePermission/g) || []).length, 4);
 });
 
 test('admin users locale files contain all New API binding keys used by pages', async () => {

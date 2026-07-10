@@ -461,7 +461,8 @@ export default async function AdminUserDetailPage({
               ) : null}
               <div className="flex flex-wrap gap-2">
                 {bindingResult.data?.status === 'disabled' ? (
-                  // 停用态下重试/停用都是无效操作，只保留恢复入口
+                  // While disabled, retry/disable are both no-ops that only
+                  // error out; restore is the sole meaningful action.
                   <ConfirmActionButton
                     variant="default"
                     label={t('detail.binding.actions.restore')}

@@ -289,13 +289,14 @@ test('admin binding server actions require permission before current admin looku
   assert.match(source, /admin user session required/);
   assert.equal(
     (source.match(/operatorUserId:\s*currentUser\.id/g) || []).length,
-    3
+    4
   );
 
   for (const actionName of [
     'retryNewapiUserBindingAction',
     'confirmNewapiUserConflictAction',
     'disableNewapiUserBindingAction',
+    'restoreNewapiUserBindingAction',
   ]) {
     const actionStart = source.indexOf(`export async function ${actionName}`);
     assert.notEqual(actionStart, -1, `${actionName} should exist`);
