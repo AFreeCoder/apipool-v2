@@ -60,24 +60,28 @@ export default async function CatalogModelListingDeletePage({
 
   const form: Form = {
     fields: [],
-    passby: {
-      model,
-      listing,
-    },
     submit: {
       button: {
         title: t('listings.delete.buttons.submit'),
         icon: 'Trash2',
         variant: 'destructive',
       },
-      handler: async (_data, passby) => {
+      handler: async () => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const targetModel = passby?.model;
-        const targetListing = passby?.listing;
-        if (!targetModel?.id || !targetListing?.id) {
+        // 绝不信任客户端回传的记录快照：表单实参可伪造/可能陈旧。按路由参数重查
+        // 模型与售卖项，并校验售卖项归属于该模型后再删除。
+        const [targetModel, targetListing] = await Promise.all([
+          getModelById(id),
+          getListingById(listingId),
+        ]);
+        if (
+          !targetModel ||
+          !targetListing ||
+          targetListing.modelId !== targetModel.id
+        ) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 

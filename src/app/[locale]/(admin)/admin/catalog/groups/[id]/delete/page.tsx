@@ -47,27 +47,25 @@ export default async function CatalogGroupDeletePage({
 
   const form: Form = {
     fields: [],
-    passby: {
-      group,
-    },
     submit: {
       button: {
         title: t('groups.delete.buttons.submit'),
         icon: 'Trash2',
         variant: 'destructive',
       },
-      handler: async (_data, passby) => {
+      handler: async () => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const target = passby?.group;
-        if (!target?.id) {
+        // 绝不信任客户端回传的记录快照：表单实参可伪造/可能陈旧，删除目标按路由参数重查。
+        const freshGroup = await getGroupById(id);
+        if (!freshGroup) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
         try {
-          await deleteGroup(target.id);
+          await deleteGroup(freshGroup.id);
         } catch (error) {
           if (error instanceof CatalogDeleteBlockedError) {
             return { status: 'error' as const, message: blockedMessage };

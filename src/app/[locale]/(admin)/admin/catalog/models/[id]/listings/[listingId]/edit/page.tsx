@@ -112,10 +112,6 @@ export default async function CatalogModelListingEditPage({
         tip: t('fields.smokeTestedTip'),
       },
     ],
-    passby: {
-      model,
-      listing,
-    },
     data: {
       ...listing,
       discountFold: bpsToDiscountFold(listing.discountRateBps) || '',
@@ -125,22 +121,34 @@ export default async function CatalogModelListingEditPage({
       button: {
         title: t('listings.edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { model, listing } = passby;
+        // 绝不信任客户端回传的记录快照：Form 是客户端组件，`passby` 会作为
+        // server action 的实参往返（不是闭包，Next 不加密不签名），可被伪造
+        // （例如把 pricePolicy 改成 listing_multiplier 让公开价直接按
+        // discountRateBps 缩放），也可能是过期页面的陈旧值。写入目标与价格
+        // 策略一律以服务端按路由参数重查为准。
+        const [freshModel, freshListing] = await Promise.all([
+          getModelById(id),
+          getListingById(listingId),
+        ]);
 
-        if (!model || !listing) {
+        if (
+          !freshModel ||
+          !freshListing ||
+          freshListing.modelId !== freshModel.id
+        ) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
         let patch: UpdateListing;
         try {
+          // 只写本表单拥有的字段。modelId/groupId/pricePolicy/featured/
+          // sortOrder 不在 patch 里 —— Partial 更新，未提供即保持不变。
           patch = {
-            modelId: model.id,
-            groupId: listing.groupId,
             statusId: (data.get('statusId') as string).trim(),
             discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
@@ -148,15 +156,23 @@ export default async function CatalogModelListingEditPage({
             description:
               (data.get('description') as string | null)?.trim() || null,
             smokeTested: data.get('smokeTested') === 'true',
-            pricePolicy: listing.pricePolicy,
-            featured: listing.featured,
-            sortOrder: listing.sortOrder,
           };
         } catch {
           return { status: 'error' as const, message: invalidPriceMessage };
         }
 
-        const result = await updateListing(listing.id as string, patch);
+        // 折扣在 listing_multiplier 策略下直接决定公开价：改了它就必须重新
+        // 核验，否则展示价会立刻变而 New API 的实际计费没变（hide-until-confirmed）。
+        if (
+          freshListing.pricePolicy === 'listing_multiplier' &&
+          patch.discountRateBps !== freshListing.discountRateBps
+        ) {
+          patch.priceDriftStatus = 'needs_live_check';
+          patch.effectivePriceFormula = null;
+          patch.effectivePriceSyncedAt = null;
+        }
+
+        const result = await updateListing(freshListing.id, patch);
 
         if (!result) {
           return { status: 'error' as const, message: updateFailedMessage };
@@ -167,7 +183,7 @@ export default async function CatalogModelListingEditPage({
         return {
           status: 'success',
           message: successMessage,
-          redirect_url: `/admin/catalog/models/${model.id}/listings`,
+          redirect_url: `/admin/catalog/models/${freshModel.id}/listings`,
         };
       },
     },

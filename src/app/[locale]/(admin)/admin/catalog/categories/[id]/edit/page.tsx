@@ -76,33 +76,32 @@ export default async function CatalogCategoryEditPage({
         ],
       },
     ],
-    passby: {
-      category,
-    },
     data: category,
     submit: {
       button: {
         title: t('categories.edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { category } = passby;
+        // 绝不信任客户端回传的记录快照：表单实参可被伪造、也可能是陈旧页面的旧值，
+        // 写入目标一律按路由参数在服务端重查。
+        const freshCategory = await getCategoryById(id);
 
-        if (!category) {
+        if (!freshCategory) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCategory = {
-          slug: category.slug,
+          slug: freshCategory.slug,
           name: (data.get('name') as string).trim(),
           sortOrder: Number(data.get('sortOrder') ?? 0),
           status: (data.get('status') as string) || 'active',
         };
 
-        const result = await updateCategory(category.id as string, patch);
+        const result = await updateCategory(freshCategory.id, patch);
 
         if (!result) {
           return { status: 'error' as const, message: updateFailedMessage };

@@ -440,13 +440,16 @@ test('catalog listing child pages expose per-model group discount CRUD with the 
   );
   assert.match(editPage, callPattern('getListingById'));
   assert.match(editPage, callPattern('updateListing'));
-  assert.match(editPage, /pricePolicy:\s*listing\.pricePolicy/);
-  assert.match(editPage, /featured:\s*listing\.featured/);
-  assert.match(editPage, /sortOrder:\s*listing\.sortOrder/);
+  // 编辑 handler 绝不信任客户端回传的记录快照：必须按路由参数重查、校验售卖项
+  // 归属于该模型，并以重查记录的 id 作为写入目标（原先直接写回 listing.pricePolicy
+  // 等快照字段的断言正是「把缺陷写成期望」，此处改为断言重查与归属校验）。
+  assert.match(editPage, /getListingById\(listingId\)/);
+  assert.match(editPage, /freshListing\.modelId !== freshModel\.id/);
+  assert.match(editPage, /updateListing\(freshListing\.id/);
   assert.match(editPage, disabledFieldPattern('groupId'));
   assert.match(
     editPage,
-    /redirect_url:\s*`\/admin\/catalog\/models\/\$\{model\.id\}\/listings`/
+    /redirect_url:\s*`\/admin\/catalog\/models\/\$\{freshModel\.id\}\/listings`/
   );
 
   assert.match(deletePage, /<FormCard/);

@@ -91,27 +91,26 @@ export default async function CatalogGroupEditPage({
         ],
       },
     ],
-    passby: {
-      group,
-    },
     data: group,
     submit: {
       button: {
         title: t('groups.edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { group } = passby;
+        // 绝不信任客户端回传的记录快照：表单实参可被伪造、也可能是陈旧页面的旧值，
+        // 写入目标一律按路由参数在服务端重查。
+        const freshGroup = await getGroupById(id);
 
-        if (!group) {
+        if (!freshGroup) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCatalogGroup = {
-          slug: group.slug,
+          slug: freshGroup.slug,
           name: (data.get('name') as string).trim(),
           userDescription:
             (data.get('userDescription') as string | null)?.trim() || null,
@@ -121,7 +120,7 @@ export default async function CatalogGroupEditPage({
           status: (data.get('status') as string) || 'active',
         };
 
-        const result = await updateGroup(group.id as string, patch);
+        const result = await updateGroup(freshGroup.id, patch);
 
         if (!result) {
           return { status: 'error' as const, message: updateFailedMessage };

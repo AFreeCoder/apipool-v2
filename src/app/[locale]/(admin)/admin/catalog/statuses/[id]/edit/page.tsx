@@ -86,27 +86,26 @@ export default async function CatalogStatusEditPage({
         ],
       },
     ],
-    passby: {
-      catalogStatus,
-    },
     data: catalogStatus,
     submit: {
       button: {
         title: t('statuses.edit.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { catalogStatus } = passby;
+        // 绝不信任客户端回传的记录快照：表单实参可被伪造、也可能是陈旧页面的旧值，
+        // 写入目标一律按路由参数在服务端重查。
+        const freshStatus = await getStatusById(id);
 
-        if (!catalogStatus) {
+        if (!freshStatus) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCatalogStatus = {
-          slug: catalogStatus.slug,
+          slug: freshStatus.slug,
           name: (data.get('name') as string).trim(),
           isCallable: data.get('isCallable') === 'true',
           isPublicVisible: data.get('isPublicVisible') === 'true',
@@ -114,7 +113,7 @@ export default async function CatalogStatusEditPage({
           status: (data.get('status') as string) || 'active',
         };
 
-        const result = await updateStatus(catalogStatus.id as string, patch);
+        const result = await updateStatus(freshStatus.id, patch);
 
         if (!result) {
           return { status: 'error' as const, message: updateFailedMessage };

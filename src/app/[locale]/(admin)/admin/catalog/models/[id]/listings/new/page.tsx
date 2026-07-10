@@ -64,7 +64,6 @@ export default async function CatalogModelListingNewPage({
     return <Empty message={t('listings.new.notFound')} />;
   }
   const defaultListing = config?.listing;
-  const basePrice = config?.basePrice;
 
   const [groups, statuses] = await Promise.all([getGroups(), getStatuses()]);
   const groupOptions = groups.map((group) => ({
@@ -129,11 +128,6 @@ export default async function CatalogModelListingNewPage({
         tip: t('fields.smokeTestedTip'),
       },
     ],
-    passby: {
-      model,
-      basePrice,
-      defaultListing,
-    },
     data: {
       groupId: groups[0]?.id ?? '',
       statusId: statuses[0]?.id ?? '',
@@ -146,16 +140,22 @@ export default async function CatalogModelListingNewPage({
       button: {
         title: t('listings.new.buttons.submit'),
       },
-      handler: async (data, passby) => {
+      handler: async (data) => {
         'use server';
 
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
-        const { model, basePrice, defaultListing } = passby;
+        // 绝不信任客户端回传的记录快照：表单实参可被伪造、也可能是陈旧页面的旧值。
+        // 模型与用于填充新 listing 价格字段的基准价，一律按路由参数在服务端重查。
+        const model = await getModelById(id);
 
         if (!model) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
+
+        const config = await getModelAdminConfig(id);
+        const basePrice = config?.basePrice;
+        const defaultListing = config?.listing;
 
         let inputMicroUsd: number;
         let outputMicroUsd: number;
