@@ -6,6 +6,7 @@ import { getUserInfo } from '@/shared/models/user';
 import {
   confirmNewapiUserConflictForAdmin,
   disableNewapiUserBindingForAdmin,
+  restoreNewapiUserBindingForAdmin,
   retryNewapiUserBindingForAdmin,
 } from './portal';
 
@@ -47,6 +48,17 @@ export async function disableNewapiUserBindingAction(input: {
   await requirePermission({ code: PERMISSIONS.USERS_WRITE });
   const currentUser = await getCurrentAdminUser();
   return disableNewapiUserBindingForAdmin({
+    ...input,
+    operatorUserId: currentUser.id,
+  });
+}
+
+export async function restoreNewapiUserBindingAction(input: {
+  portalUserId: string;
+}) {
+  await requirePermission({ code: PERMISSIONS.USERS_WRITE });
+  const currentUser = await getCurrentAdminUser();
+  return restoreNewapiUserBindingForAdmin({
     ...input,
     operatorUserId: currentUser.id,
   });

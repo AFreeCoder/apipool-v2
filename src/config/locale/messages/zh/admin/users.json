@@ -95,7 +95,8 @@
       "actions": {
         "retry": "重试",
         "confirm_conflict": "确认冲突归属",
-        "disable": "停用绑定"
+        "disable": "停用绑定",
+        "restore": "恢复绑定"
       },
       "disable_confirm": {
         "title": "确认停用该绑定？",
@@ -103,6 +104,13 @@
         "confirm": "停用绑定",
         "cancel": "取消",
         "error": "停用绑定失败，请检查服务端日志后重试。"
+      },
+      "restore_confirm": {
+        "title": "确认恢复该绑定？",
+        "description": "绑定将离开停用状态，并通过常规重试管线重新接回同一个 New API 账号（同用户名与已存凭据）。该用户将恢复 API 访问，后续充值也会正常下发。",
+        "confirm": "恢复绑定",
+        "cancel": "取消",
+        "error": "恢复绑定失败，请检查服务端日志后重试。"
       }
     },
     "balance": {

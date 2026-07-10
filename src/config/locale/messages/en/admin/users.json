@@ -95,7 +95,8 @@
       "actions": {
         "retry": "Retry",
         "confirm_conflict": "Confirm Conflict Owner",
-        "disable": "Disable Binding"
+        "disable": "Disable Binding",
+        "restore": "Restore Binding"
       },
       "disable_confirm": {
         "title": "Disable this binding?",
@@ -103,6 +104,13 @@
         "confirm": "Disable Binding",
         "cancel": "Cancel",
         "error": "Failed to disable the binding. Check the server logs and try again."
+      },
+      "restore_confirm": {
+        "title": "Restore this binding?",
+        "description": "The binding leaves the disabled state and the standard retry pipeline re-attaches the same New API account (same username and stored credentials). The user regains API access and future top-ups apply again.",
+        "confirm": "Restore Binding",
+        "cancel": "Cancel",
+        "error": "Failed to restore the binding. Check the server logs and try again."
       }
     },
     "balance": {

@@ -16,6 +16,7 @@ import {
 import {
   confirmNewapiUserConflictAction,
   disableNewapiUserBindingAction,
+  restoreNewapiUserBindingAction,
   retryNewapiUserBindingAction,
 } from '@/features/newapi-bridge/server/admin-user-binding-actions';
 import { getTranslations } from 'next-intl/server';
@@ -459,50 +460,76 @@ export default async function AdminUserDetailPage({
                 <DataNotice>{bindingResult.data.lastSyncError}</DataNotice>
               ) : null}
               <div className="flex flex-wrap gap-2">
-                <form
-                  action={async () => {
-                    'use server';
-                    await retryNewapiUserBindingAction({
-                      portalUserId: targetUser.id,
-                    });
-                  }}
-                >
-                  <Button type="submit" variant="outline" size="sm">
-                    {t('detail.binding.actions.retry')}
-                  </Button>
-                </form>
-                {bindingResult.data?.status === 'conflict_requires_review' &&
-                bindingResult.data.conflictNewapiUserId ? (
-                  <form
+                {bindingResult.data?.status === 'disabled' ? (
+                  // 停用态下重试/停用都是无效操作，只保留恢复入口
+                  <ConfirmActionButton
+                    variant="default"
+                    label={t('detail.binding.actions.restore')}
+                    title={t('detail.binding.restore_confirm.title')}
+                    description={t(
+                      'detail.binding.restore_confirm.description'
+                    )}
+                    confirmLabel={t('detail.binding.restore_confirm.confirm')}
+                    cancelLabel={t('detail.binding.restore_confirm.cancel')}
+                    errorMessage={t('detail.binding.restore_confirm.error')}
                     action={async () => {
                       'use server';
-                      await confirmNewapiUserConflictAction({
+                      await restoreNewapiUserBindingAction({
                         portalUserId: targetUser.id,
-                        newapiUserId:
-                          bindingResult.data!.conflictNewapiUserId!,
                       });
                     }}
-                  >
-                    <Button type="submit" variant="outline" size="sm">
-                      {t('detail.binding.actions.confirm_conflict')}
-                    </Button>
-                  </form>
-                ) : null}
-                <ConfirmActionButton
-                  label={t('detail.binding.actions.disable')}
-                  title={t('detail.binding.disable_confirm.title')}
-                  description={t('detail.binding.disable_confirm.description')}
-                  confirmLabel={t('detail.binding.disable_confirm.confirm')}
-                  cancelLabel={t('detail.binding.disable_confirm.cancel')}
-                  errorMessage={t('detail.binding.disable_confirm.error')}
-                  action={async () => {
-                    'use server';
-                    await disableNewapiUserBindingAction({
-                      portalUserId: targetUser.id,
-                      reason: 'admin detail action',
-                    });
-                  }}
-                />
+                  />
+                ) : (
+                  <>
+                    <form
+                      action={async () => {
+                        'use server';
+                        await retryNewapiUserBindingAction({
+                          portalUserId: targetUser.id,
+                        });
+                      }}
+                    >
+                      <Button type="submit" variant="outline" size="sm">
+                        {t('detail.binding.actions.retry')}
+                      </Button>
+                    </form>
+                    {bindingResult.data?.status ===
+                      'conflict_requires_review' &&
+                    bindingResult.data.conflictNewapiUserId ? (
+                      <form
+                        action={async () => {
+                          'use server';
+                          await confirmNewapiUserConflictAction({
+                            portalUserId: targetUser.id,
+                            newapiUserId:
+                              bindingResult.data!.conflictNewapiUserId!,
+                          });
+                        }}
+                      >
+                        <Button type="submit" variant="outline" size="sm">
+                          {t('detail.binding.actions.confirm_conflict')}
+                        </Button>
+                      </form>
+                    ) : null}
+                    <ConfirmActionButton
+                      label={t('detail.binding.actions.disable')}
+                      title={t('detail.binding.disable_confirm.title')}
+                      description={t(
+                        'detail.binding.disable_confirm.description'
+                      )}
+                      confirmLabel={t('detail.binding.disable_confirm.confirm')}
+                      cancelLabel={t('detail.binding.disable_confirm.cancel')}
+                      errorMessage={t('detail.binding.disable_confirm.error')}
+                      action={async () => {
+                        'use server';
+                        await disableNewapiUserBindingAction({
+                          portalUserId: targetUser.id,
+                          reason: 'admin detail action',
+                        });
+                      }}
+                    />
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>

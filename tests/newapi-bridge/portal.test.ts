@@ -814,6 +814,103 @@ test('ensurePortalUserBinding keeps disabled bindings disabled and avoids remote
   assert.equal(remoteCalls, 0);
 });
 
+test('restoreNewapiUserBindingForAdmin recovers a disabled binding through the idempotent provision path', async () => {
+  const portalUser = await insertUser(
+    'portal_user_restore_binding',
+    'rsb@b.co'
+  );
+  const operator = await insertUser('operator_restore_binding', 'oprs@b.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await modules.portal.disableNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    reason: 'mistaken click',
+    operatorUserId: operator.id,
+  });
+
+  const restored = await modules.portal.restoreNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    client: createSuccessfulRemoteClient(),
+  });
+
+  assert.equal(restored.status, 'active');
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'active');
+
+  // 恢复后常规链路（建 Key / 充值前置）不再被 forbidden 挡住
+  const ensured = await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  assert.equal(ensured.status, 'active');
+});
+
+test('restoreNewapiUserBindingForAdmin rejects bindings that are not disabled', async () => {
+  const portalUser = await insertUser(
+    'portal_user_restore_active_guard',
+    'rsa@b.co'
+  );
+  const operator = await insertUser(
+    'operator_restore_active_guard',
+    'opra@b.co'
+  );
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+
+  await assert.rejects(
+    modules.portal.restoreNewapiUserBindingForAdmin({
+      portalUserId: portalUser.id,
+      operatorUserId: operator.id,
+      client: createSuccessfulRemoteClient(),
+    }),
+    /not disabled/
+  );
+});
+
+test('restoreNewapiUserBindingForAdmin surfaces the degraded state when the remote retry fails', async () => {
+  const portalUser = await insertUser(
+    'portal_user_restore_degraded',
+    'rsd@b.co'
+  );
+  const operator = await insertUser('operator_restore_degraded', 'oprd@b.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await modules.portal.disableNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    reason: 'security review',
+    operatorUserId: operator.id,
+  });
+
+  const failingRemote = {
+    provisionUser: async () => {
+      throw new Error('remote temporarily down');
+    },
+    ensureUserGroup: async () => {},
+    updateUserProfile: async () => {
+      throw new Error('remote temporarily down');
+    },
+  } as any;
+
+  // 恢复动作本身不抛：本地已离开 disabled，远端失败按常规同步失败记录
+  const restored = await modules.portal.restoreNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    client: failingRemote,
+  });
+
+  assert.notEqual(restored.status, 'disabled');
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.notEqual(binding.status, 'disabled');
+  assert.ok(binding.lastSyncError);
+});
+
 test('adjustPortalQuota applies ledger for long email users after binding succeeds', async () => {
   const portalUser = await insertUser(
     'portal_user_long_email_quota',
@@ -2014,6 +2111,96 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
   assert.equal(entries.length, 1);
   assert.equal(entries[0].status, 'failed');
   assert.equal(entries[0].rollbackStatus, 'not_required');
+});
+
+test('adjustPortalQuota persists the remote attempt marker before any remote side effect', async () => {
+  const portalUser = await insertUser(
+    'portal_user_adjust_marker',
+    'adjm@t.co'
+  );
+  const operator = await insertUser('operator_adjust_marker', 'opsm@t.co');
+  const { apipoolLedgerEntry } = await import('@/config/db/schema');
+  const idempotencyKey = 'portal-adjustment:test-remote-marker';
+
+  let markerAtCall: unknown;
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async () => {
+      // adjustQuota 的第一件事就是 POST /api/redemption/（远端副作用）。
+      // 在它被调用之前，ledger 必须已经留下「远端已尝试」的持久化证据。
+      const rows = await modules
+        .db()
+        .select()
+        .from(apipoolLedgerEntry)
+        .where(eq(apipoolLedgerEntry.idempotencyKey, idempotencyKey));
+      markerAtCall = rows[0]?.remoteAttemptAt;
+      return { changeId: 'change_marker_1', balanceUsd: 25 };
+    },
+  } as any;
+
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 25,
+    reason: 'Manual MVP credit',
+    idempotencyKey,
+    client: fakeRemote,
+  });
+
+  assert.equal(ledger.status, 'applied');
+  assert.ok(
+    markerAtCall instanceof Date,
+    'remoteAttemptAt must be persisted before adjustQuota runs'
+  );
+});
+
+test('adjustPortalQuota stores the redemption code before dispatch and escalates later failures', async () => {
+  const portalUser = await insertUser(
+    'portal_user_adjust_precommit',
+    'adjp@t.co'
+  );
+  const operator = await insertUser('operator_adjust_precommit', 'opsp@t.co');
+  const { apipoolLedgerEntry } = await import('@/config/db/schema');
+  const idempotencyKey = 'portal-adjustment:test-code-precommit';
+
+  let changeIdAtDispatch: string | null | undefined;
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (input: any) => {
+      // 兑换码已生成，尚未发出兑换请求
+      await input.onRedemptionCreated?.('code-adjust-precommit');
+      const rows = await modules
+        .db()
+        .select()
+        .from(apipoolLedgerEntry)
+        .where(eq(apipoolLedgerEntry.idempotencyKey, idempotencyKey));
+      changeIdAtDispatch = rows[0]?.newapiChangeId;
+      // 模拟兑换请求飞行途中进程被杀：普通错误，非 reconciliation
+      throw new Error('process killed mid-topup');
+    },
+  } as any;
+
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 25,
+    reason: 'Manual MVP credit',
+    idempotencyKey,
+    client: fakeRemote,
+  });
+
+  // 码值必须在发出兑换请求之前落库，否则崩溃后无从判断远端是否已入账
+  assert.equal(changeIdAtDispatch, 'code-adjust-precommit');
+  // 码已发出后的任何失败都不能落终态 failed：远端可能已入账，
+  // 管理员换个幂等键重试会生成第二张码 → 双倍到账。
+  assert.equal(ledger.status, 'reconciliation_required');
+  assert.equal(ledger.newapiChangeId, 'code-adjust-precommit');
 });
 
 test('adjustPortalQuota marks remote-applied confirmation failures for reconciliation', async () => {

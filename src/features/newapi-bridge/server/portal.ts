@@ -1270,6 +1270,56 @@ export async function disableNewapiUserBindingForAdmin(input: {
   return toAdminBindingDto(binding);
 }
 
+/**
+ * 停用的逆操作：disable 只翻本地状态、无远端副作用，恢复也只需把
+ * 状态翻出 disabled，再复用既有的手动重试管线（provisionUser 对
+ * 已存在的远端用户按用户名+存储密码幂等恢复）。远端重试失败不抛：
+ * 本地已离开 disabled，同步失败会照常记录在 binding 行上供页面展示。
+ */
+export async function restoreNewapiUserBindingForAdmin(input: {
+  portalUserId: string;
+  operatorUserId?: string;
+  client?: NewApiClient;
+}) {
+  const existing = await getPortalUserBinding(input.portalUserId);
+  if (!existing) throw new Error('New API user binding not found');
+  if (existing.status !== 'disabled') {
+    throw new Error('New API user binding is not disabled');
+  }
+
+  await db()
+    .update(newApiUserBinding)
+    .set({
+      status: 'provisioning',
+      lastSyncAction: 'admin_restore',
+      lastSyncErrorCode: null,
+      lastSyncError: null,
+      lastSyncAttemptedAt: new Date(),
+    })
+    .where(eq(newApiUserBinding.id, existing.id));
+
+  await recordAudit({
+    portalUserId: input.portalUserId,
+    operatorUserId: input.operatorUserId,
+    action: 'newapi.user.binding_restore',
+    targetType: 'newapi_user',
+    targetId: existing.newapiUserId,
+    status: 'success',
+    requestBody: { previousStatus: existing.status },
+  });
+
+  try {
+    return await retryNewapiUserBindingForAdmin({
+      portalUserId: input.portalUserId,
+      operatorUserId: input.operatorUserId,
+      client: input.client,
+    });
+  } catch {
+    const current = await getPortalUserBinding(input.portalUserId);
+    return toAdminBindingDto(current!);
+  }
+}
+
 export async function confirmNewapiUserConflictForAdmin(input: {
   portalUserId: string;
   newapiUserId: string;
@@ -2369,13 +2419,34 @@ export async function adjustPortalQuota(input: {
     throw error;
   }
 
+  // 与 recharge.ts 同一套崩溃防线（docs/06 §5）：
+  // 兑换码一旦发出，远端就可能已入账，此后任何失败都不能落终态 failed——
+  // 管理员换个幂等键重试会生成第二张码 → 双倍到账。
+  let remoteAdjusted = false;
+  let redemptionDispatched = false;
   try {
+    // 在任何远端副作用之前落下持久化标记：进程若在「码已创建、码值
+    // 尚未落库」之间被杀，靠它证明远端结局未知。
+    await db()
+      .update(apipoolLedgerEntry)
+      .set({ remoteAttemptAt: new Date() })
+      .where(eq(apipoolLedgerEntry.id, pending.id));
+
     const remote = await client.adjustQuota({
       user: bindingToUserCredentials(binding),
       amountUsd: input.amountUsd,
       reason: input.reason,
       reference: idempotencyKey,
+      // 在兑换请求发出之前落库码值：崩溃后据此判定「不可自动重试」
+      onRedemptionCreated: async (code) => {
+        redemptionDispatched = true;
+        await db()
+          .update(apipoolLedgerEntry)
+          .set({ newapiChangeId: code })
+          .where(eq(apipoolLedgerEntry.id, pending.id));
+      },
     });
+    remoteAdjusted = true;
     const [updated] = await db()
       .update(apipoolLedgerEntry)
       .set({
@@ -2400,11 +2471,17 @@ export async function adjustPortalQuota(input: {
     return updated;
   } catch (error: any) {
     const needsReconciliation = isQuotaAdjustmentReconciliationError(error);
+    const unknownOutcome =
+      remoteAdjusted || needsReconciliation || redemptionDispatched;
     const [failed] = await db()
       .update(apipoolLedgerEntry)
       .set({
-        status: needsReconciliation ? 'reconciliation_required' : 'failed',
-        newapiChangeId: needsReconciliation ? error.changeId : undefined,
+        status: unknownOutcome ? 'reconciliation_required' : 'failed',
+        // 码值可能已由 onRedemptionCreated 落库；这里只在拿到更权威的
+        // changeId 时覆盖，为空则保留已有值（撞唯一索引的风险同 recharge）。
+        ...(needsReconciliation && error.changeId
+          ? { newapiChangeId: error.changeId }
+          : {}),
         rollbackStatus: 'not_required',
       })
       .where(eq(apipoolLedgerEntry.id, pending.id))

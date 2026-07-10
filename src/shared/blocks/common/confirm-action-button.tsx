@@ -27,6 +27,7 @@ export function ConfirmActionButton({
   confirmLabel,
   cancelLabel,
   errorMessage,
+  variant = 'destructive',
 }: {
   action: () => Promise<void>;
   label: string;
@@ -35,6 +36,7 @@ export function ConfirmActionButton({
   confirmLabel: string;
   cancelLabel: string;
   errorMessage: string;
+  variant?: 'destructive' | 'default' | 'outline';
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -44,7 +46,7 @@ export function ConfirmActionButton({
     <>
       <Button
         type="button"
-        variant="destructive"
+        variant={variant}
         size="sm"
         onClick={() => setOpen(true)}
       >
@@ -67,7 +69,7 @@ export function ConfirmActionButton({
             </Button>
             <Button
               type="button"
-              variant="destructive"
+              variant={variant}
               disabled={pending}
               onClick={() =>
                 startTransition(async () => {
