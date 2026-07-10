@@ -25,9 +25,10 @@
 
 ## 上线前建议完成
 
-- [ ] **R-1 管理员调额仍可双倍到账/双倍扣减** —— ⚠️ **`5537976` 的修复不完整，此前的「已修复」是过度声称，已撤回**（2026-07-09 Codex 对抗评审 high，读码坐实）。该提交确实写下了 `remoteAttemptAt` 与预落库码值，但**全代码库无任何一处读取它们**：`manual_adjustment` 行没有 claim / TTL / 重夺，也没有「存在未决调额则拒绝新建」的服务端守卫；而 `quota-adjustment-form.tsx` 的幂等键只在内存 ref 里、**一收到响应就清空**，于是管理员再次提交即得新键 → 新 ledger 行 → 再发一张兑换码。负向调额更直接：`client.ts` 的 `PUT /api/user/` 已生效但响应超时时，`remoteAdjusted=false`、无兑换回调、不满足 `isQuotaAdjustmentReconciliationError` → 落终态 `failed` → 管理员重试重新读到已扣减余额 → **再扣一次**。修法见 report.md「R-1 复盘」。
+- [x] **R-1 管理员调额可双倍到账/双倍扣减** —— ⚠️ `5537976` 的首次修复**不完整**（标记写了但无人读），已于 2026-07-09 由 `9a9cd20` **真正闭合**。服务端新增未结清守卫（pending/processing/reconciliation_required 存在即拒绝新调额，错误原文含 ledger id 且已实测能穿过脱敏层）；「判定 + 插入」同事务防并发；只有陈旧且 `remoteAttemptAt`/`newapiChangeId` 皆为 null 的行可回收；负向路径新增 `onQuotaWriteDispatched`，PUT 发出后响应丢失一律升级 `reconciliation_required`。8 个新用例 + 起服务实走复验（守卫命中、清理后放行、无残留行）。复盘见 report.md「R-1 复盘」。**遗留**：卡住的 `reconciliation_required` 行目前只能人工改库解封，无 admin 界面（见 S-18 与 pre-launch 的告警项）。
 - [x] **R-2 生产环境 admin 表单业务错误全部被脱敏成通用英文** —— 2026-07-09 已修复，回链提交 `2193a2d`。catalog 21 个 CRUD 页的业务错误全部改为 `return {status:'error', message}`（输入校验辅助函数改抛私有 `FormValidationError` 在 action 内捕获；未知错误继续上抛进 error 边界）；新增守卫测试 `catalog-admin-error-contract.test.ts` 禁止页面再出现 `throw new Error(`。pre-launch P1-8 的翻译提示自此在生产真正可见。
-- [x] **R-3 停用绑定无恢复路径**，被停用户充值落终态 failed —— 2026-07-09 已修复，回链提交 `5537976`。新增 `restoreNewapiUserBindingForAdmin`（翻出 disabled + 复用幂等重试管线），详情页停用态只显示「恢复绑定」；3 用例 + 浏览器实走通过；守卫扩展见 `abe41ce`。**遗留**：幂等接回同一远端用户依赖 `provisionUser` 的按名恢复语义，建议上线后在真实 New API 复验一次。
+- [x] **R-3 停用绑定无恢复路径**，被停用户充值落终态 failed —— 2026-07-09 已修复，回链提交 `5537976`（恢复入口）+ `abe41ce`（守卫）+ `9a9cd20`（并发安全）。新增 `restoreNewapiUserBindingForAdmin`，详情页停用态只显示「恢复绑定」。**Codex 评审补修**：恢复改条件更新原子 claim（原为 check-then-act）；`ensurePortalUserBinding` 的成功与失败两条写回路径都加 `status != 'disabled'` 守卫，在途恢复不再静默撤销更晚的停用；停用确认文案「不可逆」已订正为「可撤销」。**遗留**：幂等接回同一远端用户依赖 `provisionUser` 的按名恢复语义，建议上线后在真实 New API 复验一次。
+- [x] **CDX-1 catalog server action 信任客户端回传的 `passby` 快照**（Codex high）—— `passby` 是 server action 实参、非闭包，不加密不签名。伪造 `pricePolicy='listing_multiplier'` + 极低折扣即可让公开页按基准价 0.1% 展示而 New API 仍按分组倍率计费（绕过 P0-3/F-2 的 hide-until-confirmed 不变量，需 `CATALOG_WRITE`）；过期页面也会写回陈旧快照。已改为 action 内按路由参数重查 + 校验归属，`passby` 全部删除并加守卫测试；listing 编辑不再写 `pricePolicy`/`featured`/`sortOrder`，折扣在吃折扣的策略下变更时强制 `needs_live_check`。
 - [ ] **R-4 用户编辑页头像上传必失败且清空原头像**（MVP 期移除字段，~5 行）
 - [ ] **R-5 `/admin` 落点绑最高危权限**，低权限角色进后台即 no-permission；调额页面包屑自环（与 S-2 overview 一并做最合算）
 - [ ] **R-6 调额页闭环断裂**：失败不给原因 / portalUserId 直达不回显身份 / 成功无详情页链接（≤50 行）

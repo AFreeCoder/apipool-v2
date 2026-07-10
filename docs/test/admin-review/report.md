@@ -48,6 +48,43 @@
 
 ---
 
+## 一·五、Codex 对抗式评审复盘（2026-07-09，`--base 03a3e76`）
+
+R-1/R-2/R-3 提交后跑了一轮 Codex 对抗式评审，判 `needs-attention`，三条 high 经逐条读码**全部成立，无一驳回**。其中两条直接推翻了本文档此前的结论，已修复并补测试。
+
+### R-1 复盘：写了证据，却没有人读它
+
+`5537976` 声称闭合了调额的双倍到账窗口，**这是过度声称**。它确实在远端副作用前落了 `remoteAttemptAt`、在兑换请求发出前预落了码值，但**全代码库没有任何一处读取这两个标记**：
+
+- `manual_adjustment` 行没有 claim、没有 TTL、没有重夺（`recharge.ts` 的 claim 谓词按 orderNo 走另一条路）；
+- 没有「该用户存在未决调额则拒绝新建」的服务端守卫；
+- `quota-adjustment-form.tsx` 的幂等键只活在内存 ref 里，**一收到响应就 `requestDraftRef.current = null`**，页面刷新更是直接丢失。
+
+于是根本不需要进程崩溃：任何返回了响应的失败之后，管理员再次提交就是新键 → 新 ledger 行 → 第二次远端写。负向调额更直接——`PUT /api/user/` 已生效但响应超时时，`remoteAdjusted=false`、无兑换回调、不满足 `isQuotaAdjustmentReconciliationError`，落终态 `failed`，重试重新读到已扣减余额后**再扣一次**。
+
+**真正的修法（`9a9cd20`）**：把不变量搬到服务端。① 新增未结清守卫（pending/processing/reconciliation_required 存在即拒绝新调额，抛 `UnresolvedQuotaAdjustmentError`）；② 「判定 + 插入 pending 行」放进同一事务，并发提交不会双双通过；③ 只有陈旧且 `remoteAttemptAt`/`newapiChangeId` 皆为 null 的行可回收为 `failed`；④ 负向路径新增 `onQuotaWriteDispatched`，PUT 发出前置标记，响应丢失一律升级 `reconciliation_required`。
+
+**教训（同一个错误的第三次变体）**：`docs/test/pre-launch-review/issues.md` 已经记过「把『我没记下证据』当成『事情没发生』」。这次进了一步又退了一步——证据记下了，**却没有任何消费者**。**落一个持久化标记只是修复的一半，另一半是让某条判定路径真的去读它**；修复完成的判据不是「标记写了」，而是「存在一条会因这个标记而改变行为的代码路径，且有测试覆盖」。
+
+另一个连带教训：守卫的错误消息里写了 "New API"，命中 `INTERNAL_ERROR_PATTERNS` 被 `getPublicPortalErrorMessage` 整条替换成「稍后重试」——管理员根本看不到阻塞原因。**面向管理员的错误必须实测它能穿过脱敏层**，已加测试锁死。
+
+### Finding 1 复盘：server action 的实参不是可信输入
+
+`shared/blocks/form/index.tsx` 是客户端组件，`submit.handler(formData, passby)` 把 `passby` 作为 server action 的**实参**回传。它不是闭包变量，Next.js 不加密不签名，因此完全由客户端控制。catalog 后台 13 个页面把 passby 里的记录快照直接当作写入目标与写入值。最锋利的一处是 listing 编辑：伪造 `pricePolicy='listing_multiplier'` + `discountFold=0.01`，而 `updateListing` 从不重置 `priceDriftStatus`，公开页立刻按基准价 0.1% 展示，New API 仍按分组倍率计费——正是 P0-3 与 F-2 视为上线门禁的同一条不变量。需要 `CATALOG_WRITE` 权限，故非越权，而是**特权管理员绕过安全阀**；无恶意的过期页面同样会写回陈旧快照。
+
+**修法**：catalog mutation 一律在 action 内按路由参数重查记录并校验归属，`passby` 全部删除（守卫测试禁止其再出现）；listing 编辑只写表单拥有的字段，`pricePolicy`/`featured`/`sortOrder` 不进 patch；折扣在 `listing_multiplier` 策略下变更时强制 `needs_live_check`。
+
+### Finding 3 复盘：check-then-act 与「谁的决定更晚」
+
+`restoreNewapiUserBindingForAdmin` 先读到 `disabled` 再按 id 无条件写 `provisioning`，无 CAS；`ensurePortalUserBinding` 的成功/失败写回也都按 id 无条件覆盖状态。并发停用会被在途恢复静默撤销。已改为条件更新原子 claim，并在成功与失败两条写回路径都加 `status != 'disabled'` 守卫。**踩坑**：只给成功路径加守卫时，我抛出的 forbidden 落进了 provision 的 catch，那个 catch 同样无条件写状态，把 `disabled` 改写成了 `username_sync_failed`——测试当场抓住。**状态机的每一条写回路径都要守同一个不变量，只堵 happy path 等于没堵。**
+
+### 第 4 条（lodash 4.18.0 override）
+来自另一条工作线的提交 `11809e9`（已确认无问题并推送），不在本轮范围，未复核。
+
+### 本文档同步修正
+- F-5 的停用确认文案曾写「停用不可逆、没有恢复入口」，R-3 加了恢复按钮后该文案即成假话（Codex 未报，自查发现），已订正为「可撤销」。
+- 上一版把 R-1 记为「已修复」是错误的，`issues.md` 已撤回该勾选。
+
 ## 二、遗留必修（上线前建议完成，按优先级）
 
 ### R-1（P1↑，资金链路）管理员正向调额未接 P0-1 同款防线，崩溃窗口可致双倍到账
