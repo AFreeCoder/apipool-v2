@@ -72,7 +72,8 @@ export default async function RoleEditPermissionsPage({
         type: 'checkbox',
         title: t('fields.permissions'),
         options: permissionsOptions,
-        validation: { required: true },
+        // Deliberately not required: a role may legitimately hold no
+        // permissions (e.g. while it is being built up).
       },
     ],
     data: {

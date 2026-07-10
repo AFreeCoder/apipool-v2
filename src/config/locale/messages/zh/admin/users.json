@@ -38,9 +38,11 @@
       }
     },
     "filters": {
+      "all": "全部",
       "username_sync_failed": "同步失败",
       "conflict_requires_review": "需人工确认",
-      "newapi_username_too_long": "用户名过长"
+      "newapi_username_too_long": "用户名过长",
+      "unresolved_ledger": "待对账"
     }
   },
   "empty": {
@@ -239,7 +241,8 @@
     },
     "buttons": {
       "submit": "更新"
-    }
+    },
+    "self_edit_warning": "你正在编辑自己的角色。移除自己的管理员角色会立即把你锁在后台之外。"
   },
   "grant_credits": {
     "title": "授予积分",
@@ -261,6 +264,8 @@
   },
   "messages": {
     "userSaved": "用户已更新",
-    "rolesSaved": "角色已更新"
+    "rolesSaved": "角色已更新",
+    "updateFailed": "更新用户失败，请重试。",
+    "invalidRoles": "提交的角色无效，请刷新页面后重试。"
   }
 }

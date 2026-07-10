@@ -1,3 +1,5 @@
+import { getTranslations } from 'next-intl/server';
+
 import {
   TableBody,
   TableCell,
@@ -18,7 +20,7 @@ import { Label } from './label';
 import { Time } from './time';
 import { User } from './user';
 
-export function Table({
+export async function Table({
   columns,
   data,
   emptyMessage,
@@ -32,6 +34,11 @@ export function Table({
   if (!columns) {
     columns = [];
   }
+
+  // Fall back to a localized empty state when the caller does not pass one,
+  // so admin lists that omit `emptyMessage` no longer show English in zh.
+  const t = await getTranslations('admin.common');
+  const resolvedEmptyMessage = emptyMessage ?? t('table.empty');
 
   return (
     <TableComponent className="w-full">
@@ -140,7 +147,7 @@ export function Table({
           <TableRow className="">
             <TableCell colSpan={columns.length}>
               <div className="text-muted-foreground flex w-full items-center justify-center py-8 text-sm">
-                <p>{emptyMessage ?? 'No records found.'}</p>
+                <p>{resolvedEmptyMessage}</p>
               </div>
             </TableCell>
           </TableRow>

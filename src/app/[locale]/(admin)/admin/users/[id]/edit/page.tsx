@@ -27,6 +27,8 @@ export default async function UserEditPage({
   // Captured at render time: the inline server action can only close over
   // serializable values, not the translator itself.
   const savedMessage = t('messages.userSaved');
+  const notFoundMessage = t('empty.not_found');
+  const updateFailedMessage = t('messages.updateFailed');
   const user = await findUserById(id);
   if (!user) {
     return <Empty message={t('empty.not_found')} />;
@@ -53,11 +55,6 @@ export default async function UserEditPage({
         title: t('fields.name'),
         validation: { required: true },
       },
-      {
-        name: 'image',
-        type: 'upload_image',
-        title: t('fields.avatar'),
-      },
     ],
     data: user,
     submit: {
@@ -71,21 +68,23 @@ export default async function UserEditPage({
 
         const targetUser = await findUserById(id);
         if (!targetUser) {
-          throw new Error('user not found');
+          return { status: 'error' as const, message: notFoundMessage };
         }
 
         const name = data.get('name') as string;
-        const image = data.get('image') as string;
 
+        // MVP: the avatar field was removed from this form. The upload
+        // endpoint is disabled (always 404), and a failed upload set the
+        // form value to '', so submitting used to wipe the stored avatar.
+        // Only `name` is editable here now, leaving `image` untouched.
         const newUser: UpdateUser = {
           name: name.trim(),
-          image: image as string,
         };
 
         const result = await updateUser(targetUser.id as string, newUser);
 
         if (!result) {
-          throw new Error('update user failed');
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         return {

@@ -7,11 +7,12 @@ import { TableCard } from '@/shared/blocks/table';
 import { Badge } from '@/shared/components/ui/badge';
 import {
   getUserInfo,
+  getUserRolesForUserIds,
   getUsers,
   getUsersCount,
   User,
 } from '@/shared/models/user';
-import { getUserRoles, hasPermission } from '@/shared/services/rbac';
+import { hasPermission } from '@/shared/services/rbac';
 import { Crumb, Search } from '@/shared/types/blocks/common';
 import { type Table } from '@/shared/types/blocks/table';
 
@@ -21,20 +22,35 @@ type AdminUsersSearchParams = {
   email?: string;
   newApiBindingStatus?: string;
   lastSyncErrorCode?: string;
+  ledger?: string;
+};
+
+type StatusTranslator = ((key: string) => string) & {
+  has: (key: string) => boolean;
 };
 
 function translateStatus(
-  t: (key: string) => string,
+  t: StatusTranslator,
   prefix: string,
   value: string | null | undefined,
   fallback: string
 ) {
   if (!value) return fallback;
-  try {
-    return t(`${prefix}.${value}`);
-  } catch {
-    return value;
-  }
+  const key = `${prefix}.${value}`;
+  // next-intl v4 does not throw on a missing key — it logs a warning and
+  // echoes the full key path (e.g. `admin.users.detail.status.binding.xxx`).
+  // The old try/catch was a dead guard; probe with `t.has` so an unmapped
+  // status falls back to its raw value instead of leaking the key path.
+  return t.has(key) ? t(key) : value;
+}
+
+const activePillClass =
+  'border-primary bg-primary text-primary-foreground rounded-md border px-3 py-1.5 text-sm';
+const inactivePillClass =
+  'border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm';
+
+function pillClass(active: boolean) {
+  return active ? activePillClass : inactivePillClass;
 }
 
 function statusVariant(status: string | null | undefined) {
@@ -91,16 +107,23 @@ export default async function AdminUsersPage({
     email,
     newApiBindingStatus,
     lastSyncErrorCode,
+    ledger,
   } = await searchParams;
   const page = pageNum || 1;
   const limit = pageSize || 30;
-  const userFilters = { email, newApiBindingStatus, lastSyncErrorCode };
+  const userFilters = {
+    email,
+    newApiBindingStatus,
+    lastSyncErrorCode,
+    unresolvedLedger: ledger === 'unresolved',
+  };
   const currentSearchParams = {
     page: pageNum,
     pageSize,
     email,
     newApiBindingStatus,
     lastSyncErrorCode,
+    ledger,
   };
 
   const total = await getUsersCount(userFilters);
@@ -109,6 +132,13 @@ export default async function AdminUsersPage({
     page,
     limit,
   });
+
+  // Batch-load roles for the whole page in one query instead of calling
+  // getUserRoles per row (30 rows = 30 extra queries).
+  const rolesByUser = await getUserRolesForUserIds(users.map((u) => u.id));
+
+  const hasActiveStatusFilter =
+    Boolean(newApiBindingStatus) || Boolean(lastSyncErrorCode) || Boolean(ledger);
 
   const crumbs: Crumb[] = [
     { title: t('list.crumbs.admin'), url: '/admin' },
@@ -129,6 +159,11 @@ export default async function AdminUsersPage({
         title: t('fields.id'),
         type: 'copy',
         className: 'font-mono text-xs',
+        // Truncate the UUID so it stops eating ~300px and pushing the SYNC
+        // columns off-screen; the copy button still copies the full id.
+        callback: (item: User) => (
+          <span title={item.id}>{`${item.id.slice(0, 8)}…`}</span>
+        ),
       },
       { name: 'name', title: t('fields.name') },
       {
@@ -161,8 +196,8 @@ export default async function AdminUsersPage({
       {
         name: 'roles',
         title: t('fields.roles'),
-        callback: async (item: User) => {
-          const roles = await getUserRoles(item.id);
+        callback: (item: User) => {
+          const roles = rolesByUser.get(item.id) ?? [];
 
           return (
             <div className="flex flex-col gap-2">
@@ -236,28 +271,61 @@ export default async function AdminUsersPage({
         <MainHeader title={t('list.title')} search={search} />
         <div className="mb-4 flex flex-wrap gap-2">
           <Link
-            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm"
+            className={pillClass(!hasActiveStatusFilter)}
+            href={usersFilterHref(currentSearchParams, {
+              newApiBindingStatus: undefined,
+              lastSyncErrorCode: undefined,
+              ledger: undefined,
+            })}
+          >
+            {t('list.filters.all')}
+          </Link>
+          <Link
+            className={pillClass(
+              newApiBindingStatus === 'username_sync_failed'
+            )}
             href={usersFilterHref(currentSearchParams, {
               newApiBindingStatus: 'username_sync_failed',
+              lastSyncErrorCode: undefined,
+              ledger: undefined,
             })}
           >
             {t('list.filters.username_sync_failed')}
           </Link>
           <Link
-            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm"
+            className={pillClass(
+              newApiBindingStatus === 'conflict_requires_review'
+            )}
             href={usersFilterHref(currentSearchParams, {
               newApiBindingStatus: 'conflict_requires_review',
+              lastSyncErrorCode: undefined,
+              ledger: undefined,
             })}
           >
             {t('list.filters.conflict_requires_review')}
           </Link>
           <Link
-            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-3 py-1.5 text-sm"
+            className={pillClass(
+              lastSyncErrorCode === 'newapi_username_too_long'
+            )}
             href={usersFilterHref(currentSearchParams, {
               lastSyncErrorCode: 'newapi_username_too_long',
+              newApiBindingStatus: undefined,
+              ledger: undefined,
             })}
           >
             {t('list.filters.newapi_username_too_long')}
+          </Link>
+          {/* 对账告警的落点：结清入口在用户详情页的账本行上 */}
+          <Link
+            className={pillClass(ledger === 'unresolved')}
+            href={usersFilterHref(currentSearchParams, {
+              ledger: 'unresolved',
+              newApiBindingStatus: undefined,
+              lastSyncErrorCode: undefined,
+            })}
+          >
+            {t('list.filters.unresolved_ledger')}
           </Link>
         </div>
         <TableCard table={table} />

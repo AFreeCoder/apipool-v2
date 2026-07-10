@@ -1,3 +1,10 @@
 {
-  "accessDenied": "Access denied"
+  "accessDenied": "Access denied",
+  "table": {
+    "empty": "No records found.",
+    "copied": "Copied"
+  },
+  "settings": {
+    "readonly": "You have read-only access to settings. Saving is disabled because you lack the settings write permission."
+  }
 }

@@ -1,9 +1,21 @@
 import { headers } from 'next/headers';
-import { and, count, desc, eq, inArray, type SQL } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  like,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 
 import { getAuth } from '@/core/auth';
 import { db } from '@/core/db';
-import { newApiUserBinding, user } from '@/config/db/schema';
+import { newApiUserBinding, role, user, userRole } from '@/config/db/schema';
 
 import { Permission, Role } from '../services/rbac';
 import { getRemainingCredits } from './credit';
@@ -36,17 +48,35 @@ type UserListFilters = {
   email?: string;
   newApiBindingStatus?: string;
   lastSyncErrorCode?: string;
+  /** 账本里有未结清的行（远端结局未知，已挡住该用户的后续调额）。 */
+  unresolvedLedger?: boolean;
 };
 
 function getUserListConditions({
   email,
   newApiBindingStatus,
   lastSyncErrorCode,
+  unresolvedLedger,
 }: UserListFilters) {
   const conditions: SQL[] = [];
 
+  if (unresolvedLedger) {
+    // 对账告警要能落到具体的人：结清入口在用户详情页的账本行上。
+    conditions.push(
+      sql`exists (select 1 from apipool_ledger_entry le
+                 where le.portal_user_id = ${user.id}
+                   and le.status in ('pending', 'processing', 'reconciliation_required'))`
+    );
+  }
+
   if (email) {
-    conditions.push(eq(user.email, email));
+    // Admin email search must be case-insensitive and substring-based:
+    // `eq(user.email, 'User@Example.com')` returns nothing for a stored
+    // `user@example.com`, and typing part of an address should still match.
+    const keyword = email.trim().toLowerCase();
+    if (keyword) {
+      conditions.push(like(sql`lower(${user.email})`, `%${keyword}%`));
+    }
   }
   if (newApiBindingStatus) {
     conditions.push(eq(newApiUserBinding.status, newApiBindingStatus));
@@ -98,18 +128,14 @@ export async function findUserById(userId: string) {
 export async function getUsers({
   page = 1,
   limit = 30,
-  email,
-  newApiBindingStatus,
-  lastSyncErrorCode,
+  ...filters
 }: {
   page?: number;
   limit?: number;
 } & UserListFilters = {}): Promise<User[]> {
-  const conditions = getUserListConditions({
-    email,
-    newApiBindingStatus,
-    lastSyncErrorCode,
-  });
+  // 透传整个 filters：逐字段解构时新增的筛选很容易被遗漏，
+  // 而 getUsersCount 传的是整个对象——两者会静默地不一致。
+  const conditions = getUserListConditions(filters);
 
   const result = await db()
     .select(userListSelect)
@@ -147,6 +173,70 @@ export async function getUserByUserIds(userIds: string[]) {
     .where(inArray(user.id, userIds));
 
   return result;
+}
+
+/**
+ * Case-insensitive exact-email lookup for flows that need a unique hit
+ * (e.g. quota adjustment). Deliberately NOT substring-based: matching the
+ * wrong user here changes the wrong person's balance. Limited to 2 rows so
+ * callers can detect (and reject) an ambiguous match.
+ */
+export async function findUsersByExactEmail(email: string) {
+  const keyword = email.trim().toLowerCase();
+  if (!keyword) return [];
+
+  return await db()
+    .select({ id: user.id, name: user.name, email: user.email })
+    .from(user)
+    .where(eq(sql`lower(${user.email})`, keyword))
+    .limit(2);
+}
+
+/**
+ * Batch-load active (non-expired) roles for many users in a single query,
+ * returning a userId -> roles map. Replaces the per-row `getUserRoles`
+ * fan-out on the admin user list (30 rows = 30 queries).
+ */
+export async function getUserRolesForUserIds(
+  userIds: string[]
+): Promise<Map<string, Role[]>> {
+  const rolesByUser = new Map<string, Role[]>();
+  if (userIds.length === 0) return rolesByUser;
+
+  const now = new Date();
+  const rows = await db()
+    .select({
+      userId: userRole.userId,
+      id: role.id,
+      name: role.name,
+      title: role.title,
+      description: role.description,
+      status: role.status,
+      createdAt: role.createdAt,
+      updatedAt: role.updatedAt,
+      sort: role.sort,
+    })
+    .from(userRole)
+    .innerJoin(role, eq(userRole.roleId, role.id))
+    .where(
+      and(
+        inArray(userRole.userId, userIds),
+        eq(role.status, 'active'),
+        or(isNull(userRole.expiresAt), gt(userRole.expiresAt, now))
+      )
+    );
+
+  for (const row of rows) {
+    const { userId, ...roleRow } = row;
+    const list = rolesByUser.get(userId);
+    if (list) {
+      list.push(roleRow as Role);
+    } else {
+      rolesByUser.set(userId, [roleRow as Role]);
+    }
+  }
+
+  return rolesByUser;
 }
 
 export async function getUserInfo() {

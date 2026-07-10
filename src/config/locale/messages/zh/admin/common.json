@@ -1,3 +1,10 @@
 {
-  "accessDenied": "无权访问"
+  "accessDenied": "无权访问",
+  "table": {
+    "empty": "暂无记录。",
+    "copied": "已复制"
+  },
+  "settings": {
+    "readonly": "你对设置只有只读权限。缺少设置写入权限，保存已被禁用。"
+  }
 }

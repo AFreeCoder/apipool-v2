@@ -38,9 +38,11 @@
       }
     },
     "filters": {
+      "all": "All",
       "username_sync_failed": "Sync failed",
       "conflict_requires_review": "Needs review",
-      "newapi_username_too_long": "Username too long"
+      "newapi_username_too_long": "Username too long",
+      "unresolved_ledger": "Needs reconciliation"
     }
   },
   "empty": {
@@ -239,7 +241,8 @@
     },
     "buttons": {
       "submit": "Update"
-    }
+    },
+    "self_edit_warning": "You are editing your own roles. Removing your admin role will immediately lock you out of the admin area."
   },
   "grant_credits": {
     "title": "Grant Credits",
@@ -261,6 +264,8 @@
   },
   "messages": {
     "userSaved": "User updated",
-    "rolesSaved": "Roles updated"
+    "rolesSaved": "Roles updated",
+    "updateFailed": "Could not update the user. Please try again.",
+    "invalidRoles": "The submitted roles are invalid. Reload the page and try again."
   }
 }

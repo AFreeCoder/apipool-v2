@@ -4,7 +4,7 @@ import { PERMISSIONS, requireAllPermissions } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
-import { findUserById } from '@/shared/models/user';
+import { findUserById, getUserInfo } from '@/shared/models/user';
 import {
   assignRolesToUser,
   getRoles,
@@ -30,10 +30,17 @@ export default async function UserEditRolesPage({
 
   const t = await getTranslations('admin.users');
   const savedMessage = t('messages.rolesSaved');
+  const notFoundMessage = t('empty.not_found');
+  const invalidRolesMessage = t('messages.invalidRoles');
   const user = await findUserById(id);
   if (!user) {
     return <Empty message={t('empty.not_found')} />;
   }
+
+  // Warn (do not block) when an admin edits their own roles: dropping their
+  // own admin role locks them out of the admin area entirely.
+  const currentUser = await getUserInfo();
+  const isEditingSelf = currentUser?.id === user.id;
 
   const crumbs: Crumb[] = [
     { title: t('edit_roles.crumbs.admin'), url: '/admin' },
@@ -65,7 +72,9 @@ export default async function UserEditRolesPage({
         type: 'checkbox',
         title: t('fields.roles'),
         options: rolesOptions,
-        validation: { required: true },
+        // Deliberately not required: most portal users hold zero roles, and
+        // demoting an admin means clearing their last one. The red star used
+        // to claim otherwise while nothing enforced it.
       },
     ],
     data: {
@@ -85,7 +94,7 @@ export default async function UserEditRolesPage({
 
         const targetUser = await findUserById(id);
         if (!targetUser) {
-          throw new Error('user not found');
+          return { status: 'error' as const, message: notFoundMessage };
         }
 
         let roles = data.get('roles') as unknown as string[];
@@ -93,7 +102,7 @@ export default async function UserEditRolesPage({
           try {
             roles = JSON.parse(roles);
           } catch {
-            throw new Error('invalid roles');
+            return { status: 'error' as const, message: invalidRolesMessage };
           }
         }
 
@@ -101,14 +110,14 @@ export default async function UserEditRolesPage({
           !Array.isArray(roles) ||
           roles.some((roleId) => typeof roleId !== 'string')
         ) {
-          throw new Error('invalid roles');
+          return { status: 'error' as const, message: invalidRolesMessage };
         }
 
         const allowedRoleIds = new Set(
           (await getRoles()).map((role) => role.id)
         );
         if (roles.some((roleId) => !allowedRoleIds.has(roleId))) {
-          throw new Error('invalid roles');
+          return { status: 'error' as const, message: invalidRolesMessage };
         }
 
         await assignRolesToUser(targetUser.id as string, roles);
@@ -127,6 +136,11 @@ export default async function UserEditRolesPage({
       <Header crumbs={crumbs} />
       <Main>
         <MainHeader title={t('edit_roles.title')} />
+        {isEditingSelf && (
+          <div className="mb-4 rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 md:max-w-xl dark:text-amber-400">
+            {t('edit_roles.self_edit_warning')}
+          </div>
+        )}
         <FormCard form={form} className="md:max-w-xl" />
       </Main>
     </>

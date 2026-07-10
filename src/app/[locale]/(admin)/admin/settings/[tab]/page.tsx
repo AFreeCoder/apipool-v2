@@ -9,12 +9,14 @@ import {
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
 import { getAllConfigs, saveConfigs } from '@/shared/models/config';
+import { getUserInfo } from '@/shared/models/user';
 import {
   getSettings,
   getSettingTabs,
   Setting,
 } from '@/shared/services/settings';
-import { Crumb } from '@/shared/types/blocks/common';
+import { hasPermission } from '@/shared/services/rbac';
+import { Button, Crumb } from '@/shared/types/blocks/common';
 import { Form, FormField } from '@/shared/types/blocks/form';
 
 const supportedFormFieldTypes = new Set<FormField['type']>([
@@ -110,7 +112,16 @@ export default async function SettingsPage({
     locale,
   });
 
+  // The page gate is SETTINGS_READ, but saving requires SETTINGS_WRITE. Probe
+  // the write permission at render time so read-only admins get a disabled
+  // submit button and a notice instead of a masked error on click.
+  const currentUser = await getUserInfo();
+  const canWrite = currentUser
+    ? await hasPermission(currentUser.id, PERMISSIONS.SETTINGS_WRITE)
+    : false;
+
   const t = await getTranslations('admin.settings');
+  const tCommon = await getTranslations('admin.common');
   const savedMessage = t('edit.messages.saved');
   const tabs = await getSettingTabs(tab);
   const activeTab = tabs.find((item) => item.name === tab);
@@ -162,12 +173,15 @@ export default async function SettingsPage({
     { title: t('edit.crumbs.settings'), is_active: true },
   ];
 
+  const submitButton: Button & { disabled?: boolean } = {
+    title: t('edit.buttons.submit'),
+    disabled: !canWrite,
+  };
+
   const form: Form = {
     fields,
     submit: {
-      button: {
-        title: t('edit.buttons.submit'),
-      },
+      button: submitButton,
       handler: async (data) => {
         'use server';
 
@@ -197,6 +211,11 @@ export default async function SettingsPage({
       <Header crumbs={crumbs} />
       <Main>
         <MainHeader title={t('edit.title')} tabs={tabs} />
+        {!canWrite && (
+          <div className="mb-4 rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 md:max-w-xl dark:text-amber-400">
+            {tCommon('settings.readonly')}
+          </div>
+        )}
         <FormCard title={activeTab.title} form={form} className="md:max-w-xl" />
       </Main>
     </>
