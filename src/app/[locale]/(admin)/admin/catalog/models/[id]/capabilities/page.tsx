@@ -98,15 +98,18 @@ export default async function CatalogModelCapabilitiesPage({
         const { model } = passby;
 
         if (!model) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         let capabilities = data.get('capabilities') as unknown as string[];
         if (typeof capabilities === 'string') {
           try {
             capabilities = JSON.parse(capabilities);
-          } catch (error) {
-            throw new Error(invalidSelectionMessage);
+          } catch {
+            return {
+              status: 'error' as const,
+              message: invalidSelectionMessage,
+            };
           }
         }
 

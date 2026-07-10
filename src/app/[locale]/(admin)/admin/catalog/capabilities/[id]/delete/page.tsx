@@ -66,16 +66,16 @@ export default async function CatalogCapabilityDeletePage({
 
         const target = passby?.capability;
         if (!target?.id) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         try {
           await deleteCapability(target.id);
         } catch (error) {
           if (error instanceof CatalogDeleteBlockedError) {
-            throw new Error(blockedMessage);
+            return { status: 'error' as const, message: blockedMessage };
           }
-          throw new Error(deleteFailedMessage);
+          return { status: 'error' as const, message: deleteFailedMessage };
         }
 
         revalidateCatalog();

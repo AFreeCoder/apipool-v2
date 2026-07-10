@@ -63,13 +63,13 @@ export default async function CatalogModelDeletePage({
 
         const target = passby?.model;
         if (!target?.id) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         try {
           await deleteModel(target.id);
         } catch {
-          throw new Error(deleteFailedMessage);
+          return { status: 'error' as const, message: deleteFailedMessage };
         }
 
         revalidateCatalog();

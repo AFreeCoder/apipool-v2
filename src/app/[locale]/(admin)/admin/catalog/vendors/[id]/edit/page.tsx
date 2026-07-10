@@ -92,7 +92,7 @@ export default async function CatalogVendorEditPage({
         const { vendor } = passby;
 
         if (!vendor) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateVendor = {
@@ -105,7 +105,7 @@ export default async function CatalogVendorEditPage({
         const result = await updateVendor(vendor.id as string, patch);
 
         if (!result) {
-          throw new Error(updateFailedMessage);
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         revalidateCatalog();

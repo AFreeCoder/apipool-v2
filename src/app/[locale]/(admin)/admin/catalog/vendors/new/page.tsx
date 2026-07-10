@@ -90,7 +90,7 @@ export default async function CatalogVendorNewPage({
         const result = await createVendor(newVendor);
 
         if (!result) {
-          throw new Error(createFailedMessage);
+          return { status: 'error' as const, message: createFailedMessage };
         }
 
         revalidateCatalog();

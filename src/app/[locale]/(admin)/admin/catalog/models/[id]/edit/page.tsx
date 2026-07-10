@@ -24,12 +24,16 @@ import { Crumb } from '@/shared/types/blocks/common';
 
 import { ModelAdminForm } from '../../model-admin-form';
 
+// 业务校验错误：server action 里捕获后转成 { status: 'error' } 返回。
+// 直接 throw 的话生产环境会被 Next.js 脱敏成通用英文错误。
+class FormValidationError extends Error {}
+
 function requiredPrice(
   value: FormDataEntryValue | null,
   message: string
 ): number {
   const price = optionalDollarsToMicroUsd(value);
-  if (price === null) throw new Error(message);
+  if (price === null) throw new FormValidationError(message);
   return price;
 }
 
@@ -93,52 +97,62 @@ export default async function CatalogModelEditPage({
     await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
     if (!model) {
-      throw new Error(missingRecordMessage);
+      return { status: 'error' as const, message: missingRecordMessage };
     }
 
     const operator = await getUserInfo();
-    const result = await upsertModelAdminConfig({
-      modelId: model.id,
-      operatorUserId: operator?.id,
-      model: {
-        modelId: (data.get('modelId') as string).trim(),
-        displayName: (data.get('displayName') as string).trim(),
-        vendorId: (data.get('vendorId') as string).trim(),
-        categoryIds: JSON.parse(data.get('categoryIds') as string),
-      },
-      basePrice: {
-        inputMicroUsd: requiredPrice(
-          data.get('inputMicroUsd'),
-          invalidPriceMessage
-        ),
-        outputMicroUsd: requiredPrice(
-          data.get('outputMicroUsd'),
-          invalidPriceMessage
-        ),
-        imageInputMicroUsd: optionalDollarsToMicroUsd(
-          data.get('imageInputMicroUsd')
-        ),
-        imageOutputMicroUsd: optionalDollarsToMicroUsd(
-          data.get('imageOutputMicroUsd')
-        ),
-      },
-      listing: {
-        id: listing?.id,
-        groupId: (data.get('groupId') as string).trim(),
-        statusId: (data.get('statusId') as string).trim(),
-        discountRateBps: discountFoldToBps(data.get('discountFold')),
-        discountNote:
-          (data.get('discountNote') as string | null)?.trim() || null,
-        description: (data.get('description') as string | null)?.trim() || null,
-        smokeTested: listing?.smokeTested ?? false,
-        featured: listing?.featured ?? false,
-        sortOrder: listing?.sortOrder ?? 0,
-      },
-      capabilityIds: JSON.parse(data.get('capabilityIds') as string),
-    });
 
-    if (!result) {
-      throw new Error(updateFailedMessage);
+    try {
+      const result = await upsertModelAdminConfig({
+        modelId: model.id,
+        operatorUserId: operator?.id,
+        model: {
+          modelId: (data.get('modelId') as string).trim(),
+          displayName: (data.get('displayName') as string).trim(),
+          vendorId: (data.get('vendorId') as string).trim(),
+          categoryIds: JSON.parse(data.get('categoryIds') as string),
+        },
+        basePrice: {
+          inputMicroUsd: requiredPrice(
+            data.get('inputMicroUsd'),
+            invalidPriceMessage
+          ),
+          outputMicroUsd: requiredPrice(
+            data.get('outputMicroUsd'),
+            invalidPriceMessage
+          ),
+          imageInputMicroUsd: optionalDollarsToMicroUsd(
+            data.get('imageInputMicroUsd')
+          ),
+          imageOutputMicroUsd: optionalDollarsToMicroUsd(
+            data.get('imageOutputMicroUsd')
+          ),
+        },
+        listing: {
+          id: listing?.id,
+          groupId: (data.get('groupId') as string).trim(),
+          statusId: (data.get('statusId') as string).trim(),
+          discountRateBps: discountFoldToBps(data.get('discountFold')),
+          discountNote:
+            (data.get('discountNote') as string | null)?.trim() || null,
+          description:
+            (data.get('description') as string | null)?.trim() || null,
+          smokeTested: listing?.smokeTested ?? false,
+          featured: listing?.featured ?? false,
+          sortOrder: listing?.sortOrder ?? 0,
+        },
+        capabilityIds: JSON.parse(data.get('capabilityIds') as string),
+      });
+
+      if (!result) {
+        return { status: 'error' as const, message: updateFailedMessage };
+      }
+    } catch (error) {
+      if (error instanceof FormValidationError) {
+        return { status: 'error' as const, message: error.message };
+      }
+      // 未知错误继续上抛：真 500 应进 error 边界，而不是伪装成业务错误。
+      throw error;
     }
 
     revalidateCatalog();

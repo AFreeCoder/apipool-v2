@@ -107,7 +107,7 @@ export default async function CatalogGroupEditPage({
         const { group } = passby;
 
         if (!group) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCatalogGroup = {
@@ -124,7 +124,7 @@ export default async function CatalogGroupEditPage({
         const result = await updateGroup(group.id as string, patch);
 
         if (!result) {
-          throw new Error(updateFailedMessage);
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         revalidateCatalog();

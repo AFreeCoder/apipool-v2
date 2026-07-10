@@ -112,7 +112,7 @@ export default async function CatalogGroupNewPage({
         const result = await createGroup(newGroup);
 
         if (!result) {
-          throw new Error(createFailedMessage);
+          return { status: 'error' as const, message: createFailedMessage };
         }
 
         revalidateCatalog();

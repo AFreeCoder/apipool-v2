@@ -104,7 +104,7 @@ export default async function CatalogStatusNewPage({
         const result = await createStatus(newStatus);
 
         if (!result) {
-          throw new Error(createFailedMessage);
+          return { status: 'error' as const, message: createFailedMessage };
         }
 
         revalidateCatalog();

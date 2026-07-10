@@ -133,7 +133,7 @@ export default async function CatalogModelListingEditPage({
         const { model, listing } = passby;
 
         if (!model || !listing) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         let patch: UpdateListing;
@@ -153,13 +153,13 @@ export default async function CatalogModelListingEditPage({
             sortOrder: listing.sortOrder,
           };
         } catch {
-          throw new Error(invalidPriceMessage);
+          return { status: 'error' as const, message: invalidPriceMessage };
         }
 
         const result = await updateListing(listing.id as string, patch);
 
         if (!result) {
-          throw new Error(updateFailedMessage);
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         revalidateCatalog();

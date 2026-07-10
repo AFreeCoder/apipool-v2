@@ -20,12 +20,16 @@ import { FormCard } from '@/shared/blocks/form';
 import { Crumb } from '@/shared/types/blocks/common';
 import { Form } from '@/shared/types/blocks/form';
 
+// 业务校验错误：server action 里捕获后转成 { status: 'error' } 返回。
+// 直接 throw 的话生产环境会被 Next.js 脱敏成通用英文错误。
+class FormValidationError extends Error {}
+
 function requiredBasePrice(
   value: number | null | undefined,
   message: string
 ): number {
   if (value === null || value === undefined) {
-    throw new Error(message);
+    throw new FormValidationError(message);
   }
   return value;
 }
@@ -150,17 +154,27 @@ export default async function CatalogModelListingNewPage({
         const { model, basePrice, defaultListing } = passby;
 
         if (!model) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
-        const inputMicroUsd = requiredBasePrice(
-          basePrice?.baseInputMicroUsd ?? defaultListing?.inputMicroUsd,
-          missingBasePriceMessage
-        );
-        const outputMicroUsd = requiredBasePrice(
-          basePrice?.baseOutputMicroUsd ?? defaultListing?.outputMicroUsd,
-          missingBasePriceMessage
-        );
+        let inputMicroUsd: number;
+        let outputMicroUsd: number;
+        try {
+          inputMicroUsd = requiredBasePrice(
+            basePrice?.baseInputMicroUsd ?? defaultListing?.inputMicroUsd,
+            missingBasePriceMessage
+          );
+          outputMicroUsd = requiredBasePrice(
+            basePrice?.baseOutputMicroUsd ?? defaultListing?.outputMicroUsd,
+            missingBasePriceMessage
+          );
+        } catch (error) {
+          if (error instanceof FormValidationError) {
+            return { status: 'error' as const, message: error.message };
+          }
+          // 未知错误继续上抛：真 500 应进 error 边界，而不是伪装成业务错误。
+          throw error;
+        }
 
         let newListing: NewListing;
         try {
@@ -190,7 +204,7 @@ export default async function CatalogModelListingNewPage({
             sortOrder: 0,
           } as NewListing;
         } catch {
-          throw new Error(invalidPriceMessage);
+          return { status: 'error' as const, message: invalidPriceMessage };
         }
 
         let result;
@@ -200,13 +214,16 @@ export default async function CatalogModelListingNewPage({
           // uniq_listing_model_group：同一模型在同一分组只能有一条售卖项。
           // 不捕获的话 admin 看到的是原始 SQLite 约束错误（生产还会被脱敏成通用错误）。
           if (/uniq_listing_model_group|UNIQUE constraint/i.test(String(error?.message))) {
-            throw new Error(duplicateListingMessage);
+            return {
+              status: 'error' as const,
+              message: duplicateListingMessage,
+            };
           }
           throw error;
         }
 
         if (!result) {
-          throw new Error(createFailedMessage);
+          return { status: 'error' as const, message: createFailedMessage };
         }
 
         revalidateCatalog();

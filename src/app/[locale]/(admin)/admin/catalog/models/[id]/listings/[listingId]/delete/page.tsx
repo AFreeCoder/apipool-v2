@@ -78,13 +78,13 @@ export default async function CatalogModelListingDeletePage({
         const targetModel = passby?.model;
         const targetListing = passby?.listing;
         if (!targetModel?.id || !targetListing?.id) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         try {
           await deleteListing(targetListing.id);
         } catch {
-          throw new Error(deleteFailedMessage);
+          return { status: 'error' as const, message: deleteFailedMessage };
         }
 
         revalidateCatalog();

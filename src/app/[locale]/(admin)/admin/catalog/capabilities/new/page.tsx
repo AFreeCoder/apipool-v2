@@ -93,7 +93,7 @@ export default async function CatalogCapabilityNewPage({
         const result = await createCapability(newCapability);
 
         if (!result) {
-          throw new Error(createFailedMessage);
+          return { status: 'error' as const, message: createFailedMessage };
         }
 
         revalidateCatalog();

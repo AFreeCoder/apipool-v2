@@ -90,7 +90,7 @@ export default async function CatalogCategoryNewPage({
         const result = await createCategory(newCategory);
 
         if (!result) {
-          throw new Error(createFailedMessage);
+          return { status: 'error' as const, message: createFailedMessage };
         }
 
         revalidateCatalog();

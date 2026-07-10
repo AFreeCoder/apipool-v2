@@ -92,7 +92,7 @@ export default async function CatalogCategoryEditPage({
         const { category } = passby;
 
         if (!category) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCategory = {
@@ -105,7 +105,7 @@ export default async function CatalogCategoryEditPage({
         const result = await updateCategory(category.id as string, patch);
 
         if (!result) {
-          throw new Error(updateFailedMessage);
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         revalidateCatalog();

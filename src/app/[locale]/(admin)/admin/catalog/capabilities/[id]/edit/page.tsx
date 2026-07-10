@@ -95,7 +95,7 @@ export default async function CatalogCapabilityEditPage({
         const { capability } = passby;
 
         if (!capability) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCapability = {
@@ -108,7 +108,7 @@ export default async function CatalogCapabilityEditPage({
         const result = await updateCapability(capability.id as string, patch);
 
         if (!result) {
-          throw new Error(updateFailedMessage);
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         revalidateCatalog();

@@ -102,7 +102,7 @@ export default async function CatalogStatusEditPage({
         const { catalogStatus } = passby;
 
         if (!catalogStatus) {
-          throw new Error(missingRecordMessage);
+          return { status: 'error' as const, message: missingRecordMessage };
         }
 
         const patch: UpdateCatalogStatus = {
@@ -117,7 +117,7 @@ export default async function CatalogStatusEditPage({
         const result = await updateStatus(catalogStatus.id as string, patch);
 
         if (!result) {
-          throw new Error(updateFailedMessage);
+          return { status: 'error' as const, message: updateFailedMessage };
         }
 
         revalidateCatalog();
