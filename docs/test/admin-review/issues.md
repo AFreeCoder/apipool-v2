@@ -25,7 +25,7 @@
 
 ## 上线前建议完成
 
-- [x] **R-1 管理员正向调额未接 `onRedemptionCreated`/`remoteAttemptAt`，崩溃窗口可双倍到账** —— 2026-07-09 已修复，回链提交 `5537976`。远端副作用前落 `remoteAttemptAt`、码值经 `onRedemptionCreated` 预落库、码已发出后的失败一律升级 `reconciliation_required`；TDD 2 用例守护。
+- [ ] **R-1 管理员调额仍可双倍到账/双倍扣减** —— ⚠️ **`5537976` 的修复不完整，此前的「已修复」是过度声称，已撤回**（2026-07-09 Codex 对抗评审 high，读码坐实）。该提交确实写下了 `remoteAttemptAt` 与预落库码值，但**全代码库无任何一处读取它们**：`manual_adjustment` 行没有 claim / TTL / 重夺，也没有「存在未决调额则拒绝新建」的服务端守卫；而 `quota-adjustment-form.tsx` 的幂等键只在内存 ref 里、**一收到响应就清空**，于是管理员再次提交即得新键 → 新 ledger 行 → 再发一张兑换码。负向调额更直接：`client.ts` 的 `PUT /api/user/` 已生效但响应超时时，`remoteAdjusted=false`、无兑换回调、不满足 `isQuotaAdjustmentReconciliationError` → 落终态 `failed` → 管理员重试重新读到已扣减余额 → **再扣一次**。修法见 report.md「R-1 复盘」。
 - [x] **R-2 生产环境 admin 表单业务错误全部被脱敏成通用英文** —— 2026-07-09 已修复，回链提交 `2193a2d`。catalog 21 个 CRUD 页的业务错误全部改为 `return {status:'error', message}`（输入校验辅助函数改抛私有 `FormValidationError` 在 action 内捕获；未知错误继续上抛进 error 边界）；新增守卫测试 `catalog-admin-error-contract.test.ts` 禁止页面再出现 `throw new Error(`。pre-launch P1-8 的翻译提示自此在生产真正可见。
 - [x] **R-3 停用绑定无恢复路径**，被停用户充值落终态 failed —— 2026-07-09 已修复，回链提交 `5537976`。新增 `restoreNewapiUserBindingForAdmin`（翻出 disabled + 复用幂等重试管线），详情页停用态只显示「恢复绑定」；3 用例 + 浏览器实走通过；守卫扩展见 `abe41ce`。**遗留**：幂等接回同一远端用户依赖 `provisionUser` 的按名恢复语义，建议上线后在真实 New API 复验一次。
 - [ ] **R-4 用户编辑页头像上传必失败且清空原头像**（MVP 期移除字段，~5 行）
