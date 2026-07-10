@@ -100,7 +100,7 @@
       },
       "disable_confirm": {
         "title": "Disable this binding?",
-        "description": "Disabling is one-way in the current version: there is no re-enable action, retry will stop working for this user, and any future paid top-up will fail because quota can no longer be applied. Only proceed if this account must be cut off from New API.",
+        "description": "The user immediately loses API access, retries stop working, and any paid top-up will fail while the binding is disabled. This is reversible: an admin can restore the binding from this page afterwards.",
         "confirm": "Disable Binding",
         "cancel": "Cancel",
         "error": "Failed to disable the binding. Check the server logs and try again."

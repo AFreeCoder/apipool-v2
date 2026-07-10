@@ -48,6 +48,7 @@ async function setupPortalDb() {
 
   modules = {
     db,
+    rawClient: client,
     newApiBridgeAuditLog,
     newApiKeyBinding,
     newApiUserBinding,
@@ -909,6 +910,82 @@ test('restoreNewapiUserBindingForAdmin surfaces the degraded state when the remo
   const binding = await modules.portal.getPortalUserBinding(portalUser.id);
   assert.notEqual(binding.status, 'disabled');
   assert.ok(binding.lastSyncError);
+});
+
+test('a disable landing mid-restore is not silently reverted to active', async () => {
+  const portalUser = await insertUser('portal_user_restore_race', 'rsrc@b.co');
+  const operator = await insertUser('operator_restore_race', 'oprr@b.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await modules.portal.disableNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    reason: 'security review',
+    operatorUserId: operator.id,
+  });
+
+  const racingRemote = {
+    provisionUser: async (input: { username: string }) => {
+      // 远端供给在飞时，另一名管理员再次停用该绑定
+      await modules.portal.disableNewapiUserBindingForAdmin({
+        portalUserId: portalUser.id,
+        reason: 'second disable wins',
+        operatorUserId: operator.id,
+      });
+      return {
+        newapiUserId: `remote_${input.username}`,
+        accessToken: 'test-access-token',
+      };
+    },
+    ensureUserGroup: async () => {},
+    updateUserProfile: async () => {
+      throw new Error('should not be called');
+    },
+  } as any;
+
+  await modules.portal
+    .restoreNewapiUserBindingForAdmin({
+      portalUserId: portalUser.id,
+      operatorUserId: operator.id,
+      client: racingRemote,
+    })
+    .catch(() => undefined);
+
+  // 较新的停用决定必须胜出，不能被在途恢复写回 active
+  const binding = await modules.portal.getPortalUserBinding(portalUser.id);
+  assert.equal(binding.status, 'disabled');
+});
+
+test('restoreNewapiUserBindingForAdmin claims the disabled row atomically', async () => {
+  const portalUser = await insertUser('portal_user_restore_cas', 'rscas@b.co');
+  const operator = await insertUser('operator_restore_cas', 'oprcas@b.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await modules.portal.disableNewapiUserBindingForAdmin({
+    portalUserId: portalUser.id,
+    reason: 'mistaken click',
+    operatorUserId: operator.id,
+  });
+
+  // 两个并发恢复，只有一个能 claim 到 disabled 行
+  const results = await Promise.allSettled([
+    modules.portal.restoreNewapiUserBindingForAdmin({
+      portalUserId: portalUser.id,
+      operatorUserId: operator.id,
+      client: createSuccessfulRemoteClient(),
+    }),
+    modules.portal.restoreNewapiUserBindingForAdmin({
+      portalUserId: portalUser.id,
+      operatorUserId: operator.id,
+      client: createSuccessfulRemoteClient(),
+    }),
+  ]);
+
+  const rejected = results.filter((r) => r.status === 'rejected');
+  assert.equal(rejected.length, 1);
 });
 
 test('adjustPortalQuota applies ledger for long email users after binding succeeds', async () => {
@@ -2201,6 +2278,234 @@ test('adjustPortalQuota stores the redemption code before dispatch and escalates
   // 管理员换个幂等键重试会生成第二张码 → 双倍到账。
   assert.equal(ledger.status, 'reconciliation_required');
   assert.equal(ledger.newapiChangeId, 'code-adjust-precommit');
+});
+
+async function seedAdjustmentLedgerRow(input: {
+  id: string;
+  portalUserId: string;
+  operatorUserId: string;
+  status: string;
+  remoteAttemptAt: Date | null;
+  updatedAt?: Date;
+}) {
+  const { apipoolLedgerEntry } = await import('@/config/db/schema');
+  await modules.db().insert(apipoolLedgerEntry).values({
+    id: input.id,
+    portalUserId: input.portalUserId,
+    operatorUserId: input.operatorUserId,
+    newapiUserId: 'remote_seeded',
+    idempotencyKey: `portal-adjustment:${input.id}`,
+    amountUsd: 5,
+    source: 'manual_adjustment',
+    status: input.status,
+    executor: 'internal_quota_executor',
+    reason: 'seeded row',
+    remoteAttemptAt: input.remoteAttemptAt,
+  });
+  if (input.updatedAt) {
+    // drizzle 的 $onUpdate 会覆写 updatedAt，只能走原始 SQL 造陈旧行
+    await modules.rawClient.execute({
+      sql: 'UPDATE apipool_ledger_entry SET updated_at = ? WHERE id = ?',
+      args: [input.updatedAt.getTime(), input.id],
+    });
+  }
+}
+
+function createCountingRemoteClient() {
+  let adjustCalls = 0;
+  return {
+    client: {
+      provisionUser: async (input: { username: string }) => ({
+        newapiUserId: `remote_${input.username}`,
+        accessToken: 'test-access-token',
+      }),
+      ensureUserGroup: async () => {},
+      adjustQuota: async () => {
+        adjustCalls += 1;
+        return { changeId: 'change_should_not_happen', balanceUsd: 25 };
+      },
+    } as any,
+    getAdjustCalls: () => adjustCalls,
+  };
+}
+
+test('adjustPortalQuota refuses a new adjustment while an earlier one needs reconciliation', async () => {
+  const portalUser = await insertUser('portal_user_block_recon', 'blkr@t.co');
+  const operator = await insertUser('operator_block_recon', 'opbr@t.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_unresolved_recon',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'reconciliation_required',
+    remoteAttemptAt: new Date(),
+  });
+
+  const { client, getAdjustCalls } = createCountingRemoteClient();
+  await assert.rejects(
+    modules.portal.adjustPortalQuota({
+      portalUser,
+      operatorUserId: operator.id,
+      amountUsd: 25,
+      reason: 'second adjustment',
+      idempotencyKey: 'portal-adjustment:fresh-key-after-recon',
+      client,
+    }),
+    /unresolved/i
+  );
+  // 关键：远端一次都不能被碰到，否则就是第二张兑换码 / 第二次扣减
+  assert.equal(getAdjustCalls(), 0);
+});
+
+test('the unresolved-adjustment error reaches the admin instead of being masked', async () => {
+  const { isInternalPortalError, getPublicPortalErrorMessage } = await import(
+    '@/features/api-console/lib/public-errors'
+  );
+  const error = new modules.portal.UnresolvedQuotaAdjustmentError('ledger_abc');
+
+  // 带 code 字段或提到 New API 都会被整条替换成通用文案，管理员就看不到阻塞原因
+  assert.equal(isInternalPortalError(error), false);
+  assert.match(
+    getPublicPortalErrorMessage(error, 'fallback'),
+    /unresolved quota adjustment \(ledger_abc\)/i
+  );
+});
+
+test('adjustPortalQuota refuses a new adjustment while an earlier remote attempt is unaccounted for', async () => {
+  const portalUser = await insertUser('portal_user_block_attempt', 'blka@t.co');
+  const operator = await insertUser('operator_block_attempt', 'opba@t.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  // 进程死在「远端已尝试、本地未落 applied」之间留下的行，且已过 TTL
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_pending_with_attempt',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'pending',
+    remoteAttemptAt: new Date(Date.now() - 60 * 60 * 1000),
+    updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+  });
+
+  const { client, getAdjustCalls } = createCountingRemoteClient();
+  await assert.rejects(
+    modules.portal.adjustPortalQuota({
+      portalUser,
+      operatorUserId: operator.id,
+      amountUsd: 25,
+      reason: 'retry after crash',
+      idempotencyKey: 'portal-adjustment:fresh-key-after-crash',
+      client,
+    }),
+    /unresolved/i
+  );
+  assert.equal(getAdjustCalls(), 0);
+});
+
+test('adjustPortalQuota refuses a new adjustment while another one is still in flight', async () => {
+  const portalUser = await insertUser('portal_user_block_inflight', 'blki@t.co');
+  const operator = await insertUser('operator_block_inflight', 'opbi@t.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  // 新鲜的 pending 行（另一个请求正在飞），即便还没落 remoteAttemptAt 也必须挡住
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_pending_fresh',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'pending',
+    remoteAttemptAt: null,
+  });
+
+  const { client, getAdjustCalls } = createCountingRemoteClient();
+  await assert.rejects(
+    modules.portal.adjustPortalQuota({
+      portalUser,
+      operatorUserId: operator.id,
+      amountUsd: 25,
+      reason: 'concurrent submit',
+      idempotencyKey: 'portal-adjustment:fresh-key-concurrent',
+      client,
+    }),
+    /unresolved/i
+  );
+  assert.equal(getAdjustCalls(), 0);
+});
+
+test('adjustPortalQuota reclaims a stale pending row whose remote attempt never happened', async () => {
+  const portalUser = await insertUser('portal_user_reclaim', 'rclm@t.co');
+  const operator = await insertUser('operator_reclaim', 'oprc@t.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+  // remoteAttemptAt 为 null 才是「远端什么都没发生」的证据：可安全放行
+  await seedAdjustmentLedgerRow({
+    id: 'ledger_pending_stale_clean',
+    portalUserId: portalUser.id,
+    operatorUserId: operator.id,
+    status: 'pending',
+    remoteAttemptAt: null,
+    updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+  });
+
+  const { client, getAdjustCalls } = createCountingRemoteClient();
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: 25,
+    reason: 'retry after clean abort',
+    idempotencyKey: 'portal-adjustment:fresh-key-clean',
+    client,
+  });
+
+  assert.equal(ledger.status, 'applied');
+  assert.equal(getAdjustCalls(), 1);
+  const { apipoolLedgerEntry } = await import('@/config/db/schema');
+  const [stale] = await modules
+    .db()
+    .select()
+    .from(apipoolLedgerEntry)
+    .where(eq(apipoolLedgerEntry.id, 'ledger_pending_stale_clean'));
+  assert.equal(stale.status, 'failed');
+});
+
+test('adjustPortalQuota escalates a dispatched negative quota write whose response is lost', async () => {
+  const portalUser = await insertUser('portal_user_negative_lost', 'nlst@t.co');
+  const operator = await insertUser('operator_negative_lost', 'opnl@t.co');
+  await modules.portal.ensurePortalUserBinding(
+    portalUser,
+    createSuccessfulRemoteClient()
+  );
+
+  const fakeRemote = {
+    provisionUser: async (input: { username: string }) => ({
+      newapiUserId: `remote_${input.username}`,
+      accessToken: 'test-access-token',
+    }),
+    adjustQuota: async (input: any) => {
+      // PUT /api/user/ 已发出（远端可能已扣减），响应在途中丢失
+      await input.onQuotaWriteDispatched?.();
+      throw new Error('socket hang up');
+    },
+  } as any;
+
+  const ledger = await modules.portal.adjustPortalQuota({
+    portalUser,
+    operatorUserId: operator.id,
+    amountUsd: -25,
+    reason: 'clawback',
+    idempotencyKey: 'portal-adjustment:negative-lost',
+    client: fakeRemote,
+  });
+
+  // 写已发出 ⇒ 结局未知，绝不能落终态 failed（重试会二次扣减）
+  assert.equal(ledger.status, 'reconciliation_required');
 });
 
 test('adjustPortalQuota marks remote-applied confirmation failures for reconciliation', async () => {

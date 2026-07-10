@@ -13,7 +13,7 @@ import {
   AdjustmentLedgerDraft,
   createAdjustmentLedgerDraft,
 } from '@/features/apipool-ledger/lib/ledger';
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -823,6 +823,8 @@ export async function ensurePortalUserBinding(
       group: options.requiredNewapiGroup,
     });
 
+    // 供给在飞时管理员可能已把绑定停用；此处按 id 无条件写 active 会静默
+    // 撤销那个更晚的停用决定。只在行仍未被停用时才落 active。
     const [bound] = await db()
       .update(newApiUserBinding)
       .set({
@@ -837,8 +839,20 @@ export async function ensurePortalUserBinding(
         lastSyncedAt: new Date(),
         conflictNewapiUserId: null,
       })
-      .where(eq(newApiUserBinding.id, row.id))
+      .where(
+        and(
+          eq(newApiUserBinding.id, row.id),
+          ne(newApiUserBinding.status, 'disabled')
+        )
+      )
       .returning();
+
+    if (!bound) {
+      throw new NewApiBridgeError({
+        code: 'forbidden',
+        message: 'New API user binding is disabled',
+      });
+    }
 
     await recordAudit({
       portalUserId: user.id,
@@ -866,6 +880,8 @@ export async function ensurePortalUserBinding(
         ? error?.conflictNewapiUserId || null
         : null;
     const message = error?.message || 'New API user provision failed';
+    // 同样不能覆盖在飞期间落地的停用：失败态写回也要给 disabled 让路，
+    // 否则 disabled 会被改写成 username_sync_failed，停用决定被静默吞掉。
     await db()
       .update(newApiUserBinding)
       .set({
@@ -877,7 +893,12 @@ export async function ensurePortalUserBinding(
         lastSyncAttemptedAt: new Date(),
         conflictNewapiUserId,
       })
-      .where(eq(newApiUserBinding.id, row.id));
+      .where(
+        and(
+          eq(newApiUserBinding.id, row.id),
+          ne(newApiUserBinding.status, 'disabled')
+        )
+      );
 
     await recordAudit({
       portalUserId: user.id,
@@ -1283,11 +1304,10 @@ export async function restoreNewapiUserBindingForAdmin(input: {
 }) {
   const existing = await getPortalUserBinding(input.portalUserId);
   if (!existing) throw new Error('New API user binding not found');
-  if (existing.status !== 'disabled') {
-    throw new Error('New API user binding is not disabled');
-  }
 
-  await db()
+  // 原子 claim：check-then-act 会让两个并发恢复都通过检查，也会让
+  // 「读到 disabled」与「写 provisioning」之间落地的新停用被静默吞掉。
+  const [claimed] = await db()
     .update(newApiUserBinding)
     .set({
       status: 'provisioning',
@@ -1296,7 +1316,17 @@ export async function restoreNewapiUserBindingForAdmin(input: {
       lastSyncError: null,
       lastSyncAttemptedAt: new Date(),
     })
-    .where(eq(newApiUserBinding.id, existing.id));
+    .where(
+      and(
+        eq(newApiUserBinding.id, existing.id),
+        eq(newApiUserBinding.status, 'disabled')
+      )
+    )
+    .returning();
+
+  if (!claimed) {
+    throw new Error('New API user binding is not disabled');
+  }
 
   await recordAudit({
     portalUserId: input.portalUserId,
@@ -2358,6 +2388,68 @@ async function getLedgerEntryByIdempotencyKey({
   return entry;
 }
 
+/**
+ * 未结清的人工调额状态。带着这些状态的行意味着「远端结局未知或正在进行」，
+ * 此时**绝不能**再发起一次调额——前端幂等键只活在内存里（收到响应即清空、
+ * 刷新即丢失），指望它去重等于没有去重。
+ */
+const UNRESOLVED_ADJUSTMENT_STATUSES = [
+  'pending',
+  'processing',
+  'reconciliation_required',
+];
+const ADJUSTMENT_RECLAIM_AFTER_MS = 5 * 60 * 1000;
+
+/**
+ * 供 route 层原样透出给管理员：不能带 `code` 字段，措辞也不得触发
+ * `INTERNAL_ERROR_PATTERNS`（例如出现 "New API" 就会被整条替换成通用文案），
+ * 否则管理员看到的将是「稍后重试」而不是「有一笔调额待对账」。
+ */
+export class UnresolvedQuotaAdjustmentError extends Error {
+  constructor(public readonly ledgerId: string) {
+    super(
+      `An unresolved quota adjustment (${ledgerId}) is blocking new adjustments for this user. Reconcile that entry with the upstream provider before retrying.`
+    );
+    this.name = 'UnresolvedQuotaAdjustmentError';
+  }
+}
+
+/**
+ * 把未结清的人工调额分成两类：必须挡住的（远端结局未知，或仍在飞），
+ * 与可以安全回收的（陈旧且 `remoteAttemptAt`/`newapiChangeId` 皆为 null——
+ * 这两个标记写在任何远端副作用之前，同时为 null 才是「远端什么都没发生」的证据）。
+ */
+async function triageUnresolvedAdjustments(dbOrTx: any, portalUserId: string) {
+  const rows = await dbOrTx
+    .select()
+    .from(apipoolLedgerEntry)
+    .where(
+      and(
+        eq(apipoolLedgerEntry.portalUserId, portalUserId),
+        eq(apipoolLedgerEntry.source, 'manual_adjustment'),
+        inArray(apipoolLedgerEntry.status, UNRESOLVED_ADJUSTMENT_STATUSES)
+      )
+    );
+
+  const now = Date.now();
+  const reclaimable: string[] = [];
+  for (const row of rows) {
+    const remoteOutcomeUnknown =
+      row.status === 'reconciliation_required' ||
+      row.remoteAttemptAt !== null ||
+      row.newapiChangeId !== null;
+    const stillInFlight =
+      now - (row.updatedAt?.getTime() ?? now) <= ADJUSTMENT_RECLAIM_AFTER_MS;
+
+    if (remoteOutcomeUnknown || stillInFlight) {
+      return { blockingLedgerId: row.id as string, reclaimable: [] };
+    }
+    reclaimable.push(row.id as string);
+  }
+
+  return { blockingLedgerId: null, reclaimable };
+}
+
 export async function adjustPortalQuota(input: {
   portalUser: Pick<User, 'id' | 'email'>;
   operatorUserId: string;
@@ -2378,6 +2470,12 @@ export async function adjustPortalQuota(input: {
     if (existing) return existing;
   }
 
+  // 只读快速失败：未结清时连远端用户供给都不该触发（真正的判定在下面的事务里）
+  const preflight = await triageUnresolvedAdjustments(db(), input.portalUser.id);
+  if (preflight.blockingLedgerId) {
+    throw new UnresolvedQuotaAdjustmentError(preflight.blockingLedgerId);
+  }
+
   const client = input.client || createNewApiClient();
   const binding = await ensurePortalUserBinding(input.portalUser, client);
   const baseDraft: AdjustmentLedgerDraft = createAdjustmentLedgerDraft({
@@ -2390,25 +2488,42 @@ export async function adjustPortalQuota(input: {
 
   let pending: typeof apipoolLedgerEntry.$inferSelect;
   try {
-    [pending] = await db()
-      .insert(apipoolLedgerEntry)
-      .values({
-        id: getUuid(),
-        portalUserId: baseDraft.portalUserId,
-        operatorUserId: baseDraft.operatorUserId,
-        newapiUserId: baseDraft.newapiUserId,
-        newapiChangeId: null,
-        orderNo: null,
-        idempotencyKey,
-        amountUsd: baseDraft.amountUsd,
-        source: baseDraft.source,
-        status: baseDraft.status,
-        executor: baseDraft.executor,
-        reason: baseDraft.reason,
-        rollbackStatus: baseDraft.rollbackStatus,
-      })
-      .returning();
+    // 「判定未结清 + 插入 pending 行」必须原子：否则两个并发提交（各自
+    // 携带不同的前端幂等键）会双双通过检查，各发一次远端写。
+    pending = await db().transaction(async (tx: any) => {
+      const triage = await triageUnresolvedAdjustments(tx, input.portalUser.id);
+      if (triage.blockingLedgerId) {
+        throw new UnresolvedQuotaAdjustmentError(triage.blockingLedgerId);
+      }
+      for (const staleId of triage.reclaimable) {
+        await tx
+          .update(apipoolLedgerEntry)
+          .set({ status: 'failed', rollbackStatus: 'not_required' })
+          .where(eq(apipoolLedgerEntry.id, staleId));
+      }
+
+      const [inserted] = await tx
+        .insert(apipoolLedgerEntry)
+        .values({
+          id: getUuid(),
+          portalUserId: baseDraft.portalUserId,
+          operatorUserId: baseDraft.operatorUserId,
+          newapiUserId: baseDraft.newapiUserId,
+          newapiChangeId: null,
+          orderNo: null,
+          idempotencyKey,
+          amountUsd: baseDraft.amountUsd,
+          source: baseDraft.source,
+          status: baseDraft.status,
+          executor: baseDraft.executor,
+          reason: baseDraft.reason,
+          rollbackStatus: baseDraft.rollbackStatus,
+        })
+        .returning();
+      return inserted;
+    });
   } catch (error) {
+    if (error instanceof UnresolvedQuotaAdjustmentError) throw error;
     if (isQuotaIdempotencyConstraintError(error)) {
       const existing = await getLedgerEntryByIdempotencyKey({
         portalUserId: input.portalUser.id,
@@ -2424,6 +2539,7 @@ export async function adjustPortalQuota(input: {
   // 管理员换个幂等键重试会生成第二张码 → 双倍到账。
   let remoteAdjusted = false;
   let redemptionDispatched = false;
+  let quotaWriteDispatched = false;
   try {
     // 在任何远端副作用之前落下持久化标记：进程若在「码已创建、码值
     // 尚未落库」之间被杀，靠它证明远端结局未知。
@@ -2444,6 +2560,10 @@ export async function adjustPortalQuota(input: {
           .update(apipoolLedgerEntry)
           .set({ newapiChangeId: code })
           .where(eq(apipoolLedgerEntry.id, pending.id));
+      },
+      // 负向调额：改余额的 PUT 已发出，响应丢失也不得判为可重试的失败
+      onQuotaWriteDispatched: () => {
+        quotaWriteDispatched = true;
       },
     });
     remoteAdjusted = true;
@@ -2472,7 +2592,10 @@ export async function adjustPortalQuota(input: {
   } catch (error: any) {
     const needsReconciliation = isQuotaAdjustmentReconciliationError(error);
     const unknownOutcome =
-      remoteAdjusted || needsReconciliation || redemptionDispatched;
+      remoteAdjusted ||
+      needsReconciliation ||
+      redemptionDispatched ||
+      quotaWriteDispatched;
     const [failed] = await db()
       .update(apipoolLedgerEntry)
       .set({

@@ -1422,6 +1422,12 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
        * 调用方应在此持久化码值：之后的任何崩溃都不得再自动重试。
        */
       onRedemptionCreated?: (code: string) => Promise<void> | void;
+      /**
+       * 负向调额在发出改余额的 PUT 之前回调一次。PUT 一旦发出，
+       * 即使响应丢失，远端也可能已经扣减——调用方据此把结局判为未知，
+       * 而不是可重试的失败（重试会二次扣减）。
+       */
+      onQuotaWriteDispatched?: () => Promise<void> | void;
     }): Promise<{ changeId: string; balanceUsd?: number }> {
       return withQuotaAdjustmentLock(input.user.newapiUserId, async () => {
         if (input.amountUsd === 0) {
@@ -1447,6 +1453,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
             });
           }
 
+          await input.onQuotaWriteDispatched?.();
           await request('/api/user/', {
             method: 'PUT',
             body: {
