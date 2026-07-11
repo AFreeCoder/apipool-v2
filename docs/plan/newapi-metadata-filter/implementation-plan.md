@@ -369,11 +369,11 @@ git commit -m "ci: publish and verify metadata filter"
 - Modify: `docs/deployment.md`
 - Create: `docs/test/newapi-metadata-filter/test-report.md`
 
-- [ ] **Step 1: 更新部署文档**
+- [x] **Step 1: 更新部署文档**
 
 新增“NewAPI 受控模型元数据同步”小节，说明控制台入口不变、来源经过内网过滤器、重复模型必须先修配置、排障用 docker compose logs 和容器内 wget、回滚使用前一个 IMAGE_TAG 和现有 deploy.sh。
 
-- [ ] **Step 2: 运行完整验证**
+- [x] **Step 2: 运行完整验证**
 
 Run:
 
@@ -390,7 +390,7 @@ docker compose config
 
 Expected: 全部通过；任何既有失败都停止并记录，不绕过。
 
-- [ ] **Step 3: 执行本地 NewAPI 联调**
+- [x] **Step 3: 执行本地 NewAPI 联调**
 
 1. 执行 `docker compose up -d --build`；
 2. 确认过滤输出不含 OpenCode Zen、Vivgrid、Alibaba/deepseek-r1；
@@ -398,7 +398,7 @@ Expected: 全部通过；任何既有失败都停止并记录，不绕过。
 4. 请求本地 pricing，确认 gpt-5.5 对应 OpenAI；
 5. 对已有 RunAPI 渠道发起模型请求，确认过滤器不改变数据面转发。
 
-- [ ] **Step 4: 写报告并提交**
+- [x] **Step 4: 写报告并提交**
 
 报告记录公共源时间、输出模型/供应商数、排除命中数、重复数、命令结果、预览/同步结果、数据面回归和遗留项。
 
