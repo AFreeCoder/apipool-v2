@@ -38,8 +38,9 @@ on the internal service URL.
 
 ## Deployment
 
-A two-service `docker-compose.yml` runs the portal (`apipool-v2`) plus the New
-API upstream (`calciumion/new-api`). The portal image builds from the local
+A three-service `docker-compose.yml` runs the portal (`apipool-v2`), the New
+API upstream (`calciumion/new-api`), and an internal NewAPI metadata filter.
+The portal image builds from the local
 `Dockerfile` (build-time `NEXT_PUBLIC_*` injection, esbuild-bundled SQLite
 migrator, migrate-on-startup with fail-fast secret checks). Copy
 `.env.deploy.example` to `.env.deploy`, fill the secrets, then follow the

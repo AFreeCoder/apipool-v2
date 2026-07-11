@@ -1,6 +1,7 @@
 # 最小部署引导手册
 
-两个服务:门户 `apipool-v2`(:3000)+ New API(:3001)。全程在本机,均绑 `127.0.0.1`。
+三个服务：门户 `apipool-v2`（:3000）、New API（:3001）和仅在 Compose 内网监听的
+`newapi-metadata-filter`（:8080）。全程在本机；只有前两个服务绑定 `127.0.0.1`。
 所有 compose 命令都带 `--env-file .env.deploy`(供构建期 `NEXT_PUBLIC_*` 注入与运行期 env)。
 
 ## 0. 准备

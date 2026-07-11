@@ -2,7 +2,7 @@
 
 > 本手册是 MVP 上线的发布门禁，覆盖完整闭环：注册 → 充值 → 建 Key → 真实调用 → 用量可见 → 禁用 Key 被拒。
 
-> **容器化部署件（2026-06）**：仓库已提供本地/服务器两用的 `docker-compose.yml`（门户 `apipool-v2` + `new-api` 两服务）、门户 `Dockerfile`（构建期注入 `NEXT_PUBLIC_*`、esbuild 打包迁移、entrypoint 启动时自动建表并 fail-fast 校验密钥）、`.env.deploy.example` 与一次性引导手册 [`deploy/bootstrap.md`](../deploy/bootstrap.md)。具体起服务步骤以 `deploy/bootstrap.md` 为准；本手册聚焦发布门禁、安全与回滚。门户与 New API 已完成本地及服务器实跑验证，当前生产形态（腾讯云 VPS + Caddy + GitHub Actions CI/CD）见下文各节。
+> **容器化部署件（2026-06）**：仓库已提供本地/服务器两用的 `docker-compose.yml`（门户 `apipool-v2`、`new-api` 与内网 `newapi-metadata-filter` 三服务）、门户 `Dockerfile`（构建期注入 `NEXT_PUBLIC_*`、esbuild 打包迁移、entrypoint 启动时自动建表并 fail-fast 校验密钥）、`.env.deploy.example` 与一次性引导手册 [`deploy/bootstrap.md`](../deploy/bootstrap.md)。具体起服务步骤以 `deploy/bootstrap.md` 为准；本手册聚焦发布门禁、安全与回滚。门户与 New API 已完成本地及服务器实跑验证，当前生产形态（腾讯云 VPS + Caddy + GitHub Actions CI/CD）见下文各节。
 
 ## 0. 当前 VPS
 
@@ -114,14 +114,15 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 
 ## 3. 部署验收顺序（不可跳步，后步通过不能替代前步失败）
 
-1. **New API 健康检查**：内部地址 `GET /api/status` 返回 `success=true`。
-2. **bridge 冒烟**：门户服务端能以管理员上下文认证，且浏览器侧无内部标识泄漏。
-3. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
-4. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → credit 入账 → ledger applied → New API quota 增加 → 控制台余额一致。
-5. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
-6. **调用冒烟**：用该 Key 通过 `https://api2.apipool.dev` 的 OpenAI 兼容路径调用发布模型成功，用量页可见日志。
-7. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
-8. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
+1. **元数据过滤器健康检查**：容器必须为 `healthy`；它不开放宿主机端口。
+2. **New API 健康检查**：内部地址 `GET /api/status` 返回 `success=true`。
+3. **bridge 冒烟**：门户服务端能以管理员上下文认证，且浏览器侧无内部标识泄漏。
+4. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
+5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → credit 入账 → ledger applied → New API quota 增加 → 控制台余额一致。
+6. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
+7. **调用冒烟**：用该 Key 通过 `https://api2.apipool.dev` 的 OpenAI 兼容路径调用发布模型成功，用量页可见日志。
+8. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
+9. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
 GitHub `APIPool MVP Verify` workflow 在 push/PR/手动触发时只跑无密钥本地验证。生产真实冒烟门禁必须在 VPS 上执行 `deploy/live-smoke.sh`，使用服务器本地 `.env.deploy`；不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions。
 
@@ -312,7 +313,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
 
 1. `deploy/backup.sh pre-deploy`，备份数据库目录和配置文件，只保留最近 2 次 pre-deploy 备份。
 2. 写入 `release.env` 的 `IMAGE_TAG`。
-3. `docker compose pull` 拉取门户镜像与 New API 镜像。
+3. `docker compose pull` 拉取门户镜像与 NewAPI 元数据过滤器镜像；New API 上游镜像按其既有标签获取。
 4. `docker compose up -d --remove-orphans` 切换容器。
 5. 验证 `http://127.0.0.1:3001/api/status` 与 `http://127.0.0.1:3000/`。
 6. 健康检查失败时尝试回滚到上一次 `IMAGE_TAG`；数据库不自动回滚，需根据备份人工恢复。

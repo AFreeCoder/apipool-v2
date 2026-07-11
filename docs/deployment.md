@@ -213,6 +213,7 @@ gh run view -R AFreeCoder/apipool-v2 <run-id> --json status,conclusion,headSha,j
 
 ```bash
 ssh apipool_vps 'cd /opt/apipool-v2 && cat release.env && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml ps'
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml ps newapi-metadata-filter'
 ssh apipool_vps 'curl -fsS http://127.0.0.1:3001/api/status && curl -fsS http://127.0.0.1:3000/ >/dev/null'
 ssh apipool_vps 'docker logs --since 5m apipool-v2-apipool-v2-1 2>&1 | tail -120'
 ssh apipool_vps 'df -h /opt/apipool-v2 && free -h && docker system df'
@@ -248,7 +249,7 @@ cutover 后再回收给 v2。
 - `origin/main` 已包含目标提交。
 - `Build and Push Docker Image` 工作流成功，部署 job 成功。
 - 服务器 `/opt/apipool-v2/release.env` 中的 `IMAGE_TAG` 是目标 `sha-<commit>`。
-- `docker compose ps` 显示 `apipool-v2` 和 `new-api` 运行中。
+- `docker compose ps` 显示 `apipool-v2`、`new-api` 运行中，且 `newapi-metadata-filter` 为 `healthy`。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
 - 外部 `https://app.apipool.dev/` 通过。
 - 外部 `https://newapi.apipool.dev/`：配了保护时应 401/403；当前生产设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`，预期 200（Caddy 层不拦，属 owner 已知情决策）。
