@@ -30,9 +30,11 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 
 ## Runtime Architecture
 
-- 运行单元：`docker-compose.prod.yml` 中的 `apipool-v2` 和 `new-api`
+- 运行单元：`docker-compose.prod.yml` 中的 `apipool-v2`、`new-api` 和
+  `newapi-metadata-filter`
 - 门户容器：拉取 GHCR 镜像，监听服务器本机 `127.0.0.1:3000`
 - New API 容器：`calciumion/new-api`，监听服务器本机 `127.0.0.1:3001`
+- 元数据过滤器：独立 GHCR 镜像，仅在 Compose 内网监听 `8080`；不发布宿主机端口。
 - 持久化数据：
   - `data/portal/`：门户 SQLite 数据
   - `data/new-api/`：New API SQLite 数据
@@ -59,7 +61,9 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 生产 Compose 还运行一个不发布端口的 `newapi-metadata-filter` 服务。它实时读取公共
 元数据源，只保留仓库中
 `services/newapi-metadata-filter/config/official-vendors.yaml` 定义的供应商，并通过
-`SYNC_UPSTREAM_BASE=http://newapi-metadata-filter:8080` 提供给 NewAPI。
+`SYNC_UPSTREAM_BASE=http://newapi-metadata-filter:8080` 提供给 NewAPI。生产环境使用
+随该服务镜像构建的 YAML，不做宿主机 bind mount，因此回滚 `IMAGE_TAG` 会同时回滚
+过滤器代码和白名单策略。
 
 - 控制台入口不变：**模型 → 元信息 → 添加模型旁的更多操作 → 同步上游**。
 - 过滤器不缓存、不回退到公共源。公共源故障、供应商图标缺失或过滤后出现重复
@@ -140,6 +144,8 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `.github/workflows/docker-build.yaml`
 - `.github/workflows/mvp-verify.yaml`
 - `Dockerfile`
+- `services/newapi-metadata-filter/Dockerfile`
+- `services/newapi-metadata-filter/config/official-vendors.yaml`
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
 - `deploy/configure-caddy.sh`

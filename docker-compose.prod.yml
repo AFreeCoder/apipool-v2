@@ -30,8 +30,6 @@ services:
 
   newapi-metadata-filter:
     image: ${NEWAPI_METADATA_FILTER_IMAGE:-ghcr.io/afreecoder/apipool-v2-newapi-metadata-filter}:${IMAGE_TAG:?IMAGE_TAG is required}
-    volumes:
-      - ./services/newapi-metadata-filter/config/official-vendors.yaml:/app/config/official-vendors.yaml:ro
     restart: unless-stopped
 
   new-api:

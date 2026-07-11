@@ -12,7 +12,7 @@ test('CI builds and tests the metadata filter alongside the portal', async () =>
   assert.match(buildWorkflow, /id:\s*metadata-filter-meta/);
   assert.match(buildWorkflow, /context:\s*\.\/services\/newapi-metadata-filter/);
   assert.match(buildWorkflow, /tags:\s*\$\{\{\s*steps\.metadata-filter-meta\.outputs\.tags\s*\}\}/);
-  assert.match(buildWorkflow, /docker-compose\.prod\.yml deploy services\/newapi-metadata-filter\/config/);
+  assert.doesNotMatch(buildWorkflow, /services\/newapi-metadata-filter\/config/);
 
   assert.match(verifyWorkflow, /actions\/setup-go@v6/);
   assert.match(verifyWorkflow, /go-version:\s*['"]1\.26\.0['"]/);

@@ -105,7 +105,7 @@ jobs:
 
       - name: Sync deployment files
         run: |
-          tar -czf - docker-compose.prod.yml deploy services/newapi-metadata-filter/config | ssh \
+          tar -czf - docker-compose.prod.yml deploy | ssh \
             -p "$APIPOOL_VPS_PORT" \
             -i ~/.ssh/apipool_vps \
             "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST" \
