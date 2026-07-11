@@ -131,7 +131,7 @@ git commit -m "feat: add metadata filter policy config"
 - Create: `services/newapi-metadata-filter/internal/filter/filter.go`
 - Create: `services/newapi-metadata-filter/internal/filter/filter_test.go`
 
-- [ ] **Step 1: 写上游客户端失败测试**
+- [x] **Step 1: 写上游客户端失败测试**
 
 用 `httptest.Server` 覆盖 HTTP 500、success=false、非法 JSON、超过 MaxBytes 和成功解析。目标 API：
 
@@ -146,7 +146,7 @@ func (c Client) FetchModels(ctx context.Context) (metadata.Envelope[metadata.Mod
 func (c Client) FetchVendors(ctx context.Context) (metadata.Envelope[metadata.Vendor], error)
 ~~~
 
-- [ ] **Step 2: 写过滤器失败测试**
+- [x] **Step 2: 写过滤器失败测试**
 
 fixture 放入 OpenAI 与 OpenCode Zen 的 gpt-5.5、Alibaba 的 deepseek-r1、Moonshot AI 与 Moonshot AI (China) 的 kimi-k2.6、无图标供应商。断言白名单结果、Alibaba 例外、供应商裁剪和重复错误：
 
@@ -159,17 +159,17 @@ if !errors.As(err, &duplicate) || duplicate.ModelName != "gpt-5.5" {
 _ = result
 ~~~
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `cd services/newapi-metadata-filter && go test ./internal/upstream ./internal/filter -v`
 
 Expected: FAIL，因为客户端和 `Build` 尚不存在。
 
-- [ ] **Step 4: 实现上游客户端**
+- [x] **Step 4: 实现上游客户端**
 
 客户端固定追加 `/api/newapi/models.json` 与 `/api/newapi/vendors.json`，使用 request context、超时 HTTP client、LimitReader 和 JSON decoder。非 200、超限、解码失败、success=false 一律返回带资源名和状态的错误；不记录完整正文。
 
-- [ ] **Step 5: 实现过滤器**
+- [x] **Step 5: 实现过滤器**
 
 ~~~go
 type Result struct {
@@ -188,7 +188,7 @@ func Build(
 
 不得按名称前缀、源顺序或供应商优先级解决冲突。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 Run: `cd services/newapi-metadata-filter && go test ./internal/upstream ./internal/filter -v`
 
