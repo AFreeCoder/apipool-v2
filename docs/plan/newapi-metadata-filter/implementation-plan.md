@@ -282,23 +282,23 @@ git commit -m "feat: serve filtered NewAPI metadata"
 - Modify: `deploy/env.production.example`
 - Create: `tests/deploy/newapi-metadata-filter-compose.test.ts`
 
-- [ ] **Step 1: 写 Compose 静态失败测试**
+- [x] **Step 1: 写 Compose 静态失败测试**
 
 断言两份 Compose 都有 newapi-metadata-filter；new-api 的 SYNC_UPSTREAM_BASE 为内部服务地址；depends_on 使用 service_healthy；过滤服务没有 ports。生产配置还必须以 NEWAPI_METADATA_FILTER_IMAGE 和 IMAGE_TAG 选择镜像。
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run: `pnpm exec tsx --test tests/deploy/newapi-metadata-filter-compose.test.ts`
 
 Expected: FAIL，因为 Compose 尚未包含服务。
 
-- [ ] **Step 3: 修改 Compose 和环境示例**
+- [x] **Step 3: 修改 Compose 和环境示例**
 
 本地服务以 `./services/newapi-metadata-filter` 构建，生产服务使用第二份 GHCR 镜像。两者都将配置 YAML 只读挂载到 `/app/config/official-vendors.yaml`，均不发布端口。
 
 两份 new-api service 都增加内部 SYNC_UPSTREAM_BASE 环境变量，并依赖过滤服务健康。生产环境示例增加过滤器镜像名称。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 
