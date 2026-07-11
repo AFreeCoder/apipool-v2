@@ -1,0 +1,17 @@
+official_vendors:
+  - OpenAI
+  - Anthropic
+  - Google
+  - DeepSeek
+  - Alibaba
+  - Moonshot AI
+  - minimax
+  - Mistral
+  - xAI
+  - Z.AI
+  - doubao
+  - Llama
+
+exclude_models_by_vendor:
+  Alibaba:
+    - deepseek-r1

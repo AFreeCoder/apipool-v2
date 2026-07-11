@@ -39,6 +39,13 @@ services:
       - new-api
     restart: unless-stopped
 
+  newapi-metadata-filter:
+    build:
+      context: ./services/newapi-metadata-filter
+    volumes:
+      - ./services/newapi-metadata-filter/config/official-vendors.yaml:/app/config/official-vendors.yaml:ro
+    restart: unless-stopped
+
   new-api:
     image: calciumion/new-api:latest
     # 本地发布到 127.0.0.1:3001：既是 /v1 网关（供 curl），也是管理后台（加渠道）
@@ -46,4 +53,9 @@ services:
       - "127.0.0.1:3001:3000"
     volumes:
       - ./data/new-api:/data
+    environment:
+      SYNC_UPSTREAM_BASE: http://newapi-metadata-filter:8080
+    depends_on:
+      newapi-metadata-filter:
+        condition: service_healthy
     restart: unless-stopped

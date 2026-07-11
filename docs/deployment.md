@@ -30,9 +30,11 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 
 ## Runtime Architecture
 
-- 运行单元：`docker-compose.prod.yml` 中的 `apipool-v2` 和 `new-api`
+- 运行单元：`docker-compose.prod.yml` 中的 `apipool-v2`、`new-api` 和
+  `newapi-metadata-filter`
 - 门户容器：拉取 GHCR 镜像，监听服务器本机 `127.0.0.1:3000`
 - New API 容器：`calciumion/new-api`，监听服务器本机 `127.0.0.1:3001`
+- 元数据过滤器：独立 GHCR 镜像，仅在 Compose 内网监听 `8080`；不发布宿主机端口。
 - 持久化数据：
   - `data/portal/`：门户 SQLite 数据
   - `data/new-api/`：New API SQLite 数据
@@ -53,6 +55,36 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
   - `/opt/apipool-v2/docker-compose.prod.yml`
+
+## NewAPI 受控模型元数据同步
+
+生产 Compose 还运行一个不发布端口的 `newapi-metadata-filter` 服务。它实时读取公共
+元数据源，只保留仓库中
+`services/newapi-metadata-filter/config/official-vendors.yaml` 定义的供应商，并通过
+`SYNC_UPSTREAM_BASE=http://newapi-metadata-filter:8080` 提供给 NewAPI。生产环境使用
+随该服务镜像构建的 YAML，不做宿主机 bind mount，因此回滚 `IMAGE_TAG` 会同时回滚
+过滤器代码和白名单策略。
+
+- 控制台入口不变：**模型 → 元信息 → 添加模型旁的更多操作 → 同步上游**。
+- 过滤器不缓存、不回退到公共源。公共源故障、供应商图标缺失或过滤后出现重复
+  `model_name` 时返回 502；此时停止同步，先检查日志和白名单策略。
+- `Alibaba/deepseek-r1` 是当前唯一显式排除项。新增候选或处理新冲突必须先提交并审核
+  YAML，不得以源顺序或模型名前缀静默选择供应商。
+- 同步操作会把结果写入 NewAPI 自己的元信息表；镜像/策略回滚只恢复后续同步来源，
+  不会自动回滚已经写入的元信息。
+
+服务器排障（不需要公网路由）：
+
+```bash
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml ps newapi-metadata-filter'
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml exec -T newapi-metadata-filter wget -q -O - http://127.0.0.1:8080/healthz'
+ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml logs --tail=120 newapi-metadata-filter'
+```
+
+服务应为 `healthy` 后再从 NewAPI 控制台预览同步结果。预览中若供应商、图标或标签
+不符合预期，不执行同步；先修订白名单并在本地验证。回滚使用已有的前一
+`IMAGE_TAG` 与 `deploy/deploy.sh`，然后重新预览，再决定是否需要人工清理或重同步
+NewAPI 元信息。
 
 ## DNS Phase
 
@@ -112,6 +144,8 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `.github/workflows/docker-build.yaml`
 - `.github/workflows/mvp-verify.yaml`
 - `Dockerfile`
+- `services/newapi-metadata-filter/Dockerfile`
+- `services/newapi-metadata-filter/config/official-vendors.yaml`
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
 - `deploy/configure-caddy.sh`
