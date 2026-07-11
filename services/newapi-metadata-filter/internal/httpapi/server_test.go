@@ -34,6 +34,73 @@ func TestServerServesFilteredMetadata(t *testing.T) {
 	}
 }
 
+func TestServerServesFilteredTokenRatioConfig(t *testing.T) {
+	var models metadata.Envelope[metadata.Model]
+	if err := json.Unmarshal([]byte(`{
+		"success": true,
+		"data": [
+			{
+				"model_name": "gpt-5.4-mini",
+				"vendor_name": "OpenAI",
+				"ratio_model": 0.375,
+				"ratio_completion": 6,
+				"ratio_cache": 0.1
+			},
+			{
+				"model_name": "gpt-5.4-mini",
+				"vendor_name": "OpenCode Zen",
+				"ratio_model": 7.5,
+				"ratio_completion": 2,
+				"ratio_cache": 0.5
+			}
+		]
+	}`), &models); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+
+	server := New(&fakeFetcher{
+		models: models,
+		vendors: metadata.Envelope[metadata.Vendor]{Success: true, Data: []metadata.Vendor{
+			{Name: "OpenAI", Icon: "openai.svg"},
+			{Name: "OpenCode Zen", Icon: "opencode.svg"},
+		}},
+	}, policy(t))
+
+	rr := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/newapi/ratio_config-v1-base.json", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ModelRatio      map[string]float64 `json:"model_ratio"`
+			CompletionRatio map[string]float64 `json:"completion_ratio"`
+			CacheRatio      map[string]float64 `json:"cache_ratio"`
+			ModelPrice      map[string]float64 `json:"model_price"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.Success {
+		t.Fatalf("response success = false")
+	}
+	if got, want := response.Data.ModelRatio["gpt-5.4-mini"], 0.375; got != want {
+		t.Fatalf("model ratio = %v, want %v", got, want)
+	}
+	if got, want := response.Data.CompletionRatio["gpt-5.4-mini"], 6.0; got != want {
+		t.Fatalf("completion ratio = %v, want %v", got, want)
+	}
+	if got, want := response.Data.CacheRatio["gpt-5.4-mini"], 0.1; got != want {
+		t.Fatalf("cache ratio = %v, want %v", got, want)
+	}
+	if len(response.Data.ModelPrice) != 0 {
+		t.Fatalf("model price = %#v, want no per-call prices", response.Data.ModelPrice)
+	}
+}
+
 func TestServerRejectsDuplicateModelNames(t *testing.T) {
 	server := New(&fakeFetcher{
 		models: metadata.Envelope[metadata.Model]{Success: true, Data: []metadata.Model{

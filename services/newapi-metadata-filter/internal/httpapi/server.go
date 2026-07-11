@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	modelsPath  = "/api/newapi/models.json"
-	vendorsPath = "/api/newapi/vendors.json"
+	modelsPath      = "/api/newapi/models.json"
+	ratioConfigPath = "/api/newapi/ratio_config-v1-base.json"
+	vendorsPath     = "/api/newapi/vendors.json"
 )
 
 // Fetcher fetches both public metadata resources for one uncached request.
@@ -38,7 +39,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
-		if request.URL.Path == modelsPath || request.URL.Path == vendorsPath || request.URL.Path == "/healthz" {
+		if request.URL.Path == modelsPath || request.URL.Path == ratioConfigPath || request.URL.Path == vendorsPath || request.URL.Path == "/healthz" {
 			writer.Header().Set("Allow", http.MethodGet)
 			writeError(writer, http.StatusMethodNotAllowed, "method_not_allowed", "only GET is supported", nil)
 			return
@@ -57,6 +58,13 @@ func (s *Server) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		writeJSON(writer, http.StatusOK, metadata.Envelope[metadata.Model]{Success: true, Data: result.Models})
+	case ratioConfigPath:
+		result, err := s.fetchAndBuild(request.Context())
+		if err != nil {
+			s.writeFetchError(writer, err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, filter.BuildTokenRatioConfig(result.Models))
 	case vendorsPath:
 		result, err := s.fetchAndBuild(request.Context())
 		if err != nil {

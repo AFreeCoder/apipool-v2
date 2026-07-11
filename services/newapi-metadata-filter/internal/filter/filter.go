@@ -15,6 +15,36 @@ type Result struct {
 	Vendors []metadata.Vendor
 }
 
+// BuildTokenRatioConfig derives NewAPI's token pricing maps from the same
+// vendor-filtered, duplicate-free models used for metadata sync. It does not
+// infer per-call ModelPrice entries because the upstream models payload does
+// not carry enough information to do that safely.
+func BuildTokenRatioConfig(models []metadata.Model) metadata.TokenRatioConfig {
+	config := metadata.TokenRatioConfig{
+		Success: true,
+		Data: metadata.TokenRatioData{
+			CacheRatio:      make(map[string]float64),
+			CompletionRatio: make(map[string]float64),
+			ModelPrice:      make(map[string]float64),
+			ModelRatio:      make(map[string]float64),
+		},
+	}
+
+	for _, model := range models {
+		if model.RatioModel != nil {
+			config.Data.ModelRatio[model.ModelName] = *model.RatioModel
+		}
+		if model.RatioCompletion != nil {
+			config.Data.CompletionRatio[model.ModelName] = *model.RatioCompletion
+		}
+		if model.RatioCache != nil {
+			config.Data.CacheRatio[model.ModelName] = *model.RatioCache
+		}
+	}
+
+	return config
+}
+
 // DuplicateModelError signals that the explicit policy did not make model_name unique.
 type DuplicateModelError struct {
 	ModelName string
