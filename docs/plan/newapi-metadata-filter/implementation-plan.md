@@ -36,7 +36,7 @@
 - Create: `services/newapi-metadata-filter/internal/config/config_test.go`
 - Create: `services/newapi-metadata-filter/internal/metadata/types.go`
 
-- [ ] **Step 1: 写配置失败测试**
+- [x] **Step 1: 写配置失败测试**
 
 覆盖空白名单、重复供应商、排除项引用未白名单供应商：
 
@@ -50,13 +50,13 @@ func TestLoadRejectsInvalidPolicy(t *testing.T) {
 }
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd services/newapi-metadata-filter && go test ./internal/config -run TestLoadRejectsInvalidPolicy -v`
 
 Expected: FAIL，因为 `Load` 尚不存在。
 
-- [ ] **Step 3: 创建模块、类型和配置实现**
+- [x] **Step 3: 创建模块、类型和配置实现**
 
 创建 Go 1.26 模块，依赖 `gopkg.in/yaml.v3 v3.0.1`。定义：
 
@@ -88,7 +88,7 @@ type Vendor struct {
 
 `Load(path)` 将 YAML 列表变成集合，拒绝空白值、重复值和未授权排除键。
 
-- [ ] **Step 4: 写入已确认的策略**
+- [x] **Step 4: 写入已确认的策略**
 
 ~~~yaml
 official_vendors:
@@ -110,7 +110,7 @@ exclude_models_by_vendor:
     - deepseek-r1
 ~~~
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 Run: `cd services/newapi-metadata-filter && go test ./internal/config -v`
 
