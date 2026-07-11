@@ -8,6 +8,7 @@
 
 ```text
 GET /api/newapi/ratio_config-v1-base.json
+GET /api/pricing
 ```
 
 端点对每次请求实时执行既有的官方供应商过滤和重复模型校验；校验通过后仅将过滤结果中
@@ -21,10 +22,13 @@ GET /api/newapi/ratio_config-v1-base.json
 
 ## 控制台接入
 
-NewAPI 价格同步界面使用 custom 完整端点：
+新增一条禁用、无模型的同步专用渠道：
 
 ```text
-http://newapi-metadata-filter:8080/api/newapi/ratio_config-v1-base.json
+名称：官方过滤倍率
+Base URL：http://newapi-metadata-filter:8080
 ```
 
-此请求由 NewAPI 容器发起，过滤器不需要新公网路由或 Compose 端口映射。
+NewAPI 对普通渠道默认请求 `/api/pricing`，由兼容别名返回过滤后的 Token 倍率配置。
+这样同步端点和渠道 Base URL 都持久化在 NewAPI 渠道记录中，不依赖临时 custom 输入。
+请求由 NewAPI 容器发起，过滤器不需要新公网路由或 Compose 端口映射。

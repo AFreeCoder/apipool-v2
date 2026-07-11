@@ -19,8 +19,9 @@
   → /api/newapi/ratio_config-v1-base.json
 ```
 
-新端点返回 NewAPI 兼容的 envelope，包含 `model_ratio`、`completion_ratio`、
-`cache_ratio` 和空的 `model_price`。`model_price` 为空是明确的安全边界：当前
+端点返回 NewAPI 兼容的 envelope，包含 `model_ratio`、`completion_ratio`、
+`cache_ratio` 和空的 `model_price`。同一响应还通过 `GET /api/pricing` 提供兼容
+别名，供 NewAPI 普通同步渠道的默认端点调用。`model_price` 为空是明确的安全边界：当前
 `models.json` 不足以可靠重建按次计费价格，绝不从全局倍率配置反向过滤或猜测。
 
 现有 `/api/newapi/models.json` 和 `/api/newapi/vendors.json` 的行为不变；其解析时
@@ -28,18 +29,22 @@
 
 ## 控制台使用
 
-部署后，在 **计费与支付 → 模型定价 → 上游价格同步** 中选择“官方倍率预设”，将
-同步端点设为 `custom`，填写完整内部 URL：
+部署后，在 NewAPI 渠道中新增一条禁用的同步专用渠道：
 
 ```text
-http://newapi-metadata-filter:8080/api/newapi/ratio_config-v1-base.json
+名称：官方过滤倍率
+Base URL：http://newapi-metadata-filter:8080
+状态：禁用
+模型：留空，不参与任何数据面路由
 ```
 
-该 URL 由 NewAPI 后端在 Compose 内网请求，不需要发布过滤器宿主机端口。先获取差异，
-核对来源后再批量应用。NewAPI 当前前端不持久化这个 custom 值，重新打开弹窗需再次填写。
+在 **计费与支付 → 模型定价 → 上游价格同步** 中选择该渠道即可。NewAPI 默认请求
+`/api/pricing`，由兼容别名返回过滤后的倍率配置，不需要选择 custom 或重复填写 URL。
+请求由 NewAPI 后端在 Compose 内网发起，过滤器不需要发布宿主机端口。
 
 ## 非目标
 
 - 不同步按次计费的 `ModelPrice`；这类模型保留 NewAPI 本地手工配置。
+- 不启用同步专用渠道，也不在其中配置模型，避免它被误作真实上游。
 - 不修改渠道、模型元信息表、分组倍率或数据面转发。
 - 不在出现同名官方模型时选择优先级；保持 502 fail-closed。

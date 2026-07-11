@@ -75,20 +75,22 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 
 ### Token 倍率同步
 
-过滤器还提供 `GET /api/newapi/ratio_config-v1-base.json`。它从已过滤且同名
+过滤器提供 `GET /api/newapi/ratio_config-v1-base.json`，并以 `GET /api/pricing` 作为
+普通同步渠道兼容别名。它从已过滤且同名
 fail-closed 的模型记录直接生成 `model_ratio`、`completion_ratio` 和 `cache_ratio`，
 不会读取公共全量倍率配置，也不会自动生成按次 `model_price`。
 
-在 NewAPI 的 **计费与支付 → 模型定价 → 上游价格同步** 中，选择“官方倍率预设”，
-将同步端点设为 `custom`，填写：
+在 NewAPI 渠道中创建一条禁用、无模型的同步专用渠道（建议名称“官方过滤倍率”）：
 
 ```text
-http://newapi-metadata-filter:8080/api/newapi/ratio_config-v1-base.json
+Base URL=http://newapi-metadata-filter:8080
+状态=禁用
 ```
 
-这是由 NewAPI 容器访问的 Compose 内网地址，过滤器仍不发布宿主机端口。获取差异后可用
-来源列表头复选框批量选择并应用；分组倍率不在此次同步范围。NewAPI 当前界面不会持久化
-custom 端点，重新打开弹窗时需要重新填写。按次计费模型继续在本地 `ModelPrice` 手工维护。
+在 **计费与支付 → 模型定价 → 上游价格同步** 中选择该渠道，使用默认 `pricing`
+端点即可。此请求由 NewAPI 容器访问 Compose 内网地址，过滤器仍不发布宿主机端口；渠道
+禁用且无模型，不能参与数据面路由。获取差异后可用来源列表头复选框批量选择并应用；分组
+倍率不在此次同步范围。按次计费模型继续在本地 `ModelPrice` 手工维护。
 
 服务器排障（不需要公网路由）：
 

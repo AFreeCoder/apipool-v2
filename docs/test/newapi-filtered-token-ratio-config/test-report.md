@@ -6,7 +6,7 @@
 
 | 场景 | 结果 | 证据 |
 |---|---|---|
-| HTTP 合约 | 通过 | 过滤后的官方 `gpt-5.4-mini` 输出 `0.375 / 6 / 0.1`；同名渠道商记录不进入结果。 |
+| HTTP 合约 | 通过 | `/api/newapi/ratio_config-v1-base.json` 与 `/api/pricing` 均返回过滤后的官方 `gpt-5.4-mini` `0.375 / 6 / 0.1`；同名渠道商记录不进入结果。 |
 | 按次价格边界 | 通过 | 响应包含空 `model_price`，不提供自动按次价格同步。 |
 | Go 全量测试 | 通过 | `cd services/newapi-metadata-filter && go test ./...`。 |
 | 镜像构建 | 通过 | `docker build -t apipool/newapi-metadata-filter:token-ratio-test services/newapi-metadata-filter`。 |

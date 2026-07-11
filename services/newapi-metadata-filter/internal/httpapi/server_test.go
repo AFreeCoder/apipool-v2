@@ -66,38 +66,45 @@ func TestServerServesFilteredTokenRatioConfig(t *testing.T) {
 		}},
 	}, policy(t))
 
-	rr := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/newapi/ratio_config-v1-base.json", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
-	}
+	for _, path := range []string{
+		"/api/newapi/ratio_config-v1-base.json",
+		"/api/pricing",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+			}
 
-	var response struct {
-		Success bool `json:"success"`
-		Data    struct {
-			ModelRatio      map[string]float64 `json:"model_ratio"`
-			CompletionRatio map[string]float64 `json:"completion_ratio"`
-			CacheRatio      map[string]float64 `json:"cache_ratio"`
-			ModelPrice      map[string]float64 `json:"model_price"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !response.Success {
-		t.Fatalf("response success = false")
-	}
-	if got, want := response.Data.ModelRatio["gpt-5.4-mini"], 0.375; got != want {
-		t.Fatalf("model ratio = %v, want %v", got, want)
-	}
-	if got, want := response.Data.CompletionRatio["gpt-5.4-mini"], 6.0; got != want {
-		t.Fatalf("completion ratio = %v, want %v", got, want)
-	}
-	if got, want := response.Data.CacheRatio["gpt-5.4-mini"], 0.1; got != want {
-		t.Fatalf("cache ratio = %v, want %v", got, want)
-	}
-	if len(response.Data.ModelPrice) != 0 {
-		t.Fatalf("model price = %#v, want no per-call prices", response.Data.ModelPrice)
+			var response struct {
+				Success bool `json:"success"`
+				Data    struct {
+					ModelRatio      map[string]float64 `json:"model_ratio"`
+					CompletionRatio map[string]float64 `json:"completion_ratio"`
+					CacheRatio      map[string]float64 `json:"cache_ratio"`
+					ModelPrice      map[string]float64 `json:"model_price"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if !response.Success {
+				t.Fatalf("response success = false")
+			}
+			if got, want := response.Data.ModelRatio["gpt-5.4-mini"], 0.375; got != want {
+				t.Fatalf("model ratio = %v, want %v", got, want)
+			}
+			if got, want := response.Data.CompletionRatio["gpt-5.4-mini"], 6.0; got != want {
+				t.Fatalf("completion ratio = %v, want %v", got, want)
+			}
+			if got, want := response.Data.CacheRatio["gpt-5.4-mini"], 0.1; got != want {
+				t.Fatalf("cache ratio = %v, want %v", got, want)
+			}
+			if len(response.Data.ModelPrice) != 0 {
+				t.Fatalf("model price = %#v, want no per-call prices", response.Data.ModelPrice)
+			}
+		})
 	}
 }
 
