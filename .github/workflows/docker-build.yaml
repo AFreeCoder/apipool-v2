@@ -10,6 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  METADATA_FILTER_IMAGE: ghcr.io/afreecoder/apipool-v2-newapi-metadata-filter
   NEXT_PUBLIC_APP_URL: https://app.apipool.dev
   NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://api2.apipool.dev
   NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: gpt-5.4-mini
@@ -55,6 +56,25 @@ jobs:
             NEXT_PUBLIC_APIPOOL_API_BASE_URL=${{ env.NEXT_PUBLIC_APIPOOL_API_BASE_URL }}
             NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=${{ env.NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL }}
 
+      - name: Extract metadata for NewAPI metadata filter
+        id: metadata-filter-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.METADATA_FILTER_IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push NewAPI metadata filter image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./services/newapi-metadata-filter
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.metadata-filter-meta.outputs.tags }}
+          labels: ${{ steps.metadata-filter-meta.outputs.labels }}
+
   deploy-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build-and-push
@@ -85,7 +105,7 @@ jobs:
 
       - name: Sync deployment files
         run: |
-          tar -czf - docker-compose.prod.yml deploy | ssh \
+          tar -czf - docker-compose.prod.yml deploy services/newapi-metadata-filter/config | ssh \
             -p "$APIPOOL_VPS_PORT" \
             -i ~/.ssh/apipool_vps \
             "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST" \

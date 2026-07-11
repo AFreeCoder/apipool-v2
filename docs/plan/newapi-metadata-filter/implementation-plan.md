@@ -329,31 +329,30 @@ git commit -m "feat: wire NewAPI metadata filter into compose"
 - Modify: `deploy/deploy.sh`
 - Create: `tests/deploy/newapi-metadata-filter-deploy.test.ts`
 
-- [ ] **Step 1: 写 CI/部署失败测试**
+- [x] **Step 1: 写 CI/部署失败测试**
 
 断言镜像工作流以服务目录为 context 构建第二镜像，并使用与门户相同的 SHA 标签；断言 MVP 验证工作流安装 Go 1.26 并执行 `go test ./...`；断言部署归档包含过滤器 config 目录；断言 deploy.sh 在 NewAPI 前等待过滤服务健康。
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run: `pnpm exec tsx --test tests/deploy/newapi-metadata-filter-deploy.test.ts`
 
 Expected: FAIL，因为工作流和部署脚本尚未包含该服务。
 
-- [ ] **Step 3: 修改工作流和 deploy 脚本**
+- [x] **Step 3: 修改工作流和 deploy 脚本**
 
 镜像工作流为过滤器加入独立 metadata 和 build-push 步骤，context 为服务目录。MVP 验证工作流安装 Go 并运行过滤器单元测试。部署归档包含服务 config 目录。
 
 在 deploy.sh 的 healthcheck 起始处，使用 compose 获取过滤容器 ID，并循环检查 Docker Health.Status；60 次、每次 2 秒后仍非 healthy 则失败并走已有回滚分支。过滤器不接入 Caddy。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 
 ~~~bash
 pnpm exec tsx --test tests/deploy/newapi-metadata-filter-deploy.test.ts
-docker compose -f docker-compose.prod.yml \
-  --env-file deploy/env.production.example \
-  --env-file <(printf 'IMAGE_TAG=sha-test\n') config >/tmp/apipool-prod-compose.yaml
+env IMAGE_TAG=sha-test docker compose \
+  -f docker-compose.prod.yml config >/tmp/apipool-prod-compose.yaml
 ~~~
 
 Expected: 测试通过，生产 Compose 能解析第二镜像和内部依赖。

@@ -62,6 +62,24 @@ compose() {
 }
 
 healthcheck() {
+  echo "[deploy] waiting for NewAPI metadata filter"
+  local filter_container_id=""
+  local filter_health=""
+  for _ in $(seq 1 60); do
+    filter_container_id="$(compose ps -q newapi-metadata-filter)"
+    if [ -n "$filter_container_id" ]; then
+      filter_health="$(docker inspect --format '{{.State.Health.Status}}' "$filter_container_id" 2>/dev/null || true)"
+      if [ "$filter_health" = "healthy" ]; then
+        break
+      fi
+    fi
+    sleep 2
+  done
+  if [ -z "$filter_container_id" ] || [ "$filter_health" != "healthy" ]; then
+    echo "[deploy] NewAPI metadata filter is not healthy" >&2
+    return 1
+  fi
+
   echo "[deploy] waiting for New API"
   for _ in $(seq 1 60); do
     if curl -fsS http://127.0.0.1:3001/api/status >/dev/null 2>&1; then

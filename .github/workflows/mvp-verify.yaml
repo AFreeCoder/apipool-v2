@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: services/newapi-metadata-filter/go.sum
+
       - uses: pnpm/action-setup@v6
         with:
           run_install: false
@@ -25,6 +30,8 @@ jobs:
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
+      - run: go test ./...
+        working-directory: services/newapi-metadata-filter
       - run: pnpm exec tsc --noEmit --pretty false
       - run: pnpm test
       - run: pnpm lint
