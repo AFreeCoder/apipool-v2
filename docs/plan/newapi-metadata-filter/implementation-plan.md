@@ -208,7 +208,7 @@ git commit -m "feat: filter metadata to official vendors"
 - Create: `services/newapi-metadata-filter/cmd/server/main.go`
 - Create: `services/newapi-metadata-filter/Dockerfile`
 
-- [ ] **Step 1: 写 HTTP handler 失败测试**
+- [x] **Step 1: 写 HTTP handler 失败测试**
 
 成功测试：
 
@@ -225,13 +225,13 @@ if rr.Code != http.StatusOK {
 
 重复 fixture 必须返回 502、success=false、code=duplicate_model_name 和 conflicts。POST 与未知路径返回 404 或 405，且不会拉取上游。
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run: `cd services/newapi-metadata-filter && go test ./internal/httpapi -v`
 
 Expected: FAIL，因为 server 尚不存在。
 
-- [ ] **Step 3: 实现 handler 和入口**
+- [x] **Step 3: 实现 handler 和入口**
 
 `main.go` 读取 UPSTREAM_METADATA_BASE、LISTEN_ADDR、REQUEST_TIMEOUT_SECONDS、MAX_RESPONSE_BYTES、CONFIG_PATH。默认配置路径为 `/app/config/official-vendors.yaml`；配置无效即退出非零。
 
@@ -243,7 +243,7 @@ Expected: FAIL，因为 server 尚不存在。
 
 healthz 只报告服务已经启动并成功加载策略，不请求外部源。日志只包含路径、状态、耗时和错误码。
 
-- [ ] **Step 4: 写 Dockerfile**
+- [x] **Step 4: 写 Dockerfile**
 
 使用 golang:1.26-alpine 编译，再用 alpine:3.22 运行。运行镜像安装 wget、复制默认 YAML、以非 root 用户运行，并定义：
 
@@ -252,7 +252,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q -O - http://127.0.0.1:8080/healthz >/dev/null || exit 1
 ~~~
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 Run:
 
