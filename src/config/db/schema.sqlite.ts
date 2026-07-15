@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  check,
   index,
   integer,
   real,
@@ -497,9 +498,7 @@ export const catalogGroup = table(
     newapiGroupRatioDecimal: text('newapi_group_ratio_decimal'),
     newapiGroupRatioBps: integer('newapi_group_ratio_bps'),
     newapiGroupRatioRaw: text('newapi_group_ratio_raw'),
-    pricingSyncStatus: text('pricing_sync_status')
-      .default('unknown')
-      .notNull(),
+    pricingSyncStatus: text('pricing_sync_status').default('unknown').notNull(),
     pricingSyncedAt: integer('pricing_synced_at', { mode: 'timestamp_ms' }),
     pricingReviewNote: text('pricing_review_note'),
     allowCreateKey: integer('allow_create_key', { mode: 'boolean' })
@@ -529,6 +528,8 @@ export const catalogModel = table(
       .references(() => catalogVendor.id),
     category: text('category').default('llm').notNull(),
     contextWindow: integer('context_window'),
+    // 展示用最大输出（发布最坏成本计算要求非空，见 routing-admin）
+    maxOutputTokens: integer('max_output_tokens'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)
       .notNull(),
@@ -558,6 +559,11 @@ export const catalogModelPrice = table(
     sourceSupportedEndpointTypes: text('source_supported_endpoint_types'),
     baseInputMicroUsd: integer('base_input_micro_usd'),
     baseOutputMicroUsd: integer('base_output_micro_usd'),
+    // cache 维度基准价（micro-USD / 1M tokens；管理员锁定+复核的成本快照）
+    baseCachedInputMicroUsd: integer('base_cached_input_micro_usd'),
+    baseCacheWrite5mMicroUsd: integer('base_cache_write_5m_micro_usd'),
+    baseCacheWrite1hMicroUsd: integer('base_cache_write_1h_micro_usd'),
+    cachePriceNote: text('cache_price_note'),
     baseImageInputMicroUsd: integer('base_image_input_micro_usd'),
     baseImageOutputMicroUsd: integer('base_image_output_micro_usd'),
     fixedPriceMicroUsd: integer('fixed_price_micro_usd'),
@@ -1142,5 +1148,363 @@ export const chatMessage = table(
   (table) => [
     index('idx_chat_message_chat_id').on(table.chatId, table.status),
     index('idx_chat_message_user_id').on(table.userId, table.status),
+  ]
+);
+
+// ---------------- Portal Gateway v1（portal-newapi-routing-billing-decoupling，设计 §3） ----------------
+
+export const portalApiKey = table(
+  'portal_api_key',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => catalogGroup.id),
+    keyHash: text('key_hash').notNull(),
+    keyPrefix: text('key_prefix').notNull(),
+    status: text('status').notNull().default('active'),
+    name: text('name').notNull(),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    disabledAt: integer('disabled_at', { mode: 'timestamp_ms' }),
+    deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+    revokedReason: text('revoked_reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_portal_api_key_hash').on(table.keyHash),
+    index('idx_portal_api_key_user_status').on(table.userId, table.status),
+    uniqueIndex('uniq_portal_api_key_user_name_live')
+      .on(table.userId, table.name)
+      .where(sql`${table.status} != 'deleted'`),
+  ]
+);
+
+export const modelRoute = table(
+  'model_route',
+  {
+    id: text('id').primaryKey(),
+    portalGroupId: text('portal_group_id')
+      .notNull()
+      .references(() => catalogGroup.id),
+    portalModelId: text('portal_model_id').notNull(),
+    newapiGroup: text('newapi_group').notNull(),
+    newapiModelId: text('newapi_model_id').notNull(),
+    version: integer('version').notNull(),
+    status: text('status').notNull().default('active'),
+    publishedBy: text('published_by').notNull(),
+    retiredAt: integer('retired_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_model_route_active')
+      .on(table.portalGroupId, table.portalModelId)
+      .where(sql`${table.status} = 'active'`),
+    uniqueIndex('uniq_model_route_version').on(
+      table.portalGroupId,
+      table.portalModelId,
+      table.version
+    ),
+  ]
+);
+
+export const modelPriceVersion = table(
+  'model_price_version',
+  {
+    id: text('id').primaryKey(),
+    portalGroupId: text('portal_group_id')
+      .notNull()
+      .references(() => catalogGroup.id),
+    portalModelId: text('portal_model_id').notNull(),
+    version: integer('version').notNull(),
+    status: text('status').notNull().default('active'),
+    inputMicroUsdPerM: integer('input_micro_usd_per_m').notNull(),
+    cachedInputMicroUsdPerM: integer('cached_input_micro_usd_per_m').notNull(),
+    cacheWrite5mMicroUsdPerM: integer(
+      'cache_write_5m_micro_usd_per_m'
+    ).notNull(),
+    cacheWrite1hMicroUsdPerM: integer(
+      'cache_write_1h_micro_usd_per_m'
+    ).notNull(),
+    outputMicroUsdPerM: integer('output_micro_usd_per_m').notNull(),
+    newapiRefInputMicroUsdPerM: integer('newapi_ref_input_micro_usd_per_m'),
+    newapiRefOutputMicroUsdPerM: integer('newapi_ref_output_micro_usd_per_m'),
+    newapiRefCachedInputMicroUsdPerM: integer(
+      'newapi_ref_cached_input_micro_usd_per_m'
+    ),
+    newapiRefCacheWrite5mMicroUsdPerM: integer(
+      'newapi_ref_cache_write_5m_micro_usd_per_m'
+    ),
+    newapiRefCacheWrite1hMicroUsdPerM: integer(
+      'newapi_ref_cache_write_1h_micro_usd_per_m'
+    ),
+    refNewapiGroup: text('ref_newapi_group'),
+    sourceNote: text('source_note'),
+    publishedBy: text('published_by').notNull(),
+    retiredAt: integer('retired_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_model_price_version_active')
+      .on(table.portalGroupId, table.portalModelId)
+      .where(sql`${table.status} = 'active'`),
+    uniqueIndex('uniq_model_price_version_version').on(
+      table.portalGroupId,
+      table.portalModelId,
+      table.version
+    ),
+  ]
+);
+
+export const runtimeCredential = table(
+  'runtime_credential',
+  {
+    id: text('id').primaryKey(),
+    portalUserId: text('portal_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    newapiGroup: text('newapi_group').notNull(),
+    newapiUserId: text('newapi_user_id'),
+    remoteName: text('remote_name').notNull(),
+    newapiTokenId: text('newapi_token_id'),
+    tokenEnc: text('token_enc'),
+    keyMasked: text('key_masked'),
+    status: text('status').notNull().default('pending'),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    lastError: text('last_error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_runtime_credential_scope').on(
+      table.portalUserId,
+      table.newapiGroup
+    ),
+    index('idx_runtime_credential_user_status').on(
+      table.portalUserId,
+      table.status
+    ),
+    index('idx_runtime_credential_status').on(table.status),
+  ]
+);
+
+export const walletAccount = table('wallet_account', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id),
+  balanceMicroUsd: integer('balance_micro_usd').notNull().default(0),
+  riskLimitOverride: integer('risk_limit_override'),
+  frozenAt: integer('frozen_at', { mode: 'timestamp_ms' }),
+  freezeReason: text('freeze_reason'),
+  frozenBy: text('frozen_by'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .default(sqliteNowMs)
+    .notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .default(sqliteNowMs)
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const walletLedger = table(
+  'wallet_ledger',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id),
+    entryType: text('entry_type').notNull(),
+    signedAmountMicroUsd: integer('signed_amount_micro_usd').notNull(),
+    balanceAfterMicroUsd: integer('balance_after_micro_usd').notNull(),
+    requestLedgerId: text('request_ledger_id'),
+    orderNo: text('order_no'),
+    idempotencyKey: text('idempotency_key'),
+    operatorUserId: text('operator_user_id'),
+    reason: text('reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_wallet_ledger_request_charge')
+      .on(table.requestLedgerId)
+      .where(sql`${table.entryType} = 'request_charge'`),
+    uniqueIndex('uniq_wallet_ledger_recharge_order')
+      .on(table.orderNo)
+      .where(sql`${table.entryType} = 'recharge'`),
+    uniqueIndex('uniq_wallet_ledger_idempotency').on(table.idempotencyKey),
+    index('idx_wallet_ledger_user_created').on(table.userId, table.createdAt),
+    check('ck_wallet_ledger_nonzero', sql`${table.signedAmountMicroUsd} != 0`),
+  ]
+);
+
+export const requestLedger = table(
+  'request_ledger',
+  {
+    id: text('id').primaryKey(),
+    newapiRequestId: text('newapi_request_id'),
+    userId: text('user_id').notNull(),
+    portalKeyId: text('portal_key_id').notNull(),
+    portalGroupId: text('portal_group_id').notNull(),
+    portalModelId: text('portal_model_id').notNull(),
+    newapiGroup: text('newapi_group').notNull(),
+    newapiModelId: text('newapi_model_id').notNull(),
+    credentialId: text('credential_id').notNull(),
+    routeVersion: integer('route_version').notNull(),
+    priceVersionId: text('price_version_id').notNull(),
+    endpoint: text('endpoint').notNull(),
+    isStream: integer('is_stream', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    httpStatus: integer('http_status'),
+    errorCode: text('error_code'),
+    streamAborted: integer('stream_aborted', { mode: 'boolean' }),
+    status: text('status').notNull().default('open'),
+    resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+    respondedAt: integer('responded_at', { mode: 'timestamp_ms' }),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+    settledAt: integer('settled_at', { mode: 'timestamp_ms' }),
+    uncachedInputTokens: integer('uncached_input_tokens'),
+    cachedReadTokens: integer('cached_read_tokens'),
+    cacheWrite5mTokens: integer('cache_write_5m_tokens'),
+    cacheWrite1hTokens: integer('cache_write_1h_tokens'),
+    outputTokens: integer('output_tokens'),
+    reasoningTokens: integer('reasoning_tokens'),
+    usageSource: text('usage_source'),
+    chargedMicroUsd: integer('charged_micro_usd'),
+    backfillAttempts: integer('backfill_attempts').notNull().default(0),
+    nextBackfillAt: integer('next_backfill_at', { mode: 'timestamp_ms' }),
+    lastBackfillError: text('last_backfill_error'),
+    newapiQuota: integer('newapi_quota'),
+    newapiPromptTokens: integer('newapi_prompt_tokens'),
+    newapiCompletionTokens: integer('newapi_completion_tokens'),
+    newapiTokenName: text('newapi_token_name'),
+    reconcileStatus: text('reconcile_status').notNull().default('pending'),
+    reconciledAt: integer('reconciled_at', { mode: 'timestamp_ms' }),
+    reconcileNote: text('reconcile_note'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_request_ledger_newapi_request').on(table.newapiRequestId),
+    index('idx_request_ledger_risk')
+      .on(table.userId)
+      .where(sql`${table.status} IN ('open','pending_backfill')`),
+    index('idx_request_ledger_backfill').on(table.status, table.nextBackfillAt),
+    index('idx_request_ledger_user_created').on(table.userId, table.createdAt),
+    index('idx_request_ledger_reconcile').on(table.reconcileStatus),
+    check(
+      'ck_request_ledger_settled',
+      sql`${table.status} != 'settled' OR (${table.newapiRequestId} IS NOT NULL AND ${table.chargedMicroUsd} IS NOT NULL)`
+    ),
+  ]
+);
+
+export const portalAdminAuditLog = table(
+  'portal_admin_audit_log',
+  {
+    id: text('id').primaryKey(),
+    action: text('action').notNull(),
+    operatorUserId: text('operator_user_id').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id'),
+    beforeJson: text('before_json'),
+    afterJson: text('after_json'),
+    reason: text('reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+  },
+  (table) => [
+    index('idx_portal_admin_audit_action_created').on(
+      table.action,
+      table.createdAt
+    ),
+    index('idx_portal_admin_audit_target').on(table.targetType, table.targetId),
+  ]
+);
+
+export const credentialRetirement = table(
+  'credential_retirement',
+  {
+    id: text('id').primaryKey(),
+    credentialId: text('credential_id')
+      .notNull()
+      .references(() => runtimeCredential.id),
+    newapiTokenId: text('newapi_token_id').notNull(),
+    reason: text('reason').notNull(),
+    disabledAt: integer('disabled_at', { mode: 'timestamp_ms' }),
+    lastError: text('last_error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+  },
+  (table) => [index('idx_credential_retirement_pending').on(table.disabledAt)]
+);
+
+export const gatewayJobLock = table('gateway_job_lock', {
+  id: text('id').primaryKey(),
+  holderId: text('holder_id'),
+  heartbeatAt: integer('heartbeat_at', { mode: 'timestamp_ms' }),
+  acquiredAt: integer('acquired_at', { mode: 'timestamp_ms' }),
+  reconcileWatermarkAt: integer('reconcile_watermark_at', {
+    mode: 'timestamp_ms',
+  }),
+});
+
+export const reconcileOrphanObservation = table(
+  'reconcile_orphan_observation',
+  {
+    id: text('id').primaryKey(),
+    newapiRequestId: text('newapi_request_id').notNull(),
+    portalUserId: text('portal_user_id'),
+    newapiGroup: text('newapi_group'),
+    newapiModelId: text('newapi_model_id'),
+    credentialId: text('credential_id'),
+    tokenName: text('token_name').notNull(),
+    newapiQuota: integer('newapi_quota'),
+    newapiPromptTokens: integer('newapi_prompt_tokens'),
+    newapiCompletionTokens: integer('newapi_completion_tokens'),
+    logCreatedAt: integer('log_created_at', { mode: 'timestamp_ms' }),
+    resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+    note: text('note'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_orphan_observation_request').on(table.newapiRequestId),
+    index('idx_orphan_observation_user').on(table.portalUserId),
+    index('idx_orphan_observation_open').on(table.resolvedAt),
   ]
 );

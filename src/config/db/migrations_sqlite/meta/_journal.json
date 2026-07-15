@@ -85,6 +85,13 @@
       "when": 1783572397378,
       "tag": "0011_ledger_remote_attempt_marker",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1784134759224,
+      "tag": "0012_portal_gateway_v1",
+      "breakpoints": true
     }
   ]
 }

@@ -79,13 +79,27 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
         (id, model_id, group_id, status_id, input_micro_usd, output_micro_usd, smoke_tested, featured, sort_order)
       values (?, ?, ?, ?, 90000, 180000, 1, 0, 12)
     `,
-    args: [id('legacy-listing'), model.rows[0].id, partnerGroupId, status.rows[0].id],
+    args: [
+      id('legacy-listing'),
+      model.rows[0].id,
+      partnerGroupId,
+      status.rows[0].id,
+    ],
   });
 
   const beforeCache = await listingCache(client);
   await applyMigrationFiles(client, (file) =>
     file.startsWith('0008_model_catalog_pricing_policy')
   );
+  // 当前运行时 schema 会读取 0012 新增的可空 catalog 列；本测试仍专注验证
+  // 0008 回填语义，因此只补齐这些无行为影响的列，不引入 0012 的新业务表或数据。
+  await client.executeMultiple(`
+    ALTER TABLE catalog_model ADD max_output_tokens integer;
+    ALTER TABLE catalog_model_price ADD base_cached_input_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_cache_write_5m_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_cache_write_1h_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD cache_price_note text;
+  `);
 
   const { getPublicListingsUncached } = await import(
     '@/features/api-catalog/server/queries'
@@ -93,10 +107,8 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
   const publicBefore = await getPublicListingsUncached({});
   assert.ok(publicBefore.length > 0);
 
-  const {
-    parseCatalogPricingBackfillArgs,
-    runCatalogPricingBackfill,
-  } = await import('../../scripts/backfill-catalog-pricing');
+  const { parseCatalogPricingBackfillArgs, runCatalogPricingBackfill } =
+    await import('../../scripts/backfill-catalog-pricing');
   assert.throws(
     () => parseCatalogPricingBackfillArgs(['--mode=apply']),
     /requires --yes/
@@ -124,7 +136,9 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
     true
   );
 
-  const prices = await client.execute('select model_id from catalog_model_price');
+  const prices = await client.execute(
+    'select model_id from catalog_model_price'
+  );
   const modelsWithListings = await client.execute(`
     select distinct catalog_model.id
     from catalog_model
