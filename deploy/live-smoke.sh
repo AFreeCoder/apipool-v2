@@ -8,7 +8,7 @@ RELEASE_FILE="${APIPOOL_RELEASE_FILE:-release.env}"
 
 usage() {
   cat >&2 <<'USAGE'
-usage: deploy/live-smoke.sh [--no-price-reconciliation]
+usage: deploy/live-smoke.sh [--gateway|--recharge] [--no-price-reconciliation]
 
 Runs production MVP live smoke on the VPS using server-local .env.deploy.
 Do not run this from GitHub Actions; it intentionally keeps production DB and
@@ -17,9 +17,18 @@ USAGE
 }
 
 PRICE_RECONCILIATION="${APIPOOL_SMOKE_PRICE_RECONCILIATION:-true}"
+SMOKE_MODE=mvp
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --gateway)
+      SMOKE_MODE=gateway
+      shift
+      ;;
+    --recharge)
+      SMOKE_MODE=recharge
+      shift
+      ;;
     --no-price-reconciliation)
       PRICE_RECONCILIATION=false
       shift
@@ -59,15 +68,16 @@ export APIPOOL_SMOKE_REQUIRE_LIVE
 export APIPOOL_SMOKE_PRICE_RECONCILIATION
 export NODE_OPTIONS
 
-required_env=(
-  IMAGE_TAG
-  DATABASE_URL
-  NEWAPI_BASE_URL
-  NEWAPI_ADMIN_TOKEN
-  NEWAPI_ADMIN_USER_ID
-  APIPOOL_SMOKE_PORTAL_USER_ID
-  APIPOOL_SMOKE_OPERATOR_USER_ID
-)
+required_env=(IMAGE_TAG DATABASE_URL APIPOOL_SMOKE_PORTAL_USER_ID)
+if [ "$SMOKE_MODE" != recharge ]; then
+  required_env+=(NEWAPI_BASE_URL NEWAPI_ADMIN_TOKEN NEWAPI_ADMIN_USER_ID)
+fi
+if [ "$SMOKE_MODE" = mvp ]; then
+  required_env+=(APIPOOL_SMOKE_OPERATOR_USER_ID)
+fi
+if [ "$SMOKE_MODE" = gateway ]; then
+  required_env+=(APIPOOL_SMOKE_MODEL)
+fi
 
 missing=()
 for name in "${required_env[@]}"; do
@@ -89,19 +99,44 @@ compose() {
 }
 
 echo "[live-smoke] image tag: $IMAGE_TAG"
+echo "[live-smoke] mode: $SMOKE_MODE"
 echo "[live-smoke] price reconciliation: $APIPOOL_SMOKE_PRICE_RECONCILIATION"
 
-compose run --rm --no-deps \
-  -e NODE_OPTIONS \
-  -e APIPOOL_SMOKE_REQUIRE_LIVE \
-  -e APIPOOL_SMOKE_PRICE_RECONCILIATION \
-  -e APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA \
-  -e APIPOOL_SMOKE_GROUP_SLUG \
-  -e APIPOOL_SMOKE_PORTAL_USER_ID \
-  -e APIPOOL_SMOKE_OPERATOR_USER_ID \
-  -e APIPOOL_SMOKE_MODEL \
-  -e APIPOOL_SMOKE_QUOTA_USD \
-  -e APIPOOL_SMOKE_USAGE_ATTEMPTS \
-  -e APIPOOL_SMOKE_USAGE_DELAY_MS \
-  apipool-v2 \
-  sh -lc 'test -f ./smoke-mvp.cjs || { echo "[live-smoke] smoke-mvp.cjs is missing from the portal image" >&2; exit 66; }; node ./smoke-mvp.cjs'
+run_bundle() {
+  bundle="$1"
+  compose run --rm --no-deps \
+    -e NODE_OPTIONS \
+    -e APIPOOL_SMOKE_REQUIRE_LIVE \
+    -e APIPOOL_SMOKE_PRICE_RECONCILIATION \
+    -e APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA \
+    -e APIPOOL_SMOKE_GROUP_SLUG \
+    -e APIPOOL_SMOKE_PORTAL_USER_ID \
+    -e APIPOOL_SMOKE_OPERATOR_USER_ID \
+    -e APIPOOL_SMOKE_MODEL \
+    -e APIPOOL_SMOKE_QUOTA_USD \
+    -e APIPOOL_SMOKE_RECHARGE_CENTS \
+    -e APIPOOL_SMOKE_GATEWAY_BASE_URL=http://apipool-v2:3000/v1 \
+    -e APIPOOL_SMOKE_USAGE_ATTEMPTS \
+    -e APIPOOL_SMOKE_USAGE_DELAY_MS \
+    apipool-v2 \
+    sh -lc "test -f ./$bundle || { echo '[live-smoke] $bundle is missing from the portal image' >&2; exit 66; }; node ./$bundle"
+}
+
+case "$SMOKE_MODE" in
+  gateway)
+    run_bundle smoke-gateway.cjs
+    marker_tmp="$(mktemp "$APP_DIR/.cutover-smoke-ok.XXXXXX")"
+    printf 'TIMESTAMP=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$marker_tmp"
+    mv -f "$marker_tmp" "$APP_DIR/.cutover-smoke-ok"
+    ;;
+  recharge)
+    run_bundle smoke-recharge.cjs
+    marker_tmp="$(mktemp "$APP_DIR/.cutover-recharge-ok.XXXXXX")"
+    printf 'TIMESTAMP=%s\nIMAGE_TAG=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$IMAGE_TAG" >"$marker_tmp"
+    mv -f "$marker_tmp" "$APP_DIR/.cutover-recharge-ok"
+    ;;
+  mvp)
+    run_bundle smoke-mvp.cjs
+    ;;
+esac

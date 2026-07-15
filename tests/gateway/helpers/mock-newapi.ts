@@ -25,7 +25,20 @@ export async function startMockNewApi() {
 
     requestSequence += 1;
     const requestId = `mock-newapi-${requestSequence}`;
-    const scenario = String(req.headers['x-test-scenario'] ?? 'normal');
+    let scenario = String(req.headers['x-test-scenario'] ?? 'normal');
+    const requestBody = Buffer.concat(chunks).toString('utf8');
+    if (scenario === 'normal') {
+      const streaming = /"stream"\s*:\s*true/.test(requestBody);
+      if (req.url?.endsWith('/v1/messages')) {
+        scenario = streaming ? 'messages' : 'messages-json';
+      } else if (req.url?.endsWith('/v1/chat/completions') && streaming) {
+        scenario = 'chat-stream';
+      } else if (req.url?.endsWith('/v1/responses')) {
+        scenario = 'responses-json';
+      } else if (req.url?.endsWith('/v1/embeddings')) {
+        scenario = 'embeddings-json';
+      }
+    }
     res.setHeader('x-oneapi-request-id', requestId);
     res.setHeader('server', 'mock-newapi-internal');
 
@@ -77,6 +90,27 @@ export async function startMockNewApi() {
       } else {
         res.end();
       }
+      return;
+    }
+    if (scenario === 'messages-json') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        '{"id":"msg-ok","type":"message","role":"assistant","content":[{"type":"text","text":"pong"}],"model":"mock","stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":3}}'
+      );
+      return;
+    }
+    if (scenario === 'responses-json') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        '{"id":"resp-ok","object":"response","status":"completed","output":[],"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}'
+      );
+      return;
+    }
+    if (scenario === 'embeddings-json') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        '{"object":"list","data":[{"object":"embedding","embedding":[0.1],"index":0}],"model":"mock","usage":{"prompt_tokens":2,"total_tokens":2}}'
+      );
       return;
     }
     if (scenario === 'long-stream') {

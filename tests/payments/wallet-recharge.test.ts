@@ -139,6 +139,12 @@ test('开关 on：PAID 事务写 recharge 流水并停写 credit', async () => {
   assert.equal(rows[0].entryType, 'recharge');
   assert.equal(rows[0].signedAmountMicroUsd, 5_000_000);
   assert.equal(rows[0].balanceAfterMicroUsd, 5_000_000);
+  const legacyRechargeRows = await modules
+    .db()
+    .select()
+    .from(modules.schema.apipoolLedgerEntry)
+    .where(eq(modules.schema.apipoolLedgerEntry.orderNo, 'wallet-order-on'));
+  assert.equal(legacyRechargeRows.length, 0);
 });
 
 test('wallet-only 事务路径：无 credit/subscription 仍把订单与钱包一起落库', async () => {

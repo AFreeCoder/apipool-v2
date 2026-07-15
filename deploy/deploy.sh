@@ -7,6 +7,8 @@ ENV_FILE="${APIPOOL_ENV_FILE:-.env.deploy}"
 RELEASE_FILE="${APIPOOL_RELEASE_FILE:-release.env}"
 LOCK_FILE="${APIPOOL_DEPLOY_LOCK:-/run/apipool-v2-deploy.lock}"
 IMAGE_TAG="${1:-${IMAGE_TAG:-}}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+STATE_ENV_FILE="$APP_DIR/$ENV_FILE"
 
 if [ -z "$IMAGE_TAG" ]; then
   echo "usage: $0 <image-tag>" >&2
@@ -22,12 +24,17 @@ flock -n 9 || {
 
 cd "$APP_DIR"
 
-for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh deploy/configure-caddy.sh; do
+for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh deploy/configure-caddy.sh deploy/lib.sh; do
   if [ ! -e "$required" ]; then
     echo "[deploy] missing $APP_DIR/$required" >&2
     exit 66
   fi
 done
+. "$SCRIPT_DIR/lib.sh"
+
+compose() {
+  docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_FILE" -f "$COMPOSE_FILE" "$@"
+}
 
 mkdir -p data/portal data/new-api backups
 chown -R 1001:1001 data/portal
@@ -36,6 +43,27 @@ chmod 700 backups
 old_tag=""
 if [ -f "$RELEASE_FILE" ]; then
   old_tag="$(sed -n 's/^IMAGE_TAG=//p' "$RELEASE_FILE" | tail -1)"
+fi
+
+# 已 go-live 的常规发布先冻结新 checkout，再替换镜像。结算路径继续可用，
+# 以便新镜像跑受控充值 smoke；失败时保持冻结。
+gated=0
+mode="$(read_env_value APIPOOL_API_MODE)"
+checkout="$(read_env_value APIPOOL_CHECKOUT_ENABLED)"
+if [ "$mode" = portal ] && [ "$checkout" = true ]; then
+  gated=1
+  echo "[deploy] freezing checkout before replacing the portal image"
+  set_env_values APIPOOL_CHECKOUT_ENABLED=false
+  if [ ! -f "$RELEASE_FILE" ]; then
+    echo "[deploy] portal recharge gate requires existing $RELEASE_FILE" >&2
+    exit 66
+  fi
+  compose up -d
+  running_checkout="$(compose exec -T apipool-v2 printenv APIPOOL_CHECKOUT_ENABLED)"
+  if [ "$running_checkout" != false ]; then
+    echo "[deploy] checkout freeze did not reach the running container" >&2
+    exit 75
+  fi
 fi
 
 # 重新生成并校验 Caddy 配置。放在动任何东西之前：configure-caddy.sh 是
@@ -56,10 +84,6 @@ tmp_release="$(mktemp)"
 } > "$tmp_release"
 install -m 600 "$tmp_release" "$RELEASE_FILE"
 rm -f "$tmp_release"
-
-compose() {
-  docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_FILE" -f "$COMPOSE_FILE" "$@"
-}
 
 healthcheck() {
   echo "[deploy] waiting for NewAPI metadata filter"
@@ -126,4 +150,13 @@ if ! healthcheck; then
 fi
 
 compose ps
+if [ "$gated" -eq 1 ]; then
+  if ./deploy/live-smoke.sh --recharge; then
+    set_env_values APIPOOL_CHECKOUT_ENABLED=true
+    compose up -d
+  else
+    echo "[deploy] RECHARGE SMOKE FAILED on $IMAGE_TAG — checkout stays frozen (fail-closed)" >&2
+    exit 75
+  fi
+fi
 echo "[deploy] deployed $IMAGE_TAG"

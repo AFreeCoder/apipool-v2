@@ -166,7 +166,9 @@ export async function handleCheckoutSuccess({
     console.log(`Order ${orderNo} is already paid, skipping`);
     // Webhook replay is also the recovery path when the order was marked paid
     // but recharge ledger creation failed before it could be recorded.
-    await applyApipoolRecharge(order);
+    if (!walletLedgerWriteEnabled()) {
+      await applyApipoolRecharge(order);
+    }
     return;
   }
 
@@ -298,7 +300,7 @@ export async function handleCheckoutSuccess({
       newWalletRecharge,
     });
 
-    if (transaction?.order) {
+    if (transaction?.order && !writeWalletLedger) {
       await applyApipoolRecharge(order);
     }
   } else if (
