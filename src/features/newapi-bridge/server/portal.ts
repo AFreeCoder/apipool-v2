@@ -1247,6 +1247,11 @@ export async function disableNewapiUserBindingForAdmin(input: {
     requestBody: { reason: input.reason },
   });
 
+  const { disableRuntimeCredentialsForUser } = await import(
+    '@/features/gateway/server/credentials'
+  );
+  await disableRuntimeCredentialsForUser(input.portalUserId, 'user_disable');
+
   return toAdminBindingDto(binding);
 }
 
