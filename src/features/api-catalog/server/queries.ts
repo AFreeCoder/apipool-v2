@@ -68,6 +68,8 @@ type ListingQueryOptions = {
   filters?: ListingFilters;
   publicVisibleOnly?: boolean;
   callableOnly?: boolean;
+  exactGroupId?: string;
+  exactPortalModelId?: string;
 };
 
 async function getModelPksByCapability(
@@ -109,6 +111,8 @@ async function queryListingRows({
   filters = {},
   publicVisibleOnly = false,
   callableOnly = false,
+  exactGroupId,
+  exactPortalModelId,
 }: ListingQueryOptions): Promise<ListingBaseRow[]> {
   const capabilityModelPks = await getModelPksByCapability(filters.capability);
   if (filters.capability && capabilityModelPks?.length === 0) return [];
@@ -142,6 +146,12 @@ async function queryListingRows({
   }
   if (filters.status) {
     conditions.push(eq(catalogStatus.slug, filters.status));
+  }
+  if (exactGroupId) {
+    conditions.push(eq(catalogGroup.id, exactGroupId));
+  }
+  if (exactPortalModelId) {
+    conditions.push(eq(catalogModel.modelId, exactPortalModelId));
   }
   if (capabilityModelPks) {
     conditions.push(inArray(catalogModel.id, capabilityModelPks));
@@ -199,6 +209,19 @@ async function queryListingRows({
     )
     .where(and(...conditions))
     .orderBy(asc(catalogModelListing.sortOrder));
+}
+
+// 网关与公开目录复用同一条完整 callable join，避免紧急下线维度漂移。
+export async function isListingCallable(
+  portalGroupId: string,
+  portalModelId: string
+): Promise<boolean> {
+  const rows = await queryListingRows({
+    callableOnly: true,
+    exactGroupId: portalGroupId,
+    exactPortalModelId: portalModelId,
+  });
+  return rows.length > 0;
 }
 
 async function getCapabilitiesByModelPk(modelPks: string[]) {
