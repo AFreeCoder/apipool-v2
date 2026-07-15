@@ -1,0 +1,358 @@
+import { createServer, type IncomingHttpHeaders } from 'node:http';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createClient } from '@libsql/client';
+
+export interface RecordedNewApiRequest {
+  method: string;
+  url: string;
+  headers: IncomingHttpHeaders;
+  body: string;
+}
+
+export async function startMockNewApi() {
+  const requests: RecordedNewApiRequest[] = [];
+  let requestSequence = 0;
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    requests.push({
+      method: req.method ?? '',
+      url: req.url ?? '',
+      headers: req.headers,
+      body: Buffer.concat(chunks).toString('utf8'),
+    });
+
+    requestSequence += 1;
+    const requestId = `mock-newapi-${requestSequence}`;
+    const scenario = String(req.headers['x-test-scenario'] ?? 'normal');
+    res.setHeader('x-oneapi-request-id', requestId);
+    res.setHeader('server', 'mock-newapi-internal');
+
+    if (scenario === 'close') {
+      req.socket.destroy();
+      return;
+    }
+    if (scenario === 'slow-first-byte') {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    if (scenario === '401') {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end('{"error":"runtime credential rejected by newapi"}');
+      return;
+    }
+    if (scenario === '500') {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end('{"error":"upstream failed"}');
+      return;
+    }
+    if (scenario === '500-stall') {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.flushHeaders();
+      req.once('close', () => res.destroy());
+      return;
+    }
+    if (scenario === 'no-usage') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"id":"cmpl-no-usage","choices":[]}');
+      return;
+    }
+    if (scenario === 'large-json') {
+      const padding = 'x'.repeat(1024 * 1024);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(`{"id":"large","padding":"${padding}"}`);
+      return;
+    }
+    if (scenario === 'messages' || scenario.startsWith('message-')) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.flushHeaders();
+      const start =
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":25,"cache_read_input_tokens":5,"output_tokens":1}}}\n\n';
+      const delta =
+        'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":77}}\n\n';
+      res.write(start);
+      if (scenario !== 'message-start-destroy') res.write(delta);
+      if (scenario.endsWith('-destroy')) {
+        setTimeout(() => res.destroy(new Error('intentional stream cut')), 10);
+      } else {
+        res.end();
+      }
+      return;
+    }
+    if (scenario === 'long-stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.flushHeaders();
+      res.write('data: {"choices":[{"delta":{"content":"one"}}]}\n\n');
+      setTimeout(() => {
+        if (res.destroyed) return;
+        res.end(
+          'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}\n\n'
+        );
+      }, 600);
+      return;
+    }
+    if (scenario === 'infinite') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.flushHeaders();
+      res.write('data: {"choices":[{"delta":{"content":"one"}}]}\n\n');
+      req.once('close', () => res.destroy());
+      return;
+    }
+    if (scenario === 'chat-stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('data: {"choices":[{"delta":{"content":"hello"}}]}\n\n');
+      res.end(
+        'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}\n\n'
+      );
+      return;
+    }
+
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      '{"id":"cmpl-ok","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}'
+    );
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('mock New API 未取得 TCP 地址');
+  }
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    requests,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      ),
+  };
+}
+
+export async function setupGatewayIntegrationDb(baseUrl: string) {
+  const dbPath = join(process.cwd(), '.tmp', 'gateway-integration.db');
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
+  await rm(dbPath, { force: true });
+  process.env.DATABASE_PROVIDER = 'sqlite';
+  process.env.DATABASE_URL = `file:${dbPath}`;
+  process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
+  process.env.DB_SINGLETON_ENABLED = 'false';
+  process.env.APIPOOL_CREDENTIALS_SECRET =
+    'gateway-integration-credentials-secret';
+  process.env.NEWAPI_BASE_URL = baseUrl;
+  process.env.GATEWAY_MAX_INFLIGHT = '16';
+  process.env.GATEWAY_RISK_SLOT_LIMIT = '10';
+  process.env.GATEWAY_PARSE_BUFFER_MAX = String(2 * 1024 * 1024);
+
+  const migrationClient = createClient({ url: `file:${dbPath}` });
+  const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  for (const file of (await readdir(migrationsDir))
+    .filter((name) => name.endsWith('.sql'))
+    .sort()) {
+    await migrationClient.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
+  }
+
+  const schema = await import('@/config/db/schema');
+  const { db } = await import('@/core/db');
+  const auth = await import('@/features/gateway/server/auth');
+  const crypto = await import('@/features/newapi-bridge/server/crypto');
+  const handler = await import('@/features/gateway/server/handler');
+  const settlement = await import('@/features/gateway/server/settlement');
+  const wallet = await import('@/features/wallet/server/ledger');
+  const credentials = await import('@/features/gateway/server/credentials');
+  const routing = await import('@/features/gateway/server/routing');
+  const modules = {
+    auth,
+    credentials,
+    crypto,
+    db,
+    handler,
+    routing,
+    schema,
+    settlement,
+    wallet,
+  };
+
+  await db().insert(schema.catalogVendor).values({
+    id: 'integration-vendor',
+    slug: 'integration-vendor',
+    name: 'Integration Vendor',
+  });
+  await db().insert(schema.catalogStatus).values({
+    id: 'integration-callable',
+    slug: 'integration-callable',
+    name: 'Integration Callable',
+    isCallable: true,
+  });
+  await db().insert(schema.catalogCategory).values({
+    id: 'integration-category',
+    slug: 'integration-category',
+    name: 'Integration Category',
+  });
+  await db().insert(schema.catalogCapability).values({
+    id: 'integration-capability',
+    slug: 'integration-capability',
+    name: 'Integration Capability',
+  });
+
+  return {
+    modules,
+    close: () => migrationClient.close(),
+  };
+}
+
+export async function seedGatewayFixture(
+  modules: any,
+  suffix: string,
+  options: {
+    balanceMicroUsd?: number;
+    riskLimit?: number;
+    bindingStatus?: string;
+    credentialStatus?: string;
+    runtimeKey?: string;
+    newapiGroup?: string;
+    modelId?: string;
+    price?: Partial<{
+      input: number;
+      cached: number;
+      write5m: number;
+      write1h: number;
+      output: number;
+    }>;
+  } = {}
+) {
+  const userId = `integration-user-${suffix}`;
+  const groupId = `integration-group-${suffix}`;
+  const modelPk = `integration-model-pk-${suffix}`;
+  const modelId = options.modelId ?? `integration-model-${suffix}`;
+  const plainKey = `sk-ap-integration-${suffix}`;
+  const newapiGroup = options.newapiGroup ?? 'official';
+  const runtimeKey = options.runtimeKey ?? `sk-upstream-${suffix}`;
+
+  await modules.db().insert(modules.schema.user).values({
+    id: userId,
+    name: suffix,
+    email: `${suffix}@gateway-integration.test`,
+  });
+  await modules.db().insert(modules.schema.walletAccount).values({
+    userId,
+    balanceMicroUsd: options.balanceMicroUsd ?? 10_000_000,
+    riskLimitOverride: options.riskLimit,
+  });
+  await modules.db().insert(modules.schema.catalogGroup).values({
+    id: groupId,
+    slug: groupId,
+    name: groupId,
+    newapiGroup,
+  });
+  await modules.db().insert(modules.schema.portalApiKey).values({
+    id: `integration-key-${suffix}`,
+    userId,
+    groupId,
+    keyHash: modules.auth.hashPortalKey(plainKey),
+    keyPrefix: `sk-ap-…${plainKey.slice(-4)}`,
+    name: '默认 Key',
+  });
+  await modules.db().insert(modules.schema.newApiUserBinding).values({
+    id: `integration-binding-${suffix}`,
+    portalUserId: userId,
+    newapiUserId: `integration-remote-user-${suffix}`,
+    status: options.bindingStatus ?? 'active',
+    newapiAccessTokenEnc: modules.crypto.encryptCredential(
+      `integration-access-${suffix}`
+    ),
+  });
+  await modules.db().insert(modules.schema.catalogModel).values({
+    id: modelPk,
+    modelId,
+    displayName: modelId,
+    vendorId: 'integration-vendor',
+    category: 'integration-category',
+  });
+  await modules.db().insert(modules.schema.catalogModelCapability).values({
+    id: `integration-model-capability-${suffix}`,
+    modelId: modelPk,
+    capabilityId: 'integration-capability',
+  });
+  await modules.db().insert(modules.schema.catalogModelListing).values({
+    id: `integration-listing-${suffix}`,
+    modelId: modelPk,
+    groupId,
+    statusId: 'integration-callable',
+    inputMicroUsd: 1_000_000,
+    outputMicroUsd: 2_000_000,
+  });
+  await modules.db().insert(modules.schema.modelRoute).values({
+    id: `integration-route-${suffix}`,
+    portalGroupId: groupId,
+    portalModelId: modelId,
+    newapiGroup,
+    newapiModelId: modelId,
+    version: 1,
+    publishedBy: 'integration-test',
+  });
+  await modules.db().insert(modules.schema.modelPriceVersion).values({
+    id: `integration-price-${suffix}`,
+    portalGroupId: groupId,
+    portalModelId: modelId,
+    version: 1,
+    inputMicroUsdPerM: options.price?.input ?? 1_000_000,
+    cachedInputMicroUsdPerM: options.price?.cached ?? 500_000,
+    cacheWrite5mMicroUsdPerM: options.price?.write5m ?? 1_250_000,
+    cacheWrite1hMicroUsdPerM: options.price?.write1h ?? 2_000_000,
+    outputMicroUsdPerM: options.price?.output ?? 2_000_000,
+    refNewapiGroup: newapiGroup,
+    publishedBy: 'integration-test',
+  });
+  await modules.db().insert(modules.schema.runtimeCredential).values({
+    id: `integration-credential-${suffix}`,
+    portalUserId: userId,
+    newapiGroup,
+    newapiUserId: `integration-remote-user-${suffix}`,
+    remoteName: modules.credentials.buildRuntimeCredentialName(
+      userId,
+      newapiGroup
+    ),
+    newapiTokenId: `integration-token-${suffix}`,
+    tokenEnc:
+      (options.credentialStatus ?? 'active') === 'active'
+        ? modules.crypto.encryptCredential(runtimeKey)
+        : null,
+    keyMasked: `sk-…${runtimeKey.slice(-4)}`,
+    status: options.credentialStatus ?? 'active',
+  });
+
+  return {
+    credentialId: `integration-credential-${suffix}`,
+    groupId,
+    keyId: `integration-key-${suffix}`,
+    modelId,
+    plainKey,
+    priceVersionId: `integration-price-${suffix}`,
+    runtimeKey,
+    userId,
+  };
+}
+
+export function gatewayRequest(
+  fixture: { plainKey: string; modelId: string },
+  path = '/v1/chat/completions',
+  scenario = 'normal',
+  body?: string,
+  extraHeaders: HeadersInit = {}
+) {
+  return new Request(`http://portal.test${path}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${fixture.plainKey}`,
+      'content-type': 'application/json',
+      'x-test-scenario': scenario,
+      ...Object.fromEntries(new Headers(extraHeaders)),
+    },
+    body: body ?? JSON.stringify({ model: fixture.modelId }),
+  });
+}
