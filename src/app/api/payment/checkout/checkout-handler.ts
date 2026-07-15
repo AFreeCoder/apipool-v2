@@ -1,4 +1,5 @@
 import { resolveTopUpCheckout } from '@/features/api-console/lib/top-up-products';
+import { checkoutEnabled } from '@/features/gateway/lib/config';
 
 import { PaymentOrder, PaymentPrice } from '@/extensions/payment/types';
 import { getSnowId, getUuid } from '@/shared/lib/hash';
@@ -84,6 +85,10 @@ export async function createTopUpCheckoutResponse(input: {
   pricingItems: PricingItem[];
   deps?: Partial<CheckoutHandlerDeps>;
 }) {
+  if (!checkoutEnabled()) {
+    return respErr('checkout is temporarily disabled');
+  }
+
   const deps = { ...defaultDeps, ...(input.deps || {}) };
   const { product_id, custom_amount_usd, currency, locale, payment_provider } =
     input.body;

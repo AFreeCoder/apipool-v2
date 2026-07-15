@@ -1,7 +1,7 @@
 import { and, count, desc, eq, or } from 'drizzle-orm';
 
 import { db } from '@/core/db';
-import { credit, order, subscription } from '@/config/db/schema';
+import { credit, order, subscription, walletLedger } from '@/config/db/schema';
 import { PaymentType } from '@/extensions/payment/types';
 
 import { NewCredit } from './credit';
@@ -208,18 +208,23 @@ export async function updateOrderInTransaction({
   updateOrder,
   newSubscription,
   newCredit,
+  newWalletRecharge,
 }: {
   orderNo: string;
   updateOrder: UpdateOrder;
   newSubscription?: NewSubscription;
   newCredit?: NewCredit;
+  newWalletRecharge?: {
+    userId: string;
+    amountMicroUsd: number;
+  };
 }) {
   if (!orderNo || !updateOrder) {
     throw new Error('orderNo and updateOrder are required');
   }
 
   // only update order, no need transaction
-  if (!newSubscription && !newCredit) {
+  if (!newSubscription && !newCredit && !newWalletRecharge) {
     return updateOrderByOrderNo(orderNo, updateOrder);
   }
 
@@ -229,6 +234,7 @@ export async function updateOrderInTransaction({
       order: null,
       subscription: null,
       credit: null,
+      walletLedgerId: null,
     };
 
     // Update order with optimistic lock before granting side effects.
@@ -311,6 +317,37 @@ export async function updateOrderInTransaction({
       }
 
       result.credit = existingCredit;
+    }
+
+    // 门户钱包充值与订单 PAID 状态在同一事务内提交。
+    if (newWalletRecharge) {
+      const { appendLedgerEntryInTx, ensureWalletAccount } = await import(
+        '@/features/wallet/server/ledger'
+      );
+      await ensureWalletAccount(newWalletRecharge.userId, tx);
+
+      const [existingRecharge] = await tx
+        .select({ id: walletLedger.id })
+        .from(walletLedger)
+        .where(
+          and(
+            eq(walletLedger.orderNo, orderNo),
+            eq(walletLedger.entryType, 'recharge')
+          )
+        )
+        .limit(1);
+
+      if (existingRecharge) {
+        result.walletLedgerId = existingRecharge.id;
+      } else {
+        const recharge = await appendLedgerEntryInTx(tx, {
+          userId: newWalletRecharge.userId,
+          entryType: 'recharge',
+          signedAmountMicroUsd: newWalletRecharge.amountMicroUsd,
+          orderNo,
+        });
+        result.walletLedgerId = recharge.ledgerId;
+      }
     }
 
     return result;

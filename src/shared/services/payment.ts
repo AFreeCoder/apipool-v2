@@ -1,3 +1,4 @@
+import { walletLedgerWriteEnabled } from '@/features/gateway/lib/config';
 import { applyRechargeForOrder } from '@/features/newapi-bridge/server/recharge';
 
 import {
@@ -249,8 +250,9 @@ export async function handleCheckoutSuccess({
     }
 
     // grant credit for order
+    const writeWalletLedger = walletLedgerWriteEnabled();
     let newCredit: NewCredit | undefined = undefined;
-    if (order.creditsAmount && order.creditsAmount > 0) {
+    if (!writeWalletLedger && order.creditsAmount && order.creditsAmount > 0) {
       const credits = order.creditsAmount;
       const expiresAt =
         credits > 0
@@ -280,11 +282,20 @@ export async function handleCheckoutSuccess({
       };
     }
 
+    const newWalletRecharge =
+      writeWalletLedger && order.creditsAmount && order.creditsAmount > 0
+        ? {
+            userId: order.userId,
+            amountMicroUsd: order.amount * 10_000,
+          }
+        : undefined;
+
     const transaction = await updateOrderInTransaction({
       orderNo,
       updateOrder,
       newSubscription,
       newCredit,
+      newWalletRecharge,
     });
 
     if (transaction?.order) {
@@ -396,8 +407,9 @@ export async function handlePaymentSuccess({
     }
 
     // grant credit for order
+    const writeWalletLedger = walletLedgerWriteEnabled();
     let newCredit: NewCredit | undefined = undefined;
-    if (order.creditsAmount && order.creditsAmount > 0) {
+    if (!writeWalletLedger && order.creditsAmount && order.creditsAmount > 0) {
       const credits = order.creditsAmount;
       const expiresAt =
         credits > 0
@@ -427,11 +439,20 @@ export async function handlePaymentSuccess({
       };
     }
 
+    const newWalletRecharge =
+      writeWalletLedger && order.creditsAmount && order.creditsAmount > 0
+        ? {
+            userId: order.userId,
+            amountMicroUsd: order.amount * 10_000,
+          }
+        : undefined;
+
     const transaction = await updateOrderInTransaction({
       orderNo,
       updateOrder,
       newSubscription,
       newCredit,
+      newWalletRecharge,
     });
 
     if (transaction?.order) {

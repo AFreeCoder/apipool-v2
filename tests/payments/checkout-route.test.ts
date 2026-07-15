@@ -11,6 +11,14 @@ import type { PricingItem } from '@/shared/types/blocks/pricing';
 
 const routePath = 'src/app/api/payment/checkout/route.ts';
 
+test.before(() => {
+  process.env.APIPOOL_CHECKOUT_ENABLED = 'true';
+});
+
+test.after(() => {
+  delete process.env.APIPOOL_CHECKOUT_ENABLED;
+});
+
 const pricingItemsFixture: PricingItem[] = [
   {
     title: 'Builder',
@@ -201,9 +209,7 @@ test('checkout handler redacts Stripe invalid API key provider errors', async ()
           ? {
               name: 'stripe',
               createPayment: async () => {
-                throw new Error(
-                  'Invalid API Key provided: bRRQHWAg****4Lfz'
-                );
+                throw new Error('Invalid API Key provided: bRRQHWAg****4Lfz');
               },
             }
           : undefined,
