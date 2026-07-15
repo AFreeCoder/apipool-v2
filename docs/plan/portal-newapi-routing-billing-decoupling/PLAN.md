@@ -1,7 +1,5 @@
 # 门户与 New API 路由计费解耦 实现计划（总览）
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
->
 > 任务正文分三个文件（本文件只是总览与全局契约）：
 > - [tasks-01-foundation.md](tasks-01-foundation.md) — Task 1–11（schema/纯函数库/钱包/准入/结算/充值）
 > - [tasks-02-gateway.md](tasks-02-gateway.md) — Task 12–21（client 扩展/Key/路由/转发/handler/集成/后台任务）
