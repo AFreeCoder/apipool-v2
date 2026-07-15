@@ -4,15 +4,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
 import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
 import {
-  canCleanupKeyStatus,
-  canDeleteKeyStatus,
-  canDisableKeyStatus,
-  type KeyLifecycleStatus,
-} from '@/features/api-console/lib/status';
-import {
   AdjustmentLedgerDraft,
   createAdjustmentLedgerDraft,
 } from '@/features/apipool-ledger/lib/ledger';
+import { generatePortalKey } from '@/features/gateway/server/auth';
+import { ensureWalletAccount } from '@/features/wallet/server/ledger';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -23,6 +19,7 @@ import {
   newApiKeyBinding,
   newApiUserBinding,
   order as orderTable,
+  portalApiKey,
   usageLogSnapshot,
   usageSnapshot,
   user as userTable,
@@ -37,7 +34,6 @@ import {
   NewApiClient,
   type NewApiBridgeErrorCode,
   type NewApiUserCredentials,
-  type RemoteKey,
   type RemoteUsageLog,
 } from './client';
 import { decryptCredential, encryptCredential } from './crypto';
@@ -119,11 +115,6 @@ type NewApiBridgeDbWriter = {
   select: ReturnType<typeof db>['select'];
 };
 
-const TERMINAL_KEY_MUTATION_ERROR_CODES = new Set<NewApiBridgeErrorCode>([
-  'unauthorized',
-  'forbidden',
-  'malformed_response',
-]);
 const USAGE_SYNC_LOCK_TTL_MS = 60_000;
 const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
 const DUPLICATE_KEY_NAME_MESSAGE =
@@ -222,6 +213,9 @@ function isDuplicateKeyNameConstraintError(error: unknown) {
     'idx_newapi_key_binding_user_display_name_active',
     'newapi_key_binding.portal_user_id',
     'newapi_key_binding.display_name',
+    'uniq_portal_api_key_user_name_live',
+    'portal_api_key.user_id',
+    'portal_api_key.name',
   ]);
 }
 
@@ -230,17 +224,6 @@ function isQuotaIdempotencyConstraintError(error: unknown) {
     'idx_apipool_ledger_idempotency',
     'apipool_ledger_entry.idempotency_key',
   ]);
-}
-
-function getFailedKeyMutationStatus(error: unknown): KeyLifecycleStatus {
-  if (
-    error instanceof NewApiBridgeError &&
-    TERMINAL_KEY_MUTATION_ERROR_CODES.has(error.code)
-  ) {
-    return 'failed_terminal';
-  }
-
-  return 'failed_retriable';
 }
 
 function sanitizeAuditBody(value: unknown): unknown {
@@ -312,10 +295,12 @@ function parseJsonObject(value: string | null | undefined) {
 }
 
 function toPublicApiKey(row: any) {
+  const keyPrefix = row.keyPrefix ?? row.keyMasked;
   return {
     id: row.id,
-    keyMasked: row.keyMasked,
-    displayName: row.displayName,
+    keyPrefix,
+    keyMasked: keyPrefix,
+    displayName: row.displayName ?? row.name,
     status: row.status,
     allowedModels: parseJsonArray<string>(row.allowedModels),
     createdAt: row.createdAt,
@@ -324,6 +309,7 @@ function toPublicApiKey(row: any) {
     deletedAt: row.deletedAt,
     groupSlug: row.groupSlug ?? null,
     groupName: row.groupName ?? null,
+    legacy: row.legacy === true,
   };
 }
 
@@ -478,27 +464,6 @@ function emptyPortalUsageView(
   };
 }
 
-function mapRemoteKeyStatus(
-  localStatus: KeyLifecycleStatus,
-  remoteStatus: RemoteKey['status']
-): KeyLifecycleStatus | undefined {
-  if (localStatus === 'deleted') return undefined;
-
-  if (remoteStatus === 'revoked') return 'deleted';
-  if (localStatus === 'delete_pending') return undefined;
-  if (remoteStatus === 'disabled') return 'disabled';
-
-  if (
-    remoteStatus === 'active' &&
-    localStatus !== 'disable_pending' &&
-    localStatus !== 'remote_created_binding_failed'
-  ) {
-    return 'active';
-  }
-
-  return undefined;
-}
-
 export async function getPortalUserBinding(portalUserId: string) {
   const [binding] = await db()
     .select()
@@ -558,12 +523,6 @@ async function recordUsernameSyncBlocked(input: {
   });
 
   return row;
-}
-
-// 远端 token 名称上限 30 字符，用本地 keyId 压缩出唯一技术名，
-// 兼作门户侧幂等键（client.createKey 先查同名 token 再创建）
-function deriveRemoteKeyName(localKeyId: string) {
-  return `pk_${localKeyId.replace(/-/g, '').slice(0, 24)}`;
 }
 
 function generateNewapiPassword() {
@@ -1444,27 +1403,25 @@ export async function confirmNewapiUserConflictForAdmin(input: {
 export async function createPortalApiKey(
   user: Pick<User, 'id' | 'email'>,
   input: PortalKeyCreateInput,
-  client: NewApiClient = createNewApiClient()
+  _client: NewApiClient = createNewApiClient()
 ) {
+  void _client;
   const group = await getGroupBySlug(input.groupSlug);
   if (!group || group.status !== 'active' || group.allowCreateKey !== true) {
     throw new Error('group not available');
   }
-  const newapiGroup = group.newapiGroup.trim();
-  if (!newapiGroup) {
+  if (!group.newapiGroup.trim()) {
     throw new Error('group not available');
   }
 
-  // 同名校验：同一用户下不允许重复的未删除 Key 名（清理失败 / 旧 Key 后可复用同名）。
-  // 用普通 Error 且不嵌入用户输入的 name，确保提示透传给前端而非被兜底成内部错误。
   const [duplicateName] = await db()
-    .select({ id: newApiKeyBinding.id })
-    .from(newApiKeyBinding)
+    .select({ id: portalApiKey.id })
+    .from(portalApiKey)
     .where(
       and(
-        eq(newApiKeyBinding.portalUserId, user.id),
-        eq(newApiKeyBinding.displayName, input.name),
-        ne(newApiKeyBinding.status, 'deleted')
+        eq(portalApiKey.userId, user.id),
+        eq(portalApiKey.name, input.name),
+        ne(portalApiKey.status, 'deleted')
       )
     )
     .limit(1);
@@ -1472,33 +1429,20 @@ export async function createPortalApiKey(
     throw new Error(DUPLICATE_KEY_NAME_MESSAGE);
   }
 
-  const binding = await ensurePortalUserBinding(user, client, {
-    requiredNewapiGroup: newapiGroup,
-  });
-  const credentials = bindingToUserCredentials(binding);
-  const idempotencyKey = `portal-key:${user.id}:${getUuid()}`;
-  const localKeyId = getUuid();
-  const remoteName = deriveRemoteKeyName(localKeyId);
-  const pendingRemoteKeyId = `pending:${idempotencyKey}`;
-
-  let pending: typeof newApiKeyBinding.$inferSelect;
+  await ensureWalletAccount(user.id);
+  const generated = generatePortalKey();
+  let created: typeof portalApiKey.$inferSelect;
   try {
-    [pending] = await db()
-      .insert(newApiKeyBinding)
+    [created] = await db()
+      .insert(portalApiKey)
       .values({
-        id: localKeyId,
-        portalUserId: user.id,
-        newapiUserId: binding.newapiUserId,
-        newapiKeyId: pendingRemoteKeyId,
-        keyMasked: 'pending',
-        displayName: input.name,
-        status: 'creating_remote',
-        allowedModels: '[]',
+        id: getUuid(),
+        userId: user.id,
         groupId: group.id,
-        newapiGroup,
-        quotaLimit: input.quotaLimit,
-        ipAllowlist: JSON.stringify(input.ipAllowlist || []),
-        idempotencyKey,
+        keyHash: generated.hash,
+        keyPrefix: generated.prefix,
+        status: 'active',
+        name: input.name,
       })
       .returning();
   } catch (error) {
@@ -1508,208 +1452,75 @@ export async function createPortalApiKey(
     throw error;
   }
 
-  let remote: Awaited<ReturnType<NewApiClient['createKey']>>;
-  try {
-    remote = await client.createKey({
-      user: credentials,
-      remoteName,
-      group: newapiGroup,
-      quotaLimitUsd: input.quotaLimit,
-      ipAllowlist: input.ipAllowlist || [],
-    });
-  } catch (error: any) {
-    const status = getFailedKeyMutationStatus(error);
+  await recordAudit({
+    portalUserId: user.id,
+    action: 'portal.key.create_local',
+    targetType: 'portal_api_key',
+    targetId: created.id,
+    status: 'success',
+    idempotencyKey: `portal-key-local:${created.id}`,
+    requestBody: input,
+    responseBody: { id: created.id, keyPrefix: created.keyPrefix },
+  });
 
-    await db()
-      .update(newApiKeyBinding)
-      .set({
-        status,
-        lastRemoteError: error?.message || 'create key failed',
-      })
-      .where(eq(newApiKeyBinding.id, pending.id));
-
-    await recordAudit({
-      portalUserId: user.id,
-      action: 'newapi.key.create',
-      targetType: 'newapi_key',
-      targetId: pendingRemoteKeyId,
-      status: 'failed',
-      idempotencyKey,
-      requestBody: input,
-      errorMessage: error?.message || 'create key failed',
-    });
-    throw error;
-  }
-
-  if (remote.status !== 'active') {
-    await db()
-      .update(newApiKeyBinding)
-      .set({
-        newapiKeyId: remote.id,
-        keyMasked: remote.maskedKey,
-        status: 'failed_retriable',
-        lastRemoteError: `Remote create did not return active status: ${remote.status}`,
-      })
-      .where(eq(newApiKeyBinding.id, pending.id));
-
-    await recordAudit({
-      portalUserId: user.id,
-      action: 'newapi.key.create',
-      targetType: 'newapi_key',
-      targetId: remote.id,
-      status: 'failed',
-      idempotencyKey,
-      requestBody: input,
-      responseBody: {
-        ...remote,
-        key: remote.key ? '[redacted]' : undefined,
-      },
-      errorMessage: `Remote create did not return active status: ${remote.status}`,
-    });
-
-    throw new NewApiBridgeError({
-      code: 'remote_error',
-      message: `Remote create did not return active status: ${remote.status}`,
-    });
-  }
-
-  try {
-    const [created] = await db()
-      .update(newApiKeyBinding)
-      .set({
-        newapiKeyId: remote.id,
-        keyMasked: remote.maskedKey,
-        status: 'active',
-        lastRemoteError: null,
-      })
-      .where(eq(newApiKeyBinding.id, pending.id))
-      .returning();
-
-    await recordAudit({
-      portalUserId: user.id,
-      action: 'newapi.key.create',
-      targetType: 'newapi_key',
-      targetId: remote.id,
-      status: 'success',
-      idempotencyKey,
-      requestBody: input,
-      responseBody: { ...remote, key: remote.key ? '[redacted]' : undefined },
-    });
-
-    return {
-      binding: toPublicApiKey({
-        ...created,
-        groupSlug: group.slug,
-        groupName: group.name,
-      }),
-      plainKey: remote.key,
-    };
-  } catch (error: any) {
-    const localBindingError =
-      `local binding update failed for remote key ${remote.id}: ` +
-      (error?.message || 'unknown error');
-
-    await db()
-      .update(newApiKeyBinding)
-      .set({
-        keyMasked: remote.maskedKey,
-        status: 'remote_created_binding_failed',
-        lastRemoteError: localBindingError,
-      })
-      .where(eq(newApiKeyBinding.id, pending.id));
-
-    await recordAudit({
-      portalUserId: user.id,
-      action: 'newapi.key.create',
-      targetType: 'newapi_key',
-      targetId: remote.id,
-      status: 'failed',
-      idempotencyKey,
-      requestBody: input,
-      responseBody: { ...remote, key: remote.key ? '[redacted]' : undefined },
-      errorMessage: localBindingError,
-    });
-    throw new NewApiBridgeError({
-      code: 'remote_error',
-      message:
-        'Local key binding failed after remote key creation. Please clean up the failed key and try again.',
-    });
-  }
+  return {
+    binding: toPublicApiKey({
+      ...created,
+      groupSlug: group.slug,
+      groupName: group.name,
+    }),
+    plainKey: generated.plain,
+  };
 }
 
-async function syncPortalApiKeyStatuses(
-  portalUserId: string,
-  rows: any[],
-  client: NewApiClient
-) {
-  const binding = await getPortalUserBinding(portalUserId);
-  if (!binding || binding.status !== 'active') return rows;
-
-  try {
-    const remoteKeys = await client.listKeys(bindingToUserCredentials(binding));
-    const remoteById = new Map(remoteKeys.map((key) => [key.id, key]));
-    const syncedRows = [];
-
-    for (const row of rows) {
-      const remote = remoteById.get(row.newapiKeyId);
-      const syncedStatus = remote
-        ? mapRemoteKeyStatus(row.status as KeyLifecycleStatus, remote.status)
-        : undefined;
-
-      if (!remote || !syncedStatus) {
-        syncedRows.push(row);
-        continue;
-      }
-
-      const [updated] = await db()
-        .update(newApiKeyBinding)
-        .set({
-          keyMasked: remote.maskedKey,
-          status: syncedStatus,
-          deletedAt:
-            syncedStatus === 'deleted' && !row.deletedAt
-              ? new Date()
-              : row.deletedAt,
-          lastRemoteError: null,
-        })
-        .where(eq(newApiKeyBinding.id, row.id))
-        .returning();
-      if (syncedStatus === 'deleted') {
-        continue;
-      }
-      syncedRows.push(
-        updated
-          ? { ...updated, groupSlug: row.groupSlug, groupName: row.groupName }
-          : row
-      );
-    }
-
-    return syncedRows;
-  } catch {
-    return rows;
-  }
+async function findLegacyPortalApiKey(portalUserId: string, keyId: string) {
+  const [legacy] = await db()
+    .select({ id: newApiKeyBinding.id })
+    .from(newApiKeyBinding)
+    .where(
+      and(
+        eq(newApiKeyBinding.id, keyId),
+        eq(newApiKeyBinding.portalUserId, portalUserId)
+      )
+    )
+    .limit(1);
+  return legacy ?? null;
 }
 
 export async function listPortalApiKeys(
   portalUserId: string,
-  client: NewApiClient = createNewApiClient()
+  _client: NewApiClient = createNewApiClient()
 ) {
-  const rows = await db()
+  void _client;
+  const localRows = await db()
+    .select({
+      id: portalApiKey.id,
+      keyPrefix: portalApiKey.keyPrefix,
+      name: portalApiKey.name,
+      status: portalApiKey.status,
+      createdAt: portalApiKey.createdAt,
+      updatedAt: portalApiKey.updatedAt,
+      lastUsedAt: portalApiKey.lastUsedAt,
+      deletedAt: portalApiKey.deletedAt,
+      groupSlug: catalogGroup.slug,
+      groupName: catalogGroup.name,
+    })
+    .from(portalApiKey)
+    .leftJoin(catalogGroup, eq(portalApiKey.groupId, catalogGroup.id))
+    .where(
+      and(
+        eq(portalApiKey.userId, portalUserId),
+        ne(portalApiKey.status, 'deleted')
+      )
+    );
+
+  const legacyRows = await db()
     .select({
       id: newApiKeyBinding.id,
-      portalUserId: newApiKeyBinding.portalUserId,
-      newapiUserId: newApiKeyBinding.newapiUserId,
-      newapiKeyId: newApiKeyBinding.newapiKeyId,
       keyMasked: newApiKeyBinding.keyMasked,
       displayName: newApiKeyBinding.displayName,
       status: newApiKeyBinding.status,
       allowedModels: newApiKeyBinding.allowedModels,
-      groupId: newApiKeyBinding.groupId,
-      newapiGroup: newApiKeyBinding.newapiGroup,
-      quotaLimit: newApiKeyBinding.quotaLimit,
-      ipAllowlist: newApiKeyBinding.ipAllowlist,
-      idempotencyKey: newApiKeyBinding.idempotencyKey,
-      lastRemoteError: newApiKeyBinding.lastRemoteError,
       createdAt: newApiKeyBinding.createdAt,
       updatedAt: newApiKeyBinding.updatedAt,
       lastUsedAt: newApiKeyBinding.lastUsedAt,
@@ -1724,14 +1535,16 @@ export async function listPortalApiKeys(
         eq(newApiKeyBinding.portalUserId, portalUserId),
         ne(newApiKeyBinding.status, 'deleted')
       )
-    )
-    .orderBy(desc(newApiKeyBinding.createdAt));
+    );
 
-  const syncedRows = await syncPortalApiKeyStatuses(portalUserId, rows, client);
-
-  return syncedRows.map(toPublicApiKey);
+  return [
+    ...localRows.map(toPublicApiKey),
+    ...legacyRows.map((row: any) => toPublicApiKey({ ...row, legacy: true })),
+  ].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  );
 }
-
 export async function listKeysByPortalUser(portalUserId: string) {
   const rows = await db()
     .select({
@@ -1763,231 +1576,136 @@ export async function listKeysByPortalUser(portalUserId: string) {
 export async function disablePortalApiKey(
   portalUserId: string,
   keyId: string,
-  client: NewApiClient = createNewApiClient()
+  _client: NewApiClient = createNewApiClient()
 ) {
   const [row] = await db()
     .select({
-      id: newApiKeyBinding.id,
-      portalUserId: newApiKeyBinding.portalUserId,
-      newapiKeyId: newApiKeyBinding.newapiKeyId,
-      status: newApiKeyBinding.status,
+      id: portalApiKey.id,
+      keyPrefix: portalApiKey.keyPrefix,
+      name: portalApiKey.name,
+      status: portalApiKey.status,
+      createdAt: portalApiKey.createdAt,
+      updatedAt: portalApiKey.updatedAt,
+      lastUsedAt: portalApiKey.lastUsedAt,
+      deletedAt: portalApiKey.deletedAt,
       groupSlug: catalogGroup.slug,
       groupName: catalogGroup.name,
     })
-    .from(newApiKeyBinding)
-    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
+    .from(portalApiKey)
+    .leftJoin(catalogGroup, eq(portalApiKey.groupId, catalogGroup.id))
     .where(
-      and(
-        eq(newApiKeyBinding.id, keyId),
-        eq(newApiKeyBinding.portalUserId, portalUserId)
-      )
+      and(eq(portalApiKey.id, keyId), eq(portalApiKey.userId, portalUserId))
     )
     .limit(1);
 
-  if (!row) throw new Error('API key not found');
-  if (!canDisableKeyStatus(row.status as KeyLifecycleStatus)) {
+  if (!row) {
+    if (await findLegacyPortalApiKey(portalUserId, keyId)) {
+      throw new Error('Legacy API keys are read-only');
+    }
+    throw new Error('API key not found');
+  }
+  if (row.status === 'disabled') return toPublicApiKey(row);
+  if (row.status !== 'active') {
     throw new Error('API key is not in active state');
   }
 
-  const binding = await getPortalUserBinding(portalUserId);
-  if (!binding || binding.status !== 'active') {
-    throw new Error('New API user binding not found');
+  const disabledAt = new Date();
+  const [updated] = await db()
+    .update(portalApiKey)
+    .set({ status: 'disabled', disabledAt })
+    .where(
+      and(
+        eq(portalApiKey.id, keyId),
+        eq(portalApiKey.userId, portalUserId),
+        eq(portalApiKey.status, 'active')
+      )
+    )
+    .returning();
+  if (!updated) {
+    return disablePortalApiKey(portalUserId, keyId, _client);
   }
-  const credentials = bindingToUserCredentials(binding);
 
-  const idempotencyKey = `portal-key-disable:${portalUserId}:${keyId}:${getUuid()}`;
-
-  await db()
-    .update(newApiKeyBinding)
-    .set({ status: 'disable_pending' })
-    .where(eq(newApiKeyBinding.id, keyId));
-
-  try {
-    const remote = await client.disableKey(credentials, row.newapiKeyId);
-    if (remote.status !== 'disabled') {
-      throw new NewApiBridgeError({
-        code: 'remote_error',
-        message: `Remote disable did not confirm disabled status: ${remote.status}`,
-      });
-    }
-
-    const [updated] = await db()
-      .update(newApiKeyBinding)
-      .set({
-        status: 'disabled',
-      })
-      .where(eq(newApiKeyBinding.id, keyId))
-      .returning();
-
-    await recordAudit({
-      portalUserId,
-      action: 'newapi.key.disable',
-      targetType: 'newapi_key',
-      targetId: row.newapiKeyId,
-      status: 'success',
-      idempotencyKey,
-      responseBody: remote,
-    });
-    return toPublicApiKey({
-      ...updated,
-      groupSlug: row.groupSlug,
-      groupName: row.groupName,
-    });
-  } catch (error: any) {
-    await db()
-      .update(newApiKeyBinding)
-      .set({
-        status: getFailedKeyMutationStatus(error),
-        lastRemoteError: error?.message || 'disable failed',
-      })
-      .where(eq(newApiKeyBinding.id, keyId));
-    await recordAudit({
-      portalUserId,
-      action: 'newapi.key.disable',
-      targetType: 'newapi_key',
-      targetId: row.newapiKeyId,
-      status: 'failed',
-      idempotencyKey,
-      errorMessage: error?.message || 'disable failed',
-    });
-    throw error;
-  }
+  await recordAudit({
+    portalUserId,
+    action: 'portal.key.disable_local',
+    targetType: 'portal_api_key',
+    targetId: keyId,
+    status: 'success',
+    idempotencyKey: `portal-key-disable-local:${keyId}`,
+  });
+  return toPublicApiKey({
+    ...updated,
+    groupSlug: row.groupSlug,
+    groupName: row.groupName,
+  });
 }
 
 export async function deletePortalApiKey(
   portalUserId: string,
   keyId: string,
-  client: NewApiClient = createNewApiClient()
+  _client: NewApiClient = createNewApiClient()
 ) {
   const [row] = await db()
     .select({
-      id: newApiKeyBinding.id,
-      portalUserId: newApiKeyBinding.portalUserId,
-      newapiKeyId: newApiKeyBinding.newapiKeyId,
-      status: newApiKeyBinding.status,
+      id: portalApiKey.id,
+      keyPrefix: portalApiKey.keyPrefix,
+      name: portalApiKey.name,
+      status: portalApiKey.status,
+      createdAt: portalApiKey.createdAt,
+      updatedAt: portalApiKey.updatedAt,
+      lastUsedAt: portalApiKey.lastUsedAt,
+      deletedAt: portalApiKey.deletedAt,
       groupSlug: catalogGroup.slug,
       groupName: catalogGroup.name,
     })
-    .from(newApiKeyBinding)
-    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
+    .from(portalApiKey)
+    .leftJoin(catalogGroup, eq(portalApiKey.groupId, catalogGroup.id))
     .where(
-      and(
-        eq(newApiKeyBinding.id, keyId),
-        eq(newApiKeyBinding.portalUserId, portalUserId)
-      )
+      and(eq(portalApiKey.id, keyId), eq(portalApiKey.userId, portalUserId))
     )
     .limit(1);
 
-  if (!row) throw new Error('API key not found');
-
-  const status = row.status as KeyLifecycleStatus;
-  const isCleanup = canCleanupKeyStatus(status);
-  if (!canDeleteKeyStatus(status) && !isCleanup) {
+  if (!row) {
+    if (await findLegacyPortalApiKey(portalUserId, keyId)) {
+      throw new Error('Legacy API keys are read-only');
+    }
+    throw new Error('API key not found');
+  }
+  if (row.status === 'deleted') return toPublicApiKey(row);
+  if (row.status !== 'active' && row.status !== 'disabled') {
     throw new Error('API key is not in deletable state');
   }
 
-  const idempotencyKey = `portal-key-delete:${portalUserId}:${keyId}:${getUuid()}`;
-
-  // 清理态（远端未建成 / 孤儿记录）：直接删本地死记录；远端若有残留 token 则尽力删、
-  // 失败不阻塞清理，且不要求 active binding（失败态常伴随 binding 凭据失效）。
-  if (isCleanup) {
-    const hasRemoteToken = !row.newapiKeyId.startsWith('pending:');
-    const cleanupBinding = await getPortalUserBinding(portalUserId);
-    if (
-      hasRemoteToken &&
-      cleanupBinding?.status === 'active' &&
-      cleanupBinding.newapiAccessTokenEnc
-    ) {
-      try {
-        await client.deleteKey(
-          bindingToUserCredentials(cleanupBinding),
-          row.newapiKeyId
-        );
-      } catch {
-        // 清理场景：远端删除失败（token 不存在 / 凭据失效）不阻塞本地清理
-      }
-    }
-    const [cleaned] = await db()
-      .update(newApiKeyBinding)
-      .set({ status: 'deleted', deletedAt: new Date() })
-      .where(eq(newApiKeyBinding.id, keyId))
-      .returning();
-    await recordAudit({
-      portalUserId,
-      action: 'newapi.key.delete',
-      targetType: 'newapi_key',
-      targetId: row.newapiKeyId,
-      status: 'success',
-      idempotencyKey,
-      responseBody: { cleanup: true, previousStatus: status },
-    });
-    return toPublicApiKey({
-      ...cleaned,
-      groupSlug: row.groupSlug,
-      groupName: row.groupName,
-    });
+  const deletedAt = new Date();
+  const [updated] = await db()
+    .update(portalApiKey)
+    .set({ status: 'deleted', deletedAt })
+    .where(
+      and(
+        eq(portalApiKey.id, keyId),
+        eq(portalApiKey.userId, portalUserId),
+        ne(portalApiKey.status, 'deleted')
+      )
+    )
+    .returning();
+  if (!updated) {
+    return deletePortalApiKey(portalUserId, keyId, _client);
   }
 
-  const binding = await getPortalUserBinding(portalUserId);
-  if (!binding || binding.status !== 'active') {
-    throw new Error('New API user binding not found');
-  }
-  const credentials = bindingToUserCredentials(binding);
-
-  await db()
-    .update(newApiKeyBinding)
-    .set({ status: 'delete_pending' })
-    .where(eq(newApiKeyBinding.id, keyId));
-
-  try {
-    const remote = await client.deleteKey(credentials, row.newapiKeyId);
-    if (remote.id !== row.newapiKeyId) {
-      throw new NewApiBridgeError({
-        code: 'remote_error',
-        message: `Remote delete did not confirm deleted key: ${row.newapiKeyId}`,
-      });
-    }
-
-    const [updated] = await db()
-      .update(newApiKeyBinding)
-      .set({ status: 'deleted', deletedAt: new Date() })
-      .where(eq(newApiKeyBinding.id, keyId))
-      .returning();
-    await recordAudit({
-      portalUserId,
-      action: 'newapi.key.delete',
-      targetType: 'newapi_key',
-      targetId: row.newapiKeyId,
-      status: 'success',
-      idempotencyKey,
-      responseBody: remote,
-    });
-    return toPublicApiKey({
-      ...updated,
-      groupSlug: row.groupSlug,
-      groupName: row.groupName,
-    });
-  } catch (error: any) {
-    await db()
-      .update(newApiKeyBinding)
-      .set({
-        status: getFailedKeyMutationStatus(error),
-        lastRemoteError: error?.message || 'delete failed',
-      })
-      .where(eq(newApiKeyBinding.id, keyId));
-    await recordAudit({
-      portalUserId,
-      action: 'newapi.key.delete',
-      targetType: 'newapi_key',
-      targetId: row.newapiKeyId,
-      status: 'failed',
-      idempotencyKey,
-      errorMessage: error?.message || 'delete failed',
-    });
-    throw error;
-  }
+  await recordAudit({
+    portalUserId,
+    action: 'portal.key.delete_local',
+    targetType: 'portal_api_key',
+    targetId: keyId,
+    status: 'success',
+    idempotencyKey: `portal-key-delete-local:${keyId}`,
+  });
+  return toPublicApiKey({
+    ...updated,
+    groupSlug: row.groupSlug,
+    groupName: row.groupName,
+  });
 }
-
 export async function getPortalUsage(
   user: Pick<User, 'id' | 'email'>,
   range: PortalUsageRange = '7d',
@@ -2583,7 +2301,10 @@ export async function adjustPortalQuota(input: {
   }
 
   // 只读快速失败：未结清时连远端用户供给都不该触发（真正的判定在下面的事务里）
-  const preflight = await triageUnresolvedAdjustments(db(), input.portalUser.id);
+  const preflight = await triageUnresolvedAdjustments(
+    db(),
+    input.portalUser.id
+  );
   if (preflight.blockingLedgerId) {
     throw new UnresolvedQuotaAdjustmentError(preflight.blockingLedgerId);
   }

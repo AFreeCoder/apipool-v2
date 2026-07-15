@@ -102,268 +102,152 @@ async function insertUser(id: string, email: string) {
   return { id, name: id, email, emailVerified: false };
 }
 
-function createRecordingRemoteClient() {
-  const createKeyInputs: any[] = [];
-  const provisionUserInputs: any[] = [];
-  const ensureUserGroupInputs: any[] = [];
-  const client = {
-    provisionUser: async (input: { username: string }) => {
-      provisionUserInputs.push(input);
-      return {
-        newapiUserId: `remote_${input.username}`,
-        accessToken: 'test-access-token',
-      };
-    },
-    ensureUserGroup: async (input: any) => {
-      ensureUserGroupInputs.push(input);
-    },
-    createKey: async (input: any) => {
-      createKeyInputs.push(input);
-      return {
-        id: input.remoteName,
-        key: `sk-test-${createKeyInputs.length}`,
-        maskedKey: `sk-...${createKeyInputs.length}`,
-        status: 'active',
-      };
-    },
-  } as any;
-
-  return {
-    client,
-    getCreateKeyInputs: () => createKeyInputs,
-    getProvisionUserInputs: () => provisionUserInputs,
-    getEnsureUserGroupInputs: () => ensureUserGroupInputs,
-  };
+function createForbiddenRemoteClient() {
+  let calls = 0;
+  const client = new Proxy(
+    {},
+    {
+      get() {
+        calls += 1;
+        throw new Error('门户 Key 本地生命周期不得调用 New API');
+      },
+    }
+  );
+  return { client, getCalls: () => calls };
 }
 
-async function getKeyBinding(id: string) {
+async function getLocalKey(id: string) {
   const [row] = await modules
     .db()
     .select()
-    .from(modules.schema.newApiKeyBinding)
-    .where(eq(modules.schema.newApiKeyBinding.id, id));
+    .from(modules.schema.portalApiKey)
+    .where(eq(modules.schema.portalApiKey.id, id));
   return row;
 }
 
 test.before(setupDb);
 
-test('createPortalApiKey provisions long email users before remote key creation', async () => {
-  const portalUser = await insertUser(
-    'create_key_long_email_user',
-    'very-long-user@example.com'
-  );
-  const remote = createRecordingRemoteClient();
+test('createPortalApiKey 对长短邮箱均只建本地 Key，不再创建远端用户或 token', async () => {
+  for (const [id, email] of [
+    ['create_key_long_email_user', 'very-long-user@example.com'],
+    ['create_key_short_email_user', ' A@B.CO '],
+  ]) {
+    const portalUser = await insertUser(id, email);
+    const remote = createForbiddenRemoteClient();
 
-  await modules.portal.createPortalApiKey(
-    portalUser,
-    { name: 'Long email key', groupSlug: 'official' },
-    remote.client
-  );
+    const result = await modules.portal.createPortalApiKey(
+      portalUser,
+      { name: `Local key ${id}`, groupSlug: 'official' },
+      remote.client as any
+    );
 
-  assert.match(remote.getProvisionUserInputs()[0].username, /^pu_[a-f0-9]+$/);
-  assert.ok(remote.getProvisionUserInputs()[0].username.length <= 20);
-  assert.equal(remote.getCreateKeyInputs().length, 1);
+    assert.match(result.plainKey, /^sk-ap-[A-Za-z0-9_-]{43}$/);
+    assert.equal(result.binding.keyMasked, result.binding.keyPrefix);
+    assert.equal(remote.getCalls(), 0);
+    const bindings = await modules
+      .db()
+      .select()
+      .from(modules.schema.newApiUserBinding)
+      .where(eq(modules.schema.newApiUserBinding.portalUserId, id));
+    assert.equal(bindings.length, 0);
+  }
 });
 
-test('createPortalApiKey uses normalized email username for first-time short-email users', async () => {
-  const portalUser = await insertUser(
-    'create_key_short_email_user',
-    ' A@B.CO '
-  );
-  const remote = createRecordingRemoteClient();
-
-  await modules.portal.createPortalApiKey(
-    portalUser,
-    { name: 'Short email key', groupSlug: 'official' },
-    remote.client
-  );
-
-  assert.equal(remote.getProvisionUserInputs()[0].username, 'a@b.co');
-  assert.equal(/^pu_/.test(remote.getProvisionUserInputs()[0].username), false);
-});
-
-test('createPortalApiKey resolves groupSlug server-side and stores only internal group fields locally', async () => {
+test('createPortalApiKey 只持久化本地 groupId、哈希和前缀，不泄漏内部字段', async () => {
   const portalUser = await insertUser('create_key_group_user', 'keyg1@t.co');
-  const remote = createRecordingRemoteClient();
+  const remote = createForbiddenRemoteClient();
 
   const result = await modules.portal.createPortalApiKey(
     portalUser,
     { name: 'Official key', groupSlug: 'official' },
-    remote.client
+    remote.client as any
   );
+  const row = await getLocalKey(result.binding.id);
 
-  const [createKeyInput] = remote.getCreateKeyInputs();
-  const [provisionUserInput] = remote.getProvisionUserInputs();
-  assert.equal(provisionUserInput.group, 'ng-official');
-  assert.equal(createKeyInput.group, 'ng-official');
-  assert.notEqual(createKeyInput.group, 'official');
-  assert.notEqual(createKeyInput.group, groupIds.official);
-  assert.equal(Object.hasOwn(createKeyInput, 'allowedModels'), false);
-
-  const row = await getKeyBinding(result.binding.id);
   assert.equal(row.groupId, groupIds.official);
-  assert.equal(row.newapiGroup, 'ng-official');
-  assert.equal(row.allowedModels, '[]');
+  assert.equal(row.name, 'Official key');
+  assert.equal(row.status, 'active');
+  assert.match(row.keyHash, /^[a-f0-9]{64}$/);
+  assert.notEqual(row.keyHash, result.plainKey);
+  assert.equal(row.keyPrefix, result.binding.keyPrefix);
+  assert.equal(remote.getCalls(), 0);
 
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes('newapiGroup'), false);
   assert.equal(serialized.includes('ng-official'), false);
   assert.equal(serialized.includes(groupIds.official), false);
+  assert.equal(serialized.includes(row.keyHash), false);
   assert.equal(Object.hasOwn(result.binding, 'groupId'), false);
   assert.equal(Object.hasOwn(result.binding, 'newapiGroup'), false);
+  assert.equal(Object.hasOwn(result.binding, 'keyHash'), false);
 });
 
-test('createPortalApiKey ensures an existing New API user can access the target group', async () => {
-  const portalUser = await insertUser(
-    'create_key_existing_group_user',
-    'keyg2@t.co'
-  );
-  const remote = createRecordingRemoteClient();
-
-  await modules.portal.createPortalApiKey(
-    portalUser,
-    { name: 'First official key', groupSlug: 'official' },
-    remote.client
-  );
-  await modules.portal.createPortalApiKey(
-    portalUser,
-    { name: 'Second official key', groupSlug: 'official' },
-    remote.client
-  );
-
-  const [provisionInput] = remote.getProvisionUserInputs();
-  assert.equal(remote.getProvisionUserInputs().length, 1);
-  assert.deepEqual(remote.getEnsureUserGroupInputs(), [
-    {
-      newapiUserId: `remote_${provisionInput.username}`,
-      username: provisionInput.username,
-      group: 'ng-official',
-    },
-  ]);
-  assert.equal(remote.getCreateKeyInputs()[1].group, 'ng-official');
-});
-
-test('createPortalApiKey rejects key-capable groups without explicit New API mapping before calling remote', async () => {
-  const portalUser = await insertUser('create_key_unmapped_user', 'unmap@t.co');
-  const remote = createRecordingRemoteClient();
-
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        { name: 'Unmapped key', groupSlug: 'unmapped' },
-        remote.client
-      ),
-    /group not available/
-  );
-  assert.equal(remote.getCreateKeyInputs().length, 0);
-});
-
-test('createPortalApiKey rejects unavailable groups before calling the remote client', async () => {
-  for (const [groupSlug, expectedMessage] of [
-    ['disabled', /group not available/],
-    ['locked', /group not available/],
-    ['missing', /group not available/],
-  ] as const) {
+test('createPortalApiKey 拒绝未映射、禁用、锁定和不存在的分组且零远端调用', async () => {
+  for (const groupSlug of ['unmapped', 'disabled', 'locked', 'missing']) {
     const portalUser = await insertUser(
       `create_key_reject_${groupSlug}`,
       `rej-${groupSlug}@t.co`
     );
-    const remote = createRecordingRemoteClient();
+    const remote = createForbiddenRemoteClient();
 
     await assert.rejects(
-      () =>
-        modules.portal.createPortalApiKey(
-          portalUser,
-          { name: `Rejected ${groupSlug}`, groupSlug },
-          remote.client
-        ),
-      expectedMessage
+      modules.portal.createPortalApiKey(
+        portalUser,
+        { name: `Rejected ${groupSlug}`, groupSlug },
+        remote.client as any
+      ),
+      /group not available/
     );
-    assert.equal(remote.getCreateKeyInputs().length, 0);
+    assert.equal(remote.getCalls(), 0);
   }
 });
 
-test('createPortalApiKey rejects duplicate key names before calling the remote client', async () => {
+test('createPortalApiKey 本地拒绝同名，删除后可复用名称', async () => {
   const portalUser = await insertUser('create_key_dup_user', 'keydup@t.co');
-  // 用唯一 remote key id，避免与其它用例共享 db 时撞 newapi_key_id 的 UNIQUE 约束
-  const createKeyInputs: any[] = [];
-  const dupClient = {
-    provisionUser: async (input: { username: string }) => ({
-      newapiUserId: `remote_dup_${input.username}`,
-      accessToken: 'test-access-token',
-    }),
-    createKey: async (input: any) => {
-      createKeyInputs.push(input);
-      return {
-        id: `dup_key_${createKeyInputs.length}`,
-        key: `sk-dup-${createKeyInputs.length}`,
-        maskedKey: `sk-...dup${createKeyInputs.length}`,
-        status: 'active',
-      };
-    },
-  } as any;
+  const remote = createForbiddenRemoteClient();
 
-  await modules.portal.createPortalApiKey(
+  const first = await modules.portal.createPortalApiKey(
     portalUser,
     { name: 'My duplicate key', groupSlug: 'official' },
-    dupClient
+    remote.client as any
   );
-  assert.equal(createKeyInputs.length, 1);
-
-  // 同名再建 → 拒绝，且不再触达远端
   await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        { name: 'My duplicate key', groupSlug: 'official' },
-        dupClient
-      ),
+    modules.portal.createPortalApiKey(
+      portalUser,
+      { name: 'My duplicate key', groupSlug: 'official' },
+      remote.client as any
+    ),
     /already exists/
   );
-  assert.equal(createKeyInputs.length, 1);
+  assert.equal(remote.getCalls(), 0);
+
+  await modules.portal.deletePortalApiKey(
+    portalUser.id,
+    first.binding.id,
+    remote.client as any
+  );
+  const recreated = await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'My duplicate key', groupSlug: 'official' },
+    remote.client as any
+  );
+  assert.notEqual(recreated.binding.id, first.binding.id);
+  assert.equal(remote.getCalls(), 0);
 });
 
-test('deletePortalApiKey cleans up failed/stuck keys locally without requiring remote', async () => {
-  const portalUser = await insertUser('cleanup_failed_user', 'clean@t.co');
-  const failingClient = {
-    provisionUser: async (input: { username: string }) => ({
-      newapiUserId: `remote_${input.username}`,
-      accessToken: 'test-access-token',
-    }),
-    createKey: async () => {
-      throw new Error('remote create failed');
-    },
-    deleteKey: async () => {
-      throw new Error('deleteKey must not be called for never-created keys');
-    },
-  } as any;
+test('createPortalApiKey 自动补建零余额 wallet_account', async () => {
+  const portalUser = await insertUser('create_key_wallet_user', 'wallet@t.co');
 
-  // 建 Key 失败 → 抛错但留 failed_retriable 死记录（newapiKeyId 仍为 pending:）
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        { name: 'Doomed key', groupSlug: 'official' },
-        failingClient
-      ),
-    /remote create failed/
-  );
-  const rows = await modules
+  await modules.portal.createPortalApiKey(portalUser, {
+    name: 'Wallet key',
+    groupSlug: 'official',
+  });
+
+  const [wallet] = await modules
     .db()
     .select()
-    .from(modules.schema.newApiKeyBinding)
-    .where(eq(modules.schema.newApiKeyBinding.portalUserId, portalUser.id));
-  const failed = rows.find((r: any) => r.status === 'failed_retriable');
-  assert.ok(failed, 'failed key binding should remain after remote failure');
-
-  // 清理删除：远端从未建成（pending:），跳过远端删除、本地落 deleted
-  const result = await modules.portal.deletePortalApiKey(
-    portalUser.id,
-    failed.id,
-    failingClient
-  );
-  assert.equal(result.status, 'deleted');
-  const after = await getKeyBinding(failed.id);
-  assert.equal(after.status, 'deleted');
+    .from(modules.schema.walletAccount)
+    .where(eq(modules.schema.walletAccount.userId, portalUser.id));
+  assert.ok(wallet);
+  assert.equal(wallet.balanceMicroUsd, 0);
 });

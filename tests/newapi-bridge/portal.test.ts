@@ -1150,902 +1150,144 @@ test('getPortalUsage reports an unknown balance when the signup binding is tempo
   assert.equal(usage.summary.errorMessage, undefined);
 });
 
-test('createPortalApiKey keeps a retriable local key row when remote creation fails', async () => {
+test('createPortalApiKey 只写本地哈希 Key 且不调用 New API', async () => {
   const portalUser = await insertUser(
-    'portal_user_create_failure',
-    'cfail@t.co'
+    'portal_user_local_key_create',
+    'local-key@b.co'
   );
-
-  const fakeRemote = {
-    provisionUser: async () => ({
-      newapiUserId: 'remote_user_1',
-      accessToken: 'test-access-token',
-    }),
-    createKey: async () => {
-      throw new modules.NewApiBridgeError({
-        code: 'timeout',
-        message: 'remote create timed out',
-      });
-    },
-  } as any;
-
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        portalKeyInput('Default key'),
-        fakeRemote
-      ),
-    /remote create timed out/
-  );
-
-  const keys = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-  assert.equal(keys.length, 1);
-  assert.equal(keys[0].status, 'failed_retriable');
-  assert.match(
-    keys[0].idempotencyKey,
-    /^portal-key:portal_user_create_failure:/
-  );
-  assert.equal(keys[0].newapiKeyId.startsWith('pending:'), true);
-});
-
-test('createPortalApiKey rejects remote-created keys that are not active', async () => {
-  const portalUser = await insertUser(
-    'portal_user_create_disabled',
-    'cdis@t.co'
-  );
-
-  const fakeRemote = {
-    provisionUser: async () => ({
-      newapiUserId: 'remote_user_disabled_key',
-      accessToken: 'test-access-token',
-    }),
-    createKey: async () => ({
-      id: 'remote_key_disabled_on_create',
-      key: 'sk-disabled-on-create',
-      maskedKey: 'sk-...disabled',
-      status: 'disabled',
-    }),
-  } as any;
-
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        portalKeyInput('Disabled remote key'),
-        fakeRemote
-      ),
-    /did not return active/
-  );
-
-  const keys = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-
-  assert.equal(keys.length, 1);
-  assert.equal(keys[0].newapiKeyId, 'remote_key_disabled_on_create');
-  assert.equal(keys[0].status, 'failed_retriable');
-  assert.equal(keys[0].keyMasked, 'sk-...disabled');
-});
-
-test('createPortalApiKey preserves remote-created evidence when local binding fails', async () => {
-  const portalUser = await insertUser(
-    'portal_user_create_binding_failure',
-    'cbind@t.co'
-  );
-  const remote = createSuccessfulRemoteClient() as any;
-  const existing = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Existing remote key'),
-    remote
-  );
-  const [existingRow] = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.id, existing.binding.id));
-  const conflictingRemoteId = existingRow.newapiKeyId;
-
-  const failingRemote = {
-    provisionUser: async (input: { username: string }) => ({
-      newapiUserId: `remote_${input.username}`,
-      accessToken: 'test-access-token',
-    }),
-    ensureUserGroup: async () => {},
-    createKey: async () => ({
-      id: conflictingRemoteId,
-      key: 'sk-local-binding-failure',
-      maskedKey: 'sk-...local-binding-failure',
-      status: 'active',
-    }),
-  } as any;
-
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        portalKeyInput('Binding failure key'),
-        failingRemote
-      ),
-    (error: any) => {
-      assert.ok(error instanceof modules.NewApiBridgeError);
-      assert.doesNotMatch(error.message, /Failed query|UNIQUE|constraint/i);
-      assert.match(error.message, /local key binding failed/i);
-      return true;
+  let remoteCalls = 0;
+  const remoteMustNotRun = new Proxy(
+    {},
+    {
+      get() {
+        remoteCalls += 1;
+        throw new Error('local key lifecycle must not call New API');
+      },
     }
   );
 
-  const rows = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-  const failedRow = rows.find(
-    (row: any) => row.displayName === 'Binding failure key'
-  );
-
-  assert.equal(failedRow.status, 'remote_created_binding_failed');
-  assert.equal(failedRow.keyMasked, 'sk-...local-binding-failure');
-  assert.match(failedRow.lastRemoteError, /constraint|local binding/i);
-
-  const audits = await modules
-    .db()
-    .select()
-    .from(modules.newApiBridgeAuditLog)
-    .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
-  const failedAudit = audits.find(
-    (row: any) =>
-      row.action === 'newapi.key.create' &&
-      row.status === 'failed' &&
-      row.targetId === conflictingRemoteId
-  );
-
-  assert.ok(failedAudit, 'failed local binding should be audited');
-  assert.match(failedAudit.responseBody, /\[redacted\]/);
-});
-
-test('portal users cannot disable or delete another user key', async () => {
-  const owner = await insertUser('portal_user_owner', 'owner@example.com');
-  const outsider = await insertUser(
-    'portal_user_outsider',
-    'outsider@example.com'
-  );
   const result = await modules.portal.createPortalApiKey(
-    owner,
-    portalKeyInput('Owner key'),
-    createSuccessfulRemoteClient() as any
+    portalUser,
+    portalKeyInput('local-only-key'),
+    remoteMustNotRun as any
   );
-  let remoteCalls = 0;
-  const forbiddenRemote = {
-    disableKey: async () => {
-      remoteCalls += 1;
-      throw new Error('remote should not be called');
-    },
-    deleteKey: async () => {
-      remoteCalls += 1;
-      throw new Error('remote should not be called');
-    },
-  };
-
-  await assert.rejects(
-    () =>
-      modules.portal.disablePortalApiKey(
-        outsider.id,
-        result.binding.id,
-        forbiddenRemote as any
-      ),
-    /API key not found/
-  );
-  await assert.rejects(
-    () =>
-      modules.portal.deletePortalApiKey(
-        outsider.id,
-        result.binding.id,
-        forbiddenRemote as any
-      ),
-    /API key not found/
+  const keys = await modules.portal.listPortalApiKeys(
+    portalUser.id,
+    remoteMustNotRun as any
   );
 
-  const keys = await modules.portal.listPortalApiKeys(owner.id);
-  assert.equal(keys[0].status, 'active');
+  assert.match(result.plainKey, /^sk-ap-[A-Za-z0-9_-]{43}$/);
+  assert.equal(result.binding.keyMasked, result.binding.keyPrefix);
+  assert.equal(
+    result.binding.keyMasked.endsWith(result.plainKey.slice(-4)),
+    true
+  );
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].legacy, false);
   assert.equal(remoteCalls, 0);
-});
-
-test('database rejects duplicate undeleted key display names per portal user', async () => {
-  const portalUser = await insertUser(
-    'portal_user_duplicate_name_index',
-    'dupidx@t.co'
-  );
-
-  await modules.db().insert(modules.newApiKeyBinding).values({
-    id: 'duplicate_name_key_1',
-    portalUserId: portalUser.id,
-    newapiUserId: 'remote_duplicate_name',
-    newapiKeyId: 'remote_duplicate_name_1',
-    keyMasked: 'sk-...duplicate-1',
-    displayName: 'Duplicate display name',
-    status: 'active',
-    allowedModels: '[]',
-    groupId: 'catalog_group_portal_test',
-    newapiGroup: 'ng-portal-test',
-    ipAllowlist: '[]',
-    idempotencyKey: 'portal-key:duplicate-name-index:1',
-  });
-
-  await assert.rejects(() =>
-    modules.db().insert(modules.newApiKeyBinding).values({
-      id: 'duplicate_name_key_2',
-      portalUserId: portalUser.id,
-      newapiUserId: 'remote_duplicate_name',
-      newapiKeyId: 'remote_duplicate_name_2',
-      keyMasked: 'sk-...duplicate-2',
-      displayName: 'Duplicate display name',
-      status: 'creating_remote',
-      allowedModels: '[]',
-      groupId: 'catalog_group_portal_test',
-      newapiGroup: 'ng-portal-test',
-      ipAllowlist: '[]',
-      idempotencyKey: 'portal-key:duplicate-name-index:2',
-    })
-  );
-
-  await modules
-    .db()
-    .update(modules.newApiKeyBinding)
-    .set({ status: 'deleted', deletedAt: new Date() })
-    .where(eq(modules.newApiKeyBinding.id, 'duplicate_name_key_1'));
-
-  await modules.db().insert(modules.newApiKeyBinding).values({
-    id: 'duplicate_name_key_3',
-    portalUserId: portalUser.id,
-    newapiUserId: 'remote_duplicate_name',
-    newapiKeyId: 'remote_duplicate_name_3',
-    keyMasked: 'sk-...duplicate-3',
-    displayName: 'Duplicate display name',
-    status: 'active',
-    allowedModels: '[]',
-    groupId: 'catalog_group_portal_test',
-    newapiGroup: 'ng-portal-test',
-    ipAllowlist: '[]',
-    idempotencyKey: 'portal-key:duplicate-name-index:3',
-  });
-});
-
-test('portal key DTOs expose only MVP customer key fields', async () => {
-  const portalUser = await insertUser('portal_user_safe_key_dto', 'skdto@t.co');
-  const remote = createSuccessfulRemoteClient();
-  const created = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Safe key DTO'),
-    remote as any
-  );
-
-  const forbiddenFields = [
-    'newapiUserId',
-    'newapiKeyId',
-    'idempotencyKey',
-    'groupId',
-    'newapiGroup',
-    'quotaLimit',
-    'ipAllowlist',
-  ];
-  assertNoFields(created.binding, forbiddenFields);
-
-  const listed = await modules.portal.listPortalApiKeys(portalUser.id);
-  assertNoFields(listed[0], forbiddenFields);
-
-  const disabled = await modules.portal.disablePortalApiKey(
-    portalUser.id,
-    created.binding.id,
-    remote as any
-  );
-  assertNoFields(disabled, forbiddenFields);
-
-  const deleted = await modules.portal.deletePortalApiKey(
-    portalUser.id,
-    created.binding.id,
-    remote as any
-  );
-  assertNoFields(deleted, forbiddenFields);
-});
-
-test('public usage and key DTOs do not expose New API user binding internals after username sync changes', async () => {
-  const portalUser = await insertUser(
-    'portal_user_redaction_regression',
-    'red@b.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-  const created = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Redaction regression'),
-    remote as any
-  );
-  const keys = await modules.portal.listPortalApiKeys(portalUser.id);
-  const usage = await modules.portal.getPortalUsage(
-    portalUser,
-    '7d',
-    remote as any
-  );
-
-  assertNoFields(created.binding, [
-    'newapiUserId',
-    'newapiKeyId',
-    'newapiGroup',
-    'newapiAccessTokenEnc',
-    'newapiPasswordEnc',
-  ]);
   assertNoFields(keys[0], [
     'newapiUserId',
     'newapiKeyId',
     'newapiGroup',
-    'newapiAccessTokenEnc',
-    'newapiPasswordEnc',
+    'keyHash',
   ]);
-  assertNoFields(usage.summary as any, ['newapiUserId', 'newapiGroup']);
 });
 
-test('listPortalApiKeys returns the portal group name and public slug without leaking internal group fields', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_group_name',
-    'kgrp@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
+test('门户本地 Key 生命周期校验所有权并保持禁用/删除幂等', async () => {
+  const owner = await insertUser('portal_user_local_key_owner', 'owner@b.co');
+  const other = await insertUser('portal_user_local_key_other', 'other@b.co');
   const created = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Grouped list key'),
-    remote as any
+    owner,
+    portalKeyInput('owner-local-key')
   );
 
-  const listed = await modules.portal.listPortalApiKeys(portalUser.id);
-  const listedKey = listed.find((key: any) => key.id === created.binding.id);
-
-  assert.ok(listedKey);
-  assert.equal(listedKey.groupName, 'Portal Test');
-  assert.equal(listedKey.groupSlug, 'portal-test');
-  assertNoFields(listedKey, ['groupId', 'newapiGroup']);
-
-  const serialized = JSON.stringify(listedKey);
-  assert.equal(serialized.includes('catalog_group_portal_test'), false);
-  assert.equal(serialized.includes('ng-portal-test'), false);
-  assert.equal(serialized.includes('newapiGroup'), false);
-  assert.equal(serialized.includes('groupId'), false);
-});
-
-test('listPortalApiKeys syncs remote key status without exposing remote ids', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_list_sync',
-    'klist@t.co'
+  await assert.rejects(
+    modules.portal.disablePortalApiKey(other.id, created.binding.id),
+    /not found/i
   );
-  const remote = createSuccessfulRemoteClient() as any;
-  const created = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('List sync key'),
-    remote
-  );
-  remote.listKeys = async () => [
-    {
-      id: `remote_key_${remoteKeySeq}`,
-      maskedKey: 'sk-...remote-disabled',
-      status: 'disabled',
-    },
-  ];
-
-  const listed = await modules.portal.listPortalApiKeys(portalUser.id, remote);
-
-  assert.equal(listed[0].id, created.binding.id);
-  assert.equal(listed[0].status, 'disabled');
-  assert.equal(listed[0].keyMasked, 'sk-...remote-disabled');
-  assertNoFields(listed[0], ['newapiUserId', 'newapiKeyId', 'idempotencyKey']);
-
-  const rows = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
-  assert.equal(rows[0].status, 'disabled');
-  assert.equal(rows[0].keyMasked, 'sk-...remote-disabled');
-});
-
-test('listPortalApiKeys keeps delete pending until remote revocation is visible', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_delete_pending_sync',
-    'kdelp@t.co'
-  );
-  const remote = createSuccessfulRemoteClient() as any;
-  const created = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Delete pending key'),
-    remote
-  );
-
-  await modules
-    .db()
-    .update(modules.newApiKeyBinding)
-    .set({ status: 'delete_pending' })
-    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
-
-  remote.listKeys = async () => [
-    {
-      id: `remote_key_${remoteKeySeq}`,
-      maskedKey: 'sk-...remote-disabled',
-      status: 'disabled',
-    },
-  ];
-
-  const listedWhileDisabled = await modules.portal.listPortalApiKeys(
-    portalUser.id,
-    remote
-  );
-  assert.equal(listedWhileDisabled[0].status, 'delete_pending');
-
-  remote.listKeys = async () => [
-    {
-      id: `remote_key_${remoteKeySeq}`,
-      maskedKey: 'sk-...remote-revoked',
-      status: 'revoked',
-    },
-  ];
-
-  const listedAfterRevocation = await modules.portal.listPortalApiKeys(
-    portalUser.id,
-    remote
-  );
-  assert.equal(
-    listedAfterRevocation.some((key: any) => key.id === created.binding.id),
-    false,
-    'revoked keys should be persisted as deleted but filtered from user lists'
-  );
-
-  const [row] = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.id, created.binding.id));
-  assert.equal(row.status, 'deleted');
-  assert.ok(row.deletedAt instanceof Date);
-});
-
-test('disablePortalApiKey and deletePortalApiKey complete only after remote confirmation', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_lifecycle',
-    'klife@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-  const result = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Lifecycle key'),
-    remote as any
+  await assert.rejects(
+    modules.portal.deletePortalApiKey(other.id, created.binding.id),
+    /not found/i
   );
 
   const disabled = await modules.portal.disablePortalApiKey(
-    portalUser.id,
-    result.binding.id,
-    remote as any
+    owner.id,
+    created.binding.id
+  );
+  const disabledReplay = await modules.portal.disablePortalApiKey(
+    owner.id,
+    created.binding.id
   );
   assert.equal(disabled.status, 'disabled');
+  assert.equal(disabledReplay.status, 'disabled');
 
   const deleted = await modules.portal.deletePortalApiKey(
-    portalUser.id,
-    result.binding.id,
-    remote as any
+    owner.id,
+    created.binding.id
+  );
+  const deletedReplay = await modules.portal.deletePortalApiKey(
+    owner.id,
+    created.binding.id
   );
   assert.equal(deleted.status, 'deleted');
-  assert.ok(deleted.deletedAt instanceof Date);
+  assert.equal(deletedReplay.status, 'deleted');
 });
 
-test('disablePortalApiKey keeps retriable failure when remote does not confirm disabled', async () => {
+test('listPortalApiKeys 合并旧 Key 为只读 legacy 行且不做远端同步', async () => {
   const portalUser = await insertUser(
-    'portal_user_disable_unconfirmed',
-    'dunc@t.co'
+    'portal_user_legacy_key_readonly',
+    'legacy-key@b.co'
   );
-  const remote = createSuccessfulRemoteClient();
-  const result = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Unconfirmed disable key'),
-    remote as any
-  );
-
-  const unconfirmedRemote = {
-    ...remote,
-    disableKey: async (_user: any, newapiKeyId: string) => ({
-      id: newapiKeyId,
-      maskedKey: 'sk-...still-active',
-      status: 'active',
-    }),
-  };
-
-  await assert.rejects(
-    () =>
-      modules.portal.disablePortalApiKey(
-        portalUser.id,
-        result.binding.id,
-        unconfirmedRemote as any
-      ),
-    /did not confirm disabled/
-  );
-
-  const [row] = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.id, result.binding.id));
-
-  assert.equal(row.status, 'failed_retriable');
-});
-
-test('deletePortalApiKey keeps retriable failure when remote confirms a different key id', async () => {
-  const portalUser = await insertUser(
-    'portal_user_delete_wrong_remote_id',
-    'dwri@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-  const result = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Wrong remote delete confirmation'),
-    remote as any
-  );
-
-  const wrongRemote = {
-    ...remote,
-    deleteKey: async () => ({
-      id: 'different_remote_key',
-      deleted: true,
-    }),
-  };
-
-  await assert.rejects(
-    () =>
-      modules.portal.deletePortalApiKey(
-        portalUser.id,
-        result.binding.id,
-        wrongRemote as any
-      ),
-    /did not confirm deleted key/
-  );
-
-  const [row] = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.id, result.binding.id));
-
-  assert.equal(row.status, 'failed_retriable');
-  assert.equal(row.deletedAt, null);
-});
-
-test('deletePortalApiKey cleans up Task 4 cleanable statuses with real remote-id shapes', async () => {
-  const portalUser = await insertUser(
-    'portal_user_cleanup_cleanable_statuses',
-    'clnst@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-
-  const creating = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Cleanup creating_remote'),
-    remote as any
-  );
-  await modules
-    .db()
-    .update(modules.newApiKeyBinding)
-    .set({
-      status: 'creating_remote',
-      newapiKeyId: 'pending:cleanup-creating',
-    })
-    .where(eq(modules.newApiKeyBinding.id, creating.binding.id));
-
-  const terminal = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Cleanup failed_terminal'),
-    remote as any
-  );
-  await modules
-    .db()
-    .update(modules.newApiKeyBinding)
-    .set({ status: 'failed_terminal' })
-    .where(eq(modules.newApiKeyBinding.id, terminal.binding.id));
-
-  const retriableRemote = {
-    ...remote,
-    createKey: async () => ({
-      id: 'remote_cleanup_retriable',
-      key: 'sk-cleanup-retriable',
-      maskedKey: 'sk-...cleanup-retriable',
-      status: 'disabled',
-    }),
-  };
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        portalKeyInput('Cleanup failed_retriable'),
-        retriableRemote as any
-      ),
-    /did not return active/
-  );
-
-  const conflictSeed = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Cleanup conflict seed'),
-    remote as any
-  );
-  const [conflictRow] = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.id, conflictSeed.binding.id));
-
-  const bindingFailureRemote = {
-    ...remote,
-    createKey: async () => ({
-      id: conflictRow.newapiKeyId,
-      key: 'sk-cleanup-binding-failed',
-      maskedKey: 'sk-...cleanup-binding-failed',
-      status: 'active',
-    }),
-  };
-  await assert.rejects(
-    () =>
-      modules.portal.createPortalApiKey(
-        portalUser,
-        portalKeyInput('Cleanup remote_created_binding_failed'),
-        bindingFailureRemote as any
-      ),
-    /local key binding failed/i
-  );
-
-  let remoteDeleteAttempts = 0;
-  const cleanupRemote = {
-    deleteKey: async () => {
-      remoteDeleteAttempts += 1;
-      throw new Error('remote residue delete failed');
-    },
-  };
-
-  const rowsBeforeCleanup = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-  const cleanupTargets = [
-    {
-      id: creating.binding.id,
-      expectedStatus: 'creating_remote',
-      expectRemoteDelete: false,
-    },
-    {
-      id: terminal.binding.id,
-      expectedStatus: 'failed_terminal',
-      expectRemoteDelete: true,
-    },
-    {
-      id: rowsBeforeCleanup.find(
-        (row: any) => row.newapiKeyId === 'remote_cleanup_retriable'
-      )?.id,
-      expectedStatus: 'failed_retriable',
-      expectRemoteDelete: true,
-    },
-    {
-      id: rowsBeforeCleanup.find(
-        (row: any) =>
-          row.displayName === 'Cleanup remote_created_binding_failed'
-      )?.id,
-      expectedStatus: 'remote_created_binding_failed',
-      expectRemoteDelete: false,
-    },
-  ];
-
-  for (const target of cleanupTargets) {
-    assert.ok(target.id, `${target.expectedStatus} fixture should exist`);
-    const before = rowsBeforeCleanup.find((row: any) => row.id === target.id);
-    assert.equal(before.status, target.expectedStatus);
-
-    const attemptsBefore = remoteDeleteAttempts;
-    const deleted = await modules.portal.deletePortalApiKey(
-      portalUser.id,
-      target.id,
-      cleanupRemote as any
-    );
-
-    assert.equal(deleted.status, 'deleted');
-    assert.ok(deleted.deletedAt instanceof Date);
-    assert.equal(
-      remoteDeleteAttempts - attemptsBefore,
-      target.expectRemoteDelete ? 1 : 0
-    );
-  }
-
-  const rows = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-
-  assert.deepEqual(
-    cleanupTargets.map(
-      (target) => rows.find((row: any) => row.id === target.id)?.status
-    ),
-    ['deleted', 'deleted', 'deleted', 'deleted']
-  );
-});
-
-test('key lifecycle mutations reject non-actionable statuses before remote calls', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_action_guard',
-    'kguard@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-  const result = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Guarded key'),
-    remote as any
-  );
-
-  const disabled = await modules.portal.disablePortalApiKey(
-    portalUser.id,
-    result.binding.id,
-    remote as any
-  );
-  assert.equal(disabled.status, 'disabled');
-
+  await modules.db().insert(modules.newApiKeyBinding).values({
+    id: 'legacy_key_readonly',
+    portalUserId: portalUser.id,
+    newapiUserId: 'legacy-newapi-user',
+    newapiKeyId: 'legacy-newapi-key',
+    keyMasked: 'sk-...legacy',
+    displayName: 'Legacy key',
+    status: 'active',
+    allowedModels: '[]',
+    groupId: 'catalog_group_portal_test',
+    newapiGroup: 'ng-portal-test',
+    idempotencyKey: 'legacy-key-readonly-idempotency',
+  });
   let remoteCalls = 0;
-  const forbiddenRemote = {
-    disableKey: async () => {
-      remoteCalls += 1;
-      throw new Error('remote disable should not be called');
-    },
-    deleteKey: async () => {
-      remoteCalls += 1;
-      throw new Error('remote delete should not be called');
-    },
-  };
-
-  await assert.rejects(
-    () =>
-      modules.portal.disablePortalApiKey(
-        portalUser.id,
-        result.binding.id,
-        forbiddenRemote as any
-      ),
-    /not in active state/
+  const remoteMustNotRun = new Proxy(
+    {},
+    {
+      get() {
+        remoteCalls += 1;
+        throw new Error('legacy list must not call New API');
+      },
+    }
   );
+
+  const keys = await modules.portal.listPortalApiKeys(
+    portalUser.id,
+    remoteMustNotRun as any
+  );
+
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].legacy, true);
+  assert.equal(keys[0].keyMasked, 'sk-...legacy');
   assert.equal(remoteCalls, 0);
-
-  const deleted = await modules.portal.deletePortalApiKey(
-    portalUser.id,
-    result.binding.id,
-    remote as any
-  );
-  assert.equal(deleted.status, 'deleted');
-
   await assert.rejects(
-    () =>
-      modules.portal.deletePortalApiKey(
-        portalUser.id,
-        result.binding.id,
-        forbiddenRemote as any
-      ),
-    /not in deletable state/
-  );
-  assert.equal(remoteCalls, 0);
-});
-
-test('key lifecycle terminal remote errors persist failed_terminal', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_terminal_failure',
-    'kterm@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-  const disableResult = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Terminal disable key'),
-    remote as any
-  );
-  const deleteResult = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Terminal delete key'),
-    remote as any
-  );
-  const terminalRemote = {
-    disableKey: async () => {
-      throw new modules.NewApiBridgeError({
-        code: 'forbidden',
-        message: 'remote disable forbidden',
-      });
-    },
-    deleteKey: async () => {
-      throw new modules.NewApiBridgeError({
-        code: 'malformed_response',
-        message: 'remote delete response malformed',
-      });
-    },
-  };
-
-  await assert.rejects(
-    () =>
-      modules.portal.disablePortalApiKey(
-        portalUser.id,
-        disableResult.binding.id,
-        terminalRemote as any
-      ),
-    /remote disable forbidden/
+    modules.portal.disablePortalApiKey(
+      portalUser.id,
+      'legacy_key_readonly',
+      remoteMustNotRun as any
+    ),
+    /read-only/i
   );
   await assert.rejects(
-    () =>
-      modules.portal.deletePortalApiKey(
-        portalUser.id,
-        deleteResult.binding.id,
-        terminalRemote as any
-      ),
-    /remote delete response malformed/
-  );
-
-  const rows = await modules
-    .db()
-    .select()
-    .from(modules.newApiKeyBinding)
-    .where(eq(modules.newApiKeyBinding.portalUserId, portalUser.id));
-  const disableRow = rows.find(
-    (row: any) => row.id === disableResult.binding.id
-  );
-  const deleteRow = rows.find((row: any) => row.id === deleteResult.binding.id);
-
-  assert.equal(disableRow.status, 'failed_terminal');
-  assert.equal(deleteRow.status, 'failed_terminal');
-});
-
-test('key disable and delete audits include operation idempotency keys', async () => {
-  const portalUser = await insertUser(
-    'portal_user_key_mutation_audit',
-    'kaudit@t.co'
-  );
-  const remote = createSuccessfulRemoteClient();
-  const result = await modules.portal.createPortalApiKey(
-    portalUser,
-    portalKeyInput('Audited key'),
-    remote as any
-  );
-
-  await modules.portal.disablePortalApiKey(
-    portalUser.id,
-    result.binding.id,
-    remote as any
-  );
-  await modules.portal.deletePortalApiKey(
-    portalUser.id,
-    result.binding.id,
-    remote as any
-  );
-
-  const audits = await modules
-    .db()
-    .select()
-    .from(modules.newApiBridgeAuditLog)
-    .where(eq(modules.newApiBridgeAuditLog.portalUserId, portalUser.id));
-
-  const disableAudit = audits.find(
-    (row: any) => row.action === 'newapi.key.disable'
-  );
-  const deleteAudit = audits.find(
-    (row: any) => row.action === 'newapi.key.delete'
-  );
-
-  assert.match(
-    disableAudit.idempotencyKey,
-    /^portal-key-disable:portal_user_key_mutation_audit:/
-  );
-  assert.match(
-    deleteAudit.idempotencyKey,
-    /^portal-key-delete:portal_user_key_mutation_audit:/
+    modules.portal.deletePortalApiKey(
+      portalUser.id,
+      'legacy_key_readonly',
+      remoteMustNotRun as any
+    ),
+    /read-only/i
   );
 });
-
 test('adjustPortalQuota applies ledger only after New API returns a change id', async () => {
   const portalUser = await insertUser(
     'portal_user_adjust_success',
@@ -2191,10 +1433,7 @@ test('adjustPortalQuota keeps failed remote adjustment as unapplied ledger entry
 });
 
 test('adjustPortalQuota persists the remote attempt marker before any remote side effect', async () => {
-  const portalUser = await insertUser(
-    'portal_user_adjust_marker',
-    'adjm@t.co'
-  );
+  const portalUser = await insertUser('portal_user_adjust_marker', 'adjm@t.co');
   const operator = await insertUser('operator_adjust_marker', 'opsm@t.co');
   const { apipoolLedgerEntry } = await import('@/config/db/schema');
   const idempotencyKey = 'portal-adjustment:test-remote-marker';
@@ -2289,19 +1528,22 @@ async function seedAdjustmentLedgerRow(input: {
   updatedAt?: Date;
 }) {
   const { apipoolLedgerEntry } = await import('@/config/db/schema');
-  await modules.db().insert(apipoolLedgerEntry).values({
-    id: input.id,
-    portalUserId: input.portalUserId,
-    operatorUserId: input.operatorUserId,
-    newapiUserId: 'remote_seeded',
-    idempotencyKey: `portal-adjustment:${input.id}`,
-    amountUsd: 5,
-    source: 'manual_adjustment',
-    status: input.status,
-    executor: 'internal_quota_executor',
-    reason: 'seeded row',
-    remoteAttemptAt: input.remoteAttemptAt,
-  });
+  await modules
+    .db()
+    .insert(apipoolLedgerEntry)
+    .values({
+      id: input.id,
+      portalUserId: input.portalUserId,
+      operatorUserId: input.operatorUserId,
+      newapiUserId: 'remote_seeded',
+      idempotencyKey: `portal-adjustment:${input.id}`,
+      amountUsd: 5,
+      source: 'manual_adjustment',
+      status: input.status,
+      executor: 'internal_quota_executor',
+      reason: 'seeded row',
+      remoteAttemptAt: input.remoteAttemptAt,
+    });
   if (input.updatedAt) {
     // drizzle 的 $onUpdate 会覆写 updatedAt，只能走原始 SQL 造陈旧行
     await modules.rawClient.execute({
@@ -2413,7 +1655,10 @@ test('adjustPortalQuota refuses a new adjustment while an earlier remote attempt
 });
 
 test('adjustPortalQuota refuses a new adjustment while another one is still in flight', async () => {
-  const portalUser = await insertUser('portal_user_block_inflight', 'blki@t.co');
+  const portalUser = await insertUser(
+    'portal_user_block_inflight',
+    'blki@t.co'
+  );
   const operator = await insertUser('operator_block_inflight', 'opbi@t.co');
   await modules.portal.ensurePortalUserBinding(
     portalUser,

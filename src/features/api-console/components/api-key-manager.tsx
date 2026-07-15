@@ -56,6 +56,7 @@ import {
 type ApiKeyRow = {
   id: string;
   displayName: string;
+  keyPrefix?: string;
   keyMasked: string;
   status: KeyLifecycleStatus;
   allowedModels?: string[];
@@ -388,7 +389,7 @@ export function ApiKeyManager({
                       {key.displayName}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {key.keyMasked}
+                      {key.keyPrefix ?? key.keyMasked}
                     </TableCell>
                     <TableCell>
                       <StatusBadge
@@ -396,15 +397,15 @@ export function ApiKeyManager({
                         label={t(`status.${key.status}`)}
                       />
                     </TableCell>
-                    <TableCell>
-                      {key.groupName ?? '—'}
-                    </TableCell>
+                    <TableCell>{key.groupName ?? '—'}</TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
                         variant="outline"
                         size="icon"
                         onClick={() =>
-                          navigator.clipboard.writeText(key.keyMasked)
+                          navigator.clipboard.writeText(
+                            key.keyPrefix ?? key.keyMasked
+                          )
                         }
                         title={t('table.copyMasked')}
                         aria-label={t('table.copyMasked')}

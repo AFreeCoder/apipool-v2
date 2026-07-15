@@ -16,7 +16,7 @@
   },
   "notices": {
     "selectGroup": "Select a group first.",
-    "created": "Key created. The full key is shown once below.",
+    "created": "Key created. The full key is shown once below. The new key becomes callable after gateway cutover.",
     "createFailed": "Create key failed",
     "disableUnavailable": "This key cannot be disabled in its current state.",
     "deleteUnavailable": "This key cannot be deleted in its current state."

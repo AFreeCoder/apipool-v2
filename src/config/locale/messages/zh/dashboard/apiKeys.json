@@ -16,7 +16,7 @@
   },
   "notices": {
     "selectGroup": "请先选择分组。",
-    "created": "Key 已创建。完整 Key 仅在下方展示一次。",
+    "created": "Key 已创建。完整 Key 仅在下方展示一次；网关切流前新 Key 暂不可调用。",
     "createFailed": "创建 Key 失败",
     "disableUnavailable": "当前状态下无法停用此 Key。",
     "deleteUnavailable": "当前状态下无法删除此 Key。"
