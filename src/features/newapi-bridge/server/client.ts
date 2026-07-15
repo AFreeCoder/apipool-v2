@@ -150,6 +150,7 @@ export type RemoteUsageSummary = {
 
 export type RemoteUsageLog = {
   id: string;
+  requestId?: string;
   keyMasked: string;
   modelId: string;
   status: 'success' | 'failed' | 'cancelled';
@@ -166,6 +167,10 @@ export type RemoteUsageLog = {
   usageSemantic?: string;
   spendUsd?: number;
   createdAt: string;
+};
+
+export type RemoteAdminUsageLog = RemoteUsageLog & {
+  username?: string;
 };
 
 export type RemoteProvisionedUser = {
@@ -349,9 +354,14 @@ function normalizeVendors(vendors: unknown): Record<string, string> {
     return Object.fromEntries(
       vendors
         .map((vendor: any) => {
-          const id = String(vendor?.id || vendor?.vendor_id || vendor?.value || '');
+          const id = String(
+            vendor?.id || vendor?.vendor_id || vendor?.value || ''
+          );
           if (!id) return null;
-          return [id, String(vendor?.name || vendor?.label || vendor?.title || id)];
+          return [
+            id,
+            String(vendor?.name || vendor?.label || vendor?.title || id),
+          ];
         })
         .filter(Boolean) as [string, string][]
     );
@@ -421,12 +431,23 @@ function groupRatioEntries(value: unknown): [string, unknown][] {
   return [];
 }
 
-function extractGroupRatios(payload: any): Record<string, RemotePricingGroupRatio> {
+function extractGroupRatios(
+  payload: any
+): Record<string, RemotePricingGroupRatio> {
   const result: Record<string, RemotePricingGroupRatio> = {};
-  for (const sourceKey of ['group_ratio', 'groupRatio', 'group_ratios'] as const) {
-    for (const [group, raw] of groupRatioEntries(getEnvelopeValue(payload, sourceKey))) {
+  for (const sourceKey of [
+    'group_ratio',
+    'groupRatio',
+    'group_ratios',
+  ] as const) {
+    for (const [group, raw] of groupRatioEntries(
+      getEnvelopeValue(payload, sourceKey)
+    )) {
       try {
-        const normalized = normalizeGroupRatio(raw as number | string, sourceKey);
+        const normalized = normalizeGroupRatio(
+          raw as number | string,
+          sourceKey
+        );
         result[group] = {
           raw,
           decimal: normalized.decimal,
@@ -833,6 +854,23 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return unwrapListItems(data).find((item: any) => item?.name === name);
   }
 
+  async function findTokensByNameExact(
+    user: NewApiUserCredentials,
+    name: string
+  ) {
+    const matches: any[] = [];
+    for (let page = 1; page <= 50; page += 1) {
+      const data = await request<any>(
+        `/api/token/?p=${page}&size=${LIST_PAGE_SIZE}`,
+        { auth: userAuth(user) }
+      );
+      const items = unwrapListItems(data);
+      matches.push(...items.filter((item: any) => item?.name === name));
+      if (items.length < LIST_PAGE_SIZE) break;
+    }
+    return matches;
+  }
+
   async function fetchFullKey(user: NewApiUserCredentials, tokenId: string) {
     const data = await request<any>(
       `/api/token/${encodeURIComponent(tokenId)}/key`,
@@ -859,7 +897,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return { start: end - days * 24 * 60 * 60, end };
   }
 
-  function parseUsageLogCacheMetadata(item: any) {
+  function parseUsageLogOther(item: any) {
     let other = item?.other;
     if (typeof other === 'string' && other.trim().length > 0) {
       try {
@@ -869,10 +907,18 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       }
     }
 
+    return other && typeof other === 'object' ? other : undefined;
+  }
+
+  function parseUsageLogCacheMetadata(item: any) {
+    const other = parseUsageLogOther(item);
+
     const cacheTokens = asNullableNumber(
       other?.cache_tokens ?? other?.cacheTokens
     );
-    const cacheRatio = asNullableNumber(other?.cache_ratio ?? other?.cacheRatio);
+    const cacheRatio = asNullableNumber(
+      other?.cache_ratio ?? other?.cacheRatio
+    );
     const cacheCreationTokens = asNullableNumber(
       other?.cache_creation_tokens ?? other?.cacheCreationTokens
     );
@@ -899,7 +945,8 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     return {
       cacheTokens:
         cacheTokens !== null && cacheTokens >= 0 ? cacheTokens : undefined,
-      cacheRatio: cacheRatio !== null && cacheRatio >= 0 ? cacheRatio : undefined,
+      cacheRatio:
+        cacheRatio !== null && cacheRatio >= 0 ? cacheRatio : undefined,
       cacheCreationTokens:
         cacheCreationTokens !== null && cacheCreationTokens >= 0
           ? cacheCreationTokens
@@ -931,8 +978,14 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
   function toRemoteUsageLog(item: any): RemoteUsageLog {
     const quota = asNullableNumber(item.quota);
     const cache = parseUsageLogCacheMetadata(item);
+    const other = parseUsageLogOther(item);
+    const requestId = item?.request_id ?? other?.request_id;
     return {
       id: String(item.id),
+      requestId:
+        typeof requestId === 'string' && requestId.length > 0
+          ? requestId
+          : undefined,
       keyMasked: typeof item.token_name === 'string' ? item.token_name : '',
       modelId: typeof item.model_name === 'string' ? item.model_name : '',
       status: 'success',
@@ -965,6 +1018,75 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       { auth: userAuth(user) }
     );
     return unwrapListItems(data).map(toRemoteUsageLog);
+  }
+
+  async function getUsageLogByRequestId(
+    user: NewApiUserCredentials,
+    requestId: string
+  ): Promise<RemoteUsageLog | null> {
+    const data = await request<any>(
+      `/api/log/self?p=1&page_size=10&type=${USAGE_LOG_TYPE_CONSUME}` +
+        `&request_id=${encodeURIComponent(requestId)}`,
+      { auth: userAuth(user) }
+    );
+    const items = unwrapListItems(data);
+    return items.length > 0 ? toRemoteUsageLog(items[0]) : null;
+  }
+
+  async function listAdminUsageLogsPage(params: {
+    page: number;
+    startTimestamp: number;
+    endTimestamp: number;
+  }): Promise<{ logs: RemoteAdminUsageLog[]; full: boolean }> {
+    const data = await request<any>(
+      `/api/log/?p=${params.page}&page_size=${LIST_PAGE_SIZE}` +
+        `&type=${USAGE_LOG_TYPE_CONSUME}` +
+        `&start_timestamp=${params.startTimestamp}` +
+        `&end_timestamp=${params.endTimestamp}`,
+      { auth: adminAuth() }
+    );
+    const items = unwrapListItems(data);
+    return {
+      logs: items.map((item: any) => ({
+        ...toRemoteUsageLog(item),
+        username: typeof item.username === 'string' ? item.username : undefined,
+      })),
+      full: items.length === LIST_PAGE_SIZE,
+    };
+  }
+
+  async function listUserUsageLogsPage(
+    user: NewApiUserCredentials,
+    params: { page: number; startTimestamp: number; endTimestamp: number }
+  ): Promise<{ logs: RemoteUsageLog[]; full: boolean }> {
+    const data = await request<any>(
+      `/api/log/self?p=${params.page}&page_size=${LIST_PAGE_SIZE}` +
+        `&type=${USAGE_LOG_TYPE_CONSUME}` +
+        `&start_timestamp=${params.startTimestamp}` +
+        `&end_timestamp=${params.endTimestamp}`,
+      { auth: userAuth(user) }
+    );
+    const items = unwrapListItems(data);
+    return {
+      logs: items.map(toRemoteUsageLog),
+      full: items.length === LIST_PAGE_SIZE,
+    };
+  }
+
+  async function createTokenRaw(
+    user: NewApiUserCredentials,
+    input: { name: string; group: string; unlimitedQuota: boolean }
+  ): Promise<void> {
+    await request('/api/token/', {
+      method: 'POST',
+      auth: userAuth(user),
+      body: {
+        name: input.name,
+        expired_time: -1,
+        unlimited_quota: input.unlimitedQuota,
+        group: input.group,
+      },
+    });
   }
 
   async function getQuotaForUser(
@@ -1012,6 +1134,12 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
   return {
     usdToQuota,
     quotaToUsd,
+    findTokensByNameExact,
+    getTokenKey: fetchFullKey,
+    createTokenRaw,
+    getUsageLogByRequestId,
+    listAdminUsageLogsPage,
+    listUserUsageLogsPage,
 
     async healthCheck(): Promise<RemoteHealth> {
       const data = await request<any>('/api/status', { auth: 'none' });
