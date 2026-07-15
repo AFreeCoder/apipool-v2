@@ -11,6 +11,11 @@
       "title": "Operations",
       "items": [
         {
+          "title": "APIPool Gateway",
+          "url": "/admin/apipool",
+          "icon": "Waypoints"
+        },
+        {
           "title": "Quota Adjustments",
           "url": "/admin/apipool-adjustments",
           "icon": "Gauge"

@@ -11,6 +11,11 @@
       "title": "运营",
       "items": [
         {
+          "title": "网关运营",
+          "url": "/admin/apipool",
+          "icon": "Waypoints"
+        },
+        {
           "title": "APIPool 调额",
           "url": "/admin/apipool-adjustments",
           "icon": "Gauge"
