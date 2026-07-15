@@ -40,17 +40,27 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
   - `data/new-api/`：New API SQLite 数据
 - 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
   **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + `reload`**
-  （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）：
-  - `app.apipool.dev` → `127.0.0.1:3000`（门户，无额外保护）
-  - `api2.apipool.dev` → `127.0.0.1:3001`，**只放行 `/v1*` 数据面**，其余路径（含
-    `/api/*` 管理接口）返回 404
-  - `newapi.apipool.dev` → `127.0.0.1:3001`。默认要求在 `.env.deploy` 配 Basic
-    Auth 与/或 IP 白名单，否则 `configure-caddy.sh` fail-closed 退出 78，部署在
-    动任何东西之前中止。**本项目在 Cloudflare 后面**，`remote_ip` 看到的是 CF 边缘
-    IP，故 IP 白名单在当前脚本下不可用（会误伤所有人）；如需保护用 Basic Auth，
-    或在 Cloudflare 层做。**当前生产已显式设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`**
-    （owner 决策，2026-07-09）：Caddy 层不加保护，管理后台公网可达，仅由 New API
-    自身 root 登录挡管理接口
+  （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）。
+- `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`；`api2` 数据面由
+  `.env.deploy` 中的 `APIPOOL_API_MODE` 按下表切换，`api2` 的非 `/v1*` 路径始终
+  返回 404：
+
+| `APIPOOL_API_MODE` | `api2.apipool.dev/v1*` | `newapi.apipool.dev/v1*` | 用途 |
+| --- | --- | --- | --- |
+| `legacy` | New API `127.0.0.1:3001` | 随 New API 运营面代理 | 切流前兼容态；不得作为故障回退目标 |
+| `maintenance` | 固定 503 | 固定 404 | 推理双向隔离；钱包激活、排空和故障收敛态 |
+| `portal` | 门户网关 `127.0.0.1:3000` | 固定 404 | 门户鉴权、路由和钱包计费的正式数据面 |
+
+- `newapi.apipool.dev` 的非 `/v1*` 路径仍指向 New API 运营面
+  `127.0.0.1:3001`。默认要求在 `.env.deploy` 配 Basic Auth 与/或 IP 白名单，
+  否则 `configure-caddy.sh` fail-closed 退出 78，部署在动任何东西之前中止。
+  **本项目在 Cloudflare 后面**，`remote_ip` 看到的是 CF 边缘 IP，故 IP 白名单在
+  当前脚本下不可用（会误伤所有人）；如需保护用 Basic Auth，或在 Cloudflare 层做。
+  **当前生产已显式设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`**（owner 决策，
+  2026-07-09）：Caddy 层不加保护，管理后台公网可达，仅由 New API 自身 root 登录
+  挡管理接口。
+- 首次切流只能按 [`docs/07-runbook.md` 的“网关切流 runbook”](./07-runbook.md#6-网关切流-runbook)
+  执行；`deploy/cutover.sh` 用 deploy lock 和前态校验拒绝跳级。
 - 运行时配置：
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
@@ -126,6 +136,17 @@ pnpm test
 pnpm lint
 pnpm build
 pnpm smoke:mvp
+
+# Compose 变量替换与门户容器 allowlist 必须可解析。
+IMAGE_TAG=validation docker compose --env-file deploy/env.production.example \
+  -f docker-compose.prod.yml config >/dev/null
+
+# 三态 Caddy fixture + 真实 adapt/validate + Compose allowlist。
+caddy version
+pnpm exec tsx --test \
+  tests/deploy/deploy-automation.test.ts \
+  tests/deploy/caddy-adapt.test.ts \
+  tests/deploy/compose-allowlist.test.ts
 ```
 
 GitHub Actions 和本地 CI 只跑无密钥门禁。生产 live smoke 使用 VPS 本地

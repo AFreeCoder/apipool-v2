@@ -349,3 +349,228 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 5. 保留调额记录与 bridge 审计日志用于对账；窗口期内的 paid 订单按 06 文档对账流程补加额。
 
 远端成功但本地绑定失败的 Key 保持 `remote_created_binding_failed`，从审计日志人工补偿；本地与远端一致前，不在用户界面显示成功。
+
+## 6. 网关切流 runbook
+
+本节是“门户与 New API 路由计费解耦”的生产切流入口。全程在
+`/opt/apipool-v2` 执行，使用 `deploy/cutover.sh` 与 deploy lock；不要直接手改 Caddyfile，
+也不要把后一步成功当成前一步门禁的替代。脚本退出 78 表示前态或人工证据不满足，退出
+75 表示锁冲突或运行时探测失败。
+
+### 6.1 前置门禁与前态状态机
+
+执行 `activate-wallet` 前，备份恢复 feature 的真实演练证据必须在案，并同时证明：
+
+1. 门户与 New API SQLite 从归档恢复后可只读打开，WAL/SHM 边界已覆盖；
+2. 恢复库满足 `wallet_account.balance_micro_usd == SUM(wallet_ledger.signed_amount_micro_usd)`，
+   关键唯一索引仍生效；
+3. 恢复环境能用托管的 `APIPOOL_CREDENTIALS_SECRET` 解开 `runtime_credential.token_enc`；
+4. 证据只记录密钥的托管位置、责任人和恢复成功结论，不复制密钥值。该密钥与数据库备份
+   必须能在灾备环境重聚；只恢复其中一项等于凭据永久丢失。
+
+状态文件是 `/opt/apipool-v2/.env.deploy`。先查看当前四开关和实时探测：
+
+```bash
+cd /opt/apipool-v2
+./deploy/cutover.sh status
+```
+
+| 子命令 | 必需前态 | 成功后的关键状态 | 被拒含义与补救 |
+| --- | --- | --- | --- |
+| `preflight` | 无写状态要求 | 状态不变 | 门户直连或 MVP live smoke 未通过；修复代码、路由/价格或运行凭据后重跑 |
+| `maintenance` | `APIPOOL_API_MODE` 为 `legacy`、`maintenance`、`portal` 或尚未初始化 | `maintenance`、checkout=false；api2=503、newapi=404 | 锁冲突或 Caddy/探测失败；先保持收款关闭，修复后重跑本步 |
+| `activate-wallet --evidence <文件>` | maintenance、checkout=false、实时 503/404 | wallet write/display=true，当前 `IMAGE_TAG` 的 recharge marker 在案 | 证据缺失、隔离未生效或容器 env 不一致；补齐证据或重跑 maintenance/本步，不得跳到 portal |
+| `portal` | maintenance、checkout=false、wallet 两开关=true、当前镜像 recharge marker 在案 | portal；api2=401、newapi=404 | 任一前态缺失即重跑对应上一步；切换后探测失败时脚本自动收敛 maintenance |
+| `finalize` | portal、wallet 两开关=true、gateway/recharge marker 在案 | checkout=true | smoke 或三探测未通过；保持 checkout=false，修复并重跑 gateway smoke |
+| `status` | 无 | 只读输出 | `000` 表示探测不可达，不代表可继续 |
+
+脚本拒绝跳级是资金安全门禁。尤其不能从 legacy 直接执行 `portal` 或 `finalize`；也不能在
+旧 `IMAGE_TAG` 留下的 recharge marker 上继续。
+
+### 6.2 步骤 0–7 与命令映射
+
+| 设计步骤 | 操作 | 探测与期待值 |
+| --- | --- | --- |
+| 0. 恢复门禁 | 归档演练报告并确认 §6.1 四项证据 | 报告文件存在；不得只用“备份成功”替代恢复成功 |
+| 1. 预检 | `./deploy/cutover.sh preflight` | `127.0.0.1:3000/v1/models` 无 Key=401；MVP live smoke 全绿；路由/价格已发布 |
+| 2. maintenance | `./deploy/cutover.sh maintenance` | api2 `/v1/models`=503；newapi `/v1/models`=404 |
+| 3. 排空/水位 | 执行下方连接计数和 quota 快照 | 活跃连接连续两次为 0；快照文件 sha256 在案 |
+| 4. 钱包激活 | `./deploy/cutover.sh activate-wallet --evidence <恢复报告>`，核对摘要后交互输入 `yes` | 容器 wallet 两开关=true；受控充值为 PAID、仅写 wallet recharge、余额闭合；checkout 仍为 false |
+| 5. portal | `./deploy/cutover.sh portal` | api2 `/v1/models` 无 Key=401；newapi `/v1/models`=404 |
+| 6. 验收/开放 | `./deploy/live-smoke.sh --gateway`，核验 Dashboard 与钱包后执行 `./deploy/cutover.sh finalize`，核对摘要后交互输入 `yes` | 真实 SDK 六类调用结算单次、钱包扣费闭合；api2 管理路径=404；最后才 checkout=true |
+| 7. 观察/收尾 | 按 §6.6 观察 72h，再作废旧 `newapi_key_binding` 对应远端 token | 无未解释差异、无钱包不变量破坏、回填无积压；旧远端 token 均 disabled/deleted |
+
+每个状态转换后都执行下列独立探测；不要只相信脚本最后一行：
+
+```bash
+./deploy/cutover.sh status
+
+# maintenance 期待 503 / 404
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/v1/models)" = 503
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/v1/models)" = 404
+
+# portal/finalize 期待 401 / 404 / 404
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/v1/models)" = 401
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/v1/models)" = 404
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/api/status)" = 404
+```
+
+### 6.3 生产迁移只读核验
+
+迁移完成后、进入 maintenance 前，以 URI `mode=ro` 打开生产门户库。先人工核对 Task 1
+关键表的完整列，再运行缺列断言；最后一条查询期待返回 `0`：
+
+```bash
+cd /opt/apipool-v2
+PORTAL_DB='file:/opt/apipool-v2/data/portal/portal.db?mode=ro'
+
+sqlite3 "$PORTAL_DB" "PRAGMA table_info(wallet_account);"
+sqlite3 "$PORTAL_DB" "PRAGMA table_info(wallet_ledger);"
+sqlite3 "$PORTAL_DB" "PRAGMA table_info(request_ledger);"
+sqlite3 "$PORTAL_DB" "PRAGMA table_info(runtime_credential);"
+sqlite3 "$PORTAL_DB" "PRAGMA table_info(model_route);"
+sqlite3 "$PORTAL_DB" "PRAGMA table_info(model_price_version);"
+
+sqlite3 "$PORTAL_DB" <<'SQL'
+WITH required(table_name, column_name) AS (VALUES
+  ('wallet_account','user_id'), ('wallet_account','balance_micro_usd'),
+  ('wallet_account','risk_limit_override'), ('wallet_account','frozen_at'),
+  ('wallet_ledger','user_id'), ('wallet_ledger','entry_type'),
+  ('wallet_ledger','signed_amount_micro_usd'), ('wallet_ledger','balance_after_micro_usd'),
+  ('wallet_ledger','request_ledger_id'), ('wallet_ledger','order_no'),
+  ('wallet_ledger','idempotency_key'),
+  ('request_ledger','newapi_request_id'), ('request_ledger','portal_key_id'),
+  ('request_ledger','credential_id'), ('request_ledger','route_version'),
+  ('request_ledger','price_version_id'), ('request_ledger','status'),
+  ('request_ledger','resolved_at'), ('request_ledger','charged_micro_usd'),
+  ('request_ledger','reconcile_status'),
+  ('runtime_credential','portal_user_id'), ('runtime_credential','newapi_group'),
+  ('runtime_credential','remote_name'), ('runtime_credential','token_enc'),
+  ('runtime_credential','status'),
+  ('model_route','portal_group_id'), ('model_route','portal_model_id'),
+  ('model_route','newapi_group'), ('model_route','newapi_model_id'),
+  ('model_price_version','cached_input_micro_usd_per_m'),
+  ('model_price_version','cache_write_5m_micro_usd_per_m'),
+  ('model_price_version','cache_write_1h_micro_usd_per_m')
+), missing AS (
+  SELECT r.* FROM required r
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pragma_table_info(r.table_name) p WHERE p.name=r.column_name
+  )
+)
+SELECT count(*) AS missing_required_columns FROM missing;
+
+SELECT name FROM sqlite_master
+WHERE type='table' AND name IN (
+  'portal_api_key','model_route','model_price_version','runtime_credential',
+  'wallet_account','wallet_ledger','request_ledger','portal_admin_audit_log',
+  'credential_retirement','gateway_job_lock','reconcile_orphan_observation'
+) ORDER BY name;
+SELECT name FROM sqlite_master
+WHERE type='index' AND name IN (
+  'uniq_wallet_ledger_request_charge','uniq_wallet_ledger_recharge_order',
+  'uniq_wallet_ledger_idempotency','uniq_request_ledger_newapi_request',
+  'uniq_runtime_credential_scope','uniq_model_route_active',
+  'uniq_model_price_version_active'
+) ORDER BY name;
+SQL
+```
+
+表或列缺失时停止切流；不得在生产库手写补列，先修复迁移并重新从步骤 1 开始。
+
+### 6.4 在途排空与 quota 水位
+
+进入 maintenance 后，先停止一切人工 smoke/后台调用。每隔 30 秒执行一次连接计数，连续
+两次为 0 才算排空；该计数是连接事实，不用“日志静默”代替：
+
+```bash
+ss -Hnt state established '( sport = :3000 or sport = :3001 )' | wc -l
+sleep 30
+ss -Hnt state established '( sport = :3000 or sport = :3001 )' | wc -l
+```
+
+随后把 New API 各用户 quota/used_quota 水位写入 root-only 文件并记录摘要。若 `users`
+实际列形态与命令不符，停止并先核对 `PRAGMA table_info(users)`，不要猜列名：
+
+```bash
+install -d -m 700 /root/apipool-cutover
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+NEWAPI_DB='file:/opt/apipool-v2/data/new-api/one-api.db?mode=ro'
+sqlite3 "$NEWAPI_DB" "PRAGMA table_info(users);"
+sqlite3 -separator $'\t' "$NEWAPI_DB" \
+  'SELECT id,username,quota,used_quota FROM users ORDER BY id;' \
+  >"/root/apipool-cutover/newapi-quota-$STAMP.tsv"
+chmod 600 "/root/apipool-cutover/newapi-quota-$STAMP.tsv"
+sha256sum "/root/apipool-cutover/newapi-quota-$STAMP.tsv"
+```
+
+步骤 6 完成后再取一次同格式快照。两份快照之间只允许出现受控 recharge/gateway smoke
+对应的变化；出现其他水位变化即保持 checkout=false 并调查。
+
+### 6.5 故障处理：maintenance + fix-forward
+
+切流后不再恢复 legacy 数据面。网关、Caddy、钱包或 smoke 任一失败时：
+
+```bash
+cd /opt/apipool-v2
+./deploy/cutover.sh maintenance
+./deploy/cutover.sh status
+```
+
+期待 api2=503、newapi=404、checkout=false。修复后从脚本要求的前态继续前滚。若必须回退
+镜像，可以在保持 maintenance 的前提下部署上一稳定 `IMAGE_TAG`：
+
+```bash
+./deploy/deploy.sh sha-<上一稳定完整提交>
+./deploy/cutover.sh status
+```
+
+镜像回退不等于数据面回退：`APIPOOL_API_MODE` 必须继续是 maintenance，禁止改回 legacy，
+因为 legacy 会同时重开 api2→New API 和 `newapi /v1` 后门。SQLite 数据恢复、删除流水、
+重建环境或轮换 `APIPOOL_CREDENTIALS_SECRET` 仍需新的明确确认。
+
+### 6.6 观察 72h、告警与旧 token 收尾
+
+前 6 小时每小时、之后每 6 小时执行一次检查并归档输出：
+
+```bash
+PORTAL_DB='file:/opt/apipool-v2/data/portal/portal.db?mode=ro'
+
+# 钱包守恒：期待 0 行。
+sqlite3 -header -column "$PORTAL_DB" "
+SELECT a.user_id,a.balance_micro_usd,COALESCE(SUM(l.signed_amount_micro_usd),0) AS ledger_sum
+FROM wallet_account a LEFT JOIN wallet_ledger l ON l.user_id=a.user_id
+GROUP BY a.user_id,a.balance_micro_usd
+HAVING a.balance_micro_usd<>COALESCE(SUM(l.signed_amount_micro_usd),0);"
+
+# 对账差异、waived 量与回填积压。
+sqlite3 -header -column "$PORTAL_DB" "
+SELECT reconcile_status,count(*) AS n FROM request_ledger GROUP BY reconcile_status ORDER BY n DESC;
+SELECT status,count(*) AS n FROM request_ledger
+WHERE status IN ('failed_unbilled','pending_backfill','open') GROUP BY status;
+SELECT count(*) AS orphan_open FROM reconcile_orphan_observation WHERE resolved_at IS NULL;
+SELECT count(*) AS backfill_over_10m FROM request_ledger
+WHERE status='pending_backfill' AND created_at < (unixepoch()*1000-600000);"
+
+# 最小告警集；有输出就登记时间窗、用户/请求 ID（脱敏）和处置。
+docker compose --env-file .env.deploy --env-file release.env \
+  -f docker-compose.prod.yml logs --since 15m apipool-v2 2>&1 | \
+  grep -E 'overdraft_freeze|token_mismatch|wallet_invariant_broken|backfill_backlog_high|waived_by_failure_high|credential_create_failed|unmapped_usage_dimension|route_price_group_mismatch|reconcile_truncated|reconcile_slice_overflow' || true
+```
+
+`unmapped_usage_dimension` 是协议演进信号：保持已知桶结算，立即查同时间窗的
+`amount_mismatch`，确认上游新增维度后扩展 usage 白名单和 fixture，再用带审计理由的
+`manual_adjustment` 补历史差额；不得把未知桶静默映射为零或整笔免单。持续检查
+`reconcile_slice_overflow`，10 分钟/片、50 页/片、12 片/轮不足时再按真实积压调参。
+
+72 小时无未解释差异、钱包不变量破坏或回填积压后，先只读导出旧 binding 清单：
+
+```bash
+sqlite3 -header -column "$PORTAL_DB" "
+SELECT id,portal_user_id,newapi_user_id,newapi_key_id,key_masked,status
+FROM newapi_key_binding WHERE status<>'deleted' ORDER BY portal_user_id,newapi_key_id;"
+```
+
+按 `newapi_key_id` 在 New API 运营面逐个 disabled/deleted，回读远端状态并保存审计证据；
+不得通过 SQL 删除本地 binding 或 token。全部作废后再次确认 api2 三探测仍为 401/404/404，
+并保留 `api2.apipool.dev` 作为永久门户网关别名。
