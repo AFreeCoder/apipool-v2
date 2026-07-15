@@ -214,5 +214,14 @@ export async function reverseRequestCharge(input: {
     reason: `reverse:${original.id}`,
     operatorUserId: input.operatorUserId,
     idempotencyKey: `reverse:${original.id}`,
+    audit: {
+      action: 'wallet.adjust',
+      targetType: 'wallet_account',
+      targetId: original.userId,
+      afterJson: {
+        reverseWalletLedgerId: original.id,
+        signedAmountMicroUsd: Math.abs(original.signedAmountMicroUsd),
+      },
+    },
   });
 }

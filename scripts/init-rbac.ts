@@ -153,6 +153,55 @@ export const defaultPermissions = [
     title: 'Adjust APIPool Quota',
     description: 'Apply manual APIPool quota adjustments through ledger v0',
   },
+  {
+    code: 'admin.apipool.routing.read',
+    resource: 'apipool.routing',
+    action: 'read',
+    title: 'Read APIPool Routing',
+    description: 'View APIPool gateway routes, requests, metrics, and audits',
+  },
+  {
+    code: 'admin.apipool.routing.write',
+    resource: 'apipool.routing',
+    action: 'write',
+    title: 'Write APIPool Routing',
+    description: 'Publish and retire APIPool gateway route and price versions',
+  },
+  {
+    code: 'admin.apipool.wallet.read',
+    resource: 'apipool.wallet',
+    action: 'read',
+    title: 'Read APIPool Wallet',
+    description: 'View APIPool wallet balances and ledger entries',
+  },
+  {
+    code: 'admin.apipool.wallet.adjust',
+    resource: 'apipool.wallet',
+    action: 'adjust',
+    title: 'Adjust APIPool Wallet',
+    description: 'Apply idempotent manual wallet adjustments and reversals',
+  },
+  {
+    code: 'admin.apipool.wallet.freeze',
+    resource: 'apipool.wallet',
+    action: 'freeze',
+    title: 'Freeze APIPool Wallet',
+    description: 'Freeze and unfreeze APIPool wallet accounts',
+  },
+  {
+    code: 'admin.apipool.reconciliation.read',
+    resource: 'apipool.reconciliation',
+    action: 'read',
+    title: 'Read APIPool Reconciliation',
+    description: 'View gateway reconciliation differences and invariants',
+  },
+  {
+    code: 'admin.apipool.reconciliation.resolve',
+    resource: 'apipool.reconciliation',
+    action: 'resolve',
+    title: 'Resolve APIPool Reconciliation',
+    description: 'Resolve gateway reconciliation exceptions with audit trails',
+  },
 
   // API Keys management
   {
