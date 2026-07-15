@@ -45,6 +45,19 @@ mkdir -p "$APP_DIR"/{data/portal,data/new-api,backups,deploy}
 chown -R 1001:1001 "$APP_DIR/data/portal"
 chmod 700 "$APP_DIR/backups"
 
+# 首次引导只在整个文件不存在时创建显式 legacy 状态。已有文件即使缺行、
+# 空值或非法也绝不修复，交给 configure-caddy fail-closed，避免重开后门。
+if [ ! -e "$APP_DIR/.env.deploy" ]; then
+  initial_env="$(mktemp "$APP_DIR/.env.deploy.init.XXXXXX")"
+  printf '%s\n' 'APIPOOL_API_MODE=legacy' >"$initial_env"
+  chmod 0600 "$initial_env"
+  if [ ! -e "$APP_DIR/.env.deploy" ]; then
+    mv "$initial_env" "$APP_DIR/.env.deploy"
+  else
+    rm -f "$initial_env"
+  fi
+fi
+
 chmod 0755 "$APP_DIR/deploy/backup.sh" "$APP_DIR/deploy/deploy.sh"
 
 # configure-caddy.sh fail-closed：New API 运营面保护变量（Basic Auth / IP 白名单）

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 test('docker image workflow builds production-configured immutable images', async () => {
@@ -150,9 +153,20 @@ test('systemd timer runs daily backup at 04:00 Asia/Shanghai', async () => {
   );
 });
 
-function printCaddyConfig(env: Record<string, string>) {
+function printCaddyConfig(
+  env: Record<string, string>,
+  mode: 'legacy' | 'maintenance' | 'portal' = 'legacy'
+) {
+  const dir = mkdtempSync(join(tmpdir(), 'apipool-caddy-env-'));
+  const envFile = join(dir, '.env.deploy');
+  writeFileSync(envFile, `APIPOOL_API_MODE=${mode}\n`, 'utf8');
   return spawnSync('bash', ['deploy/configure-caddy.sh', '--print-config'], {
-    env: { ...process.env, ...env },
+    env: {
+      ...process.env,
+      APIPOOL_DEPLOY_ENV_FILE: envFile,
+      APIPOOL_API_MODE: '',
+      ...env,
+    },
     encoding: 'utf8',
   });
 }
@@ -237,7 +251,7 @@ test('Caddy config reads bcrypt hashes and IP lists from .env.deploy literally',
   ] as const) {
     const dir = await mkdtemp(join(tmpdir(), 'apipool-env-'));
     const envFile = join(dir, '.env.deploy');
-    await writeFile(envFile, body, 'utf8');
+    await writeFile(envFile, `APIPOOL_API_MODE=legacy\n${body}`, 'utf8');
 
     // 刻意不通过环境变量传值：要覆盖的正是「从文件读」这条真实路径
     const { status, stdout, stderr } = spawnSync(
@@ -354,11 +368,13 @@ test('the fail-closed guard can be explicitly opted out, but stays closed by def
   }
 
   // 默认（无保护、无开关）仍然 fail-closed
-  const closed = await printConfig('FOO=bar\n');
+  const closed = await printConfig('APIPOOL_API_MODE=legacy\nFOO=bar\n');
   assert.equal(closed.status, 78);
 
   // 显式开关：跳过守卫，生成不带 basic_auth / remote_ip 的 newapi vhost
-  const open = await printConfig('APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n');
+  const open = await printConfig(
+    'APIPOOL_API_MODE=legacy\nAPIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n'
+  );
   assert.equal(open.status, 0);
   const newapiBlock = open.stdout.split('newapi.apipool.dev {')[1].split('\n}')[0];
   assert.doesNotMatch(newapiBlock, /basic_auth/);
@@ -366,4 +382,82 @@ test('the fail-closed guard can be explicitly opted out, but stays closed by def
   // 但仍保留 noindex，且 api2 仍只放行 /v1
   assert.match(open.stdout, /X-Robots-Tag "noindex, nofollow"/);
   assert.match(open.stdout, /handle \/v1\*/);
+});
+
+test('Caddy 三态从 .env.deploy 驱动 api2 与 newapi 数据面', () => {
+  const legacy = printCaddyConfig(NEWAPI_BASIC_AUTH, 'legacy');
+  const maintenance = printCaddyConfig(NEWAPI_BASIC_AUTH, 'maintenance');
+  const portal = printCaddyConfig(NEWAPI_BASIC_AUTH, 'portal');
+  assert.equal(legacy.status, 0, legacy.stderr);
+  assert.equal(maintenance.status, 0, maintenance.stderr);
+  assert.equal(portal.status, 0, portal.stderr);
+
+  const legacyApi = legacy.stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
+  const legacyNewapi = legacy.stdout.split('newapi.apipool.dev {')[1];
+  assert.match(legacyApi, /reverse_proxy 127\.0\.0\.1:3001/);
+  assert.doesNotMatch(legacyNewapi, /handle \/v1\*/);
+
+  const maintenanceApi = maintenance.stdout
+    .split('api2.apipool.dev {')[1]
+    .split('\n}')[0];
+  assert.match(maintenanceApi, /respond "service maintenance" 503/);
+  assert.match(maintenance.stdout.split('newapi.apipool.dev {')[1], /respond "not found" 404/);
+
+  const portalApi = portal.stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
+  assert.match(portalApi, /reverse_proxy 127\.0\.0\.1:3000/);
+  assert.match(portal.stdout.split('newapi.apipool.dev {')[1], /respond "not found" 404/);
+});
+
+test('API_MODE 缺失、空、非法或 env 与文件冲突时统一 fail-closed', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const dir = await mkdtemp(join(tmpdir(), 'apipool-mode-invalid-'));
+  for (const [body, envMode] of [
+    ['FOO=bar\n', ''],
+    ['APIPOOL_API_MODE=\n', ''],
+    ['APIPOOL_API_MODE=invalid\n', ''],
+    ['APIPOOL_API_MODE=portal\n', 'legacy'],
+    ['FOO=bar\n', 'legacy'],
+  ] as const) {
+    const envFile = join(dir, `env-${Math.random()}`);
+    await writeFile(envFile, body, 'utf8');
+    const result = spawnSync(
+      'bash',
+      ['deploy/configure-caddy.sh', '--print-config'],
+      {
+        env: {
+          ...process.env,
+          APIPOOL_DEPLOY_ENV_FILE: envFile,
+          APIPOOL_API_MODE: envMode,
+          ...NEWAPI_BASIC_AUTH,
+        },
+        encoding: 'utf8',
+      }
+    );
+    assert.equal(result.status, 78, `${body} / ${result.stderr}`);
+    assert.equal(result.stdout, '');
+  }
+});
+
+test('API_MODE env 与文件一致时允许生成 portal 配置', () => {
+  const result = printCaddyConfig(
+    { ...NEWAPI_BASIC_AUTH, APIPOOL_API_MODE: 'portal' },
+    'portal'
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /reverse_proxy 127\.0\.0\.1:3000/);
+});
+
+test('部署 env 模板显式以 legacy 初始化 API_MODE', async () => {
+  for (const path of ['deploy/env.production.example', '.env.deploy.example']) {
+    assert.match(await readFile(path, 'utf8'), /^APIPOOL_API_MODE=legacy$/m);
+  }
+});
+
+test('server-bootstrap 仅在整个 env 文件不存在时原子初始化 API_MODE', async () => {
+  const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
+  assert.match(bootstrap, /if \[ ! -e "\$APP_DIR\/\.env\.deploy" \]/);
+  assert.match(bootstrap, /APIPOOL_API_MODE=legacy/);
+  assert.match(bootstrap, /mv .*\.env\.deploy/);
+  assert.doesNotMatch(bootstrap, /grep[^\n]*APIPOOL_API_MODE/);
+  assert.doesNotMatch(bootstrap, />>[^\n]*\.env\.deploy/);
 });

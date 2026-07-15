@@ -46,6 +46,33 @@ PORTAL_UPSTREAM="${APIPOOL_PORTAL_UPSTREAM:-127.0.0.1:3000}"
 API_UPSTREAM="${APIPOOL_API_UPSTREAM:-127.0.0.1:3001}"
 NEWAPI_UPSTREAM="${APIPOOL_NEWAPI_UPSTREAM:-127.0.0.1:3001}"
 
+# API_MODE 是安全攸关的切流状态，只认 .env.deploy。环境中若同时存在，
+# 只能与文件完全一致，不能覆盖文件状态。
+FILE_API_MODE="$(read_env_value APIPOOL_API_MODE)"
+ENV_API_MODE="${APIPOOL_API_MODE:-}"
+if [ -n "$ENV_API_MODE" ] && [ "$ENV_API_MODE" != "$FILE_API_MODE" ]; then
+  echo "configure-caddy: APIPOOL_API_MODE env ('$ENV_API_MODE') != .env.deploy ('$FILE_API_MODE') — refusing (env must not override state file)" >&2
+  exit 78
+fi
+API_MODE="$FILE_API_MODE"
+if [ -z "$API_MODE" ]; then
+  echo "configure-caddy: APIPOOL_API_MODE missing/empty in .env.deploy — refusing (would silently reopen legacy backdoor)" >&2
+  exit 78
+fi
+case "$API_MODE" in
+  legacy | maintenance | portal) ;;
+  *)
+    echo "configure-caddy: invalid APIPOOL_API_MODE '$API_MODE' (expect legacy|maintenance|portal)" >&2
+    exit 78
+    ;;
+esac
+
+case "$API_MODE" in
+  legacy) api_v1_directive="		reverse_proxy $API_UPSTREAM" ;;
+  maintenance) api_v1_directive="		respond \"service maintenance\" 503" ;;
+  portal) api_v1_directive="		reverse_proxy $PORTAL_UPSTREAM" ;;
+esac
+
 # New API 运营面保护（docs/07-runbook.md 第 2 节）：Basic Auth 与 IP 白名单
 # 至少配一项，否则拒绝生成配置——绝不产出裸奔的管理面 vhost。
 # 环境变量优先；未设置时从 .env.deploy 按字面量读取
@@ -89,9 +116,13 @@ fi
 
 # newapi vhost 的保护指令
 newapi_guards=""
+newapi_guards_indented=""
 if [ "$has_ip_allowlist" -eq 1 ]; then
   newapi_guards+="	@denied not remote_ip $NEWAPI_ALLOWED_IPS
 	respond @denied \"forbidden\" 403
+"
+  newapi_guards_indented+="		@denied not remote_ip $NEWAPI_ALLOWED_IPS
+		respond @denied \"forbidden\" 403
 "
 fi
 if [ "$has_basic_auth" -eq 1 ]; then
@@ -99,6 +130,28 @@ if [ "$has_basic_auth" -eq 1 ]; then
 		$NEWAPI_BASIC_AUTH_USER $NEWAPI_BASIC_AUTH_HASH
 	}
 "
+  newapi_guards_indented+="		basic_auth {
+			$NEWAPI_BASIC_AUTH_USER $NEWAPI_BASIC_AUTH_HASH
+		}
+"
+fi
+
+# legacy 保持 New API 数据面可达；maintenance/portal 用互斥 handle 让
+# /v1* 在任何认证/白名单处理前固定 404，防止绕过门户钱包计费。
+if [ "$API_MODE" = "legacy" ]; then
+  newapi_site_body="$newapi_guards	reverse_proxy $NEWAPI_UPSTREAM"
+else
+  newapi_fallback_inner="		reverse_proxy $NEWAPI_UPSTREAM"
+  if [ -n "$newapi_guards_indented" ]; then
+    # printf 显式制造分隔换行；不能依赖命令替换会吞掉的变量尾换行。
+    newapi_fallback_inner="$(printf '%s\n%s' "$newapi_guards_indented" "		reverse_proxy $NEWAPI_UPSTREAM")"
+  fi
+  newapi_site_body="	handle /v1* {
+		respond \"not found\" 404
+	}
+	handle {
+$newapi_fallback_inner
+	}"
 fi
 
 # api2 与 New API 管理面共用同一个上游（127.0.0.1:3001）。只放行 /v1 数据面，
@@ -113,7 +166,7 @@ $API_DOMAIN {
 	encode zstd gzip
 
 	handle /v1* {
-		reverse_proxy $API_UPSTREAM
+$api_v1_directive
 	}
 
 	handle {
@@ -124,7 +177,7 @@ $API_DOMAIN {
 $NEWAPI_DOMAIN {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"
-$newapi_guards	reverse_proxy $NEWAPI_UPSTREAM
+$newapi_site_body
 }
 EOF
 
