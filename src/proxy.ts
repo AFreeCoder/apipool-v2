@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { shouldNoIndexPath } from '@/features/apipool-ui/lib/indexing';
 import { getSessionCookie } from 'better-auth/cookies';
 import createIntlMiddleware from 'next-intl/middleware';
 
 import { routing } from '@/core/i18n/config';
-import { shouldNoIndexPath } from '@/features/apipool-ui/lib/indexing';
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -85,5 +85,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: '/((?!api|trpc|_next|_vercel|.*\\..*).*)',
+  matcher: '/((?!api|v1|trpc|_next|_vercel|.*\\..*).*)',
 };
