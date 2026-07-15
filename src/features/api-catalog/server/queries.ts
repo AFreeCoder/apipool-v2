@@ -15,6 +15,8 @@ import {
   catalogModelPrice,
   catalogStatus,
   catalogVendor,
+  modelPriceVersion,
+  modelRoute,
 } from '@/config/db/schema';
 
 import type { FilterDimensions, ListingRow } from '../lib/types';
@@ -34,6 +36,7 @@ type ListingBaseRow = {
   modelId: string;
   displayName: string;
   vendorName: string;
+  groupId: string;
   groupName: string;
   groupSlug: string;
   category: string;
@@ -166,6 +169,7 @@ async function queryListingRows({
       modelId: catalogModel.modelId,
       displayName: catalogModel.displayName,
       vendorName: catalogVendor.name,
+      groupId: catalogGroup.id,
       groupName: catalogGroup.name,
       groupSlug: catalogGroup.slug,
       category: catalogModel.category,
@@ -211,7 +215,63 @@ async function queryListingRows({
     .orderBy(asc(catalogModelListing.sortOrder));
 }
 
-// 网关与公开目录复用同一条完整 callable join，避免紧急下线维度漂移。
+function routePriceKey(portalGroupId: string, portalModelId: string) {
+  return `${portalGroupId}\u0000${portalModelId}`;
+}
+
+async function getActiveRoutePriceKeys(
+  listings: Pick<ListingBaseRow, 'groupId' | 'modelId'>[]
+): Promise<Set<string>> {
+  if (listings.length === 0) return new Set();
+
+  const groupIds = [...new Set(listings.map((listing) => listing.groupId))];
+  const modelIds = [...new Set(listings.map((listing) => listing.modelId))];
+  let rows: { portalGroupId: string; portalModelId: string }[];
+  try {
+    rows = await db()
+      .select({
+        portalGroupId: modelRoute.portalGroupId,
+        portalModelId: modelRoute.portalModelId,
+      })
+      .from(modelRoute)
+      .innerJoin(
+        modelPriceVersion,
+        and(
+          eq(modelPriceVersion.portalGroupId, modelRoute.portalGroupId),
+          eq(modelPriceVersion.portalModelId, modelRoute.portalModelId),
+          eq(modelPriceVersion.status, 'active')
+        )
+      )
+      .where(
+        and(
+          eq(modelRoute.status, 'active'),
+          inArray(modelRoute.portalGroupId, groupIds),
+          inArray(modelRoute.portalModelId, modelIds)
+        )
+      );
+  } catch (error) {
+    // 旧迁移隔离检查会有意运行在路由表出现前的 schema。此时只把 CTA
+    // 关闭（fail-closed）；连接、SQL 等其他错误仍必须向上传播。
+    let cause: unknown = error;
+    for (let depth = 0; depth < 4 && cause; depth += 1) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (/no such table: (model_route|model_price_version)/.test(message)) {
+        return new Set();
+      }
+      cause = cause instanceof Error ? cause.cause : undefined;
+    }
+    throw error;
+  }
+
+  return new Set(
+    rows.map((row) =>
+      routePriceKey(row.portalGroupId, row.portalModelId)
+    )
+  );
+}
+
+// 网关与公开目录复用同一条完整 catalog + active route + active price
+// 判定，避免紧急下线维度漂移。
 export async function isListingCallable(
   portalGroupId: string,
   portalModelId: string
@@ -221,7 +281,10 @@ export async function isListingCallable(
     exactGroupId: portalGroupId,
     exactPortalModelId: portalModelId,
   });
-  return rows.length > 0;
+  const activeRoutePriceKeys = await getActiveRoutePriceKeys(rows);
+  return rows.some((row) =>
+    activeRoutePriceKeys.has(routePriceKey(row.groupId, row.modelId))
+  );
 }
 
 async function getCapabilitiesByModelPk(modelPks: string[]) {
@@ -257,7 +320,10 @@ async function getCapabilitiesByModelPk(modelPks: string[]) {
 
 async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
   const modelPks = [...new Set(rows.map((row) => row.modelPk))];
-  const capabilitiesByModelPk = await getCapabilitiesByModelPk(modelPks);
+  const [capabilitiesByModelPk, activeRoutePriceKeys] = await Promise.all([
+    getCapabilitiesByModelPk(modelPks),
+    getActiveRoutePriceKeys(rows),
+  ]);
 
   return rows
     .map((row) => {
@@ -317,7 +383,9 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
         description: row.description ?? undefined,
         statusSlug: row.statusSlug,
         statusName: row.statusName,
-        isCallable: row.isCallable,
+        isCallable:
+          row.isCallable &&
+          activeRoutePriceKeys.has(routePriceKey(row.groupId, row.modelId)),
         effectiveInputMicroUsd: effective.publicConfirmed
           ? (effective.effectiveInputMicroUsd ?? undefined)
           : undefined,
@@ -412,7 +480,7 @@ export async function getCallableListingsByGroupUncached(
     filters: { group: groupSlug },
     callableOnly: true,
   });
-  return await mapListingRows(rows);
+  return (await mapListingRows(rows)).filter((listing) => listing.isCallable);
 }
 
 export async function getSmokeTestedCallableModelIdsByGroupUncached(

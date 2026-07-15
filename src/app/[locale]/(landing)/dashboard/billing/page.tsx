@@ -8,11 +8,13 @@ import {
   formatLedgerUsdAmount,
   formatUsdAmount,
 } from '@/features/api-console/lib/money';
+import { walletDisplayEnabled } from '@/features/gateway/lib/config';
 import {
   getPortalUsage,
   listBillingLedgerEntries,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
+import { getWalletBillingView } from '@/features/wallet/server/usage-view';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import enBillingMessages from '@/config/locale/messages/en/dashboard/billing.json';
@@ -33,6 +35,10 @@ const EMPTY_USAGE: PortalUsageView = {
   },
   logs: [],
 };
+
+type BillingLedgerRow = Awaited<
+  ReturnType<typeof listBillingLedgerEntries>
+>[number];
 
 type BillingLocale = 'en' | 'zh';
 
@@ -90,16 +96,36 @@ export default async function BillingPage({
     namespace: 'dashboard.billing',
   });
   const user = await getUserInfo();
-  const [usage, ledger]: [
-    PortalUsageView,
-    Awaited<ReturnType<typeof listBillingLedgerEntries>>,
-  ] = user
-    ? await Promise.all([
-        getPortalUsage(user as any, '7d'),
-        listBillingLedgerEntries(user.id),
-      ])
-    : [EMPTY_USAGE, []];
-  const charges = buildBillingUsageCharges(usage);
+  const useWalletView = walletDisplayEnabled();
+  let balanceUsd: number | undefined;
+  let ledger: BillingLedgerRow[] = [];
+  let charges: ReturnType<typeof buildBillingUsageCharges> = [];
+  if (user && useWalletView) {
+    const wallet = await getWalletBillingView(user.id);
+    balanceUsd = wallet.balance.balanceUsd;
+    ledger = wallet.ledger.map((entry) => ({
+      orderNo: entry.orderNo,
+      amountUsd: entry.signedAmountUsd,
+      ledgerStatus: 'applied',
+      orderStatus: entry.entryType === 'recharge' ? 'paid' : null,
+      paymentProvider: null,
+      paidAt: null,
+      createdAt: new Date(entry.createdAt).getTime(),
+    }));
+  } else {
+    const [usage, legacyLedger]: [
+      PortalUsageView,
+      Awaited<ReturnType<typeof listBillingLedgerEntries>>,
+    ] = user
+      ? await Promise.all([
+          getPortalUsage(user as any, '7d'),
+          listBillingLedgerEntries(user.id),
+        ])
+      : [EMPTY_USAGE, []];
+    balanceUsd = usage.summary.balanceUsd;
+    ledger = legacyLedger;
+    charges = buildBillingUsageCharges(usage);
+  }
 
   const pricingT = await getTranslations({
     locale,
@@ -146,7 +172,7 @@ export default async function BillingPage({
             {pageT('currentBalance')}
           </div>
           <div className="mt-1 font-mono text-2xl font-semibold">
-            {formatBalanceUsdAmount(usage.summary.balanceUsd)}
+            {formatBalanceUsdAmount(balanceUsd)}
           </div>
         </div>
       </div>

@@ -25,6 +25,12 @@
     "tokens": "Tokens",
     "spend": "花费",
     "input": "输入",
-    "output": "输出"
+    "output": "输出",
+    "status": "状态"
+  },
+  "status": {
+    "settled": "已结算",
+    "billing": "计费中",
+    "failed_unbilled": "失败不计费"
   }
 }

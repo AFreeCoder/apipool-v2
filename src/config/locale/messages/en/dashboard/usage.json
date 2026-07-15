@@ -25,6 +25,12 @@
     "tokens": "Tokens",
     "spend": "Spend",
     "input": "In",
-    "output": "Out"
+    "output": "Out",
+    "status": "Status"
+  },
+  "status": {
+    "settled": "Settled",
+    "billing": "Billing",
+    "failed_unbilled": "Failed · not billed"
   }
 }

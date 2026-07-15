@@ -65,6 +65,7 @@ async function createFixtureModel(input: {
   capabilityIds: string[];
   category?: string;
   sortOrder: number;
+  activeRoutePrice?: boolean;
 }) {
   const model = await modules.service.createModel({
     modelId: input.modelId,
@@ -85,8 +86,38 @@ async function createFixtureModel(input: {
     featured: false,
     sortOrder: input.sortOrder,
   });
+  if (input.activeRoutePrice !== false) {
+    await seedActiveRoutePrice(input.groupId, model.modelId);
+  }
 
   return model;
+}
+
+async function seedActiveRoutePrice(groupId: string, modelId: string) {
+  const safeId = `${groupId}-${modelId}`;
+  await modules.db().insert(modules.schema.modelPriceVersion).values({
+    id: `price-${safeId}`,
+    portalGroupId: groupId,
+    portalModelId: modelId,
+    version: 1,
+    status: 'active',
+    inputMicroUsdPerM: 100_000,
+    cachedInputMicroUsdPerM: 50_000,
+    cacheWrite5mMicroUsdPerM: 125_000,
+    cacheWrite1hMicroUsdPerM: 200_000,
+    outputMicroUsdPerM: 200_000,
+    publishedBy: 'queries-test',
+  });
+  await modules.db().insert(modules.schema.modelRoute).values({
+    id: `route-${safeId}`,
+    portalGroupId: groupId,
+    portalModelId: modelId,
+    newapiGroup: `test-${groupId}`,
+    newapiModelId: modelId,
+    version: 1,
+    status: 'active',
+    publishedBy: 'queries-test',
+  });
 }
 
 async function seedQueryFixtures() {
@@ -308,6 +339,8 @@ async function seedQueryFixtures() {
     featured: false,
     sortOrder: 14,
   });
+  await seedActiveRoutePrice(official.id, seededModel.modelId);
+  await seedActiveRoutePrice(partnerGroup.id, seededModel.modelId);
 
   await createFixtureModel({
     modelId: 'claude-query-test',
@@ -317,6 +350,16 @@ async function seedQueryFixtures() {
     statusId: available.id,
     capabilityIds: [text.id],
     sortOrder: 12,
+  });
+  await createFixtureModel({
+    modelId: 'query-no-active-chain',
+    displayName: 'Query No Active Chain',
+    vendorId: openai.id,
+    groupId: official.id,
+    statusId: available.id,
+    capabilityIds: [text.id],
+    sortOrder: 13,
+    activeRoutePrice: false,
   });
   await createFixtureModel({
     modelId: 'query-coming-soon',
@@ -788,6 +831,7 @@ test('getCallableListingsByGroup returns only callable listings in the selected 
     (listing) => `${listing.modelId}:${listing.groupSlug}`
   );
   assert.ok(modelIds.includes('gpt-4o-mini'));
+  assert.equal(modelIds.includes('query-no-active-chain'), false);
   assert.equal(modelIds.includes('query-coming-soon'), false);
   assert.equal(modelIds.includes('query-retired'), false);
   assert.ok(
@@ -795,6 +839,35 @@ test('getCallableListingsByGroup returns only callable listings in the selected 
       (listing: { groupSlug: string; isCallable: boolean }) =>
         listing.groupSlug === 'official' && listing.isCallable
     )
+  );
+});
+
+test('public listings remain visible but are not callable without an active route and price', async () => {
+  const official = await findBySlug(
+    modules.schema.catalogGroup,
+    modules.schema.catalogGroup.slug,
+    'official'
+  );
+  const listings = await modules.queries.getPublicListingsUncached({
+    status: 'available',
+  });
+  const withoutChain = listings.find(
+    (listing: { modelId: string }) =>
+      listing.modelId === 'query-no-active-chain'
+  );
+
+  assert.ok(withoutChain);
+  assert.equal(withoutChain.isCallable, false);
+  assert.equal(
+    await modules.queries.isListingCallable(
+      official.id,
+      'query-no-active-chain'
+    ),
+    false
+  );
+  assert.equal(
+    await modules.queries.isListingCallable(official.id, 'gpt-4o-mini'),
+    true
   );
 });
 

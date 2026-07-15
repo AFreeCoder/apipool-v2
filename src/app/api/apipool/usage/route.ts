@@ -1,5 +1,7 @@
 import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
+import { walletDisplayEnabled } from '@/features/gateway/lib/config';
 import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
+import { getWalletUsageView } from '@/features/wallet/server/usage-view';
 
 import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr } from '@/shared/lib/resp';
@@ -13,11 +15,14 @@ export async function GET(req: Request) {
     if (!user) return withNoStore(respErr('no auth, please sign in'));
 
     const url = new URL(req.url);
-    const range = url.searchParams.get('range') || '7d';
-    const usage = await getPortalUsage(
-      user as any,
-      range === '30d' || range === 'month' ? range : '7d'
-    );
+    const requestedRange = url.searchParams.get('range') || '7d';
+    const range =
+      requestedRange === '30d' || requestedRange === 'month'
+        ? requestedRange
+        : '7d';
+    const usage = walletDisplayEnabled()
+      ? await getWalletUsageView(user.id, range)
+      : await getPortalUsage(user as any, range);
 
     return withNoStore(respData(usage));
   } catch (error: any) {

@@ -4,7 +4,9 @@ import {
   getUsageLogRowKey,
   getUsageSyncDescription,
 } from '@/features/api-console/lib/status';
+import { walletDisplayEnabled } from '@/features/gateway/lib/config';
 import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
+import { getWalletUsageView } from '@/features/wallet/server/usage-view';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import {
@@ -25,8 +27,31 @@ export default async function UsagePage({
     getTranslations({ locale, namespace: 'dashboard.common' }),
   ]);
   const user = await getUserInfo();
+  const useWalletView = walletDisplayEnabled();
   const usage = user
-    ? await getPortalUsage(user as any, '7d')
+    ? useWalletView
+      ? await getWalletUsageView(user.id, '7d').then((view) => ({
+          summary: {
+            ...view.summary,
+            byModel: view.summary.byModel.map((model) => ({
+              modelId: model.modelId,
+              requests: model.requestCount,
+              tokens: 0,
+              spendUsd: model.spendUsd,
+            })),
+            status: 'ready' as const,
+            syncedAt: new Date(view.summary.syncedAt),
+          },
+          logs: view.logs.map((log) => ({
+            ...log,
+            keyMasked: '—',
+            inputTokens: log.inputTokens ?? 0,
+            outputTokens: log.outputTokens ?? 0,
+            spendUsd: log.chargedUsd,
+            createdAt: new Date(log.createdAt),
+          })),
+        }))
+      : await getPortalUsage(user as any, '7d')
     : {
         summary: {
           requestCount: 0,
@@ -91,6 +116,9 @@ export default async function UsagePage({
                 <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
                   <th className="px-4 py-2.5 text-left font-medium">
                     {t('columns.model')}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('columns.status')}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     {t('columns.requests')}
@@ -170,6 +198,15 @@ export default async function UsagePage({
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       {log.modelId}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {log.status === 'settled'
+                        ? t('status.settled')
+                        : log.status === 'billing'
+                          ? t('status.billing')
+                          : log.status === 'failed_unbilled'
+                            ? t('status.failed_unbilled')
+                            : log.status}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
                       {formatConsoleNumber(log.inputTokens, locale)}
