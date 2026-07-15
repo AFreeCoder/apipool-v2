@@ -1,8 +1,12 @@
 import { SnowflakeIdv1 } from 'simple-flakeid';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 export function getUuid(): string {
   return uuidv4();
+}
+
+export function getUuidV7(): string {
+  return uuidv7();
 }
 
 /**
