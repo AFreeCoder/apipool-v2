@@ -9,9 +9,14 @@ ENV_FILE="${APIPOOL_ENV_FILE:-.env.deploy}"
 RELEASE_FILE="${APIPOOL_RELEASE_FILE:-release.env}"
 LOCK_FILE="${APIPOOL_DEPLOY_LOCK:-/run/apipool-v2-deploy.lock}"
 IMAGE_REF="${1:-}"
+LOCAL_IMAGE=0
 
-if [[ ! "$IMAGE_REF" =~ ^ghcr\.io/afreecoder/apipool-new-api@sha256:[0-9a-f]{64}$ ]]; then
-  echo "usage: $0 ghcr.io/afreecoder/apipool-new-api@sha256:<digest>" >&2
+if [[ "$IMAGE_REF" =~ ^ghcr\.io/afreecoder/apipool-new-api@sha256:[0-9a-f]{64}$ ]]; then
+  :
+elif [[ "$IMAGE_REF" =~ ^ghcr\.io/afreecoder/apipool-new-api:sha-[0-9a-f]{40}$ ]]; then
+  LOCAL_IMAGE=1
+else
+  echo "usage: $0 ghcr.io/afreecoder/apipool-new-api@sha256:<digest>|ghcr.io/afreecoder/apipool-new-api:sha-<commit>" >&2
   exit 64
 fi
 
@@ -29,6 +34,10 @@ for required in "$COMPOSE_FILE" "$ENV_FILE" "$RELEASE_FILE" deploy/backup.sh; do
     exit 66
   fi
 done
+
+if [ "$LOCAL_IMAGE" -eq 1 ]; then
+  docker image inspect "$IMAGE_REF" >/dev/null
+fi
 
 compose() {
   docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_FILE" -f "$COMPOSE_FILE" "$@"
@@ -119,7 +128,9 @@ trap rollback ERR
 set_newapi_image "$IMAGE_REF"
 changed=1
 
-compose pull new-api
+if [ "$LOCAL_IMAGE" -eq 0 ]; then
+  compose pull new-api
+fi
 compose up -d --no-deps new-api
 wait_for_newapi
 
