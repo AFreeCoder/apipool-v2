@@ -60,16 +60,19 @@ if [ ! -f "$RUNNER_HOME/.runner" ]; then
   tar -xzf "$archive" -C "$RUNNER_HOME"
   chown -R "$RUNNER_USER:$RUNNER_USER" "$RUNNER_HOME"
 
-  "$RUNNER_HOME/bin/installdependencies.sh"
-  runuser -u "$RUNNER_USER" -- env HOME="$RUNNER_HOME" \
-    "$RUNNER_HOME/config.sh" \
-      --url "$REPOSITORY_URL" \
-      --token "$registration_token" \
-      --name "$RUNNER_NAME" \
-      --labels "$RUNNER_LABEL" \
-      --work _work \
-      --unattended \
-      --replace
+  (
+    cd "$RUNNER_HOME"
+    ./bin/installdependencies.sh
+    runuser -u "$RUNNER_USER" -- env HOME="$RUNNER_HOME" \
+      ./config.sh \
+        --url "$REPOSITORY_URL" \
+        --token "$registration_token" \
+        --name "$RUNNER_NAME" \
+        --labels "$RUNNER_LABEL" \
+        --work _work \
+        --unattended \
+        --replace
+  )
 fi
 registration_token=""
 
@@ -83,7 +86,10 @@ install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/apipool-runner-dep
 rm -f "$sudoers_tmp"
 
 if [ ! -f "$RUNNER_HOME/.service" ]; then
-  "$RUNNER_HOME/svc.sh" install "$RUNNER_USER"
+  (
+    cd "$RUNNER_HOME"
+    ./svc.sh install "$RUNNER_USER"
+  )
 fi
 
 runner_uid="$(id -u "$RUNNER_USER")"
@@ -128,5 +134,8 @@ systemctl daemon-reload
 systemctl enable apipool-runner-egress.service
 systemctl restart apipool-runner-egress.service
 
-"$RUNNER_HOME/svc.sh" start
-"$RUNNER_HOME/svc.sh" status
+(
+  cd "$RUNNER_HOME"
+  ./svc.sh start
+  ./svc.sh status
+)

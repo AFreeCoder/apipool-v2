@@ -461,6 +461,10 @@ test('production runner deploy wrapper validates immutable inputs and keeps root
   assert.match(installer, /meta skuid/);
   assert.match(installer, /169\.254\.0\.0\/16 reject/);
   assert.match(installer, /tcp dport \{ 53, 443 \} accept/);
+  assert.match(installer, /cd "\$RUNNER_HOME"/);
+  assert.match(installer, /\.\/bin\/installdependencies\.sh/);
+  assert.match(installer, /\.\/svc\.sh install "\$RUNNER_USER"/);
+  assert.match(installer, /\.\/svc\.sh start/);
   assert.doesNotMatch(installer, /usermod .*docker|groupadd .*docker/);
 
   assert.match(toolingInstaller, /必须以 root 运行/);
