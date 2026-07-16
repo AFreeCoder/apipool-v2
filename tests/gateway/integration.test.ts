@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { join } from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { desc, eq } from 'drizzle-orm';
 
 import {
@@ -12,6 +15,33 @@ import {
 let mock: Awaited<ReturnType<typeof startMockNewApi>>;
 let modules: any;
 let closeDb: () => void;
+const execFileAsync = promisify(execFile);
+
+async function runMemoryStress(
+  mode: 'parser' | 'content-length' | 'chunked',
+  maxOldSpaceMb: number
+) {
+  const runner = join(
+    process.cwd(),
+    'tests/gateway/helpers/memory-stress-runner.ts'
+  );
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      '--conditions=react-server',
+      '--expose-gc',
+      `--max-old-space-size=${maxOldSpaceMb}`,
+      '--import=tsx',
+      runner,
+      mode,
+    ],
+    {
+      maxBuffer: 1024 * 1024,
+      timeout: 120_000,
+    }
+  );
+  return JSON.parse(stdout.trim());
+}
 
 async function waitUntil(
   predicate: () => Promise<boolean> | boolean,
@@ -237,14 +267,17 @@ test('4 重映射发布 v2 后新请求锁 v2，旧账本仍按 v1 价格', asyn
 test('5 同用户双 Key 复用凭证，禁用 A 不影响 B', async () => {
   const fixture = await seedGatewayFixture(modules, 'key-isolation');
   const keyB = 'sk-ap-integration-key-isolation-b';
-  await modules.db().insert(modules.schema.portalApiKey).values({
-    id: 'integration-key-isolation-b',
-    userId: fixture.userId,
-    groupId: fixture.groupId,
-    keyHash: modules.auth.hashPortalKey(keyB),
-    keyPrefix: 'sk-ap-…on-b',
-    name: 'Key B',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.portalApiKey)
+    .values({
+      id: 'integration-key-isolation-b',
+      userId: fixture.userId,
+      groupId: fixture.groupId,
+      keyHash: modules.auth.hashPortalKey(keyB),
+      keyPrefix: 'sk-ap-…on-b',
+      name: 'Key B',
+    });
   await modules
     .db()
     .update(modules.schema.portalApiKey)
@@ -397,7 +430,10 @@ test('10 pending_backfill 占满风险槽，结算一条后恢复', async () => 
   }
   assert.equal((await invoke(fixture)).status, 429);
   const rows = await ledgers(fixture.userId);
-  assert.equal(rows.filter((row: any) => row.status === 'pending_backfill').length, 2);
+  assert.equal(
+    rows.filter((row: any) => row.status === 'pending_backfill').length,
+    2
+  );
   assert.equal(
     await modules.settlement.settleByLedgerId(rows[0].id, {
       buckets: {
@@ -466,7 +502,9 @@ test('13 policy B：usage 前流中断 failed_unbilled 且零扣费', async () =
     ['messages']
   );
   await assert.rejects(() => response.text());
-  await waitUntil(async () => (await latestLedger(fixture.userId)).status !== 'open');
+  await waitUntil(
+    async () => (await latestLedger(fixture.userId)).status !== 'open'
+  );
   const ledger = await latestLedger(fixture.userId);
   assert.equal(ledger.status, 'failed_unbilled');
   assert.equal(ledger.streamAborted, true);
@@ -479,16 +517,20 @@ test('14 Messages 完整性分界：delta 后中断结算，start 后中断免�
       (response: Response) => response.text()
     )
   );
-  await waitUntil(async () => (await latestLedger(partial.userId)).status !== 'open');
+  await waitUntil(
+    async () => (await latestLedger(partial.userId)).status !== 'open'
+  );
   assert.equal((await latestLedger(partial.userId)).status, 'failed_unbilled');
 
   const complete = await seedGatewayFixture(modules, 'message-complete');
   await assert.rejects(() =>
-    invoke(complete, 'message-complete-destroy', '/v1/messages', ['messages']).then(
-      (response: Response) => response.text()
-    )
+    invoke(complete, 'message-complete-destroy', '/v1/messages', [
+      'messages',
+    ]).then((response: Response) => response.text())
   );
-  await waitUntil(async () => (await latestLedger(complete.userId)).status !== 'open');
+  await waitUntil(
+    async () => (await latestLedger(complete.userId)).status !== 'open'
+  );
   assert.equal((await latestLedger(complete.userId)).status, 'settled');
 });
 
@@ -545,10 +587,17 @@ test('18 上游凭证零残留，只收到运行 Key 与 identity 编码', async
     runtimeKey: 'sk-upstream-test',
   });
   const offset = mock.requests.length;
-  const response = await invoke(fixture, 'normal', undefined, undefined, undefined, {
-    'x-api-key': 'sk-ap-leaked-backup',
-    cookie: 'session=secret',
-  });
+  const response = await invoke(
+    fixture,
+    'normal',
+    undefined,
+    undefined,
+    undefined,
+    {
+      'x-api-key': 'sk-ap-leaked-backup',
+      cookie: 'session=secret',
+    }
+  );
   await consumeAndWait(response, fixture.userId);
   const received = mock.requests[offset];
   assert.equal(received.headers.authorization, 'Bearer sk-upstream-test');
@@ -609,7 +658,9 @@ test('22 hard timeout 终止无限流并按 policy B 免单', async () => {
   const fixture = await seedGatewayFixture(modules, 'hard-timeout');
   const response = await invoke(fixture, 'infinite');
   await assert.rejects(() => response.text());
-  await waitUntil(async () => (await latestLedger(fixture.userId)).status !== 'open');
+  await waitUntil(
+    async () => (await latestLedger(fixture.userId)).status !== 'open'
+  );
   assert.equal((await latestLedger(fixture.userId)).status, 'failed_unbilled');
 });
 
@@ -632,10 +683,10 @@ test('23 慢请求体占满并发后超时自愈', async () => {
     body,
     duplex: 'half',
   } as RequestInit);
-  const firstPromise = modules.handler.handleGatewayRequest(
-    slowRequest,
-    ['chat', 'completions']
-  );
+  const firstPromise = modules.handler.handleGatewayRequest(slowRequest, [
+    'chat',
+    'completions',
+  ]);
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal((await invoke(fixture)).status, 429);
   const timedOut = await firstPromise;
@@ -745,7 +796,10 @@ test('27 非 2xx 零 chunk body 仍受计时器控制且释放并发槽', async 
   const response = await invoke(fixture, '500-stall');
   assert.equal(response.status, 500);
   await assert.rejects(() => response.text());
-  await waitUntil(async () => (await latestLedger(fixture.userId)).status === 'failed_unbilled');
+  await waitUntil(
+    async () =>
+      (await latestLedger(fixture.userId)).status === 'failed_unbilled'
+  );
   const recovered = await invoke(fixture);
   assert.notEqual(recovered.status, 429);
   await consumeAndWait(recovered, fixture.userId);
@@ -800,73 +854,29 @@ test('29 准入后 forward 非预期异常收束账本并释放槽', async () =>
 });
 
 test('30 巨串与重复 model flood 在 256MB 约束目标下保持零分配扫描语义', async () => {
-  const parser = await import('@/features/gateway/lib/sse-parser');
-  const encoder = new TextEncoder();
-  const giant = encoder.encode(
-    `{"model":"giant-ok","input":"${'x'.repeat(25 * 1024 * 1024)}"}`
+  const result = await runMemoryStress('parser', 256);
+  assert.deepEqual(
+    {
+      mode: result.mode,
+      bodies: result.bodies,
+      bodySize: result.bodySize,
+    },
+    {
+      mode: 'parser',
+      bodies: 6,
+      bodySize: 25 * 1024 * 1024,
+    }
   );
-  assert.deepEqual(parser.extractTopLevelModel(giant), {
-    ok: true,
-    model: 'giant-ok',
-  });
-  const flood = encoder.encode(
-    `{${'"model":"x",'.repeat(1_900_000)}"tail":true}`
-  );
-  assert.deepEqual(parser.extractTopLevelModel(flood), {
-    ok: false,
-    reason: 'ambiguous',
-  });
 });
 
 test('31 聚合入站内存有界：CL/无 CL 统一单块、正常截断、超限 cancel', async () => {
   const { readBodyBounded } = modules.handler;
-  const runBarrierBatch = async (withContentLength: boolean) => {
-    const count = 4;
-    const size = 2 * 1024 * 1024;
-    let release!: () => void;
-    const barrier = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let entered = 0;
-    const promises = Array.from({ length: count }, () => {
-      let sent = 0;
-      const stream = new ReadableStream<Uint8Array>({
-        async pull(controller) {
-          entered += 1;
-          await barrier;
-          if (sent >= size) {
-            controller.close();
-            return;
-          }
-          const length = Math.min(256 * 1024, size - sent);
-          sent += length;
-          controller.enqueue(new Uint8Array(length));
-        },
-      });
-      const req = new Request('http://portal.test/v1/chat/completions', {
-        method: 'POST',
-        headers: withContentLength
-          ? { 'content-length': String(size) }
-          : undefined,
-        body: stream,
-        duplex: 'half',
-      } as RequestInit);
-      return readBodyBounded(req, size, {
-        idleMs: 2000,
-        totalMs: 5000,
-        signal: new AbortController().signal,
-      });
-    });
-    await waitUntil(() => entered === count);
-    const before = process.memoryUsage();
-    release();
-    const results = await Promise.all(promises);
-    const after = process.memoryUsage();
-    assert.equal(results.every((result) => result.ok), true);
-    assert.ok(after.external - before.external < 64 * 1024 * 1024);
-  };
-  await runBarrierBatch(true);
-  await runBarrierBatch(false);
+  const withContentLength = await runMemoryStress('content-length', 768);
+  const chunked = await runMemoryStress('chunked', 768);
+  assert.equal(withContentLength.count, 16);
+  assert.equal(chunked.count, 16);
+  assert.equal(withContentLength.bodySize, 25 * 1024 * 1024);
+  assert.equal(chunked.bodySize, 25 * 1024 * 1024);
 
   const small = new Request('http://portal.test/v1/chat/completions', {
     method: 'POST',

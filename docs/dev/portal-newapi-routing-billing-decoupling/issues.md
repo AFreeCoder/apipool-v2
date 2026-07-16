@@ -1,7 +1,14 @@
 # 门户与 New API 路由计费解耦：开发遗留
 
-以下均为已接受、需在运营期观察的遗留，不是本次切流前的未完成实现。PLAN.md 的
-设计勘误已扩至 E1–E9 并全部收编到对应 Task，本清单不重复登记勘误。
+## 切流前门禁
+
+- [ ] 在目标环境设置 `APIPOOL_SMOKE_REQUIRE_LIVE=true`，完成 Gateway 数据面和充值闭环 live smoke；本次接收只验证了本地构建、测试和静态编排，没有部署，也没有目标环境凭据。
+- [ ] 在安装 Caddy 的 CI 或等价 Linux 环境完成真实 `caddy adapt` / `caddy validate`；本机缺少 Caddy，相关本地用例按设计跳过，GitHub Actions 已配置为安装失败即失败。
+
+## 运营期观察
+
+以下均为已接受、需在运营期观察的遗留。PLAN.md 的设计勘误已扩至 E1–E9
+并全部收编到对应 Task，本清单不重复登记勘误。
 
 - [ ] Spike S1：截至 2026-07-15，管理员 `GET /api/log/` 从当前实现机返回空响应（Node `UND_ERR_SOCKET`、curl 52），字段形态尚未得到线上 fixture 证实。运行时保留管理员主路径，失败立即回退逐绑定用户 `/api/log/self`，并兼容顶层和 `other.request_id`；取得受信 fixture 后补契约测试。详见 [S1 记录](./s1-admin-usage-log-spike.md)。
 - [ ] Spike S2：截至 2026-07-15，`GET /api/pricing` 同样无法取得响应，cache read、5m write、1h write 三维价格不能自动预填；继续要求管理员明确录入并锁定复核，不猜字段、不从 input/output 推导、不用零值代替未知。详见 [S2 记录](./s2-cache-pricing-spike.md)。

@@ -111,6 +111,7 @@ test('getUsageLogByRequestId 精确命中并映射 requestId，未命中返回 n
 
   assert.equal(found?.requestId, 'req-from-other');
   assert.equal(found?.modelId, 'gpt-5.5');
+  assert.equal(found?.quota, 500_000);
   assert.equal(missing, null);
   assert.equal(new URL(requests[0].url).pathname, '/api/log/self');
 });

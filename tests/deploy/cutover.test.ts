@@ -5,8 +5,8 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,21 +21,23 @@ type CutoverState = {
 };
 
 function envBody(state: CutoverState) {
-  return [
-    state.mode === undefined ? null : `APIPOOL_API_MODE=${state.mode}`,
-    state.checkout === undefined
-      ? null
-      : `APIPOOL_CHECKOUT_ENABLED=${state.checkout}`,
-    state.ledger === undefined
-      ? null
-      : `WALLET_LEDGER_WRITE_ENABLED=${state.ledger}`,
-    state.display === undefined
-      ? null
-      : `WALLET_DISPLAY_ENABLED=${state.display}`,
-    'QUOTED_VALUE=\'keep $literal spaces\'',
-  ]
-    .filter(Boolean)
-    .join('\n') + '\n';
+  return (
+    [
+      state.mode === undefined ? null : `APIPOOL_API_MODE=${state.mode}`,
+      state.checkout === undefined
+        ? null
+        : `APIPOOL_CHECKOUT_ENABLED=${state.checkout}`,
+      state.ledger === undefined
+        ? null
+        : `WALLET_LEDGER_WRITE_ENABLED=${state.ledger}`,
+      state.display === undefined
+        ? null
+        : `WALLET_DISPLAY_ENABLED=${state.display}`,
+      "QUOTED_VALUE='keep $literal spaces'",
+    ]
+      .filter(Boolean)
+      .join('\n') + '\n'
+  );
 }
 
 async function executable(path: string, body: string) {
@@ -152,7 +154,9 @@ test('env-set-batch 幂等替换/追加多个键并保留引号值', async () =>
   assert.match(body, /^K2=value with spaces$/m);
   assert.match(body, /^QUOTED_VALUE='keep \$literal spaces'$/m);
   assert.deepEqual(
-    (await readdir(fixture.dir)).filter((name) => name.startsWith('.env.deploy.')),
+    (await readdir(fixture.dir)).filter((name) =>
+      name.startsWith('.env.deploy.')
+    ),
     []
   );
 });
@@ -346,7 +350,10 @@ test('portal/finalize 拒绝缺失或陈旧 smoke 标志', async () => {
 
 test('共享 env 写入只用同目录临时文件与 rename，不用 install 覆盖状态文件', async () => {
   const library = await readFile('deploy/lib.sh', 'utf8');
-  assert.match(library, /mktemp "\$\(dirname "\$STATE_ENV_FILE"\)\/\.env\.deploy/);
+  assert.match(
+    library,
+    /mktemp "\$\(dirname "\$STATE_ENV_FILE"\)\/\.env\.deploy/
+  );
   assert.match(library, /mv -f "\$tmp" "\$STATE_ENV_FILE"/);
   assert.doesNotMatch(library, /install[^\n]*STATE_ENV_FILE/);
 });
@@ -406,6 +413,8 @@ printf 'TIMESTAMP=fixture\\nIMAGE_TAG=%s\\n' "$tag" >"$APIPOOL_DEPLOY_DIR/.cutov
 checkout="$(sed -n 's/^APIPOOL_CHECKOUT_ENABLED=//p' "$APIPOOL_DEPLOY_DIR/.env.deploy" | tail -1)"
 echo "docker $* checkout=$checkout" >>"$MOCK_CALL_LOG"
 case "$*" in
+  *"ps -q newapi-metadata-filter"*) printf '%s\\n' "mock-metadata-filter" ;;
+  *"inspect --format"*"mock-metadata-filter"*) printf '%s\\n' "healthy" ;;
   *"exec -T apipool-v2 printenv APIPOOL_CHECKOUT_ENABLED"*) printf '%s\\n' "$checkout" ;;
 esac
 exit 0
@@ -419,10 +428,7 @@ exit 0
   return fixture;
 }
 
-function runDeploy(
-  fixture: { dir: string; log: string },
-  smokeExit = '0'
-) {
+function runDeploy(fixture: { dir: string; log: string }, smokeExit = '0') {
   return spawnSync('bash', [join(fixture.dir, 'deploy/deploy.sh'), 'sha-new'], {
     env: {
       ...process.env,

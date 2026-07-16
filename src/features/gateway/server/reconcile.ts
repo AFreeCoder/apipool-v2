@@ -38,6 +38,7 @@ type UsageLog = {
   modelId?: string;
   inputTokens: number;
   outputTokens: number;
+  quota?: number;
   spendUsd?: number;
   createdAt: string;
   [key: string]: unknown;
@@ -45,8 +46,20 @@ type UsageLog = {
 
 type Slice = { start: number; end: number };
 type SliceResult = 'complete' | 'overflow' | 'lost_lock';
+type ReconcileCounters = {
+  settledByLog: number;
+  orphans: number;
+  waivedOrOrphans: number;
+};
 
 function quotaFromLog(log: UsageLog): number | null {
+  if (
+    typeof log.quota === 'number' &&
+    Number.isSafeInteger(log.quota) &&
+    log.quota >= 0
+  ) {
+    return log.quota;
+  }
   if (log.spendUsd === undefined || !Number.isFinite(log.spendUsd)) {
     return null;
   }
@@ -105,10 +118,8 @@ function referencePrice(
     price: {
       inputMicroUsdPerM: row.newapiRefInputMicroUsdPerM ?? 0,
       cachedInputMicroUsdPerM: row.newapiRefCachedInputMicroUsdPerM ?? 0,
-      cacheWrite5mMicroUsdPerM:
-        row.newapiRefCacheWrite5mMicroUsdPerM ?? 0,
-      cacheWrite1hMicroUsdPerM:
-        row.newapiRefCacheWrite1hMicroUsdPerM ?? 0,
+      cacheWrite5mMicroUsdPerM: row.newapiRefCacheWrite5mMicroUsdPerM ?? 0,
+      cacheWrite1hMicroUsdPerM: row.newapiRefCacheWrite1hMicroUsdPerM ?? 0,
       outputMicroUsdPerM: row.newapiRefOutputMicroUsdPerM ?? 0,
     },
     missing,
@@ -153,12 +164,9 @@ async function reconcileSettled(
     notes.push('quota_missing');
   } else {
     const actualMicroUsd = quota * 2;
-    const expectedMicroUsd = Number(
-      computeChargeMicroUsd(buckets, ref.price!)
-    );
+    const expectedMicroUsd = Number(computeChargeMicroUsd(buckets, ref.price!));
     const tolerance = Math.max(10, Math.ceil(Math.abs(actualMicroUsd) * 0.01));
-    externalMismatch =
-      Math.abs(actualMicroUsd - expectedMicroUsd) > tolerance;
+    externalMismatch = Math.abs(actualMicroUsd - expectedMicroUsd) > tolerance;
     if (externalMismatch) notes.push('external_amount_mismatch');
   }
 
@@ -217,10 +225,7 @@ async function recordOrphan(log: UsageLog): Promise<boolean> {
   return Boolean(inserted);
 }
 
-async function processUsageLog(
-  log: UsageLog,
-  counters: { waivedOrOrphans: number }
-) {
+async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
   if (!log.requestId) return;
   const [row] = await db()
     .select()
@@ -228,7 +233,10 @@ async function processUsageLog(
     .where(eq(requestLedger.newapiRequestId, log.requestId))
     .limit(1);
   if (!row) {
-    if (await recordOrphan(log)) counters.waivedOrOrphans += 1;
+    if (await recordOrphan(log)) {
+      counters.orphans += 1;
+      counters.waivedOrOrphans += 1;
+    }
     return;
   }
 
@@ -247,10 +255,11 @@ async function processUsageLog(
       .update(requestLedger)
       .set({ ...telemetry, updatedAt: new Date() })
       .where(eq(requestLedger.id, row.id));
-    await settleByNewapiRequestId(log.requestId, {
+    const result = await settleByNewapiRequestId(log.requestId, {
       buckets: normalizeBackfillUsage(log),
       usageSource: 'log_backfill',
     });
+    if (result === 'settled') counters.settledByLog += 1;
     return;
   }
   if (row.status === 'failed_unbilled') {
@@ -292,7 +301,12 @@ export async function runReconcileSyncOnce(
     slicePageLimit?: number;
     maxSlicesPerRun?: number;
   } = {}
-): Promise<{ processed: number; truncated: boolean }> {
+): Promise<{
+  scanned: number;
+  settledByLog: number;
+  orphans: number;
+  truncated: boolean;
+}> {
   const { createNewApiClient } = await import(
     '@/features/newapi-bridge/server/client'
   );
@@ -305,8 +319,12 @@ export async function runReconcileSyncOnce(
   const sliceMs = deps.sliceMs ?? DEFAULT_SLICE_MS;
   const pageLimit = deps.slicePageLimit ?? DEFAULT_SLICE_PAGE_LIMIT;
   const maxSlices = deps.maxSlicesPerRun ?? DEFAULT_MAX_SLICES_PER_RUN;
-  const counters = { waivedOrOrphans: 0 };
-  let processed = 0;
+  const counters: ReconcileCounters = {
+    settledByLog: 0,
+    orphans: 0,
+    waivedOrOrphans: 0,
+  };
+  let scanned = 0;
 
   const [lockRow] = await db()
     .select({ watermark: gatewayJobLock.reconcileWatermarkAt })
@@ -326,7 +344,7 @@ export async function runReconcileSyncOnce(
     for (const log of logs) {
       if (!(await keepAlive())) return false;
       await processUsageLog(log, counters);
-      processed += 1;
+      scanned += 1;
     }
     return true;
   };
@@ -385,7 +403,12 @@ export async function runReconcileSyncOnce(
     const slice = queue.shift()!;
     const result = await processSlice(slice);
     if (result === 'lost_lock') {
-      return { processed, truncated: true };
+      return {
+        scanned,
+        settledByLog: counters.settledByLog,
+        orphans: counters.orphans,
+        truncated: true,
+      };
     }
     if (result === 'overflow') {
       const middle = Math.floor((slice.start + slice.end) / 2);
@@ -405,7 +428,12 @@ export async function runReconcileSyncOnce(
       count: counters.waivedOrOrphans,
     });
   }
-  return { processed, truncated: queue.length > 0 };
+  return {
+    scanned,
+    settledByLog: counters.settledByLog,
+    orphans: counters.orphans,
+    truncated: queue.length > 0,
+  };
 }
 
 export async function runWalletInvariantCheckOnce(): Promise<{

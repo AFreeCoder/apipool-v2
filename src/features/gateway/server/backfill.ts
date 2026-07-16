@@ -13,7 +13,17 @@ import { settleByNewapiRequestId } from './settlement';
 const BACKOFF_MS = [5_000, 15_000, 60_000, 300_000, 900_000, 1_800_000];
 const BATCH = 20;
 
-function quotaFromLog(log: { spendUsd?: number }): number | null {
+function quotaFromLog(log: {
+  quota?: number;
+  spendUsd?: number;
+}): number | null {
+  if (
+    typeof log.quota === 'number' &&
+    Number.isSafeInteger(log.quota) &&
+    log.quota >= 0
+  ) {
+    return log.quota;
+  }
   if (log.spendUsd === undefined || !Number.isFinite(log.spendUsd)) {
     return null;
   }

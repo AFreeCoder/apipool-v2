@@ -44,35 +44,46 @@ async function setupDb() {
 
 async function seedUser(suffix: string, balance = 1_000_000) {
   const userId = `backfill-user-${suffix}`;
-  await modules.db().insert(modules.schema.user).values({
-    id: userId,
-    name: suffix,
-    email: `${suffix}@backfill.test`,
-  });
+  await modules
+    .db()
+    .insert(modules.schema.user)
+    .values({
+      id: userId,
+      name: suffix,
+      email: `${suffix}@backfill.test`,
+    });
   await modules.db().insert(modules.schema.walletAccount).values({
     userId,
     balanceMicroUsd: balance,
   });
-  await modules.db().insert(modules.schema.newApiUserBinding).values({
-    id: `backfill-binding-${suffix}`,
-    portalUserId: userId,
-    newapiUserId: `remote-${suffix}`,
-    status: 'active',
-    newapiAccessTokenEnc: modules.crypto.encryptCredential(`access-${suffix}`),
-  });
+  await modules
+    .db()
+    .insert(modules.schema.newApiUserBinding)
+    .values({
+      id: `backfill-binding-${suffix}`,
+      portalUserId: userId,
+      newapiUserId: `remote-${suffix}`,
+      status: 'active',
+      newapiAccessTokenEnc: modules.crypto.encryptCredential(
+        `access-${suffix}`
+      ),
+    });
   const priceVersionId = `backfill-price-${suffix}`;
-  await modules.db().insert(modules.schema.modelPriceVersion).values({
-    id: priceVersionId,
-    portalGroupId: 'backfill-group',
-    portalModelId: `model-${suffix}`,
-    version: 1,
-    inputMicroUsdPerM: 1_000_000,
-    cachedInputMicroUsdPerM: 500_000,
-    cacheWrite5mMicroUsdPerM: 1_250_000,
-    cacheWrite1hMicroUsdPerM: 2_000_000,
-    outputMicroUsdPerM: 2_000_000,
-    publishedBy: 'backfill-test',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id: priceVersionId,
+      portalGroupId: 'backfill-group',
+      portalModelId: `model-${suffix}`,
+      version: 1,
+      inputMicroUsdPerM: 1_000_000,
+      cachedInputMicroUsdPerM: 500_000,
+      cacheWrite5mMicroUsdPerM: 1_250_000,
+      cacheWrite1hMicroUsdPerM: 2_000_000,
+      outputMicroUsdPerM: 2_000_000,
+      publishedBy: 'backfill-test',
+    });
   return { priceVersionId, userId };
 }
 
@@ -89,28 +100,31 @@ async function seedRequest(
   }
 ) {
   const id = `preq-backfill-${suffix}`;
-  await modules.db().insert(modules.schema.requestLedger).values({
-    id,
-    newapiRequestId:
-      input.requestId === undefined ? `rid-${suffix}` : input.requestId,
-    userId: input.userId,
-    portalKeyId: 'key',
-    portalGroupId: 'backfill-group',
-    portalModelId: `model-${suffix}`,
-    newapiGroup: 'official',
-    newapiModelId: `model-${suffix}`,
-    credentialId: 'credential',
-    routeVersion: 1,
-    priceVersionId: input.priceVersionId,
-    endpoint: 'chat_completions',
-    isStream: false,
-    status: input.status ?? 'pending_backfill',
-    chargedMicroUsd: input.status === 'settled' ? 1 : undefined,
-    backfillAttempts: input.attempts ?? 0,
-    nextBackfillAt:
-      input.nextAt === undefined ? new Date(Date.now() - 1000) : input.nextAt,
-    createdAt: input.createdAt,
-  });
+  await modules
+    .db()
+    .insert(modules.schema.requestLedger)
+    .values({
+      id,
+      newapiRequestId:
+        input.requestId === undefined ? `rid-${suffix}` : input.requestId,
+      userId: input.userId,
+      portalKeyId: 'key',
+      portalGroupId: 'backfill-group',
+      portalModelId: `model-${suffix}`,
+      newapiGroup: 'official',
+      newapiModelId: `model-${suffix}`,
+      credentialId: 'credential',
+      routeVersion: 1,
+      priceVersionId: input.priceVersionId,
+      endpoint: 'chat_completions',
+      isStream: false,
+      status: input.status ?? 'pending_backfill',
+      chargedMicroUsd: input.status === 'settled' ? 1 : undefined,
+      backfillAttempts: input.attempts ?? 0,
+      nextBackfillAt:
+        input.nextAt === undefined ? new Date(Date.now() - 1000) : input.nextAt,
+      createdAt: input.createdAt,
+    });
   return id;
 }
 
@@ -143,6 +157,7 @@ test('定点回填命中：日志字段落库、log_backfill 结算并扣费', a
         cacheTokens: 2,
         cacheCreationTokens5m: 3,
         spendUsd: 2,
+        quota: 1_000_001,
       }),
     },
   });
@@ -150,7 +165,7 @@ test('定点回填命中：日志字段落库、log_backfill 结算并扣费', a
   const ledger = await row(id);
   assert.equal(ledger.status, 'settled');
   assert.equal(ledger.usageSource, 'log_backfill');
-  assert.equal(ledger.newapiQuota, 1_000_000);
+  assert.equal(ledger.newapiQuota, 1_000_001);
   assert.equal(ledger.newapiPromptTokens, 10);
   assert.equal(ledger.newapiCompletionTokens, 4);
   assert.equal(ledger.newapiTokenName, 'rk_hit');
@@ -172,7 +187,8 @@ test('日志显式 quota=0 → failed_unbilled 且不扣费', async () => {
         keyMasked: 'rk_zero',
         inputTokens: 0,
         outputTokens: 0,
-        spendUsd: 0,
+        spendUsd: 2,
+        quota: 0,
       }),
     },
   });

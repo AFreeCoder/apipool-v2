@@ -61,22 +61,30 @@ async function watermark() {
 
 async function seedUser(suffix: string, balance = 1_000_000) {
   const userId = `reconcile-user-${suffix}`;
-  await modules.db().insert(modules.schema.user).values({
-    id: userId,
-    name: suffix,
-    email: `${suffix}@reconcile.test`,
-  });
+  await modules
+    .db()
+    .insert(modules.schema.user)
+    .values({
+      id: userId,
+      name: suffix,
+      email: `${suffix}@reconcile.test`,
+    });
   await modules.db().insert(modules.schema.walletAccount).values({
     userId,
     balanceMicroUsd: balance,
   });
-  await modules.db().insert(modules.schema.newApiUserBinding).values({
-    id: `reconcile-binding-${suffix}`,
-    portalUserId: userId,
-    newapiUserId: `remote-${suffix}`,
-    status: 'active',
-    newapiAccessTokenEnc: modules.crypto.encryptCredential(`access-${suffix}`),
-  });
+  await modules
+    .db()
+    .insert(modules.schema.newApiUserBinding)
+    .values({
+      id: `reconcile-binding-${suffix}`,
+      portalUserId: userId,
+      newapiUserId: `remote-${suffix}`,
+      status: 'active',
+      newapiAccessTokenEnc: modules.crypto.encryptCredential(
+        `access-${suffix}`
+      ),
+    });
   return userId;
 }
 
@@ -85,25 +93,28 @@ async function seedPrice(
   overrides: Record<string, number | null> = {}
 ) {
   const id = `reconcile-price-${suffix}`;
-  await modules.db().insert(modules.schema.modelPriceVersion).values({
-    id,
-    portalGroupId: 'reconcile-group',
-    portalModelId: `model-${suffix}`,
-    version: 1,
-    inputMicroUsdPerM: 1_000_000,
-    cachedInputMicroUsdPerM: 500_000,
-    cacheWrite5mMicroUsdPerM: 1_250_000,
-    cacheWrite1hMicroUsdPerM: 2_000_000,
-    outputMicroUsdPerM: 2_000_000,
-    newapiRefInputMicroUsdPerM: 1_000_000,
-    newapiRefCachedInputMicroUsdPerM: 500_000,
-    newapiRefCacheWrite5mMicroUsdPerM: 1_250_000,
-    newapiRefCacheWrite1hMicroUsdPerM: 2_000_000,
-    newapiRefOutputMicroUsdPerM: 2_000_000,
-    refNewapiGroup: 'official',
-    publishedBy: 'reconcile-test',
-    ...overrides,
-  });
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id,
+      portalGroupId: 'reconcile-group',
+      portalModelId: `model-${suffix}`,
+      version: 1,
+      inputMicroUsdPerM: 1_000_000,
+      cachedInputMicroUsdPerM: 500_000,
+      cacheWrite5mMicroUsdPerM: 1_250_000,
+      cacheWrite1hMicroUsdPerM: 2_000_000,
+      outputMicroUsdPerM: 2_000_000,
+      newapiRefInputMicroUsdPerM: 1_000_000,
+      newapiRefCachedInputMicroUsdPerM: 500_000,
+      newapiRefCacheWrite5mMicroUsdPerM: 1_250_000,
+      newapiRefCacheWrite1hMicroUsdPerM: 2_000_000,
+      newapiRefOutputMicroUsdPerM: 2_000_000,
+      refNewapiGroup: 'official',
+      publishedBy: 'reconcile-test',
+      ...overrides,
+    });
   return id;
 }
 
@@ -129,22 +140,25 @@ async function seedLedger(
   const id = `preq-reconcile-${suffix}`;
   const requestId = `rid-reconcile-${suffix}`;
   const modelId = options.modelId ?? `model-${suffix}`;
-  await modules.db().insert(modules.schema.requestLedger).values({
-    id,
-    newapiRequestId: requestId,
-    userId,
-    portalKeyId: 'key',
-    portalGroupId: 'reconcile-group',
-    portalModelId: `model-${suffix}`,
-    newapiGroup: 'official',
-    newapiModelId: modelId,
-    credentialId: 'credential',
-    routeVersion: 1,
-    priceVersionId,
-    endpoint: 'chat_completions',
-    isStream: false,
-    status: 'open',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.requestLedger)
+    .values({
+      id,
+      newapiRequestId: requestId,
+      userId,
+      portalKeyId: 'key',
+      portalGroupId: 'reconcile-group',
+      portalModelId: `model-${suffix}`,
+      newapiGroup: 'official',
+      newapiModelId: modelId,
+      credentialId: 'credential',
+      routeVersion: 1,
+      priceVersionId,
+      endpoint: 'chat_completions',
+      isStream: false,
+      status: 'open',
+    });
   const buckets = {
     uncachedInput: 10,
     cachedRead: 0,
@@ -180,6 +194,7 @@ function logFor(
     modelId: ledger.modelId,
     inputTokens: 10,
     outputTokens: 4,
+    quota: 9,
     spendUsd: 18 / 1_000_000,
     createdAt: new Date(BASE_NOW - 1000).toISOString(),
     ...overrides,
@@ -211,10 +226,7 @@ function pageClient(
   };
 }
 
-async function run(
-  logs: any[],
-  options: Record<string, unknown> = {}
-) {
+async function run(logs: any[], options: Record<string, unknown> = {}) {
   await setWatermark(new Date(BASE_NOW));
   return modules.reconcile.runReconcileSyncOnce({
     client: pageClient(logs),
@@ -237,7 +249,13 @@ test.after(() => client.close());
 
 test('settled 命中：对账字段回填并 matched', async () => {
   const ledger = await seedLedger('matched', { status: 'settled' });
-  await run([logFor(ledger)]);
+  const result = await run([logFor(ledger)]);
+  assert.deepEqual(result, {
+    scanned: 1,
+    settledByLog: 0,
+    orphans: 0,
+    truncated: false,
+  });
   const row = await ledgerRow(ledger.id);
   assert.equal(row.reconcileStatus, 'matched');
   assert.equal(row.newapiQuota, 9);
@@ -255,8 +273,8 @@ test('金额外部超差为 amount_mismatch，±10 micro 容差内 matched', asy
   const mismatch = await seedLedger('amount-mismatch', { status: 'settled' });
   const tolerance = await seedLedger('amount-tolerance', { status: 'settled' });
   await run([
-    logFor(mismatch, { spendUsd: 100 / 1_000_000 }),
-    logFor(tolerance, { spendUsd: 23 / 1_000_000 }),
+    logFor(mismatch, { quota: 50, spendUsd: 100 / 1_000_000 }),
+    logFor(tolerance, { quota: 12, spendUsd: 23 / 1_000_000 }),
   ]);
   assert.equal(
     (await ledgerRow(mismatch.id)).reconcileStatus,
@@ -265,9 +283,18 @@ test('金额外部超差为 amount_mismatch，±10 micro 容差内 matched', asy
   assert.equal((await ledgerRow(tolerance.id)).reconcileStatus, 'matched');
 });
 
+test('原始 quota 优先于 spendUsd 反算，避免浮点精度损失', async () => {
+  const ledger = await seedLedger('raw-quota', { status: 'settled' });
+  await run([logFor(ledger, { quota: 9, spendUsd: 1 })]);
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.newapiQuota, 9);
+  assert.equal(row.reconcileStatus, 'matched');
+});
+
 test('open 命中 → log_backfill 结算', async () => {
   const ledger = await seedLedger('open-settle');
-  await run([logFor(ledger)]);
+  const result = await run([logFor(ledger)]);
+  assert.equal(result.settledByLog, 1);
   const row = await ledgerRow(ledger.id);
   assert.equal(row.status, 'settled');
   assert.equal(row.usageSource, 'log_backfill');
@@ -296,7 +323,7 @@ test('孤儿 rk_ 写 observation、正确归因且不伪造主账本', async () 
     status: 'active',
   });
   const before = await modules.db().select().from(modules.schema.requestLedger);
-  await run([
+  const result = await run([
     {
       id: 'log-orphan-known',
       requestId: 'rid-orphan-known',
@@ -308,6 +335,7 @@ test('孤儿 rk_ 写 observation、正确归因且不伪造主账本', async () 
       createdAt: new Date(BASE_NOW - 1000).toISOString(),
     },
   ]);
+  assert.equal(result.orphans, 1);
   const observations = await modules
     .db()
     .select()
@@ -338,8 +366,10 @@ test('孤儿幂等：同 request id 二轮仍只有一行', async () => {
     spendUsd: 0.01,
     createdAt: new Date(BASE_NOW - 1000).toISOString(),
   };
-  await run([orphan]);
-  await run([orphan]);
+  const first = await run([orphan]);
+  const second = await run([orphan]);
+  assert.equal(first.orphans, 1);
+  assert.equal(second.orphans, 0);
   const rows = await modules
     .db()
     .select()
@@ -557,18 +587,17 @@ test('日志模型与账本模型不一致 → token_mismatch + model_mismatch n
 
 test('未知维度成本通过外部金额差额呈现为 amount_mismatch', async () => {
   const ledger = await seedLedger('unmapped-cost', { status: 'settled' });
-  await run([logFor(ledger, { spendUsd: 1000 / 1_000_000 })]);
-  assert.equal(
-    (await ledgerRow(ledger.id)).reconcileStatus,
-    'amount_mismatch'
-  );
+  await run([logFor(ledger, { quota: 500, spendUsd: 1000 / 1_000_000 })]);
+  assert.equal((await ledgerRow(ledger.id)).reconcileStatus, 'amount_mismatch');
 });
 
 test('admin 失败时 fallback 按时间片逐用户追平并推进水位', async () => {
   const ledger = await seedLedger('fallback', { status: 'settled' });
   await setWatermark(new Date(BASE_NOW - 20 * 60_000));
   const logs = [
-    logFor(ledger, { createdAt: new Date(BASE_NOW - 15 * 60_000).toISOString() }),
+    logFor(ledger, {
+      createdAt: new Date(BASE_NOW - 15 * 60_000).toISOString(),
+    }),
   ];
   let fallbackCalls = 0;
   const client = pageClient(logs, { adminFails: true });

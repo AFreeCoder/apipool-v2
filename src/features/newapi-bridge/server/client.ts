@@ -166,6 +166,7 @@ export type RemoteUsageLog = {
   cacheCreationRatio1h?: number;
   usageSemantic?: string;
   spendUsd?: number;
+  quota?: number;
   createdAt: string;
 };
 
@@ -1001,6 +1002,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       cacheCreationRatio1h: cache.cacheCreationRatio1h,
       usageSemantic: cache.usageSemantic,
       spendUsd: quota === null ? undefined : quotaToUsd(quota),
+      quota: quota === null ? undefined : quota,
       createdAt: new Date(asNumber(item.created_at) * 1000).toISOString(),
     };
   }
