@@ -9,7 +9,7 @@
 - 云服务器：腾讯云轻量服务器，实例 `ins-ep486xqw`，区域 `na-siliconvalley`，公网 IP `43.135.146.49`。
 - SSH：本机 `~/.ssh/config` 使用别名 `apipool_vps`，端口 `22222`，用户 `root`，私钥文件 `~/.ssh/silicon_2.pem`（权限应为 `400`）。
 - 连接命令：`ssh apipool_vps`。
-- SSHD：服务器已同时监听 `22` 和 `22222`；日常运维走 `22222`。云防火墙/安全组需保持 TCP `22222` 入站放行。
+- SSHD：仅保留 `22222`；腾讯云防火墙与主机防火墙都只允许 owner 的固定公网 IP/CIDR 访问该端口。TCP `22` 不监听、不放行。
 - 系统：Debian GNU/Linux 13 (`trixie`)。
 - Docker：已切到 Docker 官方 apt 源并启用开机自启。当前版本：Docker `29.5.3`，Docker Compose plugin `v5.1.4`，Buildx `v0.34.1`，sqlite3 `3.46.1-7+deb13u1`。若现场版本与本节不一致，以 `deploy/server-bootstrap.sh` 重新对齐后更新此记录。
 
@@ -17,9 +17,9 @@
 
 排空期 v2 只接管新增用户入口，不接管老站契约域名：
 
-- `app.apipool.dev`：指向 v2 VPS，承载站点、登录、控制台、支付回调和 OAuth 回调。
-- `api2.apipool.dev`：指向 v2 VPS，承载 v2 用户 API 调用。
-- `newapi.apipool.dev`：指向 v2 VPS，仅运营访问，继续 noindex。
+- `app.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，承载站点、登录、控制台、支付回调和 OAuth 回调。
+- `api2.apipool.dev`：DNS only（灰云），直接指向 v2 VPS，承载 v2 用户 API 调用，绕开 Cloudflare HTTP 请求时长上限。
+- `newapi.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，仅运营访问，继续 noindex。
 - `apipool.dev`：排空期继续指向老站，保留品牌与 SEO；cutover 后回收给 v2 营销站。
 - `api.apipool.dev`：排空期继续指向老站，保证老用户无需改代码；cutover 后回收给 v2 正牌 API，`api2.apipool.dev` 永久保留为别名。
 
@@ -81,13 +81,15 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 
 ## 2. New API 运营面安全
 
-`newapi.apipool.dev` 仅运营访问：
+`newapi.apipool.dev` 仅运营访问。入口分为两层，不能互相替代：
 
-- New API 运营登录之外，可再加一层边界（Basic Auth 或 IP 白名单）。**由 `deploy/configure-caddy.sh` 默认强制**：两者都未配置时脚本 fail-closed 退出 78。
-  - **退出开关**：`APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true` 显式接受「管理后台公网开放」，跳过守卫（仍打印警告）。**当前生产采用此项**（owner 决策，2026-07-09）：New API 在 Cloudflare 后面，IP 白名单不可用（`remote_ip` 是 CF IP），且 owner 判断不需要 Caddy 层门禁；管理接口仍由 New API 自身 root 登录保护，如需加固可在 Cloudflare 层做。
+- New API 运营登录与其自身权限仍是应用层认证；下面的源站边界和运营面守卫是额外的网络/代理层防线。
+- **源站边界（强制）**：Caddy 只接受 `deploy/cloudflare-ips.txt` 中的 Cloudflare TCP 源地址；缺少、为空或存在非法 CIDR 时配置生成 fail-closed。该边界同时覆盖 `app.apipool.dev` 和 `newapi.apipool.dev`，防止绕过 Cloudflare 直接访问源站。
+- **运营面守卫（可选叠加）**：New API 自身登录之外，可再配置 Basic Auth 或额外 IP 守卫；两者都未配置时脚本默认 fail-closed 退出 78。
+  - **退出开关**：`APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true` 只跳过运营面守卫，绝不会跳过上述 Cloudflare 源站边界。
   - `APIPOOL_NEWAPI_BASIC_AUTH_USER` + `APIPOOL_NEWAPI_BASIC_AUTH_HASH`（哈希用 `caddy hash-password --plaintext '<password>'` 生成）
   - `APIPOOL_NEWAPI_ALLOWED_IPS`（空格分隔的 IP/CIDR）
-  - **写进 `.env.deploy` 时这两个值必须用单引号包起来**：`deploy/live-smoke.sh` 会 `source` 该文件，bcrypt 哈希里的 `$` 会被 shell 展开（`$2a$14$...` → `a4`，basic_auth 谁也登不上），空格分隔的 IP 白名单里第二个 IP 会被当成命令执行、在 `set -e` 下直接中断部署。`configure-caddy.sh` 自己按字面量读取该文件，加不加引号都能正确解析。
+  - **写进 `.env.deploy` 时这两个值必须用单引号包起来**：`deploy/live-smoke.sh` 会 `source` 该文件，bcrypt 哈希里的 `$` 会被 shell 展开（`$2a$14$...` → `a4`，`basicauth` 谁也登不上），空格分隔的 IP 白名单里第二个 IP 会被当成命令执行、在 `set -e` 下直接中断部署。`configure-caddy.sh` 自己按字面量读取该文件，加不加引号都能正确解析。
   - 两项均配则同时生效（先过 IP 白名单，再过 Basic Auth）。变量写在 `/opt/apipool-v2/.env.deploy`；`server-bootstrap.sh` 把该文件路径经 `APIPOOL_DEPLOY_ENV_FILE` 交给 `configure-caddy.sh`，由后者按字面量读取（不 source）。
 - `X-Robots-Tag: noindex, nofollow`。
 - 不出现在公开导航、文档、sitemap、客服文案中。
@@ -100,7 +102,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://api2.apipool.dev/v1/models   # 401（需 sk- key），非 404
 curl -sS -o /dev/null -w '%{http_code}\n' https://api2.apipool.dev/api/status  # 404
-curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          # 401 或 403，绝不是 200
+curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          # 200/401 取决于运营守卫，但必须经 Cloudflare
 ```
 
 预跑生成的配置（无需 root，不改系统）：`bash deploy/configure-caddy.sh --print-config`。
@@ -231,7 +233,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
 
 ## 3.5 自动化部署流程
 
-生产部署由 GitHub Actions 构建镜像、VPS 拉取指定镜像、部署脚本先备份后切换容器三段组成。
+生产部署由四段组成：GitHub 托管 Runner 构建并推送镜像、VPS 自托管 Runner 仅通过出站 HTTPS 接单、root-owned 包装器拉取指定镜像、部署脚本先备份后切换容器。VPS 不构建镜像，GitHub 托管 Runner 也不再通过 SSH 登录 VPS。
 
 ### GitHub CI 镜像
 
@@ -262,19 +264,28 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
 └── deploy/
     ├── backup.sh
     ├── configure-caddy.sh
+    ├── configure-ingress-firewall.sh
     ├── deploy.sh
+    ├── install-production-tooling.sh
     ├── live-smoke.sh
     ├── server-bootstrap.sh
     ├── setup-smoke-users.sh
     └── systemd/
 ```
 
+VPS 自托管 Runner 固定安装在 `/opt/actions-runner-apipool`，使用无登录 shell 的 `apipool-runner` 用户。它只能免密执行 root 持有的 `/usr/local/sbin/apipool-runner-deploy`；不能直接以 root 运行任意命令。
+
+生产 compose 与 `deploy/` 是 owner 经 SSH 安装的固定 root-owned 工具链；Actions checkout 不能覆盖它们。工具链需要更新时必须单独走 SSH 审核安装。Runner 用户自身未加入 Docker 组，nftables 只允许其发起 DNS/HTTPS，并拒绝访问云 metadata 网段；Docker 拉镜像由校验后的 root 包装器执行。
+
 ### 首次引导
 
-从本机同步部署件到服务器（不包含 `.env.deploy` 密钥文件）：
+从本机把候选部署件同步到服务器临时目录（不包含 `.env.deploy` 密钥文件），再由
+root 安装器备份旧工具链并统一所有权；不要直接 rsync 覆盖 `/opt/apipool-v2`：
 
 ```bash
-rsync -az docker-compose.prod.yml deploy/ apipool_vps:/opt/apipool-v2/
+COPYFILE_DISABLE=1 tar --no-xattrs -czf - docker-compose.prod.yml deploy \
+  | ssh apipool_vps 'install -d -m 700 /root/apipool-tooling-candidate && tar -xzf - -C /root/apipool-tooling-candidate'
+ssh apipool_vps '/root/apipool-tooling-candidate/deploy/install-production-tooling.sh /root/apipool-tooling-candidate'
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 ```
 
@@ -295,15 +306,23 @@ APIPOOL_KEY_CREATION_ENABLED=false
 
 完成 New API root 初始化并写入 `NEWAPI_ADMIN_TOKEN` 后，再改回 `true` 并重新执行部署。
 
-私有 GHCR 镜像需要服务器先登录：
+首次安装 repo-level 自托管 Runner 时，从 GitHub 生成一次性注册 token，经标准输入交给安装脚本；不要把 token 写入磁盘或命令行历史：
 
 ```bash
-gh auth token | ssh apipool_vps 'docker login ghcr.io -u AFreeCoder --password-stdin'
+ssh apipool_vps 'install -d -m 700 /root/apipool-runner-bootstrap'
+scp deploy/install-github-runner.sh deploy/runner-deploy.sh \
+  apipool_vps:/root/apipool-runner-bootstrap/
+gh api --method POST repos/AFreeCoder/apipool-v2/actions/runners/registration-token --jq .token \
+  | ssh apipool_vps '/root/apipool-runner-bootstrap/install-github-runner.sh'
 ```
 
-### 部署命令
+安装完成后删除 `/root/apipool-runner-bootstrap`。工作流每次只把当次 `GITHUB_TOKEN` 通过标准输入交给 root 包装器登录 GHCR，任务结束立即 logout，不在 VPS 保存长期 GHCR 凭据。
 
-CI 成功后取完整 commit 对应的镜像 tag：
+> 权限门禁：私有仓库当前若没有 `main` 分支保护或 production required reviewer，任何拥有 write 权限的协作者都能触发生产镜像发布。安装 Runner 前必须确认所有 write 协作者都属于生产发布信任边界；否则先降权，或升级 GitHub 方案并启用保护。
+
+### 自动部署与人工恢复
+
+`main` 构建成功后，部署 job 会自动投递给带 `apipool-prod-deploy` 标签的 VPS Runner。人工恢复时才通过 SSH 直接执行：
 
 ```bash
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
@@ -317,6 +336,31 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
 4. `docker compose up -d --remove-orphans` 切换容器。
 5. 验证 `http://127.0.0.1:3001/api/status` 与 `http://127.0.0.1:3000/`。
 6. 健康检查失败时尝试回滚到上一次 `IMAGE_TAG`；数据库不自动回滚，需根据备份人工恢复。
+
+### 主机入站防火墙
+
+先在腾讯云防火墙放行 owner 确认的 SSH CIDR 到 TCP `22222`，再应用主机层规则。不要把当前临时出口 IP 自动当成长期白名单：
+
+```bash
+ssh apipool_vps
+cd /opt/apipool-v2
+APIPOOL_SSH_ALLOWED_CIDRS='<owner-cidr>/32' \
+  ./deploy/configure-ingress-firewall.sh --print-config
+sudo APIPOOL_SSH_ALLOWED_CIDRS='<owner-cidr>/32' \
+  ./deploy/configure-ingress-firewall.sh --apply
+```
+
+`--apply` 会先安排 5 分钟后的自动回滚。保持当前会话不退出，从另一个终端建立新的 `ssh apipool_vps`；确认新会话、80/443 与 GitHub Runner 都正常后，才执行：
+
+```bash
+sudo /opt/apipool-v2/deploy/configure-ingress-firewall.sh --confirm
+```
+
+规则只允许公网 TCP `80/443`、HTTP/3 的 UDP `443`、确认 CIDR 的 TCP `22222`、回环、已建立连接、DHCP 续租以及必要 ICMP/ICMPv6；TCP `22` 与其他新入站默认丢弃。紧急人工回滚：
+
+```bash
+sudo /opt/apipool-v2/deploy/configure-ingress-firewall.sh --rollback
+```
 
 ### 定时备份
 

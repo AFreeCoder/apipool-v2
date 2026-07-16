@@ -54,15 +54,18 @@ docker compose --env-file .env.deploy up -d --build
 the container refuses to start. New API root credentials (`NEWAPI_ROOT_*`) are
 host-bootstrap-only and are not injected into the portal container.
 
-For production, GitHub Actions builds immutable GHCR images and the VPS deploy
-script pulls the selected tag after a pre-deploy backup:
+生产环境由 GitHub 托管 Runner 构建不可变 GHCR 镜像。VPS 上的仓库级专用部署
+Runner 只通过出站 HTTPS 领取生产部署任务，在预部署备份后拉取指定镜像。VPS 不构建
+镜像，GitHub 托管 Runner 也不通过 SSH 登录 VPS。workflow 无权替换 root 持有的
+生产 compose/deploy 工具链；工具链更新仍需运营人员显式通过 SSH 完成。人工恢复继续
+使用运营 SSH 通道：
 
 ```bash
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
 ```
 
-Release gating, security, backup retention, rollback, and the current VPS
-access record are in [`docs/07-runbook.md`](docs/07-runbook.md).
+发布门禁、安全边界、备份保留、回滚和当前 VPS 访问记录见
+[`docs/07-runbook.md`](docs/07-runbook.md)。
 
 ## Verification
 
