@@ -1,4 +1,4 @@
-name: Build and deploy New API image-count hotfix
+name: Build New API image-count hotfix
 
 on:
   push:
@@ -16,8 +16,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - name: Checkout deployment repository
@@ -63,53 +61,17 @@ jobs:
           provenance: mode=max
           sbom: true
 
-  deploy-production:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    concurrency:
-      group: apipool-production-deploy
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      packages: read
-    env:
-      IMAGE_REF: ghcr.io/afreecoder/apipool-new-api@${{ needs.build-and-push.outputs.digest }}
-      APIPOOL_VPS_HOST: ${{ secrets.APIPOOL_VPS_HOST }}
-      APIPOOL_VPS_PORT: ${{ secrets.APIPOOL_VPS_PORT }}
-      APIPOOL_VPS_USER: ${{ secrets.APIPOOL_VPS_USER }}
-      APIPOOL_VPS_SSH_KEY: ${{ secrets.APIPOOL_VPS_SSH_KEY }}
-
-    steps:
-      - name: Checkout deployment repository
-        uses: actions/checkout@v7
-
-      - name: Prepare SSH
+      - name: Export deployable image archive
         run: |
-          test -n "$APIPOOL_VPS_HOST"
-          test -n "$APIPOOL_VPS_PORT"
-          test -n "$APIPOOL_VPS_USER"
-          test -n "$APIPOOL_VPS_SSH_KEY"
-          mkdir -p ~/.ssh
-          printf '%s\n' "$APIPOOL_VPS_SSH_KEY" > ~/.ssh/apipool_vps
-          chmod 600 ~/.ssh/apipool_vps
-          ssh-keyscan -p "$APIPOOL_VPS_PORT" "$APIPOOL_VPS_HOST" >> ~/.ssh/known_hosts
+          image="${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          docker pull "$image"
+          docker image inspect --format '{{.Os}}/{{.Architecture}} {{.Id}}' "$image"
+          docker save "$image" | gzip -1 > apipool-new-api-hotfix.tar.gz
 
-      - name: Upload New API deployment helper
-        run: |
-          scp \
-            -P "$APIPOOL_VPS_PORT" \
-            -i ~/.ssh/apipool_vps \
-            deploy/deploy-newapi-image.sh \
-            "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST:/tmp/deploy-newapi-image.sh"
-
-      - name: Deploy New API image
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          test -n "$GHCR_TOKEN"
-          printf '%s' "$GHCR_TOKEN" | ssh \
-            -p "$APIPOOL_VPS_PORT" \
-            -i ~/.ssh/apipool_vps \
-            "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST" \
-            "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin >/dev/null && chmod 700 /tmp/deploy-newapi-image.sh && /tmp/deploy-newapi-image.sh '$IMAGE_REF'; status=\$?; docker logout ghcr.io >/dev/null 2>&1 || true; exit \$status"
+      - name: Upload deployable image archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: apipool-new-api-hotfix-${{ github.sha }}
+          path: apipool-new-api-hotfix.tar.gz
+          if-no-files-found: error
+          retention-days: 3
