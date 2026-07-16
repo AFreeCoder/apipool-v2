@@ -443,6 +443,7 @@ test('production runner deploy wrapper validates immutable inputs and keeps root
   assert.match(wrapper, /\^sha-\[0-9a-f\]\{40\}\$/);
   assert.match(wrapper, /checkout HEAD does not match image tag/);
   assert.match(wrapper, /safe\.directory=/);
+  assert.match(wrapper, /GIT_OPTIONAL_LOCKS=0/);
   assert.match(wrapper, /workspace is not clean/);
   assert.match(wrapper, /verify_root_owned_tooling/);
   assert.doesNotMatch(wrapper, /install .*workspace.*docker-compose/);

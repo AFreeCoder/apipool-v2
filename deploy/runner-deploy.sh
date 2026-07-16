@@ -45,7 +45,9 @@ for required in .git; do
 done
 
 git_in_workspace() {
-  env -i PATH=/usr/bin:/bin HOME=/root \
+  # root 只读检查 Runner checkout。禁止 Git 为刷新 stat cache 写回 .git/index，
+  # 否则 index 会变成 root 所有，actions/checkout 的 post cleanup 无法读取。
+  env -i PATH=/usr/bin:/bin HOME=/root GIT_OPTIONAL_LOCKS=0 \
     git -c safe.directory="$workspace" -C "$workspace" "$@"
 }
 
