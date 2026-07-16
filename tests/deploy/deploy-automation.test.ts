@@ -22,10 +22,15 @@ test('docker image workflow builds production-configured immutable images', asyn
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL:\s*gpt-5\.4-mini/);
   assert.match(workflow, /deploy-production:/);
   assert.match(workflow, /IMAGE_TAG:\s*sha-\$\{\{\s*github\.sha\s*\}\}/);
-  assert.match(workflow, /docker login ghcr\.io/);
-  assert.match(workflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
-  assert.match(workflow, /deploy\/live-smoke\.sh/);
-  assert.match(workflow, /deploy\/setup-smoke-users\.sh/);
+  assert.match(
+    workflow,
+    /runs-on:\s*\[self-hosted, linux, x64, apipool-prod-deploy\]/
+  );
+  assert.match(workflow, /sudo \/usr\/local\/sbin\/apipool-runner-deploy/);
+  assert.match(workflow, /GHCR_USER:\s*\$\{\{\s*github\.repository_owner\s*\}\}/);
+  assert.match(workflow, /persist-credentials:\s*false/);
+  assert.doesNotMatch(workflow, /APIPOOL_VPS_SSH_KEY/);
+  assert.doesNotMatch(workflow, /ssh-keyscan|\| ssh \\/);
 });
 
 test('GitHub workflows use Node 24-compatible actions without changing release semantics', async () => {
@@ -74,7 +79,7 @@ test('GitHub workflows use Node 24-compatible actions without changing release s
     /if:\s*github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/
   );
   assert.match(dockerWorkflow, /type=sha,format=long/);
-  assert.match(dockerWorkflow, /\.\/deploy\/deploy\.sh '\$IMAGE_TAG'/);
+  assert.match(dockerWorkflow, /apipool-runner-deploy/);
   assert.equal(
     [...verifyWorkflow.matchAll(/node-version:\s*['"]22['"]/g)].length,
     1
@@ -175,6 +180,63 @@ test('Caddy setup keeps the portal and the data plane reachable', async () => {
   assert.match(bootstrap, /configure-caddy\.sh/);
 });
 
+test('Cloudflare source ranges are versioned and valid CIDRs', async () => {
+  const { isIP } = await import('node:net');
+  const body = await readFile('deploy/cloudflare-ips.txt', 'utf8');
+  const cidrs = body
+    .split(/\r?\n/)
+    .map((line) => line.replace(/#.*/, '').trim())
+    .filter(Boolean);
+
+  assert.ok(cidrs.length >= 20);
+  assert.ok(cidrs.some((cidr) => cidr.includes(':')));
+  assert.ok(cidrs.some((cidr) => !cidr.includes(':')));
+
+  for (const cidr of cidrs) {
+    const [address, prefix, extra] = cidr.split('/');
+    assert.equal(extra, undefined, `unexpected CIDR: ${cidr}`);
+    const version = isIP(address);
+    assert.ok(version === 4 || version === 6, `invalid IP: ${cidr}`);
+    const prefixNumber = Number(prefix);
+    assert.ok(Number.isInteger(prefixNumber), `invalid prefix: ${cidr}`);
+    assert.ok(
+      prefixNumber >= 0 && prefixNumber <= (version === 4 ? 32 : 128),
+      `invalid prefix: ${cidr}`
+    );
+  }
+});
+
+test('Caddy accepts only Cloudflare peers for proxied hostnames', async () => {
+  const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
+  assert.equal(status, 0);
+
+  const portalBlock = stdout.split('app.apipool.dev {')[1].split('\n}')[0];
+  const apiBlock = stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
+  const newapiBlock = stdout
+    .split('newapi.apipool.dev {')[1]
+    .split('\n}')[0];
+
+  for (const block of [portalBlock, newapiBlock]) {
+    assert.match(block, /@not_cloudflare not remote_ip/);
+    assert.match(block, /173\.245\.48\.0\/20/);
+    assert.match(block, /2400:cb00::\/32/);
+    assert.match(block, /respond @not_cloudflare .*403/);
+  }
+
+  // DNS-only API 面向任意客户，不能误套 Cloudflare 来源限制。
+  assert.doesNotMatch(apiBlock, /@not_cloudflare/);
+});
+
+test('Caddy fails closed when the Cloudflare range file is unavailable', () => {
+  const { status, stderr } = printCaddyConfig({
+    ...NEWAPI_BASIC_AUTH,
+    APIPOOL_CLOUDFLARE_IPS_FILE: '/path/that/does/not/exist',
+  });
+
+  assert.equal(status, 78);
+  assert.match(stderr, /missing Cloudflare IP list/);
+});
+
 test('Caddy exposes only the /v1 data plane on the public API domain', async () => {
   // api2 与 New API 管理面同一个上游；不限路径就等于把 /api/* 管理接口也代理出去
   const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
@@ -192,7 +254,7 @@ test('Caddy guards the New API operator surface with basic auth', async () => {
   assert.equal(status, 0);
 
   const newapiBlock = stdout.split('newapi.apipool.dev {')[1];
-  assert.match(newapiBlock, /basic_auth/);
+  assert.match(newapiBlock, /basicauth/);
   assert.match(newapiBlock, /ops \$2a\$14\$hashplaceholder/);
 });
 
@@ -357,13 +419,68 @@ test('the fail-closed guard can be explicitly opted out, but stays closed by def
   const closed = await printConfig('FOO=bar\n');
   assert.equal(closed.status, 78);
 
-  // 显式开关：跳过守卫，生成不带 basic_auth / remote_ip 的 newapi vhost
+  // 显式开关只跳过 operator guard；Cloudflare 源站 ACL 始终保留
   const open = await printConfig('APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n');
   assert.equal(open.status, 0);
   const newapiBlock = open.stdout.split('newapi.apipool.dev {')[1].split('\n}')[0];
-  assert.doesNotMatch(newapiBlock, /basic_auth/);
-  assert.doesNotMatch(newapiBlock, /remote_ip/);
+  assert.doesNotMatch(newapiBlock, /basicauth/);
+  assert.doesNotMatch(newapiBlock, /@denied/);
+  assert.match(newapiBlock, /@not_cloudflare not remote_ip/);
   // 但仍保留 noindex，且 api2 仍只放行 /v1
   assert.match(open.stdout, /X-Robots-Tag "noindex, nofollow"/);
   assert.match(open.stdout, /handle \/v1\*/);
+});
+
+test('production runner deploy wrapper validates immutable inputs and keeps root scope narrow', async () => {
+  const wrapper = await readFile('deploy/runner-deploy.sh', 'utf8');
+  const installer = await readFile('deploy/install-github-runner.sh', 'utf8');
+  const toolingInstaller = await readFile(
+    'deploy/install-production-tooling.sh',
+    'utf8'
+  );
+
+  assert.match(wrapper, /EXPECTED_WORKSPACE=.*actions-runner-apipool/);
+  assert.match(wrapper, /\^sha-\[0-9a-f\]\{40\}\$/);
+  assert.match(wrapper, /checkout HEAD does not match image tag/);
+  assert.match(wrapper, /safe\.directory=/);
+  assert.match(wrapper, /workspace is not clean/);
+  assert.match(wrapper, /verify_root_owned_tooling/);
+  assert.doesNotMatch(wrapper, /install .*workspace.*docker-compose/);
+  assert.match(wrapper, /production env file must be root-owned and owner-only/);
+  assert.match(wrapper, /env -i/);
+  assert.match(wrapper, /DOCKER_CONFIG=.*\/run\/apipool-ghcr-auth/);
+  assert.match(wrapper, /docker login ghcr\.io/);
+  assert.match(wrapper, /\.\/deploy\/deploy\.sh "\$image_tag"/);
+
+  assert.match(installer, /sha256sum --check --status/);
+  assert.match(installer, /useradd --system/);
+  assert.match(installer, /\/usr\/sbin\/nologin/);
+  assert.match(installer, /apipool-prod-deploy/);
+  assert.match(installer, /\/etc\/sudoers\.d\/apipool-runner-deploy/);
+  assert.match(installer, /apipool_runner_egress/);
+  assert.match(installer, /meta skuid/);
+  assert.match(installer, /169\.254\.0\.0\/16 reject/);
+  assert.match(installer, /tcp dport \{ 53, 443 \} accept/);
+  assert.doesNotMatch(installer, /usermod .*docker|groupadd .*docker/);
+
+  assert.match(toolingInstaller, /必须以 root 运行/);
+  assert.match(toolingInstaller, /部署件中不允许出现符号链接/);
+  assert.match(toolingInstaller, /tooling-.*tar\.gz/);
+  assert.match(toolingInstaller, /install -D -o root -g root/);
+});
+
+test('ingress firewall is allowlisted and requires explicit rollback confirmation', async () => {
+  const script = await readFile('deploy/configure-ingress-firewall.sh', 'utf8');
+
+  assert.match(script, /policy drop/);
+  assert.match(script, /tcp dport \{ 80, 443 \} accept/);
+  assert.match(script, /tcp dport 22222 accept/);
+  assert.doesNotMatch(script, /tcp dport 22 accept/);
+  assert.match(script, /ct state established,related accept/);
+  assert.match(script, /udp sport 67 udp dport 68 accept/);
+  assert.match(script, /udp sport 547 udp dport 546 accept/);
+  assert.match(script, /systemd-run/);
+  assert.match(script, /--on-active=/);
+  assert.match(script, /--confirm/);
+  assert.match(script, /--rollback/);
 });
