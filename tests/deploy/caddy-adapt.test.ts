@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -33,13 +33,20 @@ function renderConfig(guardEnv: Record<string, string>) {
 }
 
 function runCaddy(command: 'adapt' | 'validate', config: string) {
-  const result = spawnSync(
-    'caddy',
-    [command, '--config', '-', '--adapter', 'caddyfile'],
-    { input: config, encoding: 'utf8' }
-  );
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout;
+  const dir = mkdtempSync(join(tmpdir(), 'apipool-caddy-config-'));
+  const configFile = join(dir, 'Caddyfile');
+  writeFileSync(configFile, config, 'utf8');
+  try {
+    const result = spawnSync(
+      'caddy',
+      [command, '--config', configFile, '--adapter', 'caddyfile'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function visit(
