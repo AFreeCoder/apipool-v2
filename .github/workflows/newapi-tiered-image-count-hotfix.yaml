@@ -1,0 +1,115 @@
+name: Build and deploy New API image-count hotfix
+
+on:
+  push:
+    branches:
+      - codex/newapi-tiered-image-count
+
+env:
+  IMAGE_NAME: ghcr.io/afreecoder/apipool-new-api
+  NEWAPI_REPOSITORY: AFreeCoder/new-api
+  NEWAPI_REF: 31d25e51208d3220ec277e88e0ca275e45b08da8
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout deployment repository
+        uses: actions/checkout@v7
+
+      - name: Checkout patched New API source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.NEWAPI_REPOSITORY }}
+          ref: ${{ env.NEWAPI_REF }}
+          path: .build/new-api
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: .build/new-api/go.sum
+
+      - name: Run targeted New API tests
+        working-directory: .build/new-api
+        run: go test ./pkg/billingexpr ./relay/helper ./service ./relay/channel/openai
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push immutable New API image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .build/new-api
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=newapi-tiered-image-count
+          cache-to: type=gha,mode=max,scope=newapi-tiered-image-count
+          provenance: mode=max
+          sbom: true
+
+  deploy-production:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: apipool-production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE_REF: ghcr.io/afreecoder/apipool-new-api@${{ needs.build-and-push.outputs.digest }}
+      APIPOOL_VPS_HOST: ${{ secrets.APIPOOL_VPS_HOST }}
+      APIPOOL_VPS_PORT: ${{ secrets.APIPOOL_VPS_PORT }}
+      APIPOOL_VPS_USER: ${{ secrets.APIPOOL_VPS_USER }}
+      APIPOOL_VPS_SSH_KEY: ${{ secrets.APIPOOL_VPS_SSH_KEY }}
+
+    steps:
+      - name: Checkout deployment repository
+        uses: actions/checkout@v7
+
+      - name: Prepare SSH
+        run: |
+          test -n "$APIPOOL_VPS_HOST"
+          test -n "$APIPOOL_VPS_PORT"
+          test -n "$APIPOOL_VPS_USER"
+          test -n "$APIPOOL_VPS_SSH_KEY"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$APIPOOL_VPS_SSH_KEY" > ~/.ssh/apipool_vps
+          chmod 600 ~/.ssh/apipool_vps
+          ssh-keyscan -p "$APIPOOL_VPS_PORT" "$APIPOOL_VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload New API deployment helper
+        run: |
+          scp \
+            -P "$APIPOOL_VPS_PORT" \
+            -i ~/.ssh/apipool_vps \
+            deploy/deploy-newapi-image.sh \
+            "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST:/tmp/deploy-newapi-image.sh"
+
+      - name: Deploy New API image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" | ssh \
+            -p "$APIPOOL_VPS_PORT" \
+            -i ~/.ssh/apipool_vps \
+            "$APIPOOL_VPS_USER@$APIPOOL_VPS_HOST" \
+            "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin >/dev/null && chmod 700 /tmp/deploy-newapi-image.sh && /tmp/deploy-newapi-image.sh '$IMAGE_REF'; status=\$?; docker logout ghcr.io >/dev/null 2>&1 || true; exit \$status"
