@@ -95,7 +95,10 @@ async function getCredential(userId: string, group: string) {
   return row;
 }
 
-function createWorkerHarness(initial: Record<string, any[]> = {}) {
+function createWorkerHarness(
+  initial: Record<string, any[]> = {},
+  hooks: { afterCreate?: (token: any) => Promise<void> } = {}
+) {
   const tokens = new Map<string, any[]>(Object.entries(initial));
   const createCalls: any[] = [];
   const disableCalls: any[] = [];
@@ -113,6 +116,7 @@ function createWorkerHarness(initial: Record<string, any[]> = {}) {
         status: 1,
       };
       tokens.set(input.name, [...(tokens.get(input.name) || []), next]);
+      await hooks.afterCreate?.(next);
     },
     getTokenKey: async (_credentials: any, tokenId: string) =>
       `sk-runtime-${tokenId}`,
@@ -316,6 +320,35 @@ test('用户禁用入 retirement、清 token；worker 随后远端禁用', async
     .from(modules.schema.credentialRetirement)
     .where(eq(modules.schema.credentialRetirement.credentialId, row.id));
   assert.ok(retirement.disabledAt);
+});
+
+test('worker 创建 token 期间管理员禁用，不得把本地凭证复活为 pending/active', async () => {
+  const userId = 'credential-disable-during-create';
+  const group = 'official';
+  await insertUser(userId);
+  await insertCredential(userId, group);
+  const harness = createWorkerHarness(
+    {},
+    {
+      afterCreate: async () => {
+        await modules.credentials.disableRuntimeCredentialsForUser(
+          userId,
+          'user_disable'
+        );
+      },
+    }
+  );
+
+  const first = await modules.credentials.runCredentialWorkerOnce(harness);
+  const disabled = await getCredential(userId, group);
+  assert.equal(first.failed, 1);
+  assert.equal(disabled.status, 'disabled');
+  assert.equal(disabled.tokenEnc, null);
+
+  const second = await modules.credentials.runCredentialWorkerOnce(harness);
+  assert.equal(second.processed, 0);
+  assert.equal((await getCredential(userId, group)).status, 'disabled');
+  assert.equal(harness.createCalls.length, 1);
 });
 
 test('禁用后恢复：ensure 转 pending，旧 token 黑名单迫使新建', async () => {

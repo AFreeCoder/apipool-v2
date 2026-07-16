@@ -14,6 +14,7 @@ import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
 import {
   createUsageExtractor,
   extractTopLevelModel,
+  extractTopLevelStream,
 } from '@/features/gateway/lib/sse-parser';
 
 import { getUuidV7 } from '@/shared/lib/hash';
@@ -302,6 +303,10 @@ export async function handleGatewayRequest(
         )
       );
     }
+    const streamExtraction = extractTopLevelStream(bodyResult.body);
+    const requestIsStream = streamExtraction.ok
+      ? streamExtraction.isStream
+      : false;
 
     const route = await deps.resolveRoute(auth.key.groupId, extraction.model);
     if (!route) {
@@ -339,7 +344,7 @@ export async function handleGatewayRequest(
         routeVersion: route.routeVersion,
         priceVersionId: route.priceVersionId,
         endpoint: endpoint.key,
-        isStream: false,
+        isStream: requestIsStream,
       },
       riskLimit
     );
@@ -360,7 +365,7 @@ export async function handleGatewayRequest(
       endpoint,
       rawBody: bodyResult.body,
       headers: buildUpstreamHeaders(req.headers, credential.runtimeKey),
-      isStream: false,
+      isStream: requestIsStream,
       clientSignal: upstreamController.signal,
     });
     if (outcome.kind === 'no_response') {

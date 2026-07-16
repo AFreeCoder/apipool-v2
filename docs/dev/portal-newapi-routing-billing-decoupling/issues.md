@@ -5,6 +5,13 @@
 - [ ] 在目标环境设置 `APIPOOL_SMOKE_REQUIRE_LIVE=true`，完成 Gateway 数据面和充值闭环 live smoke；本次接收只验证了本地构建、测试和静态编排，没有部署，也没有目标环境凭据。
 - [ ] 在安装 Caddy 的 CI 或等价 Linux 环境完成真实 `caddy adapt` / `caddy validate`；本机缺少 Caddy，相关本地用例按设计跳过，GitHub Actions 已配置为安装失败即失败。
 
+## 本次接收已闭环裁决
+
+- [x] Task 11 充值语义按计划执行：`WALLET_LEDGER_WRITE_ENABLED` 只切换 credit/wallet 本地事实链，`applyApipoolRecharge` 在两种模式和 PAID 重放下都照常执行；回归测试同时校验远端推送凭证按 `order_no` 幂等。
+- [x] runtime credential worker 的 invalid→pending 与失败 catch 更新都增加 `status IN ('pending','invalid')` 条件，管理员并发禁用后不得把凭证复活为 pending/active；已补“创建 token 期间禁用”的竞态测试。
+- [x] Task 25 公开目录 callable 叠加维持无额外 `APIPOOL_API_MODE` 门控。明确接受“代码部署后、路由/价格发布前”短暂显示不可调用；运营顺序固定为“部署 → 立即发布路由/价格 → preflight”，未完成不得继续切流。详见 [runbook §6.2](../../07-runbook.md#62-步骤-07-与命令映射)。
+- [x] 告警关键字检索式已改为代码中真实存在的日志词，并按终态、凭证、回填、资金/路由四类补充处置入口。详见 [runbook §6.6](../../07-runbook.md#66-观察-72h告警与旧-token-收尾)。
+
 ## 运营期观察
 
 以下均为已接受、需在运营期观察的遗留。PLAN.md 的设计勘误已扩至 E1–E9
@@ -23,6 +30,6 @@
 - [ ] 评审 R4-F1 降级修对 finalize 终态写入做 3 次退避重试，不持久化意图 marker。残余窗口为“流中断且单条 UPDATE 三连失败”，open 经 sweeper 回填后可能按日志错扣一笔；由对账发现并用 `manual_adjustment` 人工冲正，实际出现后再重开终态意图持久化裁决。
 - [ ] 评审 R6-F5 降级裁决：出现非零未映射 usage 维度时仍结算已知桶，因为整笔 `failed_unbilled` 或同样不识新维度的回填损失更大。恢复链路固定为 `unmapped_usage_dimension` 告警 → 对账 `amount_mismatch` → 扩展白名单 → 用带审计的 `manual_adjustment` 补历史差额。
 - [ ] reconcile 时间片按 v1 量级固定为 10 分钟/片、50 页/片、12 片/轮；根据 `reconcile_slice_overflow` 频率调参。
-- [ ] 评审 R17：常规发布冻结 checkout 只阻止创建新支付会话；冻结前已创建的在途会话若在新镜像启动后、充值 smoke 完成前的秒级窗口抵达，仍会在尚未最终验证的镜像上结算。当前由每小时钱包不变量检查提供可见性，并可用带审计的 `manual_adjustment` 冲正；业务量提升后再设计可重试的结算门控。
+- [ ] 评审 R17：常规发布冻结 checkout 只阻止创建新支付会话；冻结前已创建的在途会话若在新镜像开始接收请求后、当前 `IMAGE_TAG` 的 recharge smoke marker 写入且 checkout 重开前抵达，仍会在尚未最终验证的镜像上结算。该秒级窗口的起点是新容器接流，终点是 smoke 成功并恢复 checkout；当前由每小时钱包不变量检查提供可见性，并可用带审计的 `manual_adjustment` 冲正。业务量提升后再设计可重试的结算门控。
 
 十七轮评审完整处置见 [review-log.md](../../plan/portal-newapi-routing-billing-decoupling/review-log.md)。

@@ -4,6 +4,10 @@ export type ModelExtraction =
   | { ok: true; model: string }
   | { ok: false; reason: 'missing' | 'ambiguous' | 'malformed' };
 
+export type StreamExtraction =
+  | { ok: true; isStream: boolean }
+  | { ok: false; reason: 'missing' | 'ambiguous' | 'malformed' };
+
 const QUOTE = 0x22;
 const BACKSLASH = 0x5c;
 const COLON = 0x3a;
@@ -13,6 +17,9 @@ const CLOSE_BRACE = 0x7d;
 const CLOSE_BRACKET = 0x5d;
 const MODEL_VALUE_MAX_BYTES = 512;
 const MODEL_KEY = [0x6d, 0x6f, 0x64, 0x65, 0x6c];
+const STREAM_KEY = [0x73, 0x74, 0x72, 0x65, 0x61, 0x6d];
+const TRUE_VALUE = [0x74, 0x72, 0x75, 0x65];
+const FALSE_VALUE = [0x66, 0x61, 0x6c, 0x73, 0x65];
 
 const isWhitespace = (byte: number) =>
   byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d;
@@ -221,6 +228,75 @@ export function extractTopLevelModel(body: Uint8Array): ModelExtraction {
   if (depth !== 0) return { ok: false, reason: 'malformed' };
   if (model === null) return { ok: false, reason: 'missing' };
   return { ok: true, model };
+}
+
+function matchesLiteral(
+  body: Uint8Array,
+  start: number,
+  expected: readonly number[]
+): boolean {
+  for (let offset = 0; offset < expected.length; offset += 1) {
+    if (body[start + offset] !== expected[offset]) return false;
+  }
+  const next = body[start + expected.length];
+  return (
+    next === undefined ||
+    isWhitespace(next) ||
+    next === 0x2c ||
+    next === CLOSE_BRACE ||
+    next === CLOSE_BRACKET
+  );
+}
+
+export function extractTopLevelStream(body: Uint8Array): StreamExtraction {
+  let isStream: boolean | null = null;
+  let depth = 0;
+  let index = 0;
+
+  while (index < body.length) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const key = matchJsonString(body, index, STREAM_KEY);
+      if (!key) return { ok: false, reason: 'malformed' };
+      if (depth === 1 && key.matches) {
+        let colonIndex = key.end;
+        while (colonIndex < body.length && isWhitespace(body[colonIndex])) {
+          colonIndex += 1;
+        }
+        if (body[colonIndex] === COLON) {
+          if (isStream !== null) return { ok: false, reason: 'ambiguous' };
+          let valueIndex = colonIndex + 1;
+          while (valueIndex < body.length && isWhitespace(body[valueIndex])) {
+            valueIndex += 1;
+          }
+          if (matchesLiteral(body, valueIndex, TRUE_VALUE)) {
+            isStream = true;
+            index = valueIndex + TRUE_VALUE.length;
+            continue;
+          }
+          if (matchesLiteral(body, valueIndex, FALSE_VALUE)) {
+            isStream = false;
+            index = valueIndex + FALSE_VALUE.length;
+            continue;
+          }
+          return { ok: false, reason: 'malformed' };
+        }
+      }
+      index = key.end;
+      continue;
+    }
+
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth < 0) return { ok: false, reason: 'malformed' };
+    }
+    index += 1;
+  }
+
+  if (depth !== 0) return { ok: false, reason: 'malformed' };
+  if (isStream === null) return { ok: false, reason: 'missing' };
+  return { ok: true, isStream };
 }
 
 export interface ExtractedUsage {

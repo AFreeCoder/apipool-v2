@@ -219,8 +219,14 @@ async function processCredential(
         tokenEnc: null,
         keyMasked: null,
       })
-      .where(eq(runtimeCredential.id, row.id))
+      .where(
+        and(
+          eq(runtimeCredential.id, row.id),
+          inArray(runtimeCredential.status, ['pending', 'invalid'])
+        )
+      )
       .returning();
+    if (!pending) return;
     row = pending;
   }
 
@@ -388,7 +394,12 @@ export async function runCredentialWorkerOnce(
         await db()
           .update(runtimeCredential)
           .set({ status: 'pending', lastError: message })
-          .where(eq(runtimeCredential.id, row.id));
+          .where(
+            and(
+              eq(runtimeCredential.id, row.id),
+              inArray(runtimeCredential.status, ['pending', 'invalid'])
+            )
+          );
       }
       console.warn(`runtime credential worker failed: ${row.id} ${message}`);
     }

@@ -228,6 +228,41 @@ test('路由存在但运行 Key pending → 503 + Retry-After', async () => {
   assert.equal(response.headers.get('retry-after'), '1');
 });
 
+test('请求 stream 布尔值写入准入账本并传给上游转发', async () => {
+  const handler = await loadHandler();
+  let admitted: any;
+  let forwarded: any;
+  const response = await handler.handleGatewayRequest(
+    request('/v1/chat/completions', '{"model":"portal-model","stream":true}'),
+    ['chat', 'completions'],
+    readyDeps({
+      admit: async (input: any) => {
+        admitted = input;
+        return true;
+      },
+      forward: async (input: any) => {
+        forwarded = input;
+        return {
+          kind: 'responded',
+          upstream: new Response(
+            'data: {"usage":{"prompt_tokens":2,"completion_tokens":3}}\n\n',
+            {
+              headers: {
+                'content-type': 'text/event-stream',
+                'x-oneapi-request-id': 'newapi-request-stream-observation',
+              },
+            }
+          ),
+          newapiRequestId: 'newapi-request-stream-observation',
+        };
+      },
+    }) as any
+  );
+  await response.text();
+  assert.equal(admitted.isStream, true);
+  assert.equal(forwarded.isStream, true);
+});
+
 test('异常路径释放进程信号量，下一请求不被永久 429', async () => {
   process.env.GATEWAY_MAX_INFLIGHT = '1';
   const handler = await loadHandler();

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   createUsageExtractor,
   extractTopLevelModel,
+  extractTopLevelStream,
 } from '@/features/gateway/lib/sse-parser';
 
 const enc = new TextEncoder();
@@ -50,6 +51,33 @@ test('Unicode 转义键规范解码', () => {
       enc.encode('{"model":"cheap","\\u006dodel":"expensive"}')
     ),
     { ok: false, reason: 'ambiguous' }
+  );
+});
+
+test('extractTopLevelStream：只读取顶层布尔值并拒绝重复/错误类型', () => {
+  assert.deepEqual(
+    extractTopLevelStream(
+      enc.encode('{"model":"m1","stream":true,"metadata":{"stream":false}}')
+    ),
+    { ok: true, isStream: true }
+  );
+  assert.deepEqual(
+    extractTopLevelStream(enc.encode('{"model":"m1","\\u0073tream":false}')),
+    { ok: true, isStream: false }
+  );
+  assert.deepEqual(extractTopLevelStream(enc.encode('{"model":"m1"}')), {
+    ok: false,
+    reason: 'missing',
+  });
+  assert.deepEqual(
+    extractTopLevelStream(
+      enc.encode('{"model":"m1","stream":true,"stream":false}')
+    ),
+    { ok: false, reason: 'ambiguous' }
+  );
+  assert.deepEqual(
+    extractTopLevelStream(enc.encode('{"model":"m1","stream":"true"}')),
+    { ok: false, reason: 'malformed' }
   );
 });
 

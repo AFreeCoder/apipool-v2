@@ -419,30 +419,34 @@ cd /opt/apipool-v2
 ./deploy/cutover.sh status
 ```
 
-| 子命令 | 必需前态 | 成功后的关键状态 | 被拒含义与补救 |
-| --- | --- | --- | --- |
-| `preflight` | 无写状态要求 | 状态不变 | 门户直连或 MVP live smoke 未通过；修复代码、路由/价格或运行凭据后重跑 |
-| `maintenance` | `APIPOOL_API_MODE` 为 `legacy`、`maintenance`、`portal` 或尚未初始化 | `maintenance`、checkout=false；api2=503、newapi=404 | 锁冲突或 Caddy/探测失败；先保持收款关闭，修复后重跑本步 |
-| `activate-wallet --evidence <文件>` | maintenance、checkout=false、实时 503/404 | wallet write/display=true，当前 `IMAGE_TAG` 的 recharge marker 在案 | 证据缺失、隔离未生效或容器 env 不一致；补齐证据或重跑 maintenance/本步，不得跳到 portal |
-| `portal` | maintenance、checkout=false、wallet 两开关=true、当前镜像 recharge marker 在案 | portal；api2=401、newapi=404 | 任一前态缺失即重跑对应上一步；切换后探测失败时脚本自动收敛 maintenance |
-| `finalize` | portal、wallet 两开关=true、gateway/recharge marker 在案 | checkout=true | smoke 或三探测未通过；保持 checkout=false，修复并重跑 gateway smoke |
-| `status` | 无 | 只读输出 | `000` 表示探测不可达，不代表可继续 |
+| 子命令                              | 必需前态                                                                       | 成功后的关键状态                                                    | 被拒含义与补救                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `preflight`                         | 无写状态要求                                                                   | 状态不变                                                            | 门户直连或 MVP live smoke 未通过；修复代码、路由/价格或运行凭据后重跑                   |
+| `maintenance`                       | `APIPOOL_API_MODE` 为 `legacy`、`maintenance`、`portal` 或尚未初始化           | `maintenance`、checkout=false；api2=503、newapi=404                 | 锁冲突或 Caddy/探测失败；先保持收款关闭，修复后重跑本步                                 |
+| `activate-wallet --evidence <文件>` | maintenance、checkout=false、实时 503/404                                      | wallet write/display=true，当前 `IMAGE_TAG` 的 recharge marker 在案 | 证据缺失、隔离未生效或容器 env 不一致；补齐证据或重跑 maintenance/本步，不得跳到 portal |
+| `portal`                            | maintenance、checkout=false、wallet 两开关=true、当前镜像 recharge marker 在案 | portal；api2=401、newapi=404                                        | 任一前态缺失即重跑对应上一步；切换后探测失败时脚本自动收敛 maintenance                  |
+| `finalize`                          | portal、wallet 两开关=true、gateway/recharge marker 在案                       | checkout=true                                                       | smoke 或三探测未通过；保持 checkout=false，修复并重跑 gateway smoke                     |
+| `status`                            | 无                                                                             | 只读输出                                                            | `000` 表示探测不可达，不代表可继续                                                      |
 
 脚本拒绝跳级是资金安全门禁。尤其不能从 legacy 直接执行 `portal` 或 `finalize`；也不能在
 旧 `IMAGE_TAG` 留下的 recharge marker 上继续。
 
 ### 6.2 步骤 0–7 与命令映射
 
-| 设计步骤 | 操作 | 探测与期待值 |
-| --- | --- | --- |
-| 0. 恢复门禁 | 归档演练报告并确认 §6.1 四项证据 | 报告文件存在；不得只用“备份成功”替代恢复成功 |
-| 1. 预检 | `./deploy/cutover.sh preflight` | `127.0.0.1:3000/v1/models` 无 Key=401；MVP live smoke 全绿；路由/价格已发布 |
-| 2. maintenance | `./deploy/cutover.sh maintenance` | api2 `/v1/models`=503；newapi `/v1/models`=404 |
-| 3. 排空/水位 | 执行下方连接计数和 quota 快照 | 活跃连接连续两次为 0；快照文件 sha256 在案 |
-| 4. 钱包激活 | `./deploy/cutover.sh activate-wallet --evidence <恢复报告>`，核对摘要后交互输入 `yes` | 容器 wallet 两开关=true；受控充值为 PAID、仅写 wallet recharge、余额闭合；checkout 仍为 false |
-| 5. portal | `./deploy/cutover.sh portal` | api2 `/v1/models` 无 Key=401；newapi `/v1/models`=404 |
-| 6. 验收/开放 | `./deploy/live-smoke.sh --gateway`，核验 Dashboard 与钱包后执行 `./deploy/cutover.sh finalize`，核对摘要后交互输入 `yes` | 真实 SDK 六类调用结算单次、钱包扣费闭合；api2 管理路径=404；最后才 checkout=true |
-| 7. 观察/收尾 | 按 §6.6 观察 72h，再作废旧 `newapi_key_binding` 对应远端 token | 无未解释差异、无钱包不变量破坏、回填无积压；旧远端 token 均 disabled/deleted |
+Task 25 的公开目录 callable 叠加维持无额外切流开关：阶段①代码部署后、路由和价格发布前，
+目录可能短暂显示“不可调用”，这是已接受的运营窗口。固定顺序是“部署 → 立即发布路由/价格
+→ preflight”；路由/价格未发布完成时不得进入 maintenance、portal 或 finalize。
+
+| 设计步骤       | 操作                                                                                                                     | 探测与期待值                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| 0. 恢复门禁    | 归档演练报告并确认 §6.1 四项证据                                                                                         | 报告文件存在；不得只用“备份成功”替代恢复成功                                                  |
+| 1. 预检        | `./deploy/cutover.sh preflight`                                                                                          | `127.0.0.1:3000/v1/models` 无 Key=401；MVP live smoke 全绿；路由/价格已发布                   |
+| 2. maintenance | `./deploy/cutover.sh maintenance`                                                                                        | api2 `/v1/models`=503；newapi `/v1/models`=404                                                |
+| 3. 排空/水位   | 执行下方连接计数和 quota 快照                                                                                            | 活跃连接连续两次为 0；快照文件 sha256 在案                                                    |
+| 4. 钱包激活    | `./deploy/cutover.sh activate-wallet --evidence <恢复报告>`，核对摘要后交互输入 `yes`                                    | 容器 wallet 两开关=true；受控充值为 PAID、仅写 wallet recharge、余额闭合；checkout 仍为 false |
+| 5. portal      | `./deploy/cutover.sh portal`                                                                                             | api2 `/v1/models` 无 Key=401；newapi `/v1/models`=404                                         |
+| 6. 验收/开放   | `./deploy/live-smoke.sh --gateway`，核验 Dashboard 与钱包后执行 `./deploy/cutover.sh finalize`，核对摘要后交互输入 `yes` | 真实 SDK 六类调用结算单次、钱包扣费闭合；api2 管理路径=404；最后才 checkout=true              |
+| 7. 观察/收尾   | 按 §6.6 观察 72h，再作废旧 `newapi_key_binding` 对应远端 token                                                           | 无未解释差异、无钱包不变量破坏、回填无积压；旧远端 token 均 disabled/deleted                  |
 
 每个状态转换后都执行下列独立探测；不要只相信脚本最后一行：
 
@@ -594,13 +598,27 @@ SELECT status,count(*) AS n FROM request_ledger
 WHERE status IN ('failed_unbilled','pending_backfill','open') GROUP BY status;
 SELECT count(*) AS orphan_open FROM reconcile_orphan_observation WHERE resolved_at IS NULL;
 SELECT count(*) AS backfill_over_10m FROM request_ledger
-WHERE status='pending_backfill' AND created_at < (unixepoch()*1000-600000);"
+WHERE status='pending_backfill' AND created_at < (unixepoch()*1000-600000);
+SELECT count(*) AS frozen_wallets FROM wallet_account WHERE frozen_at IS NOT NULL;"
 
-# 最小告警集；有输出就登记时间窗、用户/请求 ID（脱敏）和处置。
+# 最小日志告警集；只使用代码中真实存在的关键字。有输出就登记时间窗、
+# 用户/请求 ID（脱敏）和处置。
 docker compose --env-file .env.deploy --env-file release.env \
   -f docker-compose.prod.yml logs --since 15m apipool-v2 2>&1 | \
-  grep -E 'overdraft_freeze|token_mismatch|wallet_invariant_broken|backfill_backlog_high|waived_by_failure_high|credential_create_failed|unmapped_usage_dimension|route_price_group_mismatch|reconcile_truncated|reconcile_slice_overflow' || true
+  grep -E 'terminal write failed|unmapped_usage_dimension|request id not persisted|finalize pipeline error|request handler failed|duplicate newapi_request_id|route_price_group_mismatch|runtime credential (adoption mismatch|retirement failed|worker failed)|\[backfill\] exhausted, manual queue|out_of_scope_consumption|admin logs unavailable|reconcile_slice_overflow|waived_by_failure_high|wallet_invariant_broken|\[jobs\] tick failed' || true
 ```
+
+关键字处置归类：
+
+- `terminal write failed`、`request id not persisted`、`finalize pipeline error`、
+  `request handler failed`、`duplicate newapi_request_id`：请求终态或幂等风险，立即按
+  request ID 核对 `request_ledger`，不得仅靠重放请求修复。
+- `runtime credential ... failed` / `adoption mismatch`：运行凭证创建或退役异常，检查
+  本地 credential/retirement 状态与远端同名 token，禁用用户不得手工改回 pending。
+- `[backfill] exhausted, manual queue`、`reconcile_slice_overflow`、
+  `admin logs unavailable`：回填或对账能力降级，结合上方积压 SQL 判断是否停止放量。
+- `wallet_invariant_broken`、`waived_by_failure_high`、`out_of_scope_consumption`、
+  `route_price_group_mismatch`：资金或路由一致性告警，保持/进入 maintenance 后调查。
 
 `unmapped_usage_dimension` 是协议演进信号：保持已知桶结算，立即查同时间窗的
 `amount_mismatch`，确认上游新增维度后扩展 usage 白名单和 fixture，再用带审计理由的
