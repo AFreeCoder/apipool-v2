@@ -283,7 +283,7 @@ VPS 自托管 Runner 固定安装在 `/opt/actions-runner-apipool`，使用无�
 root 安装器备份旧工具链并统一所有权；不要直接 rsync 覆盖 `/opt/apipool-v2`：
 
 ```bash
-COPYFILE_DISABLE=1 tar -czf - docker-compose.prod.yml deploy \
+COPYFILE_DISABLE=1 tar --no-xattrs -czf - docker-compose.prod.yml deploy \
   | ssh apipool_vps 'install -d -m 700 /root/apipool-tooling-candidate && tar -xzf - -C /root/apipool-tooling-candidate'
 ssh apipool_vps '/root/apipool-tooling-candidate/deploy/install-production-tooling.sh /root/apipool-tooling-candidate'
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
