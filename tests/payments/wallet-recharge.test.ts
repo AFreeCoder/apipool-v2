@@ -117,25 +117,10 @@ async function apipoolRechargeRows(orderNo: string) {
 
 test.before(setupDb);
 test.after(() => {
-  delete process.env.WALLET_LEDGER_WRITE_ENABLED;
   delete process.env.APIPOOL_CHECKOUT_ENABLED;
 });
 
-test('开关 off：走现状 credit 入账且零 wallet 流水', async () => {
-  delete process.env.WALLET_LEDGER_WRITE_ENABLED;
-  await insertUser('wallet-recharge-off');
-  const order = await insertOrder('wallet-recharge-off', 'wallet-order-off');
-  await modules.payment.handleCheckoutSuccess({
-    order,
-    session: successSession(),
-  });
-  assert.equal((await creditRows('wallet-order-off')).length, 1);
-  assert.equal((await walletRows('wallet-order-off')).length, 0);
-  assert.equal((await apipoolRechargeRows('wallet-order-off')).length, 1);
-});
-
-test('开关 on：PAID 事务写 recharge 流水并停写 credit', async () => {
-  process.env.WALLET_LEDGER_WRITE_ENABLED = 'true';
+test('PAID 事务始终写 recharge 流水并停写 credit', async () => {
   await insertUser('wallet-recharge-on');
   const order = await insertOrder('wallet-recharge-on', 'wallet-order-on');
   await modules.payment.handleCheckoutSuccess({
@@ -168,7 +153,6 @@ test('wallet-only 事务路径：无 credit/subscription 仍把订单与钱包�
 });
 
 test('webhook 重放幂等：二次 handleCheckoutSuccess 仍只有一条 recharge', async () => {
-  process.env.WALLET_LEDGER_WRITE_ENABLED = 'true';
   await insertUser('wallet-recharge-replay');
   const order = await insertOrder(
     'wallet-recharge-replay',
@@ -226,7 +210,6 @@ test('checkout 创建门控 fail-closed：缺失/false/非法均拒绝', async (
 });
 
 test('结算不受 checkout 门控：冻结创建期仍写 wallet recharge', async () => {
-  process.env.WALLET_LEDGER_WRITE_ENABLED = 'true';
   process.env.APIPOOL_CHECKOUT_ENABLED = 'false';
   assert.equal(modules.config.checkoutEnabled(), false);
   await insertUser('wallet-recharge-frozen-checkout');

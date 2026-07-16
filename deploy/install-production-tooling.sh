@@ -12,7 +12,15 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_ROOT="$(realpath -e -- "${1:-$SCRIPT_DIR/..}")"
 APP_DIR="/opt/apipool-v2"
 
-for required in docker-compose.prod.yml deploy/deploy.sh deploy/backup.sh deploy/configure-caddy.sh deploy/cloudflare-ips.txt; do
+for required in \
+  docker-compose.prod.yml \
+  deploy/deploy.sh \
+  deploy/backup.sh \
+  deploy/configure-caddy.sh \
+  deploy/go-live.sh \
+  deploy/live-smoke.sh \
+  deploy/lib.sh \
+  deploy/cloudflare-ips.txt; do
   if [ ! -f "$SOURCE_ROOT/$required" ]; then
     echo "install-production-tooling.sh: 缺少源文件：$required" >&2
     exit 66

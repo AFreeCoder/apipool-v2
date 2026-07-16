@@ -30,7 +30,10 @@ test('docker image workflow builds production-configured immutable images', asyn
     /runs-on:\s*\[self-hosted, linux, x64, apipool-prod-deploy\]/
   );
   assert.match(workflow, /sudo \/usr\/local\/sbin\/apipool-runner-deploy/);
-  assert.match(workflow, /GHCR_USER:\s*\$\{\{\s*github\.repository_owner\s*\}\}/);
+  assert.match(
+    workflow,
+    /GHCR_USER:\s*\$\{\{\s*github\.repository_owner\s*\}\}/
+  );
   assert.match(workflow, /persist-credentials:\s*false/);
   assert.doesNotMatch(workflow, /APIPOOL_VPS_SSH_KEY/);
   assert.doesNotMatch(workflow, /ssh-keyscan|\| ssh \\/);
@@ -158,18 +161,14 @@ test('systemd timer runs daily backup at 04:00 Asia/Shanghai', async () => {
   );
 });
 
-function printCaddyConfig(
-  env: Record<string, string>,
-  mode: 'legacy' | 'maintenance' | 'portal' = 'legacy'
-) {
+function printCaddyConfig(env: Record<string, string>) {
   const dir = mkdtempSync(join(tmpdir(), 'apipool-caddy-env-'));
   const envFile = join(dir, '.env.deploy');
-  writeFileSync(envFile, `APIPOOL_API_MODE=${mode}\n`, 'utf8');
+  writeFileSync(envFile, '', 'utf8');
   return spawnSync('bash', ['deploy/configure-caddy.sh', '--print-config'], {
     env: {
       ...process.env,
       APIPOOL_DEPLOY_ENV_FILE: envFile,
-      APIPOOL_API_MODE: '',
       ...env,
     },
     encoding: 'utf8',
@@ -226,9 +225,7 @@ test('Caddy accepts only Cloudflare peers for proxied hostnames', async () => {
 
   const portalBlock = stdout.split('app.apipool.dev {')[1].split('\n}')[0];
   const apiBlock = stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
-  const newapiBlock = stdout
-    .split('newapi.apipool.dev {')[1]
-    .split('\n}')[0];
+  const newapiBlock = stdout.split('newapi.apipool.dev {')[1].split('\n}')[0];
 
   for (const block of [portalBlock, newapiBlock]) {
     assert.match(block, /@not_cloudflare not remote_ip/);
@@ -252,7 +249,7 @@ test('Caddy fails closed when the Cloudflare range file is unavailable', () => {
 });
 
 test('Caddy exposes only the /v1 data plane on the public API domain', async () => {
-  // api2 与 New API 管理面同一个上游；不限路径就等于把 /api/* 管理接口也代理出去
+  // api2 只允许门户 /v1；不限路径就等于把门户管理接口也代理出去
   const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
   assert.equal(status, 0);
 
@@ -313,7 +310,7 @@ test('Caddy config reads bcrypt hashes and IP lists from .env.deploy literally',
   ] as const) {
     const dir = await mkdtemp(join(tmpdir(), 'apipool-env-'));
     const envFile = join(dir, '.env.deploy');
-    await writeFile(envFile, `APIPOOL_API_MODE=legacy\n${body}`, 'utf8');
+    await writeFile(envFile, body, 'utf8');
 
     // 刻意不通过环境变量传值：要覆盖的正是「从文件读」这条真实路径
     const { status, stdout, stderr } = spawnSync(
@@ -398,9 +395,17 @@ test('the Caddy config is validated before it replaces the live file', async () 
   assert.doesNotMatch(script, /printf[^\n]*>\/etc\/caddy\/Caddyfile/);
   assert.match(script, /caddy validate --config "\$STAGED_CADDYFILE"/);
 
-  const validateAt = script.indexOf('caddy validate --config "$STAGED_CADDYFILE"');
-  const installAt = script.indexOf('install -m 0644 "$STAGED_CADDYFILE" /etc/caddy/Caddyfile');
-  assert.notEqual(installAt, -1, 'the staged file must be installed atomically');
+  const validateAt = script.indexOf(
+    'caddy validate --config "$STAGED_CADDYFILE"'
+  );
+  const installAt = script.indexOf(
+    'install -m 0644 "$STAGED_CADDYFILE" /etc/caddy/Caddyfile'
+  );
+  assert.notEqual(
+    installAt,
+    -1,
+    'the staged file must be installed atomically'
+  );
   assert.ok(validateAt < installAt, 'validation must precede installation');
 
   // 保留上一份配置以便人工回滚
@@ -430,15 +435,15 @@ test('the fail-closed guard can be explicitly opted out, but stays closed by def
   }
 
   // 默认（无保护、无开关）仍然 fail-closed
-  const closed = await printConfig('APIPOOL_API_MODE=legacy\nFOO=bar\n');
+  const closed = await printConfig('FOO=bar\n');
   assert.equal(closed.status, 78);
 
   // 显式开关只跳过 operator guard；Cloudflare 源站 ACL 始终保留
-  const open = await printConfig(
-    'APIPOOL_API_MODE=legacy\nAPIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n'
-  );
+  const open = await printConfig('APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n');
   assert.equal(open.status, 0);
-  const newapiBlock = open.stdout.split('newapi.apipool.dev {')[1].split('\n}')[0];
+  const newapiBlock = open.stdout
+    .split('newapi.apipool.dev {')[1]
+    .split('\n}')[0];
   assert.doesNotMatch(newapiBlock, /basicauth/);
   assert.doesNotMatch(newapiBlock, /@denied/);
   assert.match(newapiBlock, /@not_cloudflare not remote_ip/);
@@ -447,81 +452,35 @@ test('the fail-closed guard can be explicitly opted out, but stays closed by def
   assert.match(open.stdout, /handle \/v1\*/);
 });
 
-test('Caddy 三态从 .env.deploy 驱动 api2 与 newapi 数据面', () => {
-  const legacy = printCaddyConfig(NEWAPI_BASIC_AUTH, 'legacy');
-  const maintenance = printCaddyConfig(NEWAPI_BASIC_AUTH, 'maintenance');
-  const portal = printCaddyConfig(NEWAPI_BASIC_AUTH, 'portal');
-  assert.equal(legacy.status, 0, legacy.stderr);
-  assert.equal(maintenance.status, 0, maintenance.stderr);
-  assert.equal(portal.status, 0, portal.stderr);
-
-  const legacyApi = legacy.stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
-  const legacyNewapi = legacy.stdout.split('newapi.apipool.dev {')[1];
-  assert.match(legacyApi, /reverse_proxy 127\.0\.0\.1:3001/);
-  assert.doesNotMatch(legacyNewapi, /handle \/v1\*/);
-
-  const maintenanceApi = maintenance.stdout
-    .split('api2.apipool.dev {')[1]
-    .split('\n}')[0];
-  assert.match(maintenanceApi, /respond "service maintenance" 503/);
-  assert.match(maintenance.stdout.split('newapi.apipool.dev {')[1], /respond "not found" 404/);
-
-  const portalApi = portal.stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
-  assert.match(portalApi, /reverse_proxy 127\.0\.0\.1:3000/);
-  assert.match(portal.stdout.split('newapi.apipool.dev {')[1], /respond "not found" 404/);
-});
-
-test('API_MODE 缺失、空、非法或 env 与文件冲突时统一 fail-closed', async () => {
-  const { mkdtemp, writeFile } = await import('node:fs/promises');
-  const dir = await mkdtemp(join(tmpdir(), 'apipool-mode-invalid-'));
-  for (const [body, envMode] of [
-    ['FOO=bar\n', ''],
-    ['APIPOOL_API_MODE=\n', ''],
-    ['APIPOOL_API_MODE=invalid\n', ''],
-    ['APIPOOL_API_MODE=portal\n', 'legacy'],
-    ['FOO=bar\n', 'legacy'],
-  ] as const) {
-    const envFile = join(dir, `env-${Math.random()}`);
-    await writeFile(envFile, body, 'utf8');
-    const result = spawnSync(
-      'bash',
-      ['deploy/configure-caddy.sh', '--print-config'],
-      {
-        env: {
-          ...process.env,
-          APIPOOL_DEPLOY_ENV_FILE: envFile,
-          APIPOOL_API_MODE: envMode,
-          ...NEWAPI_BASIC_AUTH,
-        },
-        encoding: 'utf8',
-      }
-    );
-    assert.equal(result.status, 78, `${body} / ${result.stderr}`);
-    assert.equal(result.stdout, '');
-  }
-});
-
-test('API_MODE env 与文件一致时允许生成 portal 配置', () => {
-  const result = printCaddyConfig(
-    { ...NEWAPI_BASIC_AUTH, APIPOOL_API_MODE: 'portal' },
-    'portal'
-  );
+test('Caddy 固定以门户承接 api2 数据面并封锁 newapi /v1', () => {
+  const result = printCaddyConfig(NEWAPI_BASIC_AUTH);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /reverse_proxy 127\.0\.0\.1:3000/);
+  const api = result.stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
+  const newapi = result.stdout.split('newapi.apipool.dev {')[1];
+  assert.match(api, /handle \/v1\*/);
+  assert.match(api, /reverse_proxy 127\.0\.0\.1:3000/);
+  assert.doesNotMatch(api, /127\.0\.0\.1:3001|service maintenance/);
+  assert.match(newapi, /handle \/v1\*/);
+  assert.match(newapi, /respond "not found" 404/);
 });
 
-test('部署 env 模板显式以 legacy 初始化 API_MODE', async () => {
+test('部署 env 模板只保留默认关闭的 checkout 门禁', async () => {
   for (const path of ['deploy/env.production.example', '.env.deploy.example']) {
-    assert.match(await readFile(path, 'utf8'), /^APIPOOL_API_MODE=legacy$/m);
+    const body = await readFile(path, 'utf8');
+    assert.match(body, /^APIPOOL_CHECKOUT_ENABLED=false$/m);
+    assert.doesNotMatch(
+      body,
+      /APIPOOL_API_MODE|WALLET_LEDGER_WRITE_ENABLED|WALLET_DISPLAY_ENABLED/
+    );
   }
 });
 
-test('server-bootstrap 仅在整个 env 文件不存在时原子初始化 API_MODE', async () => {
+test('server-bootstrap 仅在整个 env 文件不存在时原子初始化关闭 checkout', async () => {
   const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
   assert.match(bootstrap, /if \[ ! -e "\$APP_DIR\/\.env\.deploy" \]/);
-  assert.match(bootstrap, /APIPOOL_API_MODE=legacy/);
+  assert.match(bootstrap, /APIPOOL_CHECKOUT_ENABLED=false/);
   assert.match(bootstrap, /mv .*\.env\.deploy/);
-  assert.doesNotMatch(bootstrap, /grep[^\n]*APIPOOL_API_MODE/);
+  assert.doesNotMatch(bootstrap, /APIPOOL_API_MODE/);
   assert.doesNotMatch(bootstrap, />>[^\n]*\.env\.deploy/);
 });
 
@@ -541,7 +500,10 @@ test('production runner deploy wrapper validates immutable inputs and keeps root
   assert.match(wrapper, /workspace is not clean/);
   assert.match(wrapper, /verify_root_owned_tooling/);
   assert.doesNotMatch(wrapper, /install .*workspace.*docker-compose/);
-  assert.match(wrapper, /production env file must be root-owned and owner-only/);
+  assert.match(
+    wrapper,
+    /production env file must be root-owned and owner-only/
+  );
   assert.match(wrapper, /env -i/);
   assert.match(wrapper, /DOCKER_CONFIG=.*\/run\/apipool-ghcr-auth/);
   assert.match(wrapper, /docker login ghcr\.io/);
@@ -564,6 +526,9 @@ test('production runner deploy wrapper validates immutable inputs and keeps root
 
   assert.match(toolingInstaller, /必须以 root 运行/);
   assert.match(toolingInstaller, /部署件中不允许出现符号链接/);
+  assert.match(toolingInstaller, /deploy\/go-live\.sh/);
+  assert.match(toolingInstaller, /deploy\/live-smoke\.sh/);
+  assert.match(toolingInstaller, /deploy\/lib\.sh/);
   assert.match(toolingInstaller, /tooling-.*tar\.gz/);
   assert.match(toolingInstaller, /install -D -o root -g root/);
   assert.match(toolingInstaller, /! -name '\._\*'/);

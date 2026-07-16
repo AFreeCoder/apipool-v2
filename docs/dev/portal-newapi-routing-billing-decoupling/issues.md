@@ -1,16 +1,17 @@
 # 门户与 New API 路由计费解耦：开发遗留
 
-## 切流前门禁
+## 上线前门禁
 
 - [ ] 在目标环境设置 `APIPOOL_SMOKE_REQUIRE_LIVE=true`，完成 Gateway 数据面和充值闭环 live smoke；本次接收只验证了本地构建、测试和静态编排，没有部署，也没有目标环境凭据。
 - [ ] 在安装 Caddy 的 CI 或等价 Linux 环境完成真实 `caddy adapt` / `caddy validate`；本机缺少 Caddy，相关本地用例按设计跳过，GitHub Actions 已配置为安装失败即失败。
 
 ## 本次接收已闭环裁决
 
-- [x] Task 11 充值语义按计划执行：`WALLET_LEDGER_WRITE_ENABLED` 只切换 credit/wallet 本地事实链，`applyApipoolRecharge` 在两种模式和 PAID 重放下都照常执行；回归测试同时校验远端推送凭证按 `order_no` 幂等。
+- [x] 2026-07-16 现场裁决：线上无真实用户和真实流量，不做渐进切流。删除钱包写入、钱包展示和 API 路由模式三个开关；充值固定写钱包账本并停写 credit，Dashboard/API 固定读取钱包与请求账本，Caddy 固定 `api2 /v1 → portal`、`newapi /v1 → 404`。仅保留 `APIPOOL_CHECKOUT_ENABLED` 作为收款开放门禁。
+- [x] Task 11 终态充值语义：`applyApipoolRecharge` 在首次结算和 PAID 重放下都照常执行；回归测试同时校验钱包流水与远端推送凭证按 `order_no` 幂等。
 - [x] runtime credential worker 的 invalid→pending 与失败 catch 更新都增加 `status IN ('pending','invalid')` 条件，管理员并发禁用后不得把凭证复活为 pending/active；已补“创建 token 期间禁用”的竞态测试。
-- [x] Task 25 公开目录 callable 叠加维持无额外 `APIPOOL_API_MODE` 门控。明确接受“代码部署后、路由/价格发布前”短暂显示不可调用；运营顺序固定为“部署 → 立即发布路由/价格 → preflight”，未完成不得继续切流。详见 [runbook §6.2](../../07-runbook.md#62-步骤-07-与命令映射)。
-- [x] 告警关键字检索式已改为代码中真实存在的日志词，并按终态、凭证、回填、资金/路由四类补充处置入口。详见 [runbook §6.6](../../07-runbook.md#66-观察-72h告警与旧-token-收尾)。
+- [x] Task 25 公开目录 callable 叠加不增加运行时门控。明确接受“代码部署后、路由/价格发布前”短暂显示不可调用；运营顺序固定为“部署 → 立即发布路由/价格 → 上线验证”，验证完成前保持 checkout=false。详见 [runbook §6.1](../../07-runbook.md#61-上线顺序)。
+- [x] 告警关键字检索式已改为代码中真实存在的日志词，并按终态、凭证、回填、资金/路由四类补充处置入口。详见 [runbook §6.5](../../07-runbook.md#65-观察-72h告警与旧-token-收尾)。
 
 ## 运营期观察
 
@@ -24,7 +25,7 @@
 - [ ] 已接受局限 2：SQLite 单文件只保证同文件进程组内的原子准入；跨机扩容前必须先迁 PostgreSQL。
 - [ ] 已接受局限 3：policy B 下“上游已消费但用户未收到”由运营承担；同主机窗口虽小，仍需通过对账和 waived 量告警观察。
 - [ ] 已接受局限 4：对抗性中断流量的白嫖从实时拦截降为离线核查和人工封禁；低量 v1 接受。
-- [ ] 已接受局限 5：网关与门户同进程，门户故障可能波及数据面；当前以可平移模块边界和 maintenance/fix-forward 兜底。
+- [ ] 已接受局限 5：网关与门户同进程，门户故障可能波及数据面；当前以可平移模块边界、checkout 冻结和稳定镜像回滚兜底。
 - [ ] sweeper 将“已有 request id 的超时 open 行”转为 `pending_backfill` 是设计缝隙的最小闭合；运营期观察误转率、回填延迟与积压。
 - [ ] 评审 F8 降级修采用 stale 5 分钟 + keepAlive 穿插续租，拒绝 fencing token；残余竞态由业务唯一索引幂等兜底。若出现同 scope 双 token 或水位乱序，再作为独立 feature 评估 fencing。
 - [ ] 评审 R4-F1 降级修对 finalize 终态写入做 3 次退避重试，不持久化意图 marker。残余窗口为“流中断且单条 UPDATE 三连失败”，open 经 sweeper 回填后可能按日志错扣一笔；由对账发现并用 `manual_adjustment` 人工冲正，实际出现后再重开终态意图持久化裁决。

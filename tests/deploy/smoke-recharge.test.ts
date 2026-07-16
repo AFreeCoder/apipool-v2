@@ -14,7 +14,6 @@ test('smoke-recharge 在隔离 DB 闭合 PAID、钱包入账、重放与审计�
   process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
   process.env.DB_SINGLETON_ENABLED = 'false';
   process.env.NEWAPI_INTEGRATION_ENABLED = 'false';
-  process.env.WALLET_LEDGER_WRITE_ENABLED = 'true';
   process.env.APIPOOL_SMOKE_PORTAL_USER_ID = 'smoke-recharge-user';
 
   const client = createClient({ url: `file:${dbPath}` });
@@ -41,7 +40,7 @@ test('smoke-recharge 在隔离 DB 闭合 PAID、钱包入账、重放与审计�
   const [smokeOrder] = await db()
     .select()
     .from(schema.order)
-    .where(like(schema.order.orderNo, 'cutover-recharge-%'));
+    .where(like(schema.order.orderNo, 'live-recharge-%'));
   assert.equal(smokeOrder.status, 'paid');
   assert.equal(
     (
@@ -56,10 +55,10 @@ test('smoke-recharge 在隔离 DB 闭合 PAID、钱包入账、重放与审计�
     .select()
     .from(schema.walletLedger)
     .where(eq(schema.walletLedger.userId, 'smoke-recharge-user'));
-  assert.deepEqual(
-    entries.map((entry: any) => entry.entryType).sort(),
-    ['manual_adjustment', 'recharge']
-  );
+  assert.deepEqual(entries.map((entry: any) => entry.entryType).sort(), [
+    'manual_adjustment',
+    'recharge',
+  ]);
   assert.equal(
     entries.reduce(
       (sum: number, entry: any) => sum + entry.signedAmountMicroUsd,
@@ -73,6 +72,5 @@ test('smoke-recharge 在隔离 DB 闭合 PAID、钱包入账、重放与审计�
     .where(eq(schema.walletAccount.userId, 'smoke-recharge-user'));
   assert.equal(account.balanceMicroUsd, 0);
 
-  delete process.env.WALLET_LEDGER_WRITE_ENABLED;
   delete process.env.APIPOOL_SMOKE_PORTAL_USER_ID;
 });

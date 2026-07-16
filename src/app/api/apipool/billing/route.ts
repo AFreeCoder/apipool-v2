@@ -1,10 +1,4 @@
-import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
 import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
-import { walletDisplayEnabled } from '@/features/gateway/lib/config';
-import {
-  getPortalUsage,
-  listBillingLedgerEntries,
-} from '@/features/newapi-bridge/server/portal';
 import { getWalletBillingView } from '@/features/wallet/server/usage-view';
 
 import { withNoStore } from '@/shared/lib/http-cache';
@@ -18,27 +12,7 @@ export async function GET() {
     const user = await getUserInfo();
     if (!user) return withNoStore(respErr('no auth, please sign in'));
 
-    if (walletDisplayEnabled()) {
-      return withNoStore(respData(await getWalletBillingView(user.id)));
-    }
-
-    const [usage, ledger] = await Promise.all([
-      getPortalUsage(user as any, '7d'),
-      listBillingLedgerEntries(user.id),
-    ]);
-
-    return withNoStore(
-      respData({
-        balance: {
-          balanceUsd: usage.summary.balanceUsd,
-          quotaRemaining: usage.summary.quotaRemaining,
-          status: usage.summary.status,
-          syncedAt: usage.summary.syncedAt,
-        },
-        ledger,
-        charges: buildBillingUsageCharges(usage),
-      })
-    );
+    return withNoStore(respData(await getWalletBillingView(user.id)));
   } catch (error: any) {
     return withNoStore(
       respErr(

@@ -13,14 +13,11 @@ const REQUIRED = [
   'GATEWAY_STREAM_IDLE_TIMEOUT_MS',
   'GATEWAY_HARD_TIMEOUT_MS',
   'GATEWAY_JOBS_ENABLED',
-  'WALLET_LEDGER_WRITE_ENABLED',
-  'WALLET_DISPLAY_ENABLED',
   'APIPOOL_CHECKOUT_ENABLED',
-  'APIPOOL_API_MODE',
 ];
 
 for (const composePath of ['docker-compose.yml', 'docker-compose.prod.yml']) {
-  test(`${composePath} 将网关、钱包与切流变量显式注入门户容器`, async () => {
+  test(`${composePath} 将网关与 checkout 变量显式注入门户容器`, async () => {
     const compose = await readFile(composePath, 'utf8');
     for (const key of REQUIRED) {
       assert.equal(
@@ -30,6 +27,13 @@ for (const composePath of ['docker-compose.yml', 'docker-compose.prod.yml']) {
         true,
         `${composePath} 缺少 ${key} allowlist 映射`
       );
+    }
+    for (const removed of [
+      'WALLET_LEDGER_WRITE_ENABLED',
+      'WALLET_DISPLAY_ENABLED',
+      'APIPOOL_API_MODE',
+    ]) {
+      assert.doesNotMatch(compose, new RegExp(removed));
     }
   });
 }

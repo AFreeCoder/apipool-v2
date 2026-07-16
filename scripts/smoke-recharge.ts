@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { applyManualAdjustment } from '@/features/wallet/server/ledger';
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -10,7 +11,6 @@ import {
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
-import { applyManualAdjustment } from '@/features/wallet/server/ledger';
 import { PaymentStatus, PaymentType } from '@/extensions/payment/types';
 import {
   createOrder,
@@ -31,17 +31,13 @@ function invariant(ok: unknown, message: string): asserts ok {
 }
 
 export async function main() {
-  invariant(
-    process.env.WALLET_LEDGER_WRITE_ENABLED === 'true',
-    'WALLET_LEDGER_WRITE_ENABLED must be true'
-  );
   const userId = requiredEnv('APIPOOL_SMOKE_PORTAL_USER_ID');
   const user = await findUserById(userId);
   invariant(user, `smoke user not found: ${userId}`);
 
   const amount = Number(process.env.APIPOOL_SMOKE_RECHARGE_CENTS || '100');
   invariant(Number.isSafeInteger(amount) && amount > 0, 'amount must be cents');
-  const orderNo = `cutover-recharge-${Date.now()}-${randomUUID()}`;
+  const orderNo = `live-recharge-${Date.now()}-${randomUUID()}`;
   const created = await createOrder({
     id: randomUUID(),
     orderNo,
@@ -50,13 +46,13 @@ export async function main() {
     status: OrderStatus.CREATED,
     amount,
     currency: 'USD',
-    productId: `cutover-smoke-${amount}`,
+    productId: `live-smoke-${amount}`,
     paymentType: PaymentType.ONE_TIME,
     paymentInterval: 'one-time',
-    paymentProvider: 'cutover-smoke',
+    paymentProvider: 'live-smoke',
     checkoutInfo: '',
     createdAt: new Date(),
-    productName: 'Cutover recharge smoke',
+    productName: 'Live recharge smoke',
     description: 'Controlled internal recharge smoke',
     callbackUrl: '',
     creditsAmount: amount,
@@ -65,7 +61,7 @@ export async function main() {
     paymentProductId: '',
   });
   const session = {
-    provider: 'cutover-smoke',
+    provider: 'live-smoke',
     paymentStatus: PaymentStatus.SUCCESS,
     paymentResult: { id: `fixture-${orderNo}` },
     paymentInfo: {
@@ -91,7 +87,10 @@ export async function main() {
           eq(walletLedger.entryType, 'recharge')
         )
       );
-    invariant(rechargeRows.length === 1, 'order must have exactly one recharge');
+    invariant(
+      rechargeRows.length === 1,
+      'order must have exactly one recharge'
+    );
     const expectedMicroUsd = amount * 10_000;
     invariant(
       rechargeRows[0].signedAmountMicroUsd === expectedMicroUsd,

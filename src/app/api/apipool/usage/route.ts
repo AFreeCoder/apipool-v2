@@ -1,6 +1,4 @@
 import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
-import { walletDisplayEnabled } from '@/features/gateway/lib/config';
-import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
 import { getWalletUsageView } from '@/features/wallet/server/usage-view';
 
 import { withNoStore } from '@/shared/lib/http-cache';
@@ -20,9 +18,7 @@ export async function GET(req: Request) {
       requestedRange === '30d' || requestedRange === 'month'
         ? requestedRange
         : '7d';
-    const usage = walletDisplayEnabled()
-      ? await getWalletUsageView(user.id, range)
-      : await getPortalUsage(user as any, range);
+    const usage = await getWalletUsageView(user.id, range);
 
     return withNoStore(respData(usage));
   } catch (error: any) {

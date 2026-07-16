@@ -163,6 +163,14 @@ async function listLedgerByOrderNo(orderNo: string) {
     .where(eq(modules.schema.apipoolLedgerEntry.orderNo, orderNo));
 }
 
+async function listWalletLedgerByOrderNo(orderNo: string) {
+  return modules
+    .db()
+    .select()
+    .from(modules.schema.walletLedger)
+    .where(eq(modules.schema.walletLedger.orderNo, orderNo));
+}
+
 async function executeRaw(sql: string) {
   await modules.rawClient.execute(sql);
 }
@@ -426,7 +434,7 @@ test('non-usd or zero-amount orders are skipped without ledger rows', async () =
   assert.equal((await listLedgerByOrderNo('order_recharge_zero')).length, 0);
 });
 
-test('handleCheckoutSuccess grants credit once and leaves recharge retriable when bridge is down', async () => {
+test('handleCheckoutSuccess credits wallet once and leaves New API recharge retriable when bridge is down', async () => {
   const user = await insertUser('recharge_user_5', 'r5@b.co');
   const orderNo = 'order_checkout_e2e';
 
@@ -463,7 +471,7 @@ test('handleCheckoutSuccess grants credit once and leaves recharge retriable whe
     },
   } as any;
 
-  // webhook 重放 3 次：credit 只入账一次，ledger 只有一行（桥接未配置 → pending）
+  // webhook 重放 3 次：钱包只入账一次，远端 ledger 只有一行（桥接未配置 → pending）
   for (let i = 0; i < 3; i += 1) {
     const order = await modules.orderModel.findOrderByOrderNo(orderNo);
     await modules.payment.handleCheckoutSuccess({ order, session });
@@ -481,8 +489,13 @@ test('handleCheckoutSuccess grants credit once and leaves recharge retriable whe
     .select()
     .from(modules.schema.credit)
     .where(eq(modules.schema.credit.orderNo, orderNo));
-  assert.equal(credits.length, 1);
-  assert.equal(credits[0].credits, 500);
+  assert.equal(credits.length, 0);
+
+  const walletEntries = await listWalletLedgerByOrderNo(orderNo);
+  assert.equal(walletEntries.length, 1);
+  assert.equal(walletEntries[0].entryType, 'recharge');
+  assert.equal(walletEntries[0].signedAmountMicroUsd, 5_000_000);
+  assert.equal(walletEntries[0].balanceAfterMicroUsd, 5_000_000);
 
   let ledger = await listLedgerByOrderNo(orderNo);
   assert.equal(ledger.length, 1);
@@ -511,7 +524,7 @@ test('handleCheckoutSuccess grants credit once and leaves recharge retriable whe
   assert.equal(ledger[0].status, 'applied');
 });
 
-test('custom checkout success keeps cents credits and New API dollars aligned', async () => {
+test('custom checkout success keeps wallet micro-USD and New API dollars aligned', async () => {
   const user = await insertUser('recharge_user_custom_1000', 'rc1000@b.co');
   const orderNo = 'order_checkout_custom_1000';
 
@@ -556,9 +569,13 @@ test('custom checkout success keeps cents credits and New API dollars aligned', 
     .select()
     .from(modules.schema.credit)
     .where(eq(modules.schema.credit.orderNo, orderNo));
-  assert.equal(credits.length, 1);
-  assert.equal(credits[0].credits, 100000);
-  assert.equal(credits[0].remainingCredits, 100000);
+  assert.equal(credits.length, 0);
+
+  const walletEntries = await listWalletLedgerByOrderNo(orderNo);
+  assert.equal(walletEntries.length, 1);
+  assert.equal(walletEntries[0].entryType, 'recharge');
+  assert.equal(walletEntries[0].signedAmountMicroUsd, 1_000_000_000);
+  assert.equal(walletEntries[0].balanceAfterMicroUsd, 1_000_000_000);
 
   let ledger = await listLedgerByOrderNo(orderNo);
   assert.equal(ledger.length, 1);
@@ -785,7 +802,10 @@ test('recharge escalates an unconfirmed remote topup to reconciliation and never
   let rows = await listLedgerByOrderNo(input.orderNo);
   assert.equal(rows[0].status, 'reconciliation_required');
   // 兑换码值必须落库，人工核对靠它反查远端是否已兑换（docs/06 第 5 节）
-  assert.equal(rows[0].newapiChangeId, 'code-recharge:order_recharge_unconfirmed');
+  assert.equal(
+    rows[0].newapiChangeId,
+    'code-recharge:order_recharge_unconfirmed'
+  );
 
   // 用户刷新支付回跳页 / webhook 重放 / admin retry 都不得再次加额
   const replay = await modules.recharge.applyRechargeForOrder(input, client);

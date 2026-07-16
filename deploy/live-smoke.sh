@@ -125,16 +125,17 @@ run_bundle() {
 case "$SMOKE_MODE" in
   gateway)
     run_bundle smoke-gateway.cjs
-    marker_tmp="$(mktemp "$APP_DIR/.cutover-smoke-ok.XXXXXX")"
-    printf 'TIMESTAMP=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$marker_tmp"
-    mv -f "$marker_tmp" "$APP_DIR/.cutover-smoke-ok"
+    marker_tmp="$(mktemp "$APP_DIR/.live-smoke-gateway-ok.XXXXXX")"
+    printf 'TIMESTAMP=%s\nIMAGE_TAG=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$IMAGE_TAG" >"$marker_tmp"
+    mv -f "$marker_tmp" "$APP_DIR/.live-smoke-gateway-ok"
     ;;
   recharge)
     run_bundle smoke-recharge.cjs
-    marker_tmp="$(mktemp "$APP_DIR/.cutover-recharge-ok.XXXXXX")"
+    marker_tmp="$(mktemp "$APP_DIR/.live-smoke-recharge-ok.XXXXXX")"
     printf 'TIMESTAMP=%s\nIMAGE_TAG=%s\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$IMAGE_TAG" >"$marker_tmp"
-    mv -f "$marker_tmp" "$APP_DIR/.cutover-recharge-ok"
+    mv -f "$marker_tmp" "$APP_DIR/.live-smoke-recharge-ok"
     ;;
   mvp)
     run_bundle smoke-mvp.cjs

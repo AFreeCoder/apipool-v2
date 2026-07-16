@@ -266,7 +266,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
     ├── configure-caddy.sh
     ├── configure-ingress-firewall.sh
     ├── deploy.sh
+    ├── go-live.sh
     ├── install-production-tooling.sh
+    ├── lib.sh
     ├── live-smoke.sh
     ├── server-bootstrap.sh
     ├── setup-smoke-users.sh
@@ -394,78 +396,54 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 
 远端成功但本地绑定失败的 Key 保持 `remote_created_binding_failed`，从审计日志人工补偿；本地与远端一致前，不在用户界面显示成功。
 
-## 6. 网关切流 runbook
+## 6. 最终态上线 runbook
 
-本节是“门户与 New API 路由计费解耦”的生产切流入口。全程在
-`/opt/apipool-v2` 执行，使用 `deploy/cutover.sh` 与 deploy lock；不要直接手改 Caddyfile，
-也不要把后一步成功当成前一步门禁的替代。脚本退出 78 表示前态或人工证据不满足，退出
-75 表示锁冲突或运行时探测失败。
+本次首次上线基于“线上没有真实用户和真实流量”的事实，直接部署最终态，不维护渐进切流
+状态。真实客户开始使用后，不得继续套用“无流量”前提：
 
-### 6.1 前置门禁与前态状态机
+- 充值始终写钱包账本并停写 credit；
+- Dashboard 与公开 API 始终读取钱包和请求账本；
+- `api2.apipool.dev/v1*` 始终进入门户网关；
+- `newapi.apipool.dev/v1*` 始终返回 404；
+- 仅 `APIPOOL_CHECKOUT_ENABLED` 控制是否允许创建支付订单。
 
-执行 `activate-wallet` 前，备份恢复 feature 的真实演练证据必须在案，并同时证明：
+全程在 `/opt/apipool-v2` 执行。`deploy/go-live.sh` 使用 deploy lock；退出 78 表示
+checkout 前态、当前镜像 smoke 标志或人工确认不满足，退出 75 表示锁冲突或运行态验证
+失败。
 
-1. 门户与 New API SQLite 从归档恢复后可只读打开，WAL/SHM 边界已覆盖；
-2. 恢复库满足 `wallet_account.balance_micro_usd == SUM(wallet_ledger.signed_amount_micro_usd)`，
-   关键唯一索引仍生效；
-3. 恢复环境能用托管的 `APIPOOL_CREDENTIALS_SECRET` 解开 `runtime_credential.token_enc`；
-4. 证据只记录密钥的托管位置、责任人和恢复成功结论，不复制密钥值。该密钥与数据库备份
-   必须能在灾备环境重聚；只恢复其中一项等于凭据永久丢失。
+### 6.1 上线顺序
 
-状态文件是 `/opt/apipool-v2/.env.deploy`。先查看当前四开关和实时探测：
+1. 确认 pre-deploy 备份存在，必要时完成恢复演练；数据库与
+   `APIPOOL_CREDENTIALS_SECRET` 必须能在恢复环境重聚。
+2. 确认 `.env.deploy` 中 `APIPOOL_CHECKOUT_ENABLED=false`。
+3. 部署目标 `IMAGE_TAG`，等待数据库迁移和容器健康检查完成。
+4. 立即发布并复核模型路由与价格；短暂“不可调用”只允许出现在本步骤完成前。
+5. 执行生产库只读核验（§6.2）。
+6. 执行 `./deploy/go-live.sh verify`。脚本依次验证固定路由、MVP smoke、充值
+   smoke 和 Gateway smoke，并把两类专项标志绑定到当前 `IMAGE_TAG`。
+7. 人工核对 Dashboard 钱包、请求账本和 New API 回充结果。
+8. 执行 `./deploy/go-live.sh open-checkout`，输入 `yes` 后才开放收款。
+9. 按 §6.5 观察并收尾。
 
 ```bash
 cd /opt/apipool-v2
-./deploy/cutover.sh status
+./deploy/go-live.sh status
+./deploy/go-live.sh verify
+./deploy/go-live.sh open-checkout
+./deploy/go-live.sh status
 ```
 
-| 子命令                              | 必需前态                                                                       | 成功后的关键状态                                                    | 被拒含义与补救                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `preflight`                         | 无写状态要求                                                                   | 状态不变                                                            | 门户直连或 MVP live smoke 未通过；修复代码、路由/价格或运行凭据后重跑                   |
-| `maintenance`                       | `APIPOOL_API_MODE` 为 `legacy`、`maintenance`、`portal` 或尚未初始化           | `maintenance`、checkout=false；api2=503、newapi=404                 | 锁冲突或 Caddy/探测失败；先保持收款关闭，修复后重跑本步                                 |
-| `activate-wallet --evidence <文件>` | maintenance、checkout=false、实时 503/404                                      | wallet write/display=true，当前 `IMAGE_TAG` 的 recharge marker 在案 | 证据缺失、隔离未生效或容器 env 不一致；补齐证据或重跑 maintenance/本步，不得跳到 portal |
-| `portal`                            | maintenance、checkout=false、wallet 两开关=true、当前镜像 recharge marker 在案 | portal；api2=401、newapi=404                                        | 任一前态缺失即重跑对应上一步；切换后探测失败时脚本自动收敛 maintenance                  |
-| `finalize`                          | portal、wallet 两开关=true、gateway/recharge marker 在案                       | checkout=true                                                       | smoke 或三探测未通过；保持 checkout=false，修复并重跑 gateway smoke                     |
-| `status`                            | 无                                                                             | 只读输出                                                            | `000` 表示探测不可达，不代表可继续                                                      |
-
-脚本拒绝跳级是资金安全门禁。尤其不能从 legacy 直接执行 `portal` 或 `finalize`；也不能在
-旧 `IMAGE_TAG` 留下的 recharge marker 上继续。
-
-### 6.2 步骤 0–7 与命令映射
-
-Task 25 的公开目录 callable 叠加维持无额外切流开关：阶段①代码部署后、路由和价格发布前，
-目录可能短暂显示“不可调用”，这是已接受的运营窗口。固定顺序是“部署 → 立即发布路由/价格
-→ preflight”；路由/价格未发布完成时不得进入 maintenance、portal 或 finalize。
-
-| 设计步骤       | 操作                                                                                                                     | 探测与期待值                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| 0. 恢复门禁    | 归档演练报告并确认 §6.1 四项证据                                                                                         | 报告文件存在；不得只用“备份成功”替代恢复成功                                                  |
-| 1. 预检        | `./deploy/cutover.sh preflight`                                                                                          | `127.0.0.1:3000/v1/models` 无 Key=401；MVP live smoke 全绿；路由/价格已发布                   |
-| 2. maintenance | `./deploy/cutover.sh maintenance`                                                                                        | api2 `/v1/models`=503；newapi `/v1/models`=404                                                |
-| 3. 排空/水位   | 执行下方连接计数和 quota 快照                                                                                            | 活跃连接连续两次为 0；快照文件 sha256 在案                                                    |
-| 4. 钱包激活    | `./deploy/cutover.sh activate-wallet --evidence <恢复报告>`，核对摘要后交互输入 `yes`                                    | 容器 wallet 两开关=true；受控充值为 PAID、仅写 wallet recharge、余额闭合；checkout 仍为 false |
-| 5. portal      | `./deploy/cutover.sh portal`                                                                                             | api2 `/v1/models` 无 Key=401；newapi `/v1/models`=404                                         |
-| 6. 验收/开放   | `./deploy/live-smoke.sh --gateway`，核验 Dashboard 与钱包后执行 `./deploy/cutover.sh finalize`，核对摘要后交互输入 `yes` | 真实 SDK 六类调用结算单次、钱包扣费闭合；api2 管理路径=404；最后才 checkout=true              |
-| 7. 观察/收尾   | 按 §6.6 观察 72h，再作废旧 `newapi_key_binding` 对应远端 token                                                           | 无未解释差异、无钱包不变量破坏、回填无积压；旧远端 token 均 disabled/deleted                  |
-
-每个状态转换后都执行下列独立探测；不要只相信脚本最后一行：
+固定路由的独立期待值始终是 401 / 404 / 404：
 
 ```bash
-./deploy/cutover.sh status
-
-# maintenance 期待 503 / 404
-test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/v1/models)" = 503
-test "$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/v1/models)" = 404
-
-# portal/finalize 期待 401 / 404 / 404
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/v1/models)" = 401
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/v1/models)" = 404
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/api/status)" = 404
 ```
 
-### 6.3 生产迁移只读核验
+### 6.2 生产迁移只读核验
 
-迁移完成后、进入 maintenance 前，以 URI `mode=ro` 打开生产门户库。先人工核对 Task 1
+迁移完成后、执行上线验证前，以 URI `mode=ro` 打开生产门户库。先人工核对 Task 1
 关键表的完整列，再运行缺列断言；最后一条查询期待返回 `0`：
 
 ```bash
@@ -524,60 +502,33 @@ WHERE type='index' AND name IN (
 SQL
 ```
 
-表或列缺失时停止切流；不得在生产库手写补列，先修复迁移并重新从步骤 1 开始。
+表或列缺失时停止上线；不得在生产库手写补列，先修复迁移并重新部署验证。
 
-### 6.4 在途排空与 quota 水位
+### 6.3 故障处理与镜像回滚
 
-进入 maintenance 后，先停止一切人工 smoke/后台调用。每隔 30 秒执行一次连接计数，连续
-两次为 0 才算排空；该计数是连接事实，不用“日志静默”代替：
-
-```bash
-ss -Hnt state established '( sport = :3000 or sport = :3001 )' | wc -l
-sleep 30
-ss -Hnt state established '( sport = :3000 or sport = :3001 )' | wc -l
-```
-
-随后把 New API 各用户 quota/used_quota 水位写入 root-only 文件并记录摘要。若 `users`
-实际列形态与命令不符，停止并先核对 `PRAGMA table_info(users)`，不要猜列名：
-
-```bash
-install -d -m 700 /root/apipool-cutover
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-NEWAPI_DB='file:/opt/apipool-v2/data/new-api/one-api.db?mode=ro'
-sqlite3 "$NEWAPI_DB" "PRAGMA table_info(users);"
-sqlite3 -separator $'\t' "$NEWAPI_DB" \
-  'SELECT id,username,quota,used_quota FROM users ORDER BY id;' \
-  >"/root/apipool-cutover/newapi-quota-$STAMP.tsv"
-chmod 600 "/root/apipool-cutover/newapi-quota-$STAMP.tsv"
-sha256sum "/root/apipool-cutover/newapi-quota-$STAMP.tsv"
-```
-
-步骤 6 完成后再取一次同格式快照。两份快照之间只允许出现受控 recharge/gateway smoke
-对应的变化；出现其他水位变化即保持 checkout=false 并调查。
-
-### 6.5 故障处理：maintenance + fix-forward
-
-切流后不再恢复 legacy 数据面。网关、Caddy、钱包或 smoke 任一失败时：
+网关、Caddy、钱包或 smoke 任一失败时保持
+`APIPOOL_CHECKOUT_ENABLED=false`，不要开放收款。由于当前没有真实用户，不需要切换
+maintenance 数据面；直接修复后重跑 `verify`，或部署上一稳定 `IMAGE_TAG`：
 
 ```bash
 cd /opt/apipool-v2
-./deploy/cutover.sh maintenance
-./deploy/cutover.sh status
-```
-
-期待 api2=503、newapi=404、checkout=false。修复后从脚本要求的前态继续前滚。若必须回退
-镜像，可以在保持 maintenance 的前提下部署上一稳定 `IMAGE_TAG`：
-
-```bash
+./deploy/go-live.sh status
 ./deploy/deploy.sh sha-<上一稳定完整提交>
-./deploy/cutover.sh status
+./deploy/go-live.sh verify
 ```
 
-镜像回退不等于数据面回退：`APIPOOL_API_MODE` 必须继续是 maintenance，禁止改回 legacy，
-因为 legacy 会同时重开 api2→New API 和 `newapi /v1` 后门。SQLite 数据恢复、删除流水、
-重建环境或轮换 `APIPOOL_CREDENTIALS_SECRET` 仍需新的明确确认。
+Caddy 的安全终态不随镜像回滚改变：`api2 /v1` 仍进入门户，`newapi /v1` 仍固定 404。
+若回滚后的旧镜像不兼容当前数据库迁移，停止并按备份恢复流程处理；不得删除流水、伪造
+充值或临时把 New API `/v1` 暴露到公网。SQLite 数据恢复、重建环境或轮换
+`APIPOOL_CREDENTIALS_SECRET` 仍需新的明确确认。
 
-### 6.6 观察 72h、告警与旧 token 收尾
+### 6.4 常规发布门禁
+
+checkout 已开放后，`deploy/deploy.sh` 会在替换镜像前把 checkout 冻结为 false。新镜像
+健康后执行当前 `IMAGE_TAG` 的充值 smoke：成功才恢复 checkout=true；失败则退出 75 并
+保持冻结。该门禁与路由状态无关，因为路由已经固定为最终态。
+
+### 6.5 观察 72h、告警与旧 token 收尾
 
 前 6 小时每小时、之后每 6 小时执行一次检查并归档输出：
 

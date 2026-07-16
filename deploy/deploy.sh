@@ -24,7 +24,14 @@ flock -n 9 || {
 
 cd "$APP_DIR"
 
-for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh deploy/configure-caddy.sh deploy/cloudflare-ips.txt deploy/lib.sh; do
+for required in \
+  "$COMPOSE_FILE" \
+  "$ENV_FILE" \
+  deploy/backup.sh \
+  deploy/configure-caddy.sh \
+  deploy/live-smoke.sh \
+  deploy/cloudflare-ips.txt \
+  deploy/lib.sh; do
   if [ ! -e "$required" ]; then
     echo "[deploy] missing $APP_DIR/$required" >&2
     exit 66
@@ -45,17 +52,16 @@ if [ -f "$RELEASE_FILE" ]; then
   old_tag="$(sed -n 's/^IMAGE_TAG=//p' "$RELEASE_FILE" | tail -1)"
 fi
 
-# 已 go-live 的常规发布先冻结新 checkout，再替换镜像。结算路径继续可用，
+# checkout 已开放的常规发布先冻结新 checkout，再替换镜像。结算路径继续可用，
 # 以便新镜像跑受控充值 smoke；失败时保持冻结。
 gated=0
-mode="$(read_env_value APIPOOL_API_MODE)"
 checkout="$(read_env_value APIPOOL_CHECKOUT_ENABLED)"
-if [ "$mode" = portal ] && [ "$checkout" = true ]; then
+if [ "$checkout" = true ]; then
   gated=1
   echo "[deploy] freezing checkout before replacing the portal image"
   set_env_values APIPOOL_CHECKOUT_ENABLED=false
   if [ ! -f "$RELEASE_FILE" ]; then
-    echo "[deploy] portal recharge gate requires existing $RELEASE_FILE" >&2
+    echo "[deploy] recharge gate requires existing $RELEASE_FILE" >&2
     exit 66
   fi
   compose up -d

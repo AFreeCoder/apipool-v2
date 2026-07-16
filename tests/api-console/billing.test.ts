@@ -42,9 +42,9 @@ test('billing usage charges only include synced logs with real spend', () => {
   assert.equal(Object.hasOwn(rows[0], 'newapiRequestId'), false);
 });
 
-test('billing API route uses the narrow customer billing ledger DTO', async () => {
+test('billing API route only reads the wallet billing view', async () => {
   const source = await readFile('src/app/api/apipool/billing/route.ts', 'utf8');
 
-  assert.match(source, /listBillingLedgerEntries/);
-  assert.doesNotMatch(source, /listLedgerEntries/);
+  assert.match(source, /getWalletBillingView/);
+  assert.doesNotMatch(source, /getPortalUsage|listBillingLedgerEntries/);
 });

@@ -6,12 +6,6 @@ function intEnv(name: string, fallback: number): number {
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
-function boolEnv(name: string, fallback: boolean): boolean {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  return raw === 'true';
-}
-
 export function gatewayConfig() {
   return {
     riskSlotLimit: intEnv('GATEWAY_RISK_SLOT_LIMIT', 10),
@@ -32,14 +26,6 @@ export function gatewayConfig() {
     newapiBaseUrl: process.env.NEWAPI_BASE_URL ?? '',
     jobsEnabled: process.env.GATEWAY_JOBS_ENABLED !== 'false',
   };
-}
-
-export function walletLedgerWriteEnabled(): boolean {
-  return boolEnv('WALLET_LEDGER_WRITE_ENABLED', false);
-}
-
-export function walletDisplayEnabled(): boolean {
-  return boolEnv('WALLET_DISPLAY_ENABLED', false);
 }
 
 // 钱门禁 fail-closed：仅精确 true 开放，缺失、空值和非法值一律关闭。

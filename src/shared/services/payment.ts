@@ -1,4 +1,3 @@
-import { walletLedgerWriteEnabled } from '@/features/gateway/lib/config';
 import { applyRechargeForOrder } from '@/features/newapi-bridge/server/recharge';
 
 import {
@@ -249,41 +248,8 @@ export async function handleCheckoutSuccess({
       );
     }
 
-    // grant credit for order
-    const writeWalletLedger = walletLedgerWriteEnabled();
-    let newCredit: NewCredit | undefined = undefined;
-    if (!writeWalletLedger && order.creditsAmount && order.creditsAmount > 0) {
-      const credits = order.creditsAmount;
-      const expiresAt =
-        credits > 0
-          ? calculateCreditExpirationTime({
-              creditsValidDays: order.creditsValidDays || 0,
-              currentPeriodEnd: subscriptionInfo?.currentPeriodEnd,
-            })
-          : null;
-
-      newCredit = {
-        id: getUuid(),
-        userId: order.userId,
-        userEmail: order.userEmail,
-        orderNo: order.orderNo,
-        subscriptionNo: newSubscription?.subscriptionNo,
-        transactionNo: getSnowId(),
-        transactionType: CreditTransactionType.GRANT,
-        transactionScene:
-          order.paymentType === PaymentType.SUBSCRIPTION
-            ? CreditTransactionScene.SUBSCRIPTION
-            : CreditTransactionScene.PAYMENT,
-        credits: credits,
-        remainingCredits: credits,
-        description: `Grant credit`,
-        expiresAt: expiresAt,
-        status: CreditStatus.ACTIVE,
-      };
-    }
-
     const newWalletRecharge =
-      writeWalletLedger && order.creditsAmount && order.creditsAmount > 0
+      order.creditsAmount && order.creditsAmount > 0
         ? {
             userId: order.userId,
             amountMicroUsd: order.amount * 10_000,
@@ -294,7 +260,6 @@ export async function handleCheckoutSuccess({
       orderNo,
       updateOrder,
       newSubscription,
-      newCredit,
       newWalletRecharge,
     });
 
@@ -406,41 +371,8 @@ export async function handlePaymentSuccess({
       );
     }
 
-    // grant credit for order
-    const writeWalletLedger = walletLedgerWriteEnabled();
-    let newCredit: NewCredit | undefined = undefined;
-    if (!writeWalletLedger && order.creditsAmount && order.creditsAmount > 0) {
-      const credits = order.creditsAmount;
-      const expiresAt =
-        credits > 0
-          ? calculateCreditExpirationTime({
-              creditsValidDays: order.creditsValidDays || 0,
-              currentPeriodEnd: subscriptionInfo?.currentPeriodEnd,
-            })
-          : null;
-
-      newCredit = {
-        id: getUuid(),
-        userId: order.userId,
-        userEmail: order.userEmail,
-        orderNo: order.orderNo,
-        subscriptionNo: newSubscription?.subscriptionNo,
-        transactionNo: getSnowId(),
-        transactionType: CreditTransactionType.GRANT,
-        transactionScene:
-          order.paymentType === PaymentType.SUBSCRIPTION
-            ? CreditTransactionScene.SUBSCRIPTION
-            : CreditTransactionScene.PAYMENT,
-        credits: credits,
-        remainingCredits: credits,
-        description: `Grant credit`,
-        expiresAt: expiresAt,
-        status: CreditStatus.ACTIVE,
-      };
-    }
-
     const newWalletRecharge =
-      writeWalletLedger && order.creditsAmount && order.creditsAmount > 0
+      order.creditsAmount && order.creditsAmount > 0
         ? {
             userId: order.userId,
             amountMicroUsd: order.amount * 10_000,
@@ -451,7 +383,6 @@ export async function handlePaymentSuccess({
       orderNo,
       updateOrder,
       newSubscription,
-      newCredit,
       newWalletRecharge,
     });
 

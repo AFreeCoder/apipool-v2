@@ -5,15 +5,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-const hasCaddy = spawnSync('caddy', ['version'], { encoding: 'utf8' }).status === 0;
+const hasCaddy =
+  spawnSync('caddy', ['version'], { encoding: 'utf8' }).status === 0;
 
-function renderConfig(
-  mode: 'legacy' | 'maintenance' | 'portal',
-  guardEnv: Record<string, string>
-) {
+function renderConfig(guardEnv: Record<string, string>) {
   const dir = mkdtempSync(join(tmpdir(), 'apipool-caddy-'));
   const envFile = join(dir, '.env.deploy');
-  writeFileSync(envFile, `APIPOOL_API_MODE=${mode}\n`, 'utf8');
+  writeFileSync(envFile, '', 'utf8');
   const rendered = spawnSync(
     'bash',
     ['deploy/configure-caddy.sh', '--print-config'],
@@ -21,7 +19,6 @@ function renderConfig(
       env: {
         ...process.env,
         APIPOOL_DEPLOY_ENV_FILE: envFile,
-        APIPOOL_API_MODE: '',
         APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
         APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
         APIPOOL_NEWAPI_ALLOWED_IPS: '',
@@ -45,7 +42,10 @@ function runCaddy(command: 'adapt' | 'validate', config: string) {
   return result.stdout;
 }
 
-function visit(value: unknown, callback: (node: Record<string, unknown>) => void) {
+function visit(
+  value: unknown,
+  callback: (node: Record<string, unknown>) => void
+) {
   if (!value || typeof value !== 'object') return;
   if (!Array.isArray(value)) callback(value as Record<string, unknown>);
   for (const child of Object.values(value)) {
@@ -66,7 +66,7 @@ test(
       ['hash-password', '--plaintext', 'fixture-password'],
       { encoding: 'utf8' }
     ).stdout.trim();
-    const config = renderConfig('portal', {
+    const config = renderConfig({
       APIPOOL_NEWAPI_BASIC_AUTH_USER: 'ops',
       APIPOOL_NEWAPI_BASIC_AUTH_HASH: hash,
     });
@@ -93,7 +93,11 @@ test(
     });
     assert.ok(v1StaticRoute, 'adapt 结果应含 /v1* 的 404 static_response');
     assert.doesNotMatch(JSON.stringify(v1StaticRoute), /authentication/);
-    assert.equal(hasAuthentication, true, 'fallback 管理路径应保留认证 handler');
+    assert.equal(
+      hasAuthentication,
+      true,
+      'fallback 管理路径应保留认证 handler'
+    );
   }
 );
 
@@ -115,7 +119,7 @@ test(
       { APIPOOL_NEWAPI_ALLOW_UNPROTECTED: 'true' },
     ];
     for (const fixture of fixtures) {
-      const config = renderConfig('portal', fixture);
+      const config = renderConfig(fixture);
       runCaddy('validate', config);
       assert.match(config, /handle \/v1\*/);
       assert.match(config, /respond "not found" 404/);

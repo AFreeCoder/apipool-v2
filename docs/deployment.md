@@ -50,15 +50,10 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）。
 - `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`，并按实际 TCP 对端只接受
   `deploy/cloudflare-ips.txt` 中的 Cloudflare 官方代理网段，其他来源返回 403。
-- `api2.apipool.dev` 是 DNS-only 公共数据面，由
-  `.env.deploy` 中的 `APIPOOL_API_MODE` 按下表切换，`api2` 的非 `/v1*` 路径始终
-  返回 404：
-
-| `APIPOOL_API_MODE` | `api2.apipool.dev/v1*` | `newapi.apipool.dev/v1*` | 用途 |
-| --- | --- | --- | --- |
-| `legacy` | New API `127.0.0.1:3001` | 随 New API 运营面代理，但仍受 Cloudflare 源站 ACL 约束 | 切流前兼容态；不得作为故障回退目标 |
-| `maintenance` | 固定 503 | 固定 404 | 推理双向隔离；钱包激活、排空和故障收敛态 |
-| `portal` | 门户网关 `127.0.0.1:3000` | 固定 404 | 门户鉴权、路由和钱包计费的正式数据面 |
+- `api2.apipool.dev` 是 DNS-only 公共数据面，`/v1*` 固定代理到门户网关
+  `127.0.0.1:3000`；非 `/v1*` 路径固定返回 404。
+- `newapi.apipool.dev/v1*` 固定返回 404，禁止绕过门户鉴权和钱包计费直连
+  New API。
 
 - `newapi.apipool.dev` 的非 `/v1*` 路径仍指向 New API 运营面
   `127.0.0.1:3001`，并始终只接受 Cloudflare 官方代理网段。默认还要求在
@@ -67,8 +62,8 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   **当前生产已显式设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`**（owner 决策，
   2026-07-09）：只跳过额外的 Caddy Basic Auth/运营 IP 守卫；Cloudflare 源站 ACL
   与 New API 自身 root 登录仍然生效。
-- 首次切流只能按 [`docs/07-runbook.md` 的“网关切流 runbook”](./07-runbook.md#6-网关切流-runbook)
-  执行；`deploy/cutover.sh` 用 deploy lock 和前态校验拒绝跳级。
+- 首次上线按 [`docs/07-runbook.md` 的“最终态上线 runbook”](./07-runbook.md#6-最终态上线-runbook)
+  执行；`deploy/go-live.sh` 只负责验证当前发布并在人工确认后开放 checkout。
 - 运行时配置：
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
@@ -199,6 +194,8 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
 - `deploy/configure-caddy.sh`
+- `deploy/go-live.sh`
+- `deploy/lib.sh`
 - `deploy/cloudflare-ips.txt`
 - `deploy/configure-ingress-firewall.sh`
 - `deploy/runner-deploy.sh`

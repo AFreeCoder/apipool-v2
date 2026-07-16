@@ -87,7 +87,6 @@ test(
               NEWAPI_BASE_URL: mock.baseUrl,
               NEWAPI_INTEGRATION_ENABLED: 'true',
               GATEWAY_JOBS_ENABLED: 'false',
-              WALLET_LEDGER_WRITE_ENABLED: 'true',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: true,
@@ -127,7 +126,6 @@ test(
         APIPOOL_SMOKE_GROUP_SLUG: fixture.groupId,
         APIPOOL_SMOKE_MODEL: fixture.modelId,
         APIPOOL_SMOKE_GATEWAY_BASE_URL: `http://127.0.0.1:${port}/v1`,
-        WALLET_LEDGER_WRITE_ENABLED: 'true',
         APIPOOL_SMOKE_USAGE_ATTEMPTS: '30',
         APIPOOL_SMOKE_USAGE_DELAY_MS: '100',
       });

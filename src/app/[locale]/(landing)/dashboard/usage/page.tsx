@@ -1,18 +1,16 @@
 import { StatCard } from '@/features/api-console/components/stat-card';
+import {
+  formatConsoleDateTime,
+  formatConsoleNumber,
+} from '@/features/api-console/lib/datetime';
 import { formatUsdAmount } from '@/features/api-console/lib/money';
 import {
   getUsageLogRowKey,
   getUsageSyncDescription,
 } from '@/features/api-console/lib/status';
-import { walletDisplayEnabled } from '@/features/gateway/lib/config';
-import { getPortalUsage } from '@/features/newapi-bridge/server/portal';
 import { getWalletUsageView } from '@/features/wallet/server/usage-view';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import {
-  formatConsoleDateTime,
-  formatConsoleNumber,
-} from '@/features/api-console/lib/datetime';
 import { getUserInfo } from '@/shared/models/user';
 
 export default async function UsagePage({
@@ -27,36 +25,34 @@ export default async function UsagePage({
     getTranslations({ locale, namespace: 'dashboard.common' }),
   ]);
   const user = await getUserInfo();
-  const useWalletView = walletDisplayEnabled();
   const usage = user
-    ? useWalletView
-      ? await getWalletUsageView(user.id, '7d').then((view) => ({
-          summary: {
-            ...view.summary,
-            byModel: view.summary.byModel.map((model) => ({
-              modelId: model.modelId,
-              requests: model.requestCount,
-              tokens: 0,
-              spendUsd: model.spendUsd,
-            })),
-            status: 'ready' as const,
-            syncedAt: new Date(view.summary.syncedAt),
-          },
-          logs: view.logs.map((log) => ({
-            ...log,
-            keyMasked: '—',
-            inputTokens: log.inputTokens ?? 0,
-            outputTokens: log.outputTokens ?? 0,
-            spendUsd: log.chargedUsd,
-            createdAt: new Date(log.createdAt),
+    ? await getWalletUsageView(user.id, '7d').then((view) => ({
+        summary: {
+          ...view.summary,
+          byModel: view.summary.byModel.map((model) => ({
+            modelId: model.modelId,
+            requests: model.requestCount,
+            tokens: 0,
+            spendUsd: model.spendUsd,
           })),
-        }))
-      : await getPortalUsage(user as any, '7d')
+          status: 'ready' as const,
+          syncedAt: new Date(view.summary.syncedAt),
+        },
+        logs: view.logs.map((log) => ({
+          ...log,
+          keyMasked: '—',
+          inputTokens: log.inputTokens ?? 0,
+          outputTokens: log.outputTokens ?? 0,
+          spendUsd: log.chargedUsd,
+          createdAt: new Date(log.createdAt),
+        })),
+      }))
     : {
         summary: {
           requestCount: 0,
           inputTokens: 0,
           outputTokens: 0,
+          spendUsd: 0,
           byModel: [],
           status: 'empty' as const,
         },
