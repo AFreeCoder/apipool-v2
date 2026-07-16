@@ -355,7 +355,7 @@ sudo APIPOOL_SSH_ALLOWED_CIDRS='<owner-cidr>/32' \
 sudo /opt/apipool-v2/deploy/configure-ingress-firewall.sh --confirm
 ```
 
-规则只允许公网 TCP `80/443`、确认 CIDR 的 TCP `22222`、回环、已建立连接、DHCP 续租以及必要 ICMP/ICMPv6；TCP `22` 与其他新入站默认丢弃。紧急人工回滚：
+规则只允许公网 TCP `80/443`、HTTP/3 的 UDP `443`、确认 CIDR 的 TCP `22222`、回环、已建立连接、DHCP 续租以及必要 ICMP/ICMPv6；TCP `22` 与其他新入站默认丢弃。紧急人工回滚：
 
 ```bash
 sudo /opt/apipool-v2/deploy/configure-ingress-firewall.sh --rollback

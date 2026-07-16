@@ -41,6 +41,8 @@ Runner 的出口网段数量大且动态变化，不适合作为长期入站白�
 - 443 端口由三个域名共用。由于 `api2` 必须接受任意客户来源，网络层不能把整个
   443 端口只限制为 Cloudflare 网段；`app/newapi` 的 Cloudflare 边界必须在 Caddy
   按域名执行。
+- Caddy 当前提供 HTTP/3，主机与云防火墙必须同时保留 UDP `443`，不能只放 TCP
+  `443` 造成 DNS-only API 客户静默降级。
 - 标准 GitHub 托管 Runner 的动态网段不得整体加入 VPS 入站白名单。
 - self-hosted Runner 仅用于私有仓库的生产部署 job，不运行 PR、构建、测试或任意
   其他仓库工作负载。

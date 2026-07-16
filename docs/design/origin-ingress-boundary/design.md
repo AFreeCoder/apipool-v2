@@ -65,7 +65,7 @@ root 包装器只接受三个输入：checkout 工作目录、`sha-<40 hex>` 镜
 
 | 端口 | 来源 | 处理 |
 |---|---|---|
-| TCP 80/443 | 公网 | 保留，满足 DNS-only API、HTTPS 与证书续期；域名边界由 Caddy 执行 |
+| TCP 80/443、UDP 443 | 公网 | 保留，满足 DNS-only API、HTTPS/HTTP3 与证书续期；域名边界由 Caddy 执行 |
 | TCP 22222 | owner 确认的 SSH CIDR | 云防火墙与主机防火墙同时允许 |
 | TCP 22 | 无 | 完成 22222 验证后停止监听并拒绝入站 |
 | TCP 3000/3001 | loopback | Docker 继续绑定 `127.0.0.1` |

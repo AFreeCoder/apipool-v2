@@ -474,6 +474,7 @@ test('ingress firewall is allowlisted and requires explicit rollback confirmatio
 
   assert.match(script, /policy drop/);
   assert.match(script, /tcp dport \{ 80, 443 \} accept/);
+  assert.match(script, /udp dport 443 accept/);
   assert.match(script, /tcp dport 22222 accept/);
   assert.doesNotMatch(script, /tcp dport 22 accept/);
   assert.match(script, /ct state established,related accept/);

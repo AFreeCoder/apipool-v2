@@ -83,6 +83,7 @@ table inet $TABLE_NAME {
     udp sport 547 udp dport 546 accept
 
     tcp dport { 80, 443 } accept
+    udp dport 443 accept
 EOF
 
   if [ -n "$ipv4_items" ]; then
