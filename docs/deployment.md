@@ -20,13 +20,20 @@
 - 验证工作流：`.github/workflows/mvp-verify.yaml`
 - 镜像仓库：`ghcr.io/afreecoder/apipool-v2`
 - 正式部署镜像 tag：`sha-<完整 commit>`，不要用 `latest` 作为正式发布输入
-- 服务器部署命令由 GitHub Actions 执行：
+- 镜像构建 job 使用 GitHub 托管 `ubuntu-latest`；生产部署 job 使用 VPS 上仓库级专用
+  Runner 标签 `[self-hosted, linux, x64, apipool-prod-deploy]`。Runner 通过出站 HTTPS
+  领取任务，不开放 GitHub Runner SSH 入站。
+- 生产部署 job 通过 root-owned `/usr/local/sbin/apipool-runner-deploy` 校验 checkout
+  SHA、不可变镜像 tag、固定部署文件所有权与 `.env.deploy` 权限，再执行：
 
 ```bash
 cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 ```
 
 `deploy/deploy.sh` 使用 `/run/apipool-v2-deploy.lock`，同一时间只允许一个部署。
+workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `deploy/`；发布
+工具链变更必须由 owner 通过 SSH 单独安装。Runner 用户未加入 Docker 组，且 nftables
+将其自身出口限制为 DNS/HTTPS并拒绝云 metadata 网段。
 
 ## Runtime Architecture
 
@@ -41,24 +48,25 @@ cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>
 - 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
   **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + `reload`**
   （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）。
-- `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`；`api2` 数据面由
+- `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`，并按实际 TCP 对端只接受
+  `deploy/cloudflare-ips.txt` 中的 Cloudflare 官方代理网段，其他来源返回 403。
+- `api2.apipool.dev` 是 DNS-only 公共数据面，由
   `.env.deploy` 中的 `APIPOOL_API_MODE` 按下表切换，`api2` 的非 `/v1*` 路径始终
   返回 404：
 
 | `APIPOOL_API_MODE` | `api2.apipool.dev/v1*` | `newapi.apipool.dev/v1*` | 用途 |
 | --- | --- | --- | --- |
-| `legacy` | New API `127.0.0.1:3001` | 随 New API 运营面代理 | 切流前兼容态；不得作为故障回退目标 |
+| `legacy` | New API `127.0.0.1:3001` | 随 New API 运营面代理，但仍受 Cloudflare 源站 ACL 约束 | 切流前兼容态；不得作为故障回退目标 |
 | `maintenance` | 固定 503 | 固定 404 | 推理双向隔离；钱包激活、排空和故障收敛态 |
 | `portal` | 门户网关 `127.0.0.1:3000` | 固定 404 | 门户鉴权、路由和钱包计费的正式数据面 |
 
 - `newapi.apipool.dev` 的非 `/v1*` 路径仍指向 New API 运营面
-  `127.0.0.1:3001`。默认要求在 `.env.deploy` 配 Basic Auth 与/或 IP 白名单，
-  否则 `configure-caddy.sh` fail-closed 退出 78，部署在动任何东西之前中止。
-  **本项目在 Cloudflare 后面**，`remote_ip` 看到的是 CF 边缘 IP，故 IP 白名单在
-  当前脚本下不可用（会误伤所有人）；如需保护用 Basic Auth，或在 Cloudflare 层做。
+  `127.0.0.1:3001`，并始终只接受 Cloudflare 官方代理网段。默认还要求在
+  `.env.deploy` 配 Basic Auth 与/或额外运营 IP 白名单，否则
+  `configure-caddy.sh` fail-closed 退出 78，部署在动任何东西之前中止。
   **当前生产已显式设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`**（owner 决策，
-  2026-07-09）：Caddy 层不加保护，管理后台公网可达，仅由 New API 自身 root 登录
-  挡管理接口。
+  2026-07-09）：只跳过额外的 Caddy Basic Auth/运营 IP 守卫；Cloudflare 源站 ACL
+  与 New API 自身 root 登录仍然生效。
 - 首次切流只能按 [`docs/07-runbook.md` 的“网关切流 runbook”](./07-runbook.md#6-网关切流-runbook)
   执行；`deploy/cutover.sh` 用 deploy lock 和前态校验拒绝跳级。
 - 运行时配置：
@@ -119,7 +127,9 @@ NewAPI 元信息。
 
 当前处于老站排空期：
 
-- `app.apipool.dev`、`api2.apipool.dev`、`newapi.apipool.dev` 指向 v2 VPS。
+- `app.apipool.dev`、`newapi.apipool.dev` 保持 Cloudflare proxied，并指向 v2 VPS。
+- `api2.apipool.dev` 指向 v2 VPS 且使用 DNS-only，避免长耗时图片请求继续受
+  Cloudflare HTTP 代理超时限制；该记录会公开 VPS IP。
 - `apipool.dev` 和 `api.apipool.dev` 保持指向老站；不要在排空期发布中改到 v2。
 - final cutover 才把 `apipool.dev` 回收给 v2 营销站、把 `api.apipool.dev` 回收给 v2 API；`api2.apipool.dev` 永久保留为别名。
 
@@ -189,6 +199,11 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
 - `deploy/configure-caddy.sh`
+- `deploy/cloudflare-ips.txt`
+- `deploy/configure-ingress-firewall.sh`
+- `deploy/runner-deploy.sh`
+- `deploy/install-github-runner.sh`
+- `deploy/install-production-tooling.sh`
 - `deploy/server-bootstrap.sh`
 - `deploy/backup.sh`
 - `deploy/entrypoint.sh`
@@ -234,6 +249,10 @@ ssh apipool_vps 'cd /opt/apipool-v2 && printf "IMAGE_TAG=<previous-sha-tag>\nDEP
 ```
 
 - Caddy 配置回滚：`ssh apipool_vps 'cp -a /etc/caddy/Caddyfile.bak /etc/caddy/Caddyfile && caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy'`。
+- Runner 部署入口回滚：在公网 SSH 尚未关闭的过渡窗口内，将 workflow 恢复为上一版
+  SSH deploy job；停止 Runner 服务不会影响当前容器运行。
+- Runner 工具链回滚：恢复 `/usr/local/sbin/apipool-runner-deploy` 与
+  `/opt/apipool-v2/deploy/` 的上一份 root-owned 版本；workflow 不会自动覆盖它们。
 - 数据恢复：只在确认持久化数据或 schema 状态需要恢复时，从
   `/opt/apipool-v2/backups/` 选择归档人工恢复。
 - 需要新确认的操作：数据库恢复、删除数据、破坏性迁移回滚、重建环境、轮换凭据。
@@ -247,6 +266,7 @@ CI/CD：
 gh run list -R AFreeCoder/apipool-v2 --workflow 'Build and Push Docker Image' --limit 5
 gh run watch -R AFreeCoder/apipool-v2 <run-id> --exit-status
 gh run view -R AFreeCoder/apipool-v2 <run-id> --json status,conclusion,headSha,jobs,url
+gh api repos/AFreeCoder/apipool-v2/actions/runners --jq '.runners[] | {name,status,busy,labels}'
 ```
 
 服务器运行态：
@@ -266,8 +286,8 @@ curl -fsS https://app.apipool.dev/ >/dev/null
 
 # newapi 运营面：
 #   - 若配了 Basic Auth / IP 白名单：无凭据应 401/403
-#   - 若 APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true（当前生产）：预期 200（Caddy 层不拦，
-#     保护由 New API 自身登录或 Cloudflare 承担）
+#   - 若 APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true（当前生产）：经 Cloudflare 预期 200；
+#     直连源站仍由 Cloudflare CIDR ACL 拦截，运营登录由 New API 自身承担
 curl -sS -o /dev/null -w 'newapi /api/status -> %{http_code}\n' https://newapi.apipool.dev/api/status
 
 # api2 只放行 /v1*：管理接口路径必须 404
@@ -288,11 +308,14 @@ cutover 后再回收给 v2。
 
 - `origin/main` 已包含目标提交。
 - `Build and Push Docker Image` 工作流成功，部署 job 成功。
+- `apipool-prod-deploy` Runner online/idle，部署日志不包含 SSH/ssh-keyscan 路径。
 - 服务器 `/opt/apipool-v2/release.env` 中的 `IMAGE_TAG` 是目标 `sha-<commit>`。
 - `docker compose ps` 显示 `apipool-v2`、`new-api` 运行中，且 `newapi-metadata-filter` 为 `healthy`。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
 - 外部 `https://app.apipool.dev/` 通过。
-- 外部 `https://newapi.apipool.dev/`：配了保护时应 401/403；当前生产设 `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`，预期 200（Caddy 层不拦，属 owner 已知情决策）。
+- 外部 `https://newapi.apipool.dev/`：配了 operator guard 时应 401/403；当前生产设
+  `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`，经 Cloudflare 预期 200，但绕过 Cloudflare
+  的源站直连必须返回 403。
 - 外部 `https://api2.apipool.dev/api/status` 返回 404（管理接口未经 api2 暴露）。
 - 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回 401 认证错误；带 Key
   真实调用由 live smoke 验证。

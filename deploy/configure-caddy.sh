@@ -6,6 +6,8 @@ if [ "${1:-}" = "--print-config" ]; then
   PRINT_CONFIG_ONLY=1
 fi
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 # New API 运营面保护变量存放在 .env.deploy。**绝不 source 它**：
 #   - bcrypt 哈希含 `$`，`HASH=$2a$14$xxx` 经 shell 参数展开后变成 `a4`，
 #     生成的 basic_auth 谁也登不上去，而且静默无提示；
@@ -73,14 +75,50 @@ case "$API_MODE" in
   portal) api_v1_directive="		reverse_proxy $PORTAL_UPSTREAM" ;;
 esac
 
+# app/newapi 是 Cloudflare proxied 记录。源站只信任实际 TCP 对端属于 Cloudflare
+# 官方 HTTP 代理网段；绝不使用客户端可伪造的 X-Forwarded-For 做这层判断。
+# api2 是 DNS-only 公共数据面，不能套用该来源限制。
+CLOUDFLARE_IPS_FILE="${APIPOOL_CLOUDFLARE_IPS_FILE:-$SCRIPT_DIR/cloudflare-ips.txt}"
+if [ ! -r "$CLOUDFLARE_IPS_FILE" ]; then
+  echo "configure-caddy.sh: missing Cloudflare IP list: $CLOUDFLARE_IPS_FILE" >&2
+  exit 78
+fi
+
+CLOUDFLARE_IPS="$(awk '
+  {
+    line = $0
+    sub(/\r$/, "", line)
+    sub(/#.*/, "", line)
+    gsub(/^[ \t]+|[ \t]+$/, "", line)
+    if (line == "") next
+    if (line !~ /^[0-9A-Fa-f:.]+\/[0-9]+$/) {
+      print "configure-caddy.sh: invalid Cloudflare CIDR: " line > "/dev/stderr"
+      exit 78
+    }
+    if (count++ > 0) printf " "
+    printf "%s", line
+  }
+  END {
+    if (count == 0) {
+      print "configure-caddy.sh: Cloudflare IP list is empty" > "/dev/stderr"
+      exit 78
+    }
+    print ""
+  }
+' "$CLOUDFLARE_IPS_FILE")"
+
+cloudflare_guard="	@not_cloudflare not remote_ip $CLOUDFLARE_IPS
+	respond @not_cloudflare \"forbidden\" 403
+"
+
 # New API 运营面保护（docs/07-runbook.md 第 2 节）：Basic Auth 与 IP 白名单
 # 至少配一项，否则拒绝生成配置——绝不产出裸奔的管理面 vhost。
 # 环境变量优先；未设置时从 .env.deploy 按字面量读取
 NEWAPI_BASIC_AUTH_USER="${APIPOOL_NEWAPI_BASIC_AUTH_USER:-$(read_env_value APIPOOL_NEWAPI_BASIC_AUTH_USER)}"
 NEWAPI_BASIC_AUTH_HASH="${APIPOOL_NEWAPI_BASIC_AUTH_HASH:-$(read_env_value APIPOOL_NEWAPI_BASIC_AUTH_HASH)}"
 NEWAPI_ALLOWED_IPS="${APIPOOL_NEWAPI_ALLOWED_IPS:-$(read_env_value APIPOOL_NEWAPI_ALLOWED_IPS)}"
-# 显式接受「New API 管理面公网开放」的退出开关。默认（未设置）保持 fail-closed；
-# 设为 true 时跳过守卫并打印警告。保护改到 Cloudflare 层，或明确接受裸奔。
+# 显式接受「New API 管理面无额外 operator guard」的退出开关。即使设为 true，
+# newapi 源站仍然只接受 Cloudflare TCP 对端；该开关只跳过 Basic Auth / 运营 IP。
 NEWAPI_ALLOW_UNPROTECTED="${APIPOOL_NEWAPI_ALLOW_UNPROTECTED:-$(read_env_value APIPOOL_NEWAPI_ALLOW_UNPROTECTED)}"
 
 has_basic_auth=0
@@ -96,7 +134,7 @@ fi
 if [ "$has_basic_auth" -eq 0 ] && [ "$has_ip_allowlist" -eq 0 ]; then
   case "$NEWAPI_ALLOW_UNPROTECTED" in
     true | True | TRUE | 1 | yes | YES)
-      echo "configure-caddy.sh: WARNING: newapi vhost exposed WITHOUT Caddy-level protection (APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true). New API admin backend is public; ensure protection at Cloudflare or accept the risk." >&2
+      echo "configure-caddy.sh: WARNING: newapi vhost has no operator-level Basic Auth/IP guard (APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true); Cloudflare-origin ACL remains enabled." >&2
       ;;
     *)
       cat >&2 <<'MSG'
@@ -126,11 +164,12 @@ if [ "$has_ip_allowlist" -eq 1 ]; then
 "
 fi
 if [ "$has_basic_auth" -eq 1 ]; then
-  newapi_guards+="	basic_auth {
+  # 生产当前 Caddy 2.6.2 使用 basicauth；新版本仍保留该兼容指令。
+  newapi_guards+="	basicauth {
 		$NEWAPI_BASIC_AUTH_USER $NEWAPI_BASIC_AUTH_HASH
 	}
 "
-  newapi_guards_indented+="		basic_auth {
+  newapi_guards_indented+="		basicauth {
 			$NEWAPI_BASIC_AUTH_USER $NEWAPI_BASIC_AUTH_HASH
 		}
 "
@@ -159,6 +198,7 @@ fi
 read -r -d '' CADDYFILE <<EOF || true
 $PORTAL_DOMAIN {
 	encode zstd gzip
+$cloudflare_guard
 	reverse_proxy $PORTAL_UPSTREAM
 }
 
@@ -177,6 +217,7 @@ $api_v1_directive
 $NEWAPI_DOMAIN {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"
+$cloudflare_guard
 $newapi_site_body
 }
 EOF

@@ -24,7 +24,7 @@ flock -n 9 || {
 
 cd "$APP_DIR"
 
-for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh deploy/configure-caddy.sh deploy/lib.sh; do
+for required in "$COMPOSE_FILE" "$ENV_FILE" deploy/backup.sh deploy/configure-caddy.sh deploy/cloudflare-ips.txt deploy/lib.sh; do
   if [ ! -e "$required" ]; then
     echo "[deploy] missing $APP_DIR/$required" >&2
     exit 66

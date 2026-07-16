@@ -387,6 +387,10 @@ async function makeDeployFixture(mode: string, checkout: string) {
   });
   await copyFile('deploy/deploy.sh', join(fixture.dir, 'deploy/deploy.sh'));
   await copyFile('deploy/lib.sh', join(fixture.dir, 'deploy/lib.sh'));
+  await copyFile(
+    'deploy/cloudflare-ips.txt',
+    join(fixture.dir, 'deploy/cloudflare-ips.txt')
+  );
   await chmod(join(fixture.dir, 'deploy/deploy.sh'), 0o755);
   await executable(
     join(fixture.dir, 'deploy/backup.sh'),
