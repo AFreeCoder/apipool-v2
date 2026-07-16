@@ -124,6 +124,15 @@ async function writeMarkers(fixture: { dir: string }, tag = 'sha-current') {
   }
 }
 
+async function writeRestoreEvidence(
+  fixture: { dir: string },
+  content = '恢复演练完成：portal=ok, newapi=ok, credentials=ok\n'
+) {
+  const path = join(fixture.dir, 'restore-drill-evidence.md');
+  await writeFile(path, content, 'utf8');
+  return path;
+}
+
 test('go-live 只保留 checkout 门禁，不再维护切流或钱包开关', async () => {
   const script = await readFile('deploy/go-live.sh', 'utf8');
   assert.match(script, /APIPOOL_CHECKOUT_ENABLED/);
@@ -180,22 +189,57 @@ test('最终态路由探测失败时 verify 不启动任何 smoke', async () => 
   assert.equal(await readFile(fixture.log, 'utf8'), '');
 });
 
+test('open-checkout 强制要求存在、可读且非空的备份恢复演练证据', async () => {
+  const noArgument = await makeFixture();
+  let result = runGoLive(noArgument, ['open-checkout']);
+  assert.equal(result.status, 78, result.stderr);
+  assert.match(result.stderr, /--evidence/);
+
+  const missing = await makeFixture();
+  result = runGoLive(missing, [
+    'open-checkout',
+    '--evidence',
+    join(missing.dir, 'missing.md'),
+  ]);
+  assert.equal(result.status, 78, result.stderr);
+  assert.match(result.stderr, /必须存在、可读且非空/);
+
+  const empty = await makeFixture();
+  const emptyPath = await writeRestoreEvidence(empty, '');
+  result = runGoLive(empty, ['open-checkout', '--evidence', emptyPath]);
+  assert.equal(result.status, 78, result.stderr);
+  assert.match(result.stderr, /必须存在、可读且非空/);
+});
+
 test('open-checkout 拒绝缺失或陈旧的当前镜像 smoke 标志', async () => {
   const missing = await makeFixture();
-  assert.equal(runGoLive(missing, ['open-checkout']).status, 78);
+  const missingEvidence = await writeRestoreEvidence(missing);
+  assert.equal(
+    runGoLive(missing, ['open-checkout', '--evidence', missingEvidence]).status,
+    78
+  );
 
   const stale = await makeFixture();
+  const staleEvidence = await writeRestoreEvidence(stale);
   await writeMarkers(stale, 'sha-old');
-  const result = runGoLive(stale, ['open-checkout']);
+  const result = runGoLive(stale, [
+    'open-checkout',
+    '--evidence',
+    staleEvidence,
+  ]);
   assert.equal(result.status, 78, result.stderr);
   assert.match(result.stderr, /与当前发布.*不匹配/);
 });
 
 test('open-checkout 经确认后原子开收款并验证容器运行态', async () => {
   const fixture = await makeFixture();
+  const evidence = await writeRestoreEvidence(fixture);
   await writeMarkers(fixture);
-  const result = runGoLive(fixture, ['open-checkout'], { input: 'yes\n' });
+  const result = runGoLive(fixture, ['open-checkout', '--evidence', evidence], {
+    input: 'yes\n',
+  });
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, new RegExp(evidence));
   const env = await readFile(join(fixture.dir, '.env.deploy'), 'utf8');
   assert.match(env, /^APIPOOL_CHECKOUT_ENABLED=true$/m);
   assert.match(env, /^QUOTED_VALUE='keep \$literal spaces'$/m);

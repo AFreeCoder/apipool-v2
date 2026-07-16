@@ -2,6 +2,8 @@
 
 ## 上线前门禁
 
+- [ ] 首次开放 checkout 前，在隔离环境完成备份恢复演练并保存真实、可读、非空的证据文件；`go-live.sh open-checkout` 必须通过 `--evidence <路径>` 校验后才能开收款。
+- [ ] 按 runbook §6.2 查询生产门户库中的有效旧 credit 余额，必须返回零行；测试余额需登记后清理，归属不明或可能是真实余额时停止开放 checkout。
 - [ ] 在目标环境设置 `APIPOOL_SMOKE_REQUIRE_LIVE=true`，完成 Gateway 数据面和充值闭环 live smoke；本次接收只验证了本地构建、测试和静态编排，没有部署，也没有目标环境凭据。
 - [ ] 在安装 Caddy 的 CI 或等价 Linux 环境完成真实 `caddy adapt` / `caddy validate`；本机缺少 Caddy，相关本地用例按设计跳过，GitHub Actions 已配置为安装失败即失败。
 

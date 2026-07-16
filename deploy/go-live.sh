@@ -43,6 +43,19 @@ require_checkout_closed() {
   fi
 }
 
+require_restore_evidence() {
+  if [ "$#" -ne 2 ] || [ "${1:-}" != --evidence ] || [ -z "${2:-}" ]; then
+    echo "go-live: open-checkout 必须提供 --evidence <备份恢复演练证据>" >&2
+    exit 78
+  fi
+
+  RESTORE_EVIDENCE="$2"
+  if [ ! -f "$RESTORE_EVIDENCE" ] || [ ! -r "$RESTORE_EVIDENCE" ] || [ ! -s "$RESTORE_EVIDENCE" ]; then
+    echo "go-live: 备份恢复演练证据必须存在、可读且非空：$RESTORE_EVIDENCE" >&2
+    exit 78
+  fi
+}
+
 require_marker() {
   marker="$1"
   expected="$(release_image_tag)"
@@ -112,7 +125,8 @@ verify_container_checkout() {
 }
 
 confirm_open() {
-  printf '%s\n' "当前镜像的网关与充值 smoke 已通过，即将开放 checkout。" >&2
+  evidence="$1"
+  printf '%s\n' "当前镜像的网关与充值 smoke 已通过；备份恢复演练证据：$evidence；即将开放 checkout。" >&2
   printf '%s' "输入 yes 确认继续: " >&2
   answer=""
   read -r answer || true
@@ -137,10 +151,12 @@ case "$command" in
     ;;
   open-checkout)
     require_checkout_closed
+    shift
+    require_restore_evidence "$@"
     require_marker "$APP_DIR/.live-smoke-recharge-ok"
     require_marker "$APP_DIR/.live-smoke-gateway-ok"
     verify_routes
-    confirm_open
+    confirm_open "$RESTORE_EVIDENCE"
     set_env_values APIPOOL_CHECKOUT_ENABLED=true
     recreate
     verify_container_checkout
@@ -154,7 +170,7 @@ case "$command" in
     printf 'api2-management=%s\n' "$(probe_status "$API_BASE/api/status")"
     ;;
   *)
-    echo "usage: $0 <verify|open-checkout|status>" >&2
+    echo "usage: $0 <verify|open-checkout --evidence PATH|status>" >&2
     exit 64
     ;;
 esac

@@ -120,7 +120,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 2. **New API 健康检查**：内部地址 `GET /api/status` 返回 `success=true`。
 3. **bridge 冒烟**：门户服务端能以管理员上下文认证，且浏览器侧无内部标识泄漏。
 4. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
-5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → credit 入账 → ledger applied → New API quota 增加 → 控制台余额一致。
+5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → ledger applied → New API quota 增加 → 控制台余额一致。
 6. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
 7. **调用冒烟**：用该 Key 通过 `https://api2.apipool.dev` 的 OpenAI 兼容路径调用发布模型成功，用量页可见日志。
 8. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
@@ -408,13 +408,13 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 - 仅 `APIPOOL_CHECKOUT_ENABLED` 控制是否允许创建支付订单。
 
 全程在 `/opt/apipool-v2` 执行。`deploy/go-live.sh` 使用 deploy lock；退出 78 表示
-checkout 前态、当前镜像 smoke 标志或人工确认不满足，退出 75 表示锁冲突或运行态验证
-失败。
+checkout 前态、恢复演练证据、当前镜像 smoke 标志或人工确认不满足，退出 75 表示锁冲突
+或运行态验证失败。
 
 ### 6.1 上线顺序
 
-1. 确认 pre-deploy 备份存在，必要时完成恢复演练；数据库与
-   `APIPOOL_CREDENTIALS_SECRET` 必须能在恢复环境重聚。
+1. 确认 pre-deploy 备份存在。首次开放 checkout 前必须在隔离环境完成一次备份恢复
+   演练并保存证据；数据库与 `APIPOOL_CREDENTIALS_SECRET` 必须能在恢复环境重聚。
 2. 确认 `.env.deploy` 中 `APIPOOL_CHECKOUT_ENABLED=false`。
 3. 部署目标 `IMAGE_TAG`，等待数据库迁移和容器健康检查完成。
 4. 立即发布并复核模型路由与价格；短暂“不可调用”只允许出现在本步骤完成前。
@@ -422,16 +422,29 @@ checkout 前态、当前镜像 smoke 标志或人工确认不满足，退出 75 
 6. 执行 `./deploy/go-live.sh verify`。脚本依次验证固定路由、MVP smoke、充值
    smoke 和 Gateway smoke，并把两类专项标志绑定到当前 `IMAGE_TAG`。
 7. 人工核对 Dashboard 钱包、请求账本和 New API 回充结果。
-8. 执行 `./deploy/go-live.sh open-checkout`，输入 `yes` 后才开放收款。
+8. 执行 `./deploy/go-live.sh open-checkout --evidence "$RESTORE_EVIDENCE"`，
+   输入 `yes` 后才开放收款。
 9. 按 §6.5 观察并收尾。
 
 ```bash
 cd /opt/apipool-v2
+RESTORE_EVIDENCE=/opt/apipool-v2/evidence/restore-drill-YYYYMMDD.md
 ./deploy/go-live.sh status
 ./deploy/go-live.sh verify
-./deploy/go-live.sh open-checkout
+./deploy/go-live.sh open-checkout --evidence "$RESTORE_EVIDENCE"
 ./deploy/go-live.sh status
 ```
+
+恢复演练证据文件必须是仅操作员可读的普通非空文件，建议权限 `600`，至少记录：
+
+- 演练时间、操作员、源备份归档绝对路径及 SHA-256；
+- 隔离恢复目标，Portal 与 New API SQLite 的 `PRAGMA integrity_check=ok`；
+- 恢复后容器启动、迁移和只读健康检查结果；
+- 使用恢复的 `APIPOOL_CREDENTIALS_SECRET` 验证凭证可解密的结果，不得记录密钥明文；
+- 演练环境清理结果。
+
+`go-live.sh` 只验证证据文件存在、可读且非空，并在人工确认时回显路径；操作员必须先
+审阅内容真实性，不能用占位文件代替恢复演练。
 
 固定路由的独立期待值始终是 401 / 404 / 404：
 
@@ -502,7 +515,29 @@ WHERE type='index' AND name IN (
 SQL
 ```
 
-表或列缺失时停止上线；不得在生产库手写补列，先修复迁移并重新部署验证。
+再检查旧 credit 有效余额；以下查询必须返回零行：
+
+```bash
+sqlite3 -header -column "$PORTAL_DB" <<'SQL'
+SELECT
+  user_id,
+  SUM(remaining_credits) AS remaining_credits
+FROM credit
+WHERE status = 'active'
+  AND transaction_type = 'grant'
+  AND remaining_credits > 0
+  AND (
+    expires_at IS NULL
+    OR expires_at > CAST(strftime('%s', 'now') AS INTEGER) * 1000
+  )
+GROUP BY user_id
+HAVING SUM(remaining_credits) > 0;
+SQL
+```
+
+表或列缺失时停止上线；不得在生产库手写补列，先修复迁移并重新部署验证。若 credit
+查询返回测试账号，登记后按测试数据清理流程处理；若归属不明或可能是真实余额，停止
+开放 checkout，先确定迁移或补账方案，不得直接删除 credit 记录。
 
 ### 6.3 故障处理与镜像回滚
 
