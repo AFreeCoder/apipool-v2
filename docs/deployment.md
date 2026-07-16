@@ -40,7 +40,9 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
 - 运行单元：`docker-compose.prod.yml` 中的 `apipool-v2`、`new-api` 和
   `newapi-metadata-filter`
 - 门户容器：拉取 GHCR 镜像，监听服务器本机 `127.0.0.1:3000`
-- New API 容器：`calciumion/new-api`，监听服务器本机 `127.0.0.1:3001`
+- New API 容器：由 `.env.deploy` 的 `NEWAPI_IMAGE` 指定，可使用上游不可变摘要或
+  `ghcr.io/afreecoder/apipool-new-api:sha-<完整 commit>` 自建镜像，监听服务器本机
+  `127.0.0.1:3001`。不要把 `latest` 作为生产回滚基线。
 - 元数据过滤器：独立 GHCR 镜像，仅在 Compose 内网监听 `8080`；不发布宿主机端口。
 - 持久化数据：
   - `data/portal/`：门户 SQLite 数据
@@ -62,6 +64,19 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
   - `/opt/apipool-v2/docker-compose.prod.yml`
+
+### New API 独立热修镜像
+
+`.github/workflows/newapi-tiered-image-count-hotfix.yaml` 从固定 New API 源码提交构建
+`linux/amd64` 镜像，并输出短期保留的可部署镜像构件。部署前必须核对构件 SHA-256、
+镜像架构和镜像 ID；加载到 VPS 后使用：
+
+```bash
+ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy-newapi-image.sh ghcr.io/afreecoder/apipool-new-api:sha-<完整 commit>'
+```
+
+脚本只替换 `new-api` 容器，不重启门户和元数据过滤器；切换前生成 `pre-deploy` 备份及
+`rollback-newapi-image-*.env`，健康检查或数据库完整性检查失败时恢复旧镜像。
 
 ## NewAPI 受控模型元数据同步
 
@@ -220,6 +235,8 @@ ssh apipool_vps 'tar -tzf "$(ls -t /opt/apipool-v2/backups/pre-deploy-*.tar.gz |
   3. 将门户回滚到上一个稳定 `sha-<commit>` 镜像。
 - 自动回滚：`deploy/deploy.sh` 健康检查失败时会把 `release.env` 写回上一次
   `IMAGE_TAG`，重新 `compose pull && compose up -d --remove-orphans`。
+- New API 独立回滚：读取对应 `backups/rollback-newapi-image-*.env` 中的不可变旧镜像
+  引用，再交给 `deploy/deploy-newapi-image.sh`；不要恢复门户 `IMAGE_TAG`。
 - 手动镜像回滚：
 
 ```bash
