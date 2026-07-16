@@ -467,6 +467,8 @@ test('production runner deploy wrapper validates immutable inputs and keeps root
   assert.match(toolingInstaller, /部署件中不允许出现符号链接/);
   assert.match(toolingInstaller, /tooling-.*tar\.gz/);
   assert.match(toolingInstaller, /install -D -o root -g root/);
+  assert.match(toolingInstaller, /! -name '\._\*'/);
+  assert.match(toolingInstaller, /! -name '\.DS_Store'/);
 });
 
 test('ingress firewall is allowlisted and requires explicit rollback confirmation', async () => {

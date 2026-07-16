@@ -47,6 +47,11 @@ while IFS= read -r -d '' source_file; do
   esac
   install -D -o root -g root -m "$mode" \
     "$source_file" "$APP_DIR/deploy/$relative_path"
-done < <(find "$SOURCE_ROOT/deploy" -type f -print0)
+done < <(
+  find "$SOURCE_ROOT/deploy" -type f \
+    ! -name '._*' \
+    ! -name '.DS_Store' \
+    -print0
+)
 
 echo "[tooling] 已安装 root-owned 生产部署工具链"
