@@ -80,28 +80,33 @@ export type ModelAdminConfigInput = {
   capabilityIds: string[];
 };
 
+export type ModelMetadataAdminConfigInput = Omit<
+  ModelAdminConfigInput,
+  'listing'
+>;
+
 export type ModelAdminConfigResult = {
   model: Model;
   listing: Listing;
   basePrice: ModelPrice;
 };
 
+export type ModelMetadataAdminConfigResult = Omit<
+  ModelAdminConfigResult,
+  'listing'
+>;
+
 export type ModelAdminRow = {
   id: string;
   modelId: string;
   displayName: string;
   vendorName: string;
-  groupName: string;
   categoryNames: string;
   capabilityNames: string;
   inputPrice: string;
   outputPrice: string;
   imageInputPrice: string;
   imageOutputPrice: string;
-  // 结构化折扣倍率（bps，10000 = 十折 = 不打折）；文案由页面按 locale 渲染。
-  // 服务层不产出预格式化字符串，否则中文「折」会漏到英文后台。
-  discountRateBps: number | null;
-  pricingStatus: string;
   createdAt: Date;
 };
 
@@ -519,67 +524,48 @@ export async function getModels(): Promise<Model[]> {
 }
 
 export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
-  const [models, vendors, groups] = await Promise.all([
-    getModels(),
-    getVendors(),
-    getGroups(),
-  ]);
+  const [models, vendors] = await Promise.all([getModels(), getVendors()]);
   if (models.length === 0) return [];
 
   const vendorNames = new Map(
     vendors.map((vendor) => [vendor.id, vendor.name] as const)
   );
-  const groupsById = new Map(groups.map((group) => [group.id, group] as const));
   const modelIds = models.map((model) => model.id);
 
-  // N+1 → 每个维度一条批量查询（inArray）。列表无分页，故一次性拉全量；
-  // 若日后需要分页，改这里为 join + TableCard.pagination（见 issues S-11d）。
-  const [listingRows, categoryRows, capabilityRows, basePriceRows] =
-    await Promise.all([
-      db()
-        .select()
-        .from(catalogModelListing)
-        .where(inArray(catalogModelListing.modelId, modelIds))
-        .orderBy(asc(catalogModelListing.sortOrder)),
-      db()
-        .select({
-          modelId: catalogModelCategory.modelId,
-          name: catalogCategory.name,
-          sortOrder: catalogCategory.sortOrder,
-        })
-        .from(catalogModelCategory)
-        .innerJoin(
-          catalogCategory,
-          eq(catalogModelCategory.categoryId, catalogCategory.id)
-        )
-        .where(inArray(catalogModelCategory.modelId, modelIds))
-        .orderBy(asc(catalogCategory.sortOrder)),
-      db()
-        .select({
-          modelId: catalogModelCapability.modelId,
-          name: catalogCapability.name,
-          sortOrder: catalogCapability.sortOrder,
-        })
-        .from(catalogModelCapability)
-        .innerJoin(
-          catalogCapability,
-          eq(catalogModelCapability.capabilityId, catalogCapability.id)
-        )
-        .where(inArray(catalogModelCapability.modelId, modelIds))
-        .orderBy(asc(catalogCapability.sortOrder)),
-      db()
-        .select()
-        .from(catalogModelPrice)
-        .where(inArray(catalogModelPrice.modelId, modelIds)),
-    ]);
-
-  // listingRows 已按 sortOrder 升序：每个模型取第一条 = 原 listings[0] 语义。
-  const firstListingByModel = new Map<string, Listing>();
-  for (const listing of listingRows as Listing[]) {
-    if (!firstListingByModel.has(listing.modelId)) {
-      firstListingByModel.set(listing.modelId, listing);
-    }
-  }
+  // 模型列表只读模型主数据与基准价；分组、折扣和 listing 健康状态只在
+  // “分组折扣”页面读取，避免拿第一条 listing 冒充模型元数据。
+  const [categoryRows, capabilityRows, basePriceRows] = await Promise.all([
+    db()
+      .select({
+        modelId: catalogModelCategory.modelId,
+        name: catalogCategory.name,
+        sortOrder: catalogCategory.sortOrder,
+      })
+      .from(catalogModelCategory)
+      .innerJoin(
+        catalogCategory,
+        eq(catalogModelCategory.categoryId, catalogCategory.id)
+      )
+      .where(inArray(catalogModelCategory.modelId, modelIds))
+      .orderBy(asc(catalogCategory.sortOrder)),
+    db()
+      .select({
+        modelId: catalogModelCapability.modelId,
+        name: catalogCapability.name,
+        sortOrder: catalogCapability.sortOrder,
+      })
+      .from(catalogModelCapability)
+      .innerJoin(
+        catalogCapability,
+        eq(catalogModelCapability.capabilityId, catalogCapability.id)
+      )
+      .where(inArray(catalogModelCapability.modelId, modelIds))
+      .orderBy(asc(catalogCapability.sortOrder)),
+    db()
+      .select()
+      .from(catalogModelPrice)
+      .where(inArray(catalogModelPrice.modelId, modelIds)),
+  ]);
   const categoryNamesByModel = new Map<string, string[]>();
   for (const row of categoryRows as { modelId: string; name: string }[]) {
     const names = categoryNamesByModel.get(row.modelId) ?? [];
@@ -600,9 +586,7 @@ export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
   }
 
   return models.map((model) => {
-    const listing = firstListingByModel.get(model.id);
     const basePrice = basePriceByModel.get(model.id);
-    const group = listing ? groupsById.get(listing.groupId) : undefined;
     const categoryNames = categoryNamesByModel.get(model.id) ?? [];
     const capabilityNames = capabilityNamesByModel.get(model.id) ?? [];
 
@@ -611,28 +595,13 @@ export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
       modelId: model.modelId,
       displayName: model.displayName,
       vendorName: vendorNames.get(model.vendorId) ?? model.vendorId,
-      groupName: listing ? (group?.name ?? listing.groupId) : '',
       categoryNames:
         categoryNames.length > 0 ? categoryNames.join(', ') : model.category,
       capabilityNames: capabilityNames.join(', '),
-      inputPrice: microUsdToDollars(
-        basePrice?.baseInputMicroUsd ?? listing?.inputMicroUsd
-      ),
-      outputPrice: microUsdToDollars(
-        basePrice?.baseOutputMicroUsd ?? listing?.outputMicroUsd
-      ),
-      imageInputPrice: microUsdToDollars(
-        basePrice?.baseImageInputMicroUsd ?? listing?.imageInputMicroUsd
-      ),
-      imageOutputPrice: microUsdToDollars(
-        basePrice?.baseImageOutputMicroUsd ?? listing?.imageOutputMicroUsd
-      ),
-      discountRateBps: listing?.discountRateBps ?? null,
-      pricingStatus: [
-        `base:${basePrice?.source ?? 'missing'}/${basePrice?.syncStatus ?? 'none'}/${basePrice?.driftStatus ?? 'unknown'}`,
-        `group:${group?.pricingSyncStatus ?? 'unknown'}${group?.newapiGroupRatioDecimal ? `@${group.newapiGroupRatioDecimal}` : ''}`,
-        `policy:${listing?.pricePolicy ?? 'none'}/${listing?.priceDriftStatus ?? 'unknown'}`,
-      ].join(' '),
+      inputPrice: microUsdToDollars(basePrice?.baseInputMicroUsd),
+      outputPrice: microUsdToDollars(basePrice?.baseOutputMicroUsd),
+      imageInputPrice: microUsdToDollars(basePrice?.baseImageInputMicroUsd),
+      imageOutputPrice: microUsdToDollars(basePrice?.baseImageOutputMicroUsd),
       createdAt: model.createdAt,
     };
   });
@@ -811,9 +780,15 @@ export async function setModelCategories(
   });
 }
 
-export async function upsertModelAdminConfig(
+export function upsertModelAdminConfig(
   input: ModelAdminConfigInput
-): Promise<ModelAdminConfigResult> {
+): Promise<ModelAdminConfigResult>;
+export function upsertModelAdminConfig(
+  input: ModelMetadataAdminConfigInput
+): Promise<ModelMetadataAdminConfigResult>;
+export async function upsertModelAdminConfig(
+  input: ModelAdminConfigInput | ModelMetadataAdminConfigInput
+): Promise<ModelAdminConfigResult | ModelMetadataAdminConfigResult> {
   if (input.model.categoryIds.length === 0) {
     throw new Error('at least one category is required');
   }
@@ -918,41 +893,49 @@ export async function upsertModelAdminConfig(
       })
       .where(eq(catalogModelListing.modelId, model.id));
 
+    // 模型元数据页面到此结束：它只维护模型主记录、分类、能力和基准价，
+    // 不得静默创建或修改任何分组折扣。
+    if (!('listing' in input)) {
+      return { model, basePrice };
+    }
+
+    const listingInput = input.listing;
+
     const listingPatch: Record<string, unknown> = {
       modelId: model.id,
-      groupId: input.listing.groupId,
-      statusId: input.listing.statusId,
+      groupId: listingInput.groupId,
+      statusId: listingInput.statusId,
       inputMicroUsd: input.basePrice.inputMicroUsd,
       outputMicroUsd: input.basePrice.outputMicroUsd,
       imageInputMicroUsd: input.basePrice.imageInputMicroUsd ?? null,
       imageOutputMicroUsd: input.basePrice.imageOutputMicroUsd ?? null,
-      discountRateBps: input.listing.discountRateBps ?? null,
-      discountNote: input.listing.discountNote ?? null,
+      discountRateBps: listingInput.discountRateBps ?? null,
+      discountNote: listingInput.discountNote ?? null,
       priceDriftStatus: 'needs_live_check',
       effectivePriceFormula: null,
       effectivePriceSyncedAt: null,
-      description: input.listing.description ?? null,
-      smokeTested: input.listing.smokeTested ?? false,
-      featured: input.listing.featured ?? false,
-      sortOrder: input.listing.sortOrder ?? 0,
+      description: listingInput.description ?? null,
+      smokeTested: listingInput.smokeTested ?? false,
+      featured: listingInput.featured ?? false,
+      sortOrder: listingInput.sortOrder ?? 0,
     };
 
     // 划线价（list price）只在调用方显式传入时才写入。传 undefined 表示
     // 「本表单不管这个字段」——旧实现无条件写 null 会静默抹掉已有划线价
     // （模型编辑表单根本不提交该字段）。显式传 null 仍会清空。
-    if (input.listing.listInputMicroUsd !== undefined) {
-      listingPatch.listInputMicroUsd = input.listing.listInputMicroUsd;
+    if (listingInput.listInputMicroUsd !== undefined) {
+      listingPatch.listInputMicroUsd = listingInput.listInputMicroUsd;
     }
-    if (input.listing.listOutputMicroUsd !== undefined) {
-      listingPatch.listOutputMicroUsd = input.listing.listOutputMicroUsd;
+    if (listingInput.listOutputMicroUsd !== undefined) {
+      listingPatch.listOutputMicroUsd = listingInput.listOutputMicroUsd;
     }
 
-    const existingListing = input.listing.id
-      ? await getListingByIdInTx(tx, input.listing.id)
+    const existingListing = listingInput.id
+      ? await getListingByIdInTx(tx, listingInput.id)
       : await getListingByModelAndGroupInTx(
           tx,
           model.id,
-          input.listing.groupId
+          listingInput.groupId
         );
 
     const [listing] = existingListing

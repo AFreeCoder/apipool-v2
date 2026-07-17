@@ -31,7 +31,7 @@
       "title": "模型目录",
       "items": [
         {
-          "title": "模型",
+          "title": "模型元数据",
           "url": "/admin/catalog/models",
           "icon": "Bot"
         },

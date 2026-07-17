@@ -267,11 +267,9 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   ]) {
     assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
-  // S-6: 分组 / 折扣 / 价格同步状态三列的数据服务层早已算好，必须注册进表格，
-  // 否则运营看不到某模型正处于 needs_live_check（公开页显示「—」）。
-  // 原断言把「三列缺失」写成了期望，这里改为断言三列都已注册。
+  // 模型表只展示元数据与基准价；分组、折扣和 listing 状态只在分组折扣页出现。
   for (const field of ['groupName', 'discountRate', 'pricingStatus']) {
-    assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
+    assert.doesNotMatch(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
   assert.doesNotMatch(listPage, /contextWindow/);
 
@@ -281,7 +279,8 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     assert.match(source, callPattern('getVendors'));
     assert.match(source, callPattern('getCategories'));
     assert.match(source, callPattern('getCapabilities'));
-    assert.match(source, callPattern('getStatuses'));
+    assert.doesNotMatch(source, callPattern('getGroups'));
+    assert.doesNotMatch(source, callPattern('getStatuses'));
     assert.match(source, callPattern('upsertModelAdminConfig'));
     assert.match(source, callPattern('optionalDollarsToMicroUsd'));
     assert.match(source, /JSON\.parse\(.*categoryIds/);
@@ -289,15 +288,14 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     assert.doesNotMatch(source, fieldPattern('contextWindow'));
     assert.match(source, /revalidateCatalog\s*\(/);
   }
-  assert.match(newPage, callPattern('getGroups'));
-  assert.match(editPage, callPattern('getGroups'));
-  for (const hiddenField of [
+  for (const groupField of [
     'groupId',
+    'statusId',
     'discountFold',
     'discountNote',
     'description',
   ]) {
-    assert.match(modelForm, new RegExp(`name="${hiddenField}"`));
+    assert.doesNotMatch(modelForm, new RegExp(`name="${groupField}"`));
   }
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
@@ -554,8 +552,8 @@ test('catalog model search route requires catalog write permission and hides raw
   assert.match(source, /PERMISSIONS\.CATALOG_WRITE/);
   assert.match(source, /createNewApiClient\s*\(/);
   assert.match(source, /listPricingModels\s*\(/);
-  assert.match(source, /getGroupById\s*\(/);
-  assert.match(source, /searchParams\.get\(['"]groupId['"]\)/);
+  assert.doesNotMatch(source, /getGroupById\s*\(/);
+  assert.doesNotMatch(source, /searchParams\.get\(['"]groupId['"]\)/);
   assert.match(source, /respData\s*\(\s*\{\s*models/);
   assert.doesNotMatch(source, /respData\s*\(\s*pricing/);
 });
@@ -569,7 +567,7 @@ test('catalog model candidate form surfaces empty and error states', async () =>
   assert.match(source, /searchError/);
   assert.match(
     source,
-    /new URLSearchParams\(\{\s*vendorId,\s*groupId,\s*keyword\s*\}\)/
+    /new URLSearchParams\(\{\s*vendorId,\s*keyword\s*\}\)/
   );
   assert.match(source, /messages\.noCandidates/);
   assert.match(source, /setSearchError\s*\(/);
@@ -669,16 +667,13 @@ test('creating a duplicate listing surfaces a translated message, not a raw cons
   }
 });
 
-test('saving a model warns that the public price is now hidden until a price sync runs', async () => {
+test('editing model base price warns that existing public prices stay hidden until sync', async () => {
   const { readFile } = await import('node:fs/promises');
 
-  for (const page of [
-    'src/app/[locale]/(admin)/admin/catalog/models/[id]/edit/page.tsx',
-    'src/app/[locale]/(admin)/admin/catalog/models/new/page.tsx',
-  ]) {
-    const source = await readFile(page, 'utf8');
-    assert.match(source, /messages\.priceHiddenAfterSave/, page);
-  }
+  const editPage =
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/edit/page.tsx';
+  const source = await readFile(editPage, 'utf8');
+  assert.match(source, /messages\.priceHiddenAfterSave/, editPage);
 
   for (const locale of ['en', 'zh']) {
     const messages = JSON.parse(

@@ -78,7 +78,7 @@ test('setup catalog admin review fixes db', async () => {
   await setupDb();
 });
 
-test('S-8/S-11d: getModelAdminRows returns structured discountRateBps (no formatted 折 string) and batches N models', async () => {
+test('模型管理行只返回模型元数据与基准价，不投影第一条分组折扣', async () => {
   const dims = await seedDimensions('rows');
 
   for (let i = 0; i < 3; i++) {
@@ -105,22 +105,15 @@ test('S-8/S-11d: getModelAdminRows returns structured discountRateBps (no format
   for (let i = 0; i < 3; i++) {
     const row = rows.find((r: any) => r.modelId === `rows-model-${i}`);
     assert.ok(row, `expected rows-model-${i} to be present`);
-    // 服务层只回传结构化 bps，绝不产出预格式化的单语字符串
-    assert.equal(typeof row.discountRateBps, 'number');
-    assert.equal(row.discountRateBps, 9000);
-    assert.equal(
-      Object.prototype.hasOwnProperty.call(row, 'discountRate'),
-      false,
-      'service row must not carry a pre-formatted discountRate string'
-    );
-    assert.ok(
-      !JSON.stringify(row).includes('折'),
-      'admin row payload must not leak a Chinese discount label'
-    );
-    // S-6: 分组名与价格同步状态已算好，供页面直接上列
-    assert.equal(row.groupName, 'Group rows');
-    assert.match(row.pricingStatus, /policy:/);
-    assert.match(row.pricingStatus, /group:/);
+    assert.equal(row.inputPrice, '0.15');
+    assert.equal(row.outputPrice, '0.6');
+    for (const field of ['groupName', 'discountRateBps', 'pricingStatus']) {
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(row, field),
+        false,
+        `${field} 属于分组折扣，不属于模型元数据`
+      );
+    }
   }
 });
 
@@ -279,19 +272,16 @@ test('S-8: formatDiscountRate is removed and discount labels render from a local
     'utf8'
   );
   assert.doesNotMatch(service, /formatDiscountRate/);
-  // getModelAdminRows 回传结构化 bps，而不是格式化后的「X 折」串。
-  assert.match(service, /discountRateBps: listing\?\.discountRateBps \?\? null/);
+  assert.doesNotMatch(service, /discountRateBps: listing\?\.discountRateBps/);
 
   const listingsListPage = await readFile(
     join(modelsRoot, '[id]/listings/page.tsx'),
     'utf8'
   );
   const modelsListPage = await readFile(join(modelsRoot, 'page.tsx'), 'utf8');
-  for (const page of [listingsListPage, modelsListPage]) {
-    assert.doesNotMatch(page, /formatDiscountRate/);
-    // 折扣文案由页面按 locale 走词条渲染
-    assert.match(page, /t\(['"]discount\.value['"]/);
-  }
+  assert.doesNotMatch(listingsListPage, /formatDiscountRate/);
+  assert.match(listingsListPage, /t\(['"]discount\.value['"]/);
+  assert.doesNotMatch(modelsListPage, /formatDiscountRate|discount\.value/);
 
   const en = await readCatalogJson('en');
   const zh = await readCatalogJson('zh');
@@ -305,35 +295,26 @@ test('S-8: formatDiscountRate is removed and discount labels render from a local
   );
 });
 
-test('S-6: models list registers group, discount, and pricing-status columns', async () => {
+test('模型列表不注册分组、折扣和 listing 定价状态列', async () => {
   const listPage = await readFile(join(modelsRoot, 'page.tsx'), 'utf8');
   for (const field of ['groupName', 'discountRate', 'pricingStatus']) {
-    assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
+    assert.doesNotMatch(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
-  // pricingStatus 是调试型定长串，用等宽小字号呈现
-  assert.match(
-    listPage,
-    /name:\s*['"]pricingStatus['"][\s\S]*?className:\s*['"]font-mono text-xs['"]/
-  );
-  const en = await readCatalogJson('en');
-  const zh = await readCatalogJson('zh');
-  assert.ok(en.fields.pricingStatus);
-  assert.ok(zh.fields.pricingStatus);
+  assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/listings/);
 });
 
-test('S-7: model admin form renders a group select instead of a hidden group field', async () => {
+test('模型表单及保存动作完全不读写分组折扣字段', async () => {
   const form = await readFile(join(modelsRoot, 'model-admin-form.tsx'), 'utf8');
-  assert.match(form, /<select\s+name="groupId"/);
-  assert.doesNotMatch(form, /<input type="hidden" name="groupId"/);
-  // 表单必须消费 groups prop（此前声明却从未渲染）
-  assert.match(form, /vendors,\s*\n\s*groups,/);
-  assert.match(form, /groups\.map\(\(group\)/);
-  // 模型搜索候选按 groupId 过滤，切换分组必须能触发
-  assert.match(form, /setGroupId/);
+  assert.doesNotMatch(form, /<select\s+name="groupId"/);
+  assert.doesNotMatch(form, /name="groupId"/);
+  assert.doesNotMatch(form, /groups\.map\(\(group\)/);
+  assert.doesNotMatch(form, /setGroupId/);
 
   for (const page of ['new/page.tsx', '[id]/edit/page.tsx']) {
     const source = await readFile(join(modelsRoot, page), 'utf8');
-    assert.match(source, /group:\s*t\(['"]fields\.group['"]\)/);
+    assert.doesNotMatch(source, /group:\s*t\(['"]fields\.group['"]\)/);
+    assert.doesNotMatch(source, /groups=\{/);
+    assert.doesNotMatch(source, /listing:\s*\{/);
   }
 });
 

@@ -22,6 +22,12 @@ import { APIPOOL_CONFIG } from '@/config/apipool';
 import { findUserById } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
 
+import {
+  assertSmokeIdentity,
+  SMOKE_OPERATOR_EMAIL,
+  SMOKE_PORTAL_EMAIL,
+} from './smoke-identities';
+
 type SmokeStep = {
   name: string;
   ok: boolean;
@@ -99,7 +105,9 @@ function missingRequiredEnv() {
     'DATABASE_URL',
     'NEWAPI_BASE_URL',
     'NEWAPI_ADMIN_TOKEN',
+    'APIPOOL_SMOKE_PORTAL_EMAIL',
     'APIPOOL_SMOKE_PORTAL_USER_ID',
+    'APIPOOL_SMOKE_OPERATOR_EMAIL',
     'APIPOOL_SMOKE_OPERATOR_USER_ID',
   ];
   return required.filter((name) => !getEnv(name));
@@ -659,12 +667,24 @@ export async function main() {
   if (!user) {
     throw new Error(`Portal user not found: ${portalUserId}`);
   }
+  assertSmokeIdentity({
+    actualEmail: user.email,
+    configuredEmail: getEnv('APIPOOL_SMOKE_PORTAL_EMAIL'),
+    expectedEmail: SMOKE_PORTAL_EMAIL,
+    role: 'portal',
+  });
   record('load portal user', true, user.email);
 
   const operator = await findUserById(operatorUserId);
   if (!operator) {
     throw new Error(`Operator user not found: ${operatorUserId}`);
   }
+  assertSmokeIdentity({
+    actualEmail: operator.email,
+    configuredEmail: getEnv('APIPOOL_SMOKE_OPERATOR_EMAIL'),
+    expectedEmail: SMOKE_OPERATOR_EMAIL,
+    role: 'operator',
+  });
   const operatorCanAdjust = await hasPermission(
     operator.id,
     PERMISSIONS.APIPOOL_QUOTA_ADJUST

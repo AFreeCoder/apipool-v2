@@ -510,6 +510,40 @@ test('createListing lets the database reject duplicate model and group pairs', a
   await assert.rejects(() => modules.service.createListing(listing));
 });
 
+test('模型元数据保存不会静默创建分组折扣', async () => {
+  const vendor = await createVendor('metadata-only-vendor');
+  const category = await createCategory('metadata-only-category');
+  const capability = await modules.service.createCapability({
+    slug: 'metadata-only-capability',
+    name: 'Metadata Only Capability',
+    sortOrder: 1,
+    status: 'active',
+  });
+
+  const created = await modules.service.upsertModelAdminConfig({
+    operatorUserId: 'metadata-only-operator',
+    model: {
+      modelId: 'metadata-only-model',
+      displayName: 'Metadata Only Model',
+      vendorId: vendor.id,
+      categoryIds: [category.id],
+    },
+    basePrice: {
+      inputMicroUsd: 1_000_000,
+      outputMicroUsd: 2_000_000,
+    },
+    capabilityIds: [capability.id],
+  });
+
+  assert.equal(created.model.modelId, 'metadata-only-model');
+  assert.equal(created.basePrice.baseInputMicroUsd, 1_000_000);
+  assert.equal('listing' in created, false);
+  assert.deepEqual(
+    await modules.service.getListingsByModel(created.model.id),
+    []
+  );
+});
+
 test('upsertModelAdminConfig creates and updates model, default listing, categories, and capabilities', async () => {
   const vendor = await createVendor('admin-model-vendor');
   const status = await createStatus('admin-model-status');

@@ -258,15 +258,15 @@
   },
   "models": {
     "list": {
-      "title": "Models",
-      "crumb": "Models",
+      "title": "Model Metadata",
+      "crumb": "Model Metadata",
       "buttons": {
         "new": "New Model"
       }
     },
     "pricingSync": {
       "title": "Pricing Sync",
-      "description": "Sync base prices and group ratios from New API, then inspect the latest drift report.",
+      "description": "Sync model base prices from New API and refresh ratios used by group discounts; manage group configuration under Group Discounts.",
       "sync": "Sync Pricing",
       "syncing": "Syncing",
       "drift": "View Drift",

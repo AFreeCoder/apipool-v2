@@ -31,7 +31,7 @@
       "title": "Model Catalog",
       "items": [
         {
-          "title": "Models",
+          "title": "Model Metadata",
           "url": "/admin/catalog/models",
           "icon": "Bot"
         },

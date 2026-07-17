@@ -117,6 +117,9 @@ test('MVP smoke requires an operator with quota adjustment permission', async ()
   );
 
   assert.match(script, /APIPOOL_SMOKE_OPERATOR_USER_ID/);
+  assert.match(script, /APIPOOL_SMOKE_PORTAL_EMAIL/);
+  assert.match(script, /APIPOOL_SMOKE_OPERATOR_EMAIL/);
+  assert.match(script, /assertSmokeIdentity/);
   assert.match(script, /PERMISSIONS\.APIPOOL_QUOTA_ADJUST/);
   assert.match(
     script,

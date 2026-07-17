@@ -17,17 +17,12 @@ export type ModelAdminFormInitial = {
   modelId: string;
   displayName: string;
   vendorId: string;
-  groupId: string;
-  statusId: string;
   categoryIds: string[];
   capabilityIds: string[];
   inputMicroUsd: string;
   outputMicroUsd: string;
   imageInputMicroUsd: string;
   imageOutputMicroUsd: string;
-  discountFold: string;
-  discountNote: string;
-  description: string;
 };
 
 export type ModelAdminFormActionResult = {
@@ -49,7 +44,6 @@ export type ModelAdminFormLabels = {
   modelId: string;
   displayName: string;
   vendor: string;
-  group: string;
   categories: string;
   capabilities: string;
   inputMicroUsd: string;
@@ -72,7 +66,6 @@ type Candidate = {
 type Props = {
   initial: ModelAdminFormInitial;
   vendors: ModelAdminFormOption[];
-  groups: ModelAdminFormOption[];
   categories: ModelAdminFormOption[];
   capabilities: ModelAdminFormOption[];
   labels: ModelAdminFormLabels;
@@ -92,7 +85,6 @@ function parseMultiSelect(element: HTMLSelectElement) {
 export function ModelAdminForm({
   initial,
   vendors,
-  groups,
   categories,
   capabilities,
   labels,
@@ -103,8 +95,6 @@ export function ModelAdminForm({
   const [modelId, setModelId] = useState(initial.modelId);
   const [displayName, setDisplayName] = useState(initial.displayName);
   const [vendorId, setVendorId] = useState(initial.vendorId);
-  const [groupId, setGroupId] = useState(initial.groupId);
-  const [statusId] = useState(initial.statusId);
   const [categoryIds, setCategoryIds] = useState(initial.categoryIds);
   const [capabilityIds, setCapabilityIds] = useState(initial.capabilityIds);
   const [inputMicroUsd, setInputMicroUsd] = useState(initial.inputMicroUsd);
@@ -115,9 +105,6 @@ export function ModelAdminForm({
   const [imageOutputMicroUsd, setImageOutputMicroUsd] = useState(
     initial.imageOutputMicroUsd
   );
-  const [discountFold] = useState(initial.discountFold);
-  const [discountNote] = useState(initial.discountNote);
-  const [description] = useState(initial.description);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -126,7 +113,7 @@ export function ModelAdminForm({
 
   useEffect(() => {
     const keyword = modelId.trim();
-    if (!vendorId || !groupId || keyword.length < 2) {
+    if (!vendorId || keyword.length < 2) {
       setCandidates([]);
       setHasSearched(false);
       setSearchError('');
@@ -140,7 +127,7 @@ export function ModelAdminForm({
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const params = new URLSearchParams({ vendorId, groupId, keyword });
+        const params = new URLSearchParams({ vendorId, keyword });
         const response = await fetch(
           `/api/apipool/admin/catalog/models/search?${params.toString()}`,
           { signal: controller.signal }
@@ -164,7 +151,7 @@ export function ModelAdminForm({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [groupId, modelId, messages.noCandidates, vendorId]);
+  }, [modelId, messages.noCandidates, vendorId]);
 
   function selectCandidate(candidate: Candidate) {
     setModelId(candidate.modelId);
@@ -209,7 +196,7 @@ export function ModelAdminForm({
   return (
     <form onSubmit={submit} className="bg-card max-w-4xl rounded-lg border p-5">
       <div className="grid gap-5">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           <label className="grid gap-2 text-sm">
             {labels.vendor}
             <select
@@ -227,28 +214,6 @@ export function ModelAdminForm({
               {vendors.map((vendor) => (
                 <option key={vendor.value} value={vendor.value}>
                   {vendor.title}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-2 text-sm">
-            {labels.group}
-            <select
-              name="groupId"
-              value={groupId}
-              onChange={(event) => {
-                setGroupId(event.target.value);
-                setCandidates([]);
-                setHasSearched(false);
-                setSearchError('');
-              }}
-              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-              required
-            >
-              {groups.map((group) => (
-                <option key={group.value} value={group.value}>
-                  {group.title}
                 </option>
               ))}
             </select>
@@ -404,10 +369,6 @@ export function ModelAdminForm({
           </label>
         </div>
 
-        <input type="hidden" name="statusId" value={statusId} />
-        <input type="hidden" name="discountFold" value={discountFold} />
-        <input type="hidden" name="discountNote" value={discountNote} />
-        <input type="hidden" name="description" value={description} />
         <input
           type="hidden"
           name="categoryIds"

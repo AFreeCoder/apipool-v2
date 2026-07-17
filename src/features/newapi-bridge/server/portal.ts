@@ -1480,8 +1480,23 @@ export async function createPortalApiKey(
 
 async function findLegacyPortalApiKey(portalUserId: string, keyId: string) {
   const [legacy] = await db()
-    .select({ id: newApiKeyBinding.id })
+    .select({
+      id: newApiKeyBinding.id,
+      newapiUserId: newApiKeyBinding.newapiUserId,
+      newapiKeyId: newApiKeyBinding.newapiKeyId,
+      keyMasked: newApiKeyBinding.keyMasked,
+      displayName: newApiKeyBinding.displayName,
+      status: newApiKeyBinding.status,
+      allowedModels: newApiKeyBinding.allowedModels,
+      createdAt: newApiKeyBinding.createdAt,
+      updatedAt: newApiKeyBinding.updatedAt,
+      lastUsedAt: newApiKeyBinding.lastUsedAt,
+      deletedAt: newApiKeyBinding.deletedAt,
+      groupSlug: catalogGroup.slug,
+      groupName: catalogGroup.name,
+    })
     .from(newApiKeyBinding)
+    .leftJoin(catalogGroup, eq(newApiKeyBinding.groupId, catalogGroup.id))
     .where(
       and(
         eq(newApiKeyBinding.id, keyId),
@@ -1490,6 +1505,102 @@ async function findLegacyPortalApiKey(portalUserId: string, keyId: string) {
     )
     .limit(1);
   return legacy ?? null;
+}
+
+function isRemoteKeyAlreadyDeleted(error: unknown) {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'status' in error &&
+      (error as { status?: unknown }).status === 404
+  );
+}
+
+async function deleteLegacyPortalApiKey(
+  portalUserId: string,
+  legacy: NonNullable<Awaited<ReturnType<typeof findLegacyPortalApiKey>>>,
+  client: NewApiClient
+) {
+  if (legacy.status === 'deleted') {
+    return toPublicApiKey({ ...legacy, legacy: true });
+  }
+
+  const binding = await getPortalUserBinding(portalUserId);
+  if (!binding || binding.newapiUserId !== legacy.newapiUserId) {
+    throw new NewApiBridgeError({
+      code: 'not_configured',
+      message: '旧版 API Key 的远端用户绑定不可用',
+    });
+  }
+
+  try {
+    await client.deleteKey(
+      bindingToUserCredentials(binding),
+      legacy.newapiKeyId
+    );
+  } catch (error) {
+    // 远端已经不存在与本次删除的最终态一致；其它错误不能只做本地隐藏，
+    // 否则旧 token 仍可能从 New API 数据面继续使用。
+    if (!isRemoteKeyAlreadyDeleted(error)) {
+      const errorMessage = getUnknownErrorMessage(error).slice(0, 1000);
+      await db()
+        .update(newApiKeyBinding)
+        .set({ lastRemoteError: errorMessage })
+        .where(eq(newApiKeyBinding.id, legacy.id));
+      await recordAudit({
+        portalUserId,
+        action: 'newapi.key.delete_legacy',
+        targetType: 'newapi_key',
+        targetId: legacy.id,
+        status: 'failed',
+        idempotencyKey: `legacy-key-delete-failed:${legacy.id}:${Date.now()}`,
+        errorMessage,
+      });
+      throw error;
+    }
+  }
+
+  const deletedAt = new Date();
+  const [updated] = await db()
+    .update(newApiKeyBinding)
+    .set({
+      status: 'deleted',
+      deletedAt,
+      lastRemoteError: null,
+    })
+    .where(
+      and(
+        eq(newApiKeyBinding.id, legacy.id),
+        eq(newApiKeyBinding.portalUserId, portalUserId),
+        ne(newApiKeyBinding.status, 'deleted')
+      )
+    )
+    .returning();
+
+  if (!updated) {
+    const current = await findLegacyPortalApiKey(portalUserId, legacy.id);
+    if (current?.status === 'deleted') {
+      return toPublicApiKey({ ...current, legacy: true });
+    }
+    throw new Error('旧版 API Key 删除状态未能保存');
+  }
+
+  await recordAudit({
+    portalUserId,
+    action: 'newapi.key.delete_legacy',
+    targetType: 'newapi_key',
+    targetId: legacy.id,
+    status: 'success',
+    idempotencyKey: `legacy-key-delete:${legacy.id}`,
+    responseBody: { newapiKeyId: legacy.newapiKeyId, deleted: true },
+  });
+
+  return toPublicApiKey({
+    ...updated,
+    groupSlug: legacy.groupSlug,
+    groupName: legacy.groupName,
+    legacy: true,
+  });
 }
 
 export async function listPortalApiKeys(
@@ -1604,8 +1715,9 @@ export async function disablePortalApiKey(
     .limit(1);
 
   if (!row) {
-    if (await findLegacyPortalApiKey(portalUserId, keyId)) {
-      throw new Error('Legacy API keys are read-only');
+    const legacy = await findLegacyPortalApiKey(portalUserId, keyId);
+    if (legacy) {
+      throw new Error('旧版 API Key 不支持停用，请直接删除');
     }
     throw new Error('API key not found');
   }
@@ -1671,8 +1783,9 @@ export async function deletePortalApiKey(
     .limit(1);
 
   if (!row) {
-    if (await findLegacyPortalApiKey(portalUserId, keyId)) {
-      throw new Error('Legacy API keys are read-only');
+    const legacy = await findLegacyPortalApiKey(portalUserId, keyId);
+    if (legacy) {
+      return deleteLegacyPortalApiKey(portalUserId, legacy, _client);
     }
     throw new Error('API key not found');
   }

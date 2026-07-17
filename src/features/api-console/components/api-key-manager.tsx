@@ -64,6 +64,7 @@ type ApiKeyRow = {
   groupName?: string | null;
   createdAt: string | Date;
   deletedAt?: string | Date | null;
+  legacy?: boolean;
 };
 
 type NoticeTone = 'error' | 'info' | 'success';
@@ -379,7 +380,10 @@ export function ApiKeyManager({
               </TableRow>
             ) : (
               keys.map((key) => {
-                const canDisable = canDisableKeyStatus(key.status);
+                // 旧版 Key 由 New API 持有，只支持远端吊销后删除；不再展示一个
+                // 注定失败的“停用”操作。
+                const canDisable =
+                  !key.legacy && canDisableKeyStatus(key.status);
                 const canCleanup = canCleanupKeyStatus(key.status);
                 const canDelete = canDeleteKeyStatus(key.status) || canCleanup;
 

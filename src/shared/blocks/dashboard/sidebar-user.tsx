@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 
 import { signOut, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
-import { SmartIcon } from '@/shared/blocks/common';
+import { UserMenuIcon } from '@/shared/blocks/common/user-menu-icon';
 import { SignModal } from '@/shared/blocks/sign/sign-modal';
 import {
   Avatar,
@@ -193,7 +193,9 @@ export function SidebarUser({ user }: { user: SidebarUserType }) {
                         target={item?.target}
                         className="flex w-full items-center gap-2"
                       >
-                        {item?.icon && <SmartIcon name={item.icon as string} />}
+                        {item?.icon && (
+                          <UserMenuIcon name={item.icon as string} />
+                        )}
                         {item?.title || ''}
                       </Link>
                     </DropdownMenuItem>

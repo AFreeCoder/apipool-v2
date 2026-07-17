@@ -90,6 +90,19 @@ test('applyApiKeyMutationResult removes a key when the mutation returns deleted'
   );
 });
 
+test('旧版 Key 只提供删除，不再展示会失败的停用操作', async () => {
+  const source = await readFile(
+    join(
+      process.cwd(),
+      'src/features/api-console/components/api-key-manager.tsx'
+    ),
+    'utf8'
+  );
+
+  assert.match(source, /legacy\?: boolean/);
+  assert.match(source, /!key\.legacy\s*&&\s*canDisableKeyStatus/);
+});
+
 test('API key manager does not ship Chinese fallback copy into the English console', async () => {
   const source = await readFile(
     join(

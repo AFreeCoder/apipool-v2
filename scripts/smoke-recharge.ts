@@ -20,6 +20,8 @@ import {
 import { findUserById } from '@/shared/models/user';
 import { handleCheckoutSuccess } from '@/shared/services/payment';
 
+import { assertSmokeIdentity, SMOKE_PORTAL_EMAIL } from './smoke-identities';
+
 function requiredEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
@@ -34,6 +36,12 @@ export async function main() {
   const userId = requiredEnv('APIPOOL_SMOKE_PORTAL_USER_ID');
   const user = await findUserById(userId);
   invariant(user, `smoke user not found: ${userId}`);
+  assertSmokeIdentity({
+    actualEmail: user.email,
+    configuredEmail: requiredEnv('APIPOOL_SMOKE_PORTAL_EMAIL'),
+    expectedEmail: SMOKE_PORTAL_EMAIL,
+    role: 'portal',
+  });
 
   const amount = Number(process.env.APIPOOL_SMOKE_RECHARGE_CENTS || '100');
   invariant(Number.isSafeInteger(amount) && amount > 0, 'amount must be cents');

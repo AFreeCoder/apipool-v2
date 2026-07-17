@@ -43,6 +43,9 @@ async function setupPortalDb() {
   const { NewApiBridgeError } = await import(
     '@/features/newapi-bridge/server/client'
   );
+  const { encryptCredential } = await import(
+    '@/features/newapi-bridge/server/crypto'
+  );
   const portal = await import('@/features/newapi-bridge/server/portal');
   const userModel = await import('@/shared/models/user');
 
@@ -53,6 +56,7 @@ async function setupPortalDb() {
     newApiKeyBinding,
     newApiUserBinding,
     NewApiBridgeError,
+    encryptCredential,
     portal,
     catalogGroup,
     usageLogSnapshot,
@@ -1233,7 +1237,7 @@ test('门户本地 Key 生命周期校验所有权并保持禁用/删除幂等',
   assert.equal(deletedReplay.status, 'deleted');
 });
 
-test('listPortalApiKeys 合并旧 Key 为只读 legacy 行且不做远端同步', async () => {
+test('listPortalApiKeys 合并旧 Key，列表不做远端同步且删除会吊销远端 token', async () => {
   const portalUser = await insertUser(
     'portal_user_legacy_key_readonly',
     'legacy-key@b.co'
@@ -1251,6 +1255,17 @@ test('listPortalApiKeys 合并旧 Key 为只读 legacy 行且不做远端同步'
     newapiGroup: 'ng-portal-test',
     idempotencyKey: 'legacy-key-readonly-idempotency',
   });
+  await modules
+    .db()
+    .insert(modules.newApiUserBinding)
+    .values({
+      id: 'legacy_user_binding',
+      portalUserId: portalUser.id,
+      newapiUserId: 'legacy-newapi-user',
+      status: 'active',
+      newapiUsername: 'legacy-key@b.co',
+      newapiAccessTokenEnc: modules.encryptCredential('legacy-access-token'),
+    });
   let remoteCalls = 0;
   const remoteMustNotRun = new Proxy(
     {},
@@ -1277,15 +1292,95 @@ test('listPortalApiKeys 合并旧 Key 为只读 legacy 行且不做远端同步'
       'legacy_key_readonly',
       remoteMustNotRun as any
     ),
-    /read-only/i
+    /不支持停用/
   );
+  const remoteDeletes: Array<{ userId: string; keyId: string; token: string }> =
+    [];
+  const deleted = await modules.portal.deletePortalApiKey(
+    portalUser.id,
+    'legacy_key_readonly',
+    {
+      deleteKey: async (
+        credentials: { newapiUserId: string; accessToken: string },
+        keyId: string
+      ) => {
+        remoteDeletes.push({
+          userId: credentials.newapiUserId,
+          keyId,
+          token: credentials.accessToken,
+        });
+        return { id: keyId, deleted: true };
+      },
+    } as any
+  );
+  assert.equal(deleted.status, 'deleted');
+  assert.equal(deleted.legacy, true);
+  assert.deepEqual(remoteDeletes, [
+    {
+      userId: 'legacy-newapi-user',
+      keyId: 'legacy-newapi-key',
+      token: 'legacy-access-token',
+    },
+  ]);
+  assert.equal(
+    (await modules.portal.listPortalApiKeys(portalUser.id)).length,
+    0
+  );
+});
+
+test('旧版 Key 远端吊销失败时保持本地可见，避免只隐藏未失效的 token', async () => {
+  const portalUser = await insertUser(
+    'portal_user_legacy_delete_failure',
+    'legacy-delete-failure@b.co'
+  );
+  await modules.db().insert(modules.newApiKeyBinding).values({
+    id: 'legacy_key_delete_failure',
+    portalUserId: portalUser.id,
+    newapiUserId: 'legacy-delete-failure-user',
+    newapiKeyId: 'legacy-delete-failure-key',
+    keyMasked: 'sk-...failure',
+    displayName: 'Legacy delete failure',
+    status: 'active',
+    allowedModels: '[]',
+    groupId: 'catalog_group_portal_test',
+    newapiGroup: 'ng-portal-test',
+    idempotencyKey: 'legacy-delete-failure-idempotency',
+  });
+  await modules
+    .db()
+    .insert(modules.newApiUserBinding)
+    .values({
+      id: 'legacy_delete_failure_binding',
+      portalUserId: portalUser.id,
+      newapiUserId: 'legacy-delete-failure-user',
+      status: 'active',
+      newapiUsername: 'legacy-delete-failure@b.co',
+      newapiAccessTokenEnc: modules.encryptCredential('failure-access-token'),
+    });
+
   await assert.rejects(
     modules.portal.deletePortalApiKey(
       portalUser.id,
-      'legacy_key_readonly',
-      remoteMustNotRun as any
+      'legacy_key_delete_failure',
+      {
+        deleteKey: async () => {
+          throw new Error('remote revoke failed');
+        },
+      } as any
     ),
-    /read-only/i
+    /remote revoke failed/
+  );
+
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.newApiKeyBinding)
+    .where(eq(modules.newApiKeyBinding.id, 'legacy_key_delete_failure'));
+  assert.equal(row.status, 'active');
+  assert.match(row.lastRemoteError, /remote revoke failed/);
+  assert.equal(
+    (await modules.portal.listPortalApiKeys(portalUser.id)).length,
+    1
   );
 });
 test('adjustPortalQuota applies ledger only after New API returns a change id', async () => {

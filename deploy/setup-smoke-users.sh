@@ -10,14 +10,10 @@ usage() {
   cat >&2 <<'USAGE'
 usage: deploy/setup-smoke-users.sh [--apply]
 
-Creates or reuses dedicated production smoke service identities in the portal
-SQLite database and writes their user ids to .env.deploy.
+在门户 SQLite 数据库中创建或复用固定的生产冒烟服务身份，并把邮箱和用户 ID
+写入 .env.deploy。
 
-Default mode is dry-run. Set these optional values in .env.deploy before apply:
-  APIPOOL_SMOKE_PORTAL_EMAIL
-  APIPOOL_SMOKE_OPERATOR_EMAIL
-  APIPOOL_SMOKE_PORTAL_NAME
-  APIPOOL_SMOKE_OPERATOR_NAME
+默认仅预演。身份固定是为了避免重复冒烟测试创建或复用任意生产用户。
 USAGE
 }
 
@@ -52,10 +48,10 @@ set -a
 . "$ENV_FILE"
 set +a
 
-SMOKE_PORTAL_EMAIL="${APIPOOL_SMOKE_PORTAL_EMAIL:-smoke.portal@apipool.local}"
-SMOKE_OPERATOR_EMAIL="${APIPOOL_SMOKE_OPERATOR_EMAIL:-smoke.operator@apipool.local}"
-SMOKE_PORTAL_NAME="${APIPOOL_SMOKE_PORTAL_NAME:-APIPool Smoke Portal}"
-SMOKE_OPERATOR_NAME="${APIPOOL_SMOKE_OPERATOR_NAME:-APIPool Smoke Operator}"
+SMOKE_PORTAL_EMAIL="smoke.portal@apipool.local"
+SMOKE_OPERATOR_EMAIL="smoke.operator@apipool.local"
+SMOKE_PORTAL_NAME="APIPool Smoke Portal"
+SMOKE_OPERATOR_NAME="APIPool Smoke Operator"
 
 validate_email() {
   case "$1" in

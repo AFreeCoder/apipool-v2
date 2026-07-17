@@ -1,7 +1,4 @@
-import {
-  getGroupById,
-  getVendorById,
-} from '@/features/api-catalog/server/catalog-service';
+import { getVendorById } from '@/features/api-catalog/server/catalog-service';
 import { filterModelPricingCandidates } from '@/features/api-catalog/server/model-candidate-search';
 import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 
@@ -28,9 +25,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const keyword = (url.searchParams.get('keyword') || '').trim();
     const localVendorId = (url.searchParams.get('vendorId') || '').trim();
-    const localGroupId = (url.searchParams.get('groupId') || '').trim();
     const vendor = localVendorId ? await getVendorById(localVendorId) : null;
-    const group = localGroupId ? await getGroupById(localGroupId) : null;
 
     const pricing = await createNewApiClient().listPricingModels();
     const models = filterModelPricingCandidates({
@@ -38,7 +33,6 @@ export async function GET(req: Request) {
       keyword,
       localVendorId,
       vendor: vendor ?? null,
-      newapiGroup: group?.newapiGroup ?? '',
       limit: MAX_RESULTS,
     }).map((model) => ({
       modelId: model.modelId,

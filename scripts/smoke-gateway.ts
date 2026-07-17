@@ -27,6 +27,8 @@ import {
 } from '@/features/newapi-bridge/server/portal';
 import { findUserById } from '@/shared/models/user';
 
+import { assertSmokeIdentity, SMOKE_PORTAL_EMAIL } from './smoke-identities';
+
 function requiredEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
@@ -216,6 +218,12 @@ export async function main() {
   ).replace(/\/$/, '');
   const user = await findUserById(userId);
   invariant(user, `smoke user not found: ${userId}`);
+  assertSmokeIdentity({
+    actualEmail: user.email,
+    configuredEmail: requiredEnv('APIPOOL_SMOKE_PORTAL_EMAIL'),
+    expectedEmail: SMOKE_PORTAL_EMAIL,
+    role: 'portal',
+  });
   const smokeEndpoints = await loadGatewaySmokeEndpoints(model);
 
   const runId = `${Date.now()}`;

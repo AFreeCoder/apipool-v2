@@ -258,15 +258,15 @@
   },
   "models": {
     "list": {
-      "title": "模型",
-      "crumb": "模型",
+      "title": "模型元数据",
+      "crumb": "模型元数据",
       "buttons": {
         "new": "新增模型"
       }
     },
     "pricingSync": {
       "title": "价格同步",
-      "description": "从 New API 同步基准价格与分组倍率，并查看最新漂移报告。",
+      "description": "从 New API 同步模型基准价格，并刷新分组折扣使用的倍率；分组配置仍在“分组折扣”中维护。",
       "sync": "同步价格",
       "syncing": "同步中",
       "drift": "查看漂移",

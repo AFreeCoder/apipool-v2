@@ -250,6 +250,7 @@ export async function seedGatewayFixture(
     runtimeKey?: string;
     newapiGroup?: string;
     modelId?: string;
+    email?: string;
     price?: Partial<{
       input: number;
       cached: number;
@@ -270,7 +271,7 @@ export async function seedGatewayFixture(
   await modules.db().insert(modules.schema.user).values({
     id: userId,
     name: suffix,
-    email: `${suffix}@gateway-integration.test`,
+    email: options.email ?? `${suffix}@gateway-integration.test`,
   });
   await modules.db().insert(modules.schema.walletAccount).values({
     userId,
