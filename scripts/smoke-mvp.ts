@@ -568,27 +568,28 @@ async function callLaunchModel({
   apiKey: string;
   model: string;
 }) {
-  const response = await fetch(
-    `${APIPOOL_CONFIG.apiBaseUrl}/v1/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: 'Reply with the single word pong.',
-          },
-        ],
-        temperature: 0,
-        max_tokens: 8,
-      }),
-    }
-  );
+  const apiV1BaseUrl = (
+    getEnv('APIPOOL_SMOKE_GATEWAY_BASE_URL') ||
+    `${APIPOOL_CONFIG.apiBaseUrl}/v1`
+  ).replace(/\/+$/, '');
+  const response = await fetch(`${apiV1BaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: 'Reply with the single word pong.',
+        },
+      ],
+      temperature: 0,
+      max_tokens: 8,
+    }),
+  });
 
   const text = await response.text();
   const assistantText = parseLaunchModelAssistantText(text);

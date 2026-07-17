@@ -162,6 +162,7 @@ test('MVP smoke creates an official group-bound key and records cleanup state', 
   );
 
   assert.match(script, /APIPOOL_SMOKE_GROUP_SLUG/);
+  assert.match(script, /APIPOOL_SMOKE_GATEWAY_BASE_URL/);
   assert.match(script, /\|\|\s*['"]official['"]/);
   assert.match(script, /groupSlug:\s*smokeGroupSlug/);
   assert.match(script, /record\(\s*['"]cleanup state['"]/);
