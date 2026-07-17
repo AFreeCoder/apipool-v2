@@ -408,11 +408,18 @@ function extractPricingItems(payload: any): any[] {
 }
 
 function extractUsableGroups(payload: any): string[] {
-  return asStringArray(
+  const value =
     getEnvelopeValue(payload, 'usable_group') ??
-      getEnvelopeValue(payload, 'usable_groups') ??
-      getEnvelopeValue(payload, 'groups')
-  );
+    getEnvelopeValue(payload, 'usable_groups') ??
+    getEnvelopeValue(payload, 'groups');
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.keys(value)
+      .map((group) => group.trim())
+      .filter((group) => group.length > 0);
+  }
+
+  return asStringArray(value);
 }
 
 function groupRatioEntries(value: unknown): [string, unknown][] {

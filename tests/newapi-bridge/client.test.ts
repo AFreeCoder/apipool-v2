@@ -232,6 +232,8 @@ test('getPricingSnapshot fingerprint includes cache pricing ratios', async () =>
     second.client.getPricingSnapshot(),
   ]);
 
+  assert.deepEqual(firstSnapshot.usableGroups, ['official']);
+  assert.deepEqual(secondSnapshot.usableGroups, ['official']);
   assert.notEqual(
     firstSnapshot.sourceFingerprint,
     secondSnapshot.sourceFingerprint
