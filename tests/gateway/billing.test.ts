@@ -15,7 +15,7 @@ const PRICE = {
   outputMicroUsdPerM: 10_000_000,
 };
 
-test('Chat：prompt_tokens 含 cached 子集必须扣除', () => {
+test('Chat：prompt_tokens 含 cached/cache write 子集必须扣除', () => {
   const { buckets, unmappedNonZero } = normalizeUsage('chat_completions', {
     prompt_tokens: 1000,
     completion_tokens: 50,
@@ -25,7 +25,7 @@ test('Chat：prompt_tokens 含 cached 子集必须扣除', () => {
     },
   });
   assert.deepEqual(buckets, {
-    uncachedInput: 400,
+    uncachedInput: 300,
     cachedRead: 600,
     cacheWrite5m: 100,
     cacheWrite1h: 0,
@@ -33,6 +33,26 @@ test('Chat：prompt_tokens 含 cached 子集必须扣除', () => {
     reasoning: 0,
   });
   assert.deepEqual(unmappedNonZero, []);
+});
+
+test('Chat：识别 OpenAI 原生 cache_write_tokens，且不与兼容字段重复计数', () => {
+  const { buckets } = normalizeUsage('chat_completions', {
+    prompt_tokens: 1000,
+    completion_tokens: 50,
+    prompt_tokens_details: {
+      cached_tokens: 600,
+      cache_write_tokens: 350,
+      cache_creation_tokens: 100,
+    },
+  });
+  assert.deepEqual(buckets, {
+    uncachedInput: 50,
+    cachedRead: 600,
+    cacheWrite5m: 350,
+    cacheWrite1h: 0,
+    output: 50,
+    reasoning: 0,
+  });
 });
 
 test('Chat：cached 超过 prompt 时 uncached 钳到 0', () => {
@@ -52,7 +72,7 @@ test('Responses：input_tokens_details 直映（16.2 实测字段）', () => {
     output_tokens_details: { reasoning_tokens: 40 },
   });
   assert.deepEqual(buckets, {
-    uncachedInput: 500,
+    uncachedInput: 450,
     cachedRead: 300,
     cacheWrite5m: 50,
     cacheWrite1h: 0,
@@ -179,7 +199,7 @@ test('连续小额逐笔和 = 逐笔 ceil 之和（不跨请求携余数）', ()
   assert.equal(sum, BigInt(30));
 });
 
-test('日志回填口径：cache 明细缺失时降级两桶', () => {
+test('日志回填口径：OpenAI 输入总量扣除 cache read/write 子集', () => {
   assert.deepEqual(
     normalizeBackfillUsage({ inputTokens: 100, outputTokens: 20 }),
     {
@@ -200,7 +220,28 @@ test('日志回填口径：cache 明细缺失时降级两桶', () => {
       cacheCreationTokens1h: 2,
     }),
     {
-      uncachedInput: 70,
+      uncachedInput: 63,
+      cachedRead: 30,
+      cacheWrite5m: 5,
+      cacheWrite1h: 2,
+      output: 20,
+      reasoning: 0,
+    }
+  );
+});
+
+test('日志回填口径：Anthropic 输入为纯文本，不重复扣除 cache 子集', () => {
+  assert.deepEqual(
+    normalizeBackfillUsage({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheTokens: 30,
+      cacheCreationTokens5m: 5,
+      cacheCreationTokens1h: 2,
+      usageSemantic: 'anthropic',
+    }),
+    {
+      uncachedInput: 100,
       cachedRead: 30,
       cacheWrite5m: 5,
       cacheWrite1h: 2,

@@ -84,6 +84,9 @@ test('New API pricing ratios derive ordinary and image token prices per 1M token
   assert.deepEqual(derived, {
     source: 'ratio',
     inputMicroUsd: 5000000,
+    cachedInputMicroUsd: 5000000,
+    cacheWriteMicroUsd: null,
+    cacheWrite1hMicroUsd: null,
     outputMicroUsd: 40000000,
     imageInputMicroUsd: 10000000,
     imageOutputMicroUsd: 40000000,
@@ -96,6 +99,7 @@ test('New API text models do not derive image prices without image support', () 
     quota_type: 0,
     model_ratio: 1.25,
     completion_ratio: 8,
+    cache_ratio: 0.1,
     image_ratio: null,
     supported_endpoint_types: ['responses'],
   });
@@ -103,10 +107,39 @@ test('New API text models do not derive image prices without image support', () 
   assert.deepEqual(derived, {
     source: 'ratio',
     inputMicroUsd: 2500000,
+    cachedInputMicroUsd: 250000,
+    cacheWriteMicroUsd: null,
+    cacheWrite1hMicroUsd: null,
     outputMicroUsd: 20000000,
     imageInputMicroUsd: null,
     imageOutputMicroUsd: null,
   });
+});
+
+test('New API cache write keeps OpenAI single bucket and Anthropic 5m/1h split', () => {
+  const openai = derivePricingFromNewApiPricing({
+    model_name: 'gpt-5.6-sol',
+    quota_type: 0,
+    model_ratio: 2.5,
+    completion_ratio: 6,
+    cache_ratio: 0.1,
+    create_cache_ratio: 1.25,
+    supported_endpoint_types: ['openai', 'openai-response'],
+  });
+  assert.equal(openai.cacheWriteMicroUsd, 6250000);
+  assert.equal(openai.cacheWrite1hMicroUsd, null);
+
+  const anthropic = derivePricingFromNewApiPricing({
+    model_name: 'claude-sonnet',
+    quota_type: 0,
+    model_ratio: 1.5,
+    completion_ratio: 5,
+    cache_ratio: 0.1,
+    create_cache_ratio: 1.25,
+    supported_endpoint_types: ['anthropic'],
+  });
+  assert.equal(anthropic.cacheWriteMicroUsd, 3750000);
+  assert.equal(anthropic.cacheWrite1hMicroUsd, 6000000);
 });
 
 test('New API fixed-price models do not pretend to have token split prices', () => {
@@ -121,6 +154,9 @@ test('New API fixed-price models do not pretend to have token split prices', () 
   assert.deepEqual(derived, {
     source: 'fixed-price',
     inputMicroUsd: null,
+    cachedInputMicroUsd: null,
+    cacheWriteMicroUsd: null,
+    cacheWrite1hMicroUsd: null,
     outputMicroUsd: null,
     imageInputMicroUsd: null,
     imageOutputMicroUsd: null,

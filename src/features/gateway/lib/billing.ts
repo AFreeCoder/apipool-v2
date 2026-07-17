@@ -65,12 +65,17 @@ export function normalizeUsage(
       const details = obj(usage.prompt_tokens_details);
       const completionDetails = obj(usage.completion_tokens_details);
       const cachedRead = num(details.cached_tokens);
+      const cacheWrite = Math.max(
+        num(details.cache_write_tokens),
+        num(details.cache_creation_tokens ?? usage.cache_creation_input_tokens)
+      );
       buckets = {
-        uncachedInput: Math.max(0, num(usage.prompt_tokens) - cachedRead),
-        cachedRead,
-        cacheWrite5m: num(
-          details.cache_creation_tokens ?? usage.cache_creation_input_tokens
+        uncachedInput: Math.max(
+          0,
+          num(usage.prompt_tokens) - cachedRead - cacheWrite
         ),
+        cachedRead,
+        cacheWrite5m: cacheWrite,
         cacheWrite1h: 0,
         output: num(usage.completion_tokens),
         reasoning: num(completionDetails.reasoning_tokens),
@@ -81,10 +86,14 @@ export function normalizeUsage(
       const inputDetails = obj(usage.input_tokens_details);
       const outputDetails = obj(usage.output_tokens_details);
       const cachedRead = num(inputDetails.cached_tokens);
+      const cacheWrite = num(inputDetails.cache_write_tokens);
       buckets = {
-        uncachedInput: Math.max(0, num(usage.input_tokens) - cachedRead),
+        uncachedInput: Math.max(
+          0,
+          num(usage.input_tokens) - cachedRead - cacheWrite
+        ),
         cachedRead,
-        cacheWrite5m: num(inputDetails.cache_write_tokens),
+        cacheWrite5m: cacheWrite,
         cacheWrite1h: 0,
         output: num(usage.output_tokens),
         reasoning: num(outputDetails.reasoning_tokens),
@@ -144,14 +153,21 @@ export function normalizeBackfillUsage(log: {
   cacheCreationTokens?: number;
   cacheCreationTokens5m?: number;
   cacheCreationTokens1h?: number;
+  usageSemantic?: string;
 }): UsageBuckets {
   const cachedRead = num(log.cacheTokens);
   const cacheWrite5m = num(
     log.cacheCreationTokens5m ?? log.cacheCreationTokens
   );
   const cacheWrite1h = num(log.cacheCreationTokens1h);
+  const anthropicSemantic = log.usageSemantic?.toLowerCase() === 'anthropic';
   return {
-    uncachedInput: Math.max(0, num(log.inputTokens) - cachedRead),
+    uncachedInput: anthropicSemantic
+      ? num(log.inputTokens)
+      : Math.max(
+          0,
+          num(log.inputTokens) - cachedRead - cacheWrite5m - cacheWrite1h
+        ),
     cachedRead,
     cacheWrite5m,
     cacheWrite1h,

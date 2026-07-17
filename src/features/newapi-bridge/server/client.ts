@@ -210,6 +210,8 @@ export type RemotePricingModel = {
   modelRatio: number;
   modelPrice: number | null;
   completionRatio: number;
+  cacheRatio?: number | null;
+  createCacheRatio?: number | null;
   imageRatio: number | null;
   source: 'ratio' | 'fixed-price';
   inputMicroUsd: number | null;
@@ -494,6 +496,8 @@ function fingerprintPricingSnapshot(input: {
             modelRatio: model.modelRatio,
             modelPrice: model.modelPrice,
             completionRatio: model.completionRatio,
+            cacheRatio: model.cacheRatio,
+            createCacheRatio: model.createCacheRatio,
             imageRatio: model.imageRatio,
             enabledGroups: [...model.enabledGroups].sort(),
             supportedEndpointTypes: [...model.supportedEndpointTypes].sort(),
@@ -514,6 +518,8 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
   const modelRatio = asNumber(item?.model_ratio);
   const modelPrice = asNullableNumber(item?.model_price);
   const completionRatio = asNumber(item?.completion_ratio);
+  const cacheRatio = asNullableNumber(item?.cache_ratio);
+  const createCacheRatio = asNullableNumber(item?.create_cache_ratio);
   const imageRatio = asNullableNumber(item?.image_ratio);
   const supportedEndpointTypes = asStringArray(item?.supported_endpoint_types);
   const derived = derivePricingFromNewApiPricing({
@@ -522,6 +528,8 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
     model_ratio: modelRatio,
     model_price: modelPrice,
     completion_ratio: completionRatio,
+    cache_ratio: cacheRatio,
+    create_cache_ratio: createCacheRatio,
     image_ratio: imageRatio,
     supported_endpoint_types: supportedEndpointTypes,
   });
@@ -535,6 +543,8 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
     modelRatio,
     modelPrice,
     completionRatio,
+    cacheRatio,
+    createCacheRatio,
     imageRatio,
     source: derived.source,
     inputMicroUsd: derived.inputMicroUsd,

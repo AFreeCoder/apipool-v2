@@ -145,6 +145,8 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
           modelRatio: 0.075,
           modelPrice: null,
           completionRatio: 4,
+          cacheRatio: 0.1,
+          createCacheRatio: null,
           imageRatio: null,
           source: 'ratio',
           inputMicroUsd: 150000,
@@ -188,6 +190,9 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
     .limit(1);
   assert.equal(price.source, 'newapi_pricing');
   assert.equal(price.baseInputMicroUsd, 150000);
+  assert.equal(price.baseCachedInputMicroUsd, 15000);
+  assert.equal(price.baseCacheWrite5mMicroUsd, null);
+  assert.equal(price.baseCacheWrite1hMicroUsd, null);
   assert.equal(price.baseOutputMicroUsd, 600000);
   assert.equal(price.sourceFingerprint, 'fingerprint-123');
   assert.equal(price.syncStatus, 'synced');

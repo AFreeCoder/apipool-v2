@@ -394,6 +394,8 @@ function remoteToPriceValues(remote: RemotePricingModel) {
     model_ratio: remote.modelRatio,
     model_price: remote.modelPrice,
     completion_ratio: remote.completionRatio,
+    cache_ratio: remote.cacheRatio,
+    create_cache_ratio: remote.createCacheRatio,
     image_ratio: remote.imageRatio,
     supported_endpoint_types: remote.supportedEndpointTypes,
   });
@@ -412,6 +414,19 @@ function remoteToPriceValues(remote: RemotePricingModel) {
         : String(remote.imageRatio),
     sourceSupportedEndpointTypes: encodeJson(remote.supportedEndpointTypes),
     baseInputMicroUsd: derived.inputMicroUsd,
+    baseCachedInputMicroUsd: derived.cachedInputMicroUsd,
+    // 现有账本以 5m 桶承载非 Anthropic 的单一 cache write；1h 仅用于
+    // Anthropic 明确返回的独立时长价格。
+    baseCacheWrite5mMicroUsd: derived.cacheWriteMicroUsd,
+    baseCacheWrite1hMicroUsd: derived.cacheWrite1hMicroUsd,
+    cachePriceNote:
+      derived.source === 'fixed-price'
+        ? null
+        : encodeJson({
+            cacheRatio: remote.cacheRatio ?? 1,
+            createCacheRatio: remote.createCacheRatio ?? null,
+            singleWriteBucket: derived.cacheWriteMicroUsd !== null,
+          }),
     baseOutputMicroUsd: derived.outputMicroUsd,
     baseImageInputMicroUsd: derived.imageInputMicroUsd,
     baseImageOutputMicroUsd: derived.imageOutputMicroUsd,

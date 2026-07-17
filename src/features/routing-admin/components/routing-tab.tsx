@@ -25,6 +25,7 @@ type GroupRow = {
 type ModelRow = { id: string; modelId: string; displayName: string };
 type BasePriceRow = {
   modelId: string;
+  sourceSupportedEndpointTypes: string | null;
   baseInputMicroUsd: number | null;
   baseCachedInputMicroUsd: number | null;
   baseCacheWrite5mMicroUsd: number | null;
@@ -66,8 +67,8 @@ type PriceForm = Record<PriceField, string>;
 const EMPTY_PRICE: PriceForm = {
   inputMicroUsdPerM: '',
   cachedInputMicroUsdPerM: '',
-  cacheWrite5mMicroUsdPerM: '',
-  cacheWrite1hMicroUsdPerM: '',
+  cacheWrite5mMicroUsdPerM: '0',
+  cacheWrite1hMicroUsdPerM: '0',
   outputMicroUsdPerM: '',
 };
 
@@ -79,9 +80,10 @@ export function RoutingTab() {
   const [targetGroup, setTargetGroup] = useState('');
   const [price, setPrice] = useState<PriceForm>(EMPTY_PRICE);
   const [retireReason, setRetireReason] = useState('');
-  const [failures, setFailures] = useState<Array<{ check: string; message: string }>>([]);
+  const [failures, setFailures] = useState<
+    Array<{ check: string; message: string }>
+  >([]);
   const [notice, setNotice] = useState<string | null>(null);
-  const [worstCase, setWorstCase] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -93,9 +95,7 @@ export function RoutingTab() {
       setMatrix(data);
       setGroupId((current) => current || data.groups[0]?.id || '');
       setModelId((current) => current || data.models[0]?.modelId || '');
-      setTargetGroup(
-        (current) => current || data.groups[0]?.newapiGroup || ''
-      );
+      setTargetGroup((current) => current || data.groups[0]?.newapiGroup || '');
       setNotice(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : t('common.failed'));
@@ -109,7 +109,9 @@ export function RoutingTab() {
   }, [load]);
 
   const selectedGroup = matrix?.groups.find((group) => group.id === groupId);
-  const selectedModel = matrix?.models.find((model) => model.modelId === modelId);
+  const selectedModel = matrix?.models.find(
+    (model) => model.modelId === modelId
+  );
   const activeRoute = matrix?.routes.find(
     (row) => row.portalGroupId === groupId && row.portalModelId === modelId
   );
@@ -125,19 +127,61 @@ export function RoutingTab() {
 
   const suggestedPrice = useMemo(() => {
     const ratio = selectedGroup?.newapiGroupRatioBps ?? 10_000;
-    const ceil = (value: number | null | undefined) =>
-      value == null ? '' : String(Math.ceil((value * ratio) / 10_000));
+    const ceil = (value: number | null | undefined, notApplicable = '') =>
+      value == null
+        ? notApplicable
+        : String(Math.ceil((value * ratio) / 10_000));
     return {
       inputMicroUsdPerM: ceil(basePrice?.baseInputMicroUsd),
       cachedInputMicroUsdPerM: ceil(basePrice?.baseCachedInputMicroUsd),
-      cacheWrite5mMicroUsdPerM: ceil(basePrice?.baseCacheWrite5mMicroUsd),
-      cacheWrite1hMicroUsdPerM: ceil(basePrice?.baseCacheWrite1hMicroUsd),
+      cacheWrite5mMicroUsdPerM: ceil(basePrice?.baseCacheWrite5mMicroUsd, '0'),
+      cacheWrite1hMicroUsdPerM: ceil(basePrice?.baseCacheWrite1hMicroUsd, '0'),
       outputMicroUsdPerM: ceil(basePrice?.baseOutputMicroUsd),
     };
   }, [basePrice, selectedGroup]);
 
+  const visiblePriceFields = useMemo(
+    () =>
+      PRICE_FIELDS.filter((field) => {
+        if (field === 'cacheWrite5mMicroUsdPerM') {
+          return basePrice?.baseCacheWrite5mMicroUsd != null;
+        }
+        if (field === 'cacheWrite1hMicroUsdPerM') {
+          return basePrice?.baseCacheWrite1hMicroUsd != null;
+        }
+        return true;
+      }),
+    [basePrice]
+  );
+
+  const singleCacheWrite = useMemo(() => {
+    if (
+      basePrice?.baseCacheWrite5mMicroUsd == null ||
+      basePrice.baseCacheWrite1hMicroUsd != null
+    ) {
+      return false;
+    }
+    try {
+      const endpointTypes = JSON.parse(
+        basePrice.sourceSupportedEndpointTypes || '[]'
+      );
+      return (
+        Array.isArray(endpointTypes) &&
+        endpointTypes.some((endpoint) =>
+          ['openai', 'openai-response', 'chat', 'responses'].includes(
+            String(endpoint)
+          )
+        )
+      );
+    } catch {
+      return false;
+    }
+  }, [basePrice]);
+
   useEffect(() => {
-    setTargetGroup(activeRoute?.newapiGroup || selectedGroup?.newapiGroup || '');
+    setTargetGroup(
+      activeRoute?.newapiGroup || selectedGroup?.newapiGroup || ''
+    );
     setPrice(suggestedPrice);
   }, [activeRoute?.newapiGroup, selectedGroup?.newapiGroup, suggestedPrice]);
 
@@ -155,18 +199,30 @@ export function RoutingTab() {
     try {
       const body =
         kind === 'price'
-          ? { kind: 'price', portalGroupId: groupId, portalModelId: modelId, price: numericPrice(), sourceNote: t('routing.reviewedSource') }
+          ? {
+              kind: 'price',
+              portalGroupId: groupId,
+              portalModelId: modelId,
+              price: numericPrice(),
+              sourceNote: t('routing.reviewedSource'),
+            }
           : {
               kind: 'route',
               portalGroupId: groupId,
               portalModelId: modelId,
               newapiGroup: targetGroup,
-              ...(atomicRemap ? { remapPrice: { ...numericPrice(), sourceNote: t('routing.remapSource') } } : {}),
+              ...(atomicRemap
+                ? {
+                    remapPrice: {
+                      ...numericPrice(),
+                      sourceNote: t('routing.remapSource'),
+                    },
+                  }
+                : {}),
             };
       const result = await apiRequest<{
         ok: boolean;
         version?: number;
-        worstCaseMicroUsd?: string;
         failures?: Array<{ check: string; message: string }>;
       }>('/api/apipool/admin/gateway/routing', {
         method: 'POST',
@@ -177,7 +233,6 @@ export function RoutingTab() {
         setFailures(result.failures || []);
         return;
       }
-      setWorstCase(result.worstCaseMicroUsd ?? null);
       setNotice(t('routing.published', { version: result.version ?? 0 }));
       await load();
     } catch (error) {
@@ -197,7 +252,11 @@ export function RoutingTab() {
       await apiRequest('/api/apipool/admin/gateway/routing/retire', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ portalGroupId: groupId, portalModelId: modelId, reason: retireReason }),
+        body: JSON.stringify({
+          portalGroupId: groupId,
+          portalModelId: modelId,
+          reason: retireReason,
+        }),
       });
       setNotice(t('routing.retired'));
       setRetireReason('');
@@ -248,48 +307,117 @@ export function RoutingTab() {
             <div className="space-y-2">
               <Label>{t('routing.group')}</Label>
               <Select value={groupId} onValueChange={setGroupId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{matrix?.groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {matrix?.groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>{t('routing.model')}</Label>
               <Select value={modelId} onValueChange={setModelId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{matrix?.models.map((model) => <SelectItem key={model.id} value={model.modelId}>{model.displayName}</SelectItem>)}</SelectContent>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {matrix?.models.map((model) => (
+                    <SelectItem key={model.id} value={model.modelId}>
+                      {model.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>{t('routing.targetGroup')}</Label>
               <Select value={targetGroup} onValueChange={setTargetGroup}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{matrix?.groups.map((group) => <SelectItem key={group.newapiGroup} value={group.newapiGroup}>{group.newapiGroup}</SelectItem>)}</SelectContent>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {matrix?.groups.map((group) => (
+                    <SelectItem
+                      key={group.newapiGroup}
+                      value={group.newapiGroup}
+                    >
+                      {group.newapiGroup}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
           </div>
-          {atomicRemap && <div className="border-warning/40 bg-warning/10 rounded-md border p-3 text-sm">{t('routing.atomicRemap')}</div>}
-          <div className="grid gap-3 md:grid-cols-5">
-            {PRICE_FIELDS.map((field) => (
+          {atomicRemap && (
+            <div className="border-warning/40 bg-warning/10 rounded-md border p-3 text-sm">
+              {t('routing.atomicRemap')}
+            </div>
+          )}
+          <div className="grid gap-3 md:grid-cols-3">
+            {visiblePriceFields.map((field) => (
               <div key={field} className="space-y-2">
-                <Label htmlFor={field}>{t(`routing.priceFields.${field}`)}</Label>
-                <Input id={field} type="number" min="1" value={price[field]} onChange={(event) => setPrice((current) => ({ ...current, [field]: event.target.value }))} />
+                <Label htmlFor={field}>
+                  {t(
+                    `routing.priceFields.${
+                      singleCacheWrite && field === 'cacheWrite5mMicroUsdPerM'
+                        ? 'cacheWriteMicroUsdPerM'
+                        : field
+                    }`
+                  )}
+                </Label>
+                <Input
+                  id={field}
+                  type="number"
+                  min="1"
+                  value={price[field]}
+                  onChange={(event) =>
+                    setPrice((current) => ({
+                      ...current,
+                      [field]: event.target.value,
+                    }))
+                  }
+                />
               </div>
             ))}
           </div>
           {failures.length > 0 && (
             <ul className="text-destructive list-disc space-y-1 pl-5 text-sm">
-              {failures.map((item) => <li key={`${item.check}:${item.message}`}>{item.check}: {item.message}</li>)}
+              {failures.map((item) => (
+                <li key={`${item.check}:${item.message}`}>
+                  {item.check}: {item.message}
+                </li>
+              ))}
             </ul>
           )}
-          {worstCase && <div className="text-muted-foreground text-sm">{t('routing.worstCase', { value: worstCase })} · {t('routing.exposure', { value: (BigInt(worstCase) * BigInt(10)).toString() })}</div>}
           <Notice message={notice} />
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void publish('price')} disabled={loading}>{t('routing.publishPrice')}</Button>
-            <Button onClick={() => void publish('route')} disabled={loading}>{atomicRemap ? t('routing.publishAtomic') : t('routing.publishRoute')}</Button>
+            <Button onClick={() => void publish('price')} disabled={loading}>
+              {t('routing.publishPrice')}
+            </Button>
+            <Button onClick={() => void publish('route')} disabled={loading}>
+              {atomicRemap
+                ? t('routing.publishAtomic')
+                : t('routing.publishRoute')}
+            </Button>
           </div>
           <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-            <Input value={retireReason} onChange={(event) => setRetireReason(event.target.value)} placeholder={t('routing.retireReason')} />
-            <Button variant="destructive" onClick={() => void retire()} disabled={loading}>{t('routing.retire')}</Button>
+            <Input
+              value={retireReason}
+              onChange={(event) => setRetireReason(event.target.value)}
+              placeholder={t('routing.retireReason')}
+            />
+            <Button
+              variant="destructive"
+              onClick={() => void retire()}
+              disabled={loading}
+            >
+              {t('routing.retire')}
+            </Button>
           </div>
         </div>
       </Panel>

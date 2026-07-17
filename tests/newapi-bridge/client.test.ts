@@ -100,6 +100,8 @@ test('listPricingModels parses pricing ratios, fixed-price models, image prices,
             quota_type: 0,
             model_ratio: 1.25,
             completion_ratio: 8,
+            cache_ratio: 0.1,
+            create_cache_ratio: null,
             image_ratio: null,
             enable_groups: ['official'],
             supported_endpoint_types: ['responses'],
@@ -123,6 +125,8 @@ test('listPricingModels parses pricing ratios, fixed-price models, image prices,
       modelRatio: 2.5,
       modelPrice: null,
       completionRatio: 8,
+      cacheRatio: null,
+      createCacheRatio: null,
       imageRatio: 2,
       source: 'ratio',
       inputMicroUsd: 5_000_000,
@@ -141,6 +145,8 @@ test('listPricingModels parses pricing ratios, fixed-price models, image prices,
       modelRatio: 0,
       modelPrice: 0.04,
       completionRatio: 0,
+      cacheRatio: null,
+      createCacheRatio: null,
       imageRatio: null,
       source: 'fixed-price',
       inputMicroUsd: null,
@@ -159,6 +165,8 @@ test('listPricingModels parses pricing ratios, fixed-price models, image prices,
       modelRatio: 1.25,
       modelPrice: null,
       completionRatio: 8,
+      cacheRatio: 0.1,
+      createCacheRatio: null,
       imageRatio: null,
       source: 'ratio',
       inputMicroUsd: 2_500_000,
@@ -192,6 +200,42 @@ test('getPricingSnapshot parses fixture group ratios, usable groups, and fingerp
     sourceKey: 'group_ratio',
   });
   assert.match(snapshot.sourceFingerprint, /^[a-f0-9]{64}$/);
+});
+
+test('getPricingSnapshot fingerprint includes cache pricing ratios', async () => {
+  const response = (cacheRatio: number) =>
+    Response.json({
+      success: true,
+      data: [
+        {
+          model_name: 'gpt-5.5',
+          quota_type: 0,
+          model_ratio: 2.5,
+          completion_ratio: 6,
+          cache_ratio: cacheRatio,
+          enable_groups: ['official'],
+          supported_endpoint_types: ['openai', 'openai-response'],
+        },
+      ],
+      group_ratio: { official: 1 },
+      usable_group: { official: '官方分组' },
+    });
+  const first = createMockedClient({
+    'GET /api/pricing': () => response(0.1),
+  });
+  const second = createMockedClient({
+    'GET /api/pricing': () => response(0.2),
+  });
+
+  const [firstSnapshot, secondSnapshot] = await Promise.all([
+    first.client.getPricingSnapshot(),
+    second.client.getPricingSnapshot(),
+  ]);
+
+  assert.notEqual(
+    firstSnapshot.sourceFingerprint,
+    secondSnapshot.sourceFingerprint
+  );
 });
 
 test('getPricingSnapshot ignores invalid group ratios without dropping models', async () => {
@@ -545,8 +589,7 @@ test('updateUserProfile rejects remote users without a numeric role', async () =
       displayName: 'a@b.co',
     }),
     (error: any) =>
-      error instanceof NewApiBridgeError &&
-      error.code === 'malformed_response'
+      error instanceof NewApiBridgeError && error.code === 'malformed_response'
   );
   assert.equal(putCalled, false);
 });
@@ -1320,7 +1363,8 @@ test('adjustQuota escalates a failed topup to reconciliation so the code is neve
         reference: 'recharge:order_1',
       }),
     (error: any) =>
-      isQuotaAdjustmentReconciliationError(error) && error.changeId === 'code-abc'
+      isQuotaAdjustmentReconciliationError(error) &&
+      error.changeId === 'code-abc'
   );
 });
 

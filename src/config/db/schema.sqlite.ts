@@ -528,7 +528,7 @@ export const catalogModel = table(
       .references(() => catalogVendor.id),
     category: text('category').default('llm').notNull(),
     contextWindow: integer('context_window'),
-    // 展示用最大输出（发布最坏成本计算要求非空，见 routing-admin）
+    // 展示用最大输出能力；请求参数由调用方按上游协议提供。
     maxOutputTokens: integer('max_output_tokens'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)

@@ -16,6 +16,12 @@ const BASE_PRICE = {
   outputMicroUsdPerM: 240,
 };
 
+const OPENAI_THREE_DIMENSION_PRICE = {
+  ...BASE_PRICE,
+  cacheWrite5mMicroUsdPerM: 0,
+  cacheWrite1hMicroUsdPerM: 0,
+};
+
 function nextId(prefix: string) {
   sequence += 1;
   return `${prefix}-${sequence}`;
@@ -45,8 +51,7 @@ async function setupDb() {
   const routeService = await import(
     '@/features/routing-admin/server/route-service'
   );
-  const worstCase = await import('@/features/routing-admin/server/worst-case');
-  modules = { db, routeService, schema, worstCase };
+  modules = { db, routeService, schema };
 
   await db().insert(schema.catalogVendor).values({
     id: 'routing-admin-vendor',
@@ -70,6 +75,7 @@ type FixtureOptions = {
   reviewedAt?: Date | null;
   endpoints?: string[];
   cacheBaseMissing?: boolean;
+  openAiThreeDimensional?: boolean;
   contextWindow?: number | null;
   maxOutputTokens?: number | null;
   withPrice?: boolean;
@@ -138,8 +144,8 @@ async function seedFixture(options: FixtureOptions = {}) {
       baseInputMicroUsd: 100,
       baseOutputMicroUsd: 200,
       baseCachedInputMicroUsd: options.cacheBaseMissing ? null : 50,
-      baseCacheWrite5mMicroUsd: options.cacheBaseMissing ? null : 125,
-      baseCacheWrite1hMicroUsd: options.cacheBaseMissing ? null : 200,
+      baseCacheWrite5mMicroUsd: options.openAiThreeDimensional ? null : 125,
+      baseCacheWrite1hMicroUsd: options.openAiThreeDimensional ? null : 200,
     });
   if (options.withPrice !== false) {
     await modules
@@ -268,6 +274,61 @@ test('价格发布：五维门禁、ref 快照、listing、审计原子闭合', 
   assert.equal(audits.at(-1).action, 'price.publish');
 });
 
+test('OpenAI 三维价格发布：cache write 不适用时以 0 落库且 ref 为 null', async () => {
+  const ids = await seedFixture({
+    withRoute: true,
+    endpoints: ['openai', 'openai-response'],
+    openAiThreeDimensional: true,
+  });
+  const result = await modules.routeService.publishPriceVersion(
+    {
+      portalGroupId: ids.group,
+      portalModelId: ids.modelId,
+      price: OPENAI_THREE_DIMENSION_PRICE,
+      operatorUserId: 'operator-openai-three-dimension',
+    },
+    snapshotDeps()
+  );
+
+  assert.deepEqual(result, { ok: true, version: 2 });
+  const active = (
+    await rowsFor(modules.schema.modelPriceVersion, ids.group, ids.modelId)
+  ).find((row: any) => row.status === 'active');
+  assert.equal(active.cacheWrite5mMicroUsdPerM, 0);
+  assert.equal(active.cacheWrite1hMicroUsdPerM, 0);
+  assert.equal(active.newapiRefCacheWrite5mMicroUsdPerM, null);
+  assert.equal(active.newapiRefCacheWrite1hMicroUsdPerM, null);
+});
+
+test('Anthropic messages 仍要求 5m/1h cache write 基准价', async () => {
+  const ids = await seedFixture({
+    withRoute: true,
+    endpoints: ['messages'],
+    openAiThreeDimensional: true,
+  });
+  const result = await modules.routeService.publishPriceVersion(
+    {
+      portalGroupId: ids.group,
+      portalModelId: ids.modelId,
+      price: OPENAI_THREE_DIMENSION_PRICE,
+      operatorUserId: 'operator-anthropic-cache-write',
+    },
+    snapshotDeps()
+  );
+
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.failures.some((failure: any) =>
+      failure.message.includes('cache_write_5m 基准价')
+    )
+  );
+  assert.ok(
+    result.failures.some((failure: any) =>
+      failure.message.includes('cache_write_1h 基准价')
+    )
+  );
+});
+
 test('ref 快照不可变：catalog cache 基准价漂移不改历史版本', async () => {
   const ids = await seedFixture({ withRoute: true });
   await modules.routeService.publishPriceVersion(
@@ -335,7 +396,7 @@ test('方向校验拒绝 input 比成本参照低 1 micro', async () => {
   );
 });
 
-test('cache 基准价缺失时拒绝发布', async () => {
+test('cached input 基准价缺失时拒绝发布', async () => {
   const ids = await seedFixture({ cacheBaseMissing: true, withRoute: true });
   const result = await modules.routeService.publishPriceVersion(
     {
@@ -390,18 +451,13 @@ test('group 未 synced 与 manual 未 review 均拒绝', async () => {
   );
 });
 
-test('路由发布逐项拒绝：usable group、端点、active price、上下文', async () => {
+test('路由发布逐项拒绝：usable group、端点、active price', async () => {
   const unusable = await seedFixture();
   const endpoint = await seedFixture({ endpoints: ['image'] });
   const noPrice = await seedFixture({ withPrice: false });
-  const noLimits = await seedFixture({
-    contextWindow: null,
-    maxOutputTokens: null,
-  });
-  const inputs = [unusable, endpoint, noPrice, noLimits];
+  const inputs = [unusable, endpoint, noPrice];
   const deps = [
     snapshotDeps({ official: 12_000 }, []),
-    snapshotDeps(),
     snapshotDeps(),
     snapshotDeps(),
   ];
@@ -433,11 +489,24 @@ test('路由发布逐项拒绝：usable group、端点、active price、上下�
       (failure: any) => failure.check === 'price_missing'
     )
   );
-  assert.ok(
-    results[3].failures.some(
-      (failure: any) => failure.check === 'worst_case_inputs'
-    )
+});
+
+test('路由发布不依赖 contextWindow/maxOutputTokens，支持 New API OpenAI 端点名', async () => {
+  const ids = await seedFixture({
+    contextWindow: null,
+    maxOutputTokens: null,
+    endpoints: ['openai', 'openai-response'],
+  });
+  const result = await modules.routeService.publishModelRoute(
+    {
+      portalGroupId: ids.group,
+      portalModelId: ids.modelId,
+      newapiGroup: 'official',
+      operatorUserId: 'operator-no-model-limits',
+    },
+    snapshotDeps()
   );
+  assert.deepEqual(result, { ok: true, version: 1 });
 });
 
 test('v1 模型 ID 恒等：不等拒绝，缺省或相等均通过', async () => {
@@ -772,7 +841,7 @@ test('发布 CAS：独立价格发布与跨组重映射交错仅一方提交，�
   }
 });
 
-test('路由发布成功：版本递增、旧版退休、响应含 worst-case', async () => {
+test('路由发布成功：版本递增、旧版退休', async () => {
   const ids = await seedFixture({ withRoute: true });
   const result = await modules.routeService.publishModelRoute(
     {
@@ -785,7 +854,7 @@ test('路由发布成功：版本递增、旧版退休、响应含 worst-case', 
   );
   assert.equal(result.ok, true);
   assert.equal(result.version, 2);
-  assert.equal(result.worstCaseMicroUsd, BigInt(1));
+  assert.deepEqual(result, { ok: true, version: 2 });
   const routes = await rowsFor(
     modules.schema.modelRoute,
     ids.group,
@@ -894,16 +963,5 @@ test('并发双路由发布由 CAS/唯一索引保证恰一成功', async () => 
       (row: any) => row.status === 'active'
     ).length,
     1
-  );
-});
-
-test('worst-case 使用最大输入价并对总额 ceilDiv', () => {
-  assert.equal(
-    modules.worstCase.computeWorstCaseMicroUsd({
-      contextWindow: 1_000,
-      maxOutputTokens: 100,
-      price: BASE_PRICE,
-    }),
-    BigInt(1)
   );
 });

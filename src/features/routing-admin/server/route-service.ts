@@ -1,7 +1,14 @@
 import 'server-only';
 
+import { revalidateCatalog } from '@/features/api-catalog/server/queries';
+import { ceilDiv, type PriceVector } from '@/features/gateway/lib/billing';
+import {
+  createNewApiClient,
+  type RemotePricingSnapshot,
+} from '@/features/newapi-bridge/server/client';
 import { and, desc, eq } from 'drizzle-orm';
 
+import { db } from '@/core/db';
 import {
   catalogGroup,
   catalogModel,
@@ -10,17 +17,8 @@ import {
   modelPriceVersion,
   modelRoute,
 } from '@/config/db/schema';
-import { db } from '@/core/db';
-import { revalidateCatalog } from '@/features/api-catalog/server/queries';
-import { ceilDiv, type PriceVector } from '@/features/gateway/lib/billing';
-import {
-  createNewApiClient,
-  type RemotePricingSnapshot,
-} from '@/features/newapi-bridge/server/client';
 import { getUuid } from '@/shared/lib/hash';
 import { recordPortalAdminAudit } from '@/shared/models/portal-admin-audit';
-
-import { computeWorstCaseMicroUsd } from './worst-case';
 
 export interface PublishRouteInput {
   portalGroupId: string;
@@ -41,7 +39,7 @@ export interface PublishPriceInput {
 
 export type PublishFailure = { check: string; message: string };
 export type PublishResult =
-  | { ok: true; version: number; worstCaseMicroUsd?: bigint }
+  | { ok: true; version: number }
   | { ok: false; failures: PublishFailure[] };
 
 type RouteServiceDeps = {
@@ -62,15 +60,18 @@ type CatalogContext = {
 type PriceReferences = {
   input: number;
   cachedInput: number;
-  cacheWrite5m: number;
-  cacheWrite1h: number;
+  cacheWrite5m: number | null;
+  cacheWrite1h: number | null;
   output: number;
 };
 
 const CALLABLE_ENDPOINT_TYPES = new Set([
   'chat',
+  'openai',
   'responses',
+  'openai-response',
   'messages',
+  'anthropic',
   'embedding',
   'embeddings',
 ]);
@@ -82,10 +83,8 @@ export class ConcurrentPublishError extends Error {
   }
 }
 
-function success(version: number, worstCaseMicroUsd?: bigint): PublishResult {
-  return worstCaseMicroUsd === undefined
-    ? { ok: true, version }
-    : { ok: true, version, worstCaseMicroUsd };
+function success(version: number): PublishResult {
+  return { ok: true, version };
 }
 
 function failure(check: string, message: string): PublishFailure {
@@ -181,10 +180,7 @@ function validateCatalogContext(context: CatalogContext): PublishFailure[] {
     failures.push(failure('price_sync', '模型基准价格不存在'));
   } else if (
     context.basePrice.syncStatus !== 'synced' &&
-    !(
-      context.basePrice.syncStatus === 'manual' &&
-      context.basePrice.reviewedAt
-    )
+    !(context.basePrice.syncStatus === 'manual' && context.basePrice.reviewedAt)
   ) {
     failures.push(
       failure('price_sync', '模型基准价格未同步或人工价格尚未复核')
@@ -218,8 +214,6 @@ function validatePrice(
   const portalDimensions: Array<[keyof PriceVector, string]> = [
     ['inputMicroUsdPerM', 'input'],
     ['cachedInputMicroUsdPerM', 'cached_input'],
-    ['cacheWrite5mMicroUsdPerM', 'cache_write_5m'],
-    ['cacheWrite1hMicroUsdPerM', 'cache_write_1h'],
     ['outputMicroUsdPerM', 'output'],
   ];
   for (const [key, label] of portalDimensions) {
@@ -228,22 +222,73 @@ function validatePrice(
     }
   }
 
-  if (
-    basePrice.baseCachedInputMicroUsd === null ||
-    basePrice.baseCacheWrite5mMicroUsd === null ||
-    basePrice.baseCacheWrite1hMicroUsd === null
-  ) {
+  if (!positiveInteger(basePrice.baseCachedInputMicroUsd)) {
     failures.push(
-      failure('cache_reference', 'cache 三维基准价必须完整并经管理员复核')
+      failure('cache_reference', 'cached input 基准价必须完整并经管理员复核')
     );
   }
   if (
     !positiveInteger(basePrice.baseInputMicroUsd) ||
     !positiveInteger(basePrice.baseOutputMicroUsd)
   ) {
-    failures.push(
-      failure('base_reference', 'input/output 基准价必须为正整数')
-    );
+    failures.push(failure('base_reference', 'input/output 基准价必须为正整数'));
+  }
+  const writeDimensions: Array<{
+    key: keyof PriceVector;
+    label: string;
+    base: number | null;
+  }> = [
+    {
+      key: 'cacheWrite5mMicroUsdPerM',
+      label: 'cache_write_5m',
+      base: basePrice.baseCacheWrite5mMicroUsd,
+    },
+    {
+      key: 'cacheWrite1hMicroUsdPerM',
+      label: 'cache_write_1h',
+      base: basePrice.baseCacheWrite1hMicroUsd,
+    },
+  ];
+  const endpointTypes = parseEndpointTypes(
+    basePrice.sourceSupportedEndpointTypes
+  );
+  const requiresSplitCacheWrite = endpointTypes.some(
+    (endpoint) => endpoint === 'messages' || endpoint === 'anthropic'
+  );
+  for (const dimension of writeDimensions) {
+    if (dimension.base === null) {
+      if (requiresSplitCacheWrite) {
+        failures.push(
+          failure(
+            'cache_reference',
+            `${dimension.label} 基准价必须完整并经管理员复核`
+          )
+        );
+        continue;
+      }
+      if (price[dimension.key] !== 0) {
+        failures.push(
+          failure(
+            `price:${dimension.label}`,
+            `${dimension.label} 不适用于当前模型，单价必须为 0`
+          )
+        );
+      }
+      continue;
+    }
+    if (!positiveInteger(dimension.base)) {
+      failures.push(
+        failure('cache_reference', `${dimension.label} 基准价必须为正整数`)
+      );
+    }
+    if (!positiveInteger(price[dimension.key])) {
+      failures.push(
+        failure(
+          `price:${dimension.label}`,
+          `${dimension.label} 单价必须为正整数`
+        )
+      );
+    }
   }
   if (
     failures.some(
@@ -258,21 +303,18 @@ function validatePrice(
 
   const references: PriceReferences = {
     input: referencePrice(basePrice.baseInputMicroUsd!, ratioBps),
-    cachedInput: referencePrice(
-      basePrice.baseCachedInputMicroUsd!,
-      ratioBps
-    ),
-    cacheWrite5m: referencePrice(
-      basePrice.baseCacheWrite5mMicroUsd!,
-      ratioBps
-    ),
-    cacheWrite1h: referencePrice(
-      basePrice.baseCacheWrite1hMicroUsd!,
-      ratioBps
-    ),
+    cachedInput: referencePrice(basePrice.baseCachedInputMicroUsd!, ratioBps),
+    cacheWrite5m:
+      basePrice.baseCacheWrite5mMicroUsd === null
+        ? null
+        : referencePrice(basePrice.baseCacheWrite5mMicroUsd, ratioBps),
+    cacheWrite1h:
+      basePrice.baseCacheWrite1hMicroUsd === null
+        ? null
+        : referencePrice(basePrice.baseCacheWrite1hMicroUsd, ratioBps),
     output: referencePrice(basePrice.baseOutputMicroUsd!, ratioBps),
   };
-  const directions: Array<[number, number, string]> = [
+  const directions: Array<[number, number | null, string]> = [
     [price.inputMicroUsdPerM, references.input, 'input'],
     [price.cachedInputMicroUsdPerM, references.cachedInput, 'cached_input'],
     [price.cacheWrite5mMicroUsdPerM, references.cacheWrite5m, 'cache_write_5m'],
@@ -280,6 +322,7 @@ function validatePrice(
     [price.outputMicroUsdPerM, references.output, 'output'],
   ];
   for (const [portal, reference, label] of directions) {
+    if (reference === null) continue;
     if (portal < reference) {
       failures.push(
         failure(
@@ -598,18 +641,13 @@ export async function publishModelRoute(
   if (!context.activePrice) {
     failures.push(failure('price_missing', '缺少 active 价格版本'));
   }
-  if (
-    !positiveInteger(context.model.contextWindow) ||
-    !positiveInteger(context.model.maxOutputTokens)
-  ) {
-    failures.push(
-      failure('worst_case_inputs', 'contextWindow/maxOutputTokens 必须完整')
-    );
-  }
   const newapiModelId = input.newapiModelId ?? input.portalModelId;
   if (newapiModelId !== input.portalModelId) {
     failures.push(
-      failure('model_id_identity', '一期要求门户模型 ID 与 New API 模型 ID 恒等')
+      failure(
+        'model_id_identity',
+        '一期要求门户模型 ID 与 New API 模型 ID 恒等'
+      )
     );
   }
 
@@ -645,20 +683,6 @@ export async function publishModelRoute(
   }
   if (failures.length > 0) return { ok: false, failures };
 
-  const routePrice = input.remapPrice ?? {
-    inputMicroUsdPerM: context.activePrice!.inputMicroUsdPerM,
-    cachedInputMicroUsdPerM: context.activePrice!.cachedInputMicroUsdPerM,
-    cacheWrite5mMicroUsdPerM:
-      context.activePrice!.cacheWrite5mMicroUsdPerM,
-    cacheWrite1hMicroUsdPerM:
-      context.activePrice!.cacheWrite1hMicroUsdPerM,
-    outputMicroUsdPerM: context.activePrice!.outputMicroUsdPerM,
-  };
-  const worstCaseMicroUsd = computeWorstCaseMicroUsd({
-    contextWindow: context.model.contextWindow!,
-    maxOutputTokens: context.model.maxOutputTokens!,
-    price: routePrice,
-  });
   const newId = deps.newId ?? getUuid;
   const version = await translateConcurrent<number>(() =>
     db().transaction(async (tx: any) => {
@@ -693,7 +717,7 @@ export async function publishModelRoute(
     })
   );
   (deps.revalidate ?? revalidateCatalog)();
-  return success(version, worstCaseMicroUsd);
+  return success(version);
 }
 
 export async function retireModelRoute(

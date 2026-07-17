@@ -27,6 +27,8 @@ export type NewApiPricingLike = {
   model_ratio?: number | null;
   model_price?: number | null;
   completion_ratio?: number | null;
+  cache_ratio?: number | null;
+  create_cache_ratio?: number | null;
   image_ratio?: number | null;
   supported_endpoint_types?: string[] | string | null;
 };
@@ -34,6 +36,9 @@ export type NewApiPricingLike = {
 export type DerivedNewApiPricing = {
   source: NewApiPricingSource;
   inputMicroUsd: number | null;
+  cachedInputMicroUsd: number | null;
+  cacheWriteMicroUsd: number | null;
+  cacheWrite1hMicroUsd: number | null;
   outputMicroUsd: number | null;
   imageInputMicroUsd: number | null;
   imageOutputMicroUsd: number | null;
@@ -128,6 +133,9 @@ export function derivePricingFromNewApiPricing(
     return {
       source: 'fixed-price',
       inputMicroUsd: null,
+      cachedInputMicroUsd: null,
+      cacheWriteMicroUsd: null,
+      cacheWrite1hMicroUsd: null,
       outputMicroUsd: null,
       imageInputMicroUsd: null,
       imageOutputMicroUsd: null,
@@ -142,6 +150,14 @@ export function derivePricingFromNewApiPricing(
   const completionRatio = finiteOrDefault(pricing.completion_ratio, 1);
   const baseUsdPerMillion =
     modelRatio * NEW_API_USD_PER_MILLION_RATIO_MULTIPLIER;
+  const cacheRatio = finiteOrDefault(pricing.cache_ratio, 1);
+  const createCacheRatio =
+    pricing.create_cache_ratio === null ||
+    pricing.create_cache_ratio === undefined
+      ? null
+      : finiteOrDefault(pricing.create_cache_ratio, 0);
+  const cacheWriteUsdPerMillion =
+    createCacheRatio === null ? null : baseUsdPerMillion * createCacheRatio;
   const outputUsdPerMillion = baseUsdPerMillion * completionRatio;
   const imageInputUsdPerMillion =
     pricing.image_ratio === null || pricing.image_ratio === undefined
@@ -154,6 +170,16 @@ export function derivePricingFromNewApiPricing(
   return {
     source: 'ratio',
     inputMicroUsd: dollarsToMicroUsd(baseUsdPerMillion),
+    cachedInputMicroUsd: dollarsToMicroUsd(baseUsdPerMillion * cacheRatio),
+    cacheWriteMicroUsd:
+      cacheWriteUsdPerMillion === null
+        ? null
+        : dollarsToMicroUsd(cacheWriteUsdPerMillion),
+    cacheWrite1hMicroUsd:
+      cacheWriteUsdPerMillion !== null &&
+      supportsAnthropicEndpoint(pricing.supported_endpoint_types)
+        ? dollarsToMicroUsd(cacheWriteUsdPerMillion * 1.6)
+        : null,
     outputMicroUsd: dollarsToMicroUsd(outputUsdPerMillion),
     imageInputMicroUsd:
       imageInputUsdPerMillion === null
@@ -393,6 +419,17 @@ function supportsImageEndpoint(value: string[] | string | null | undefined) {
   return endpointTypes.some((endpointType) =>
     endpointType.toLowerCase().includes('image')
   );
+}
+
+function supportsAnthropicEndpoint(
+  value: string[] | string | null | undefined
+) {
+  const endpointTypes = Array.isArray(value) ? value : value ? [value] : [];
+
+  return endpointTypes.some((endpointType) => {
+    const normalized = endpointType.toLowerCase();
+    return normalized === 'anthropic' || normalized === 'messages';
+  });
 }
 
 export function formatDecimal(value: number): string {

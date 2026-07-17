@@ -1,14 +1,15 @@
-import { PERMISSIONS } from '@/core/rbac/permission-codes';
 import type { PriceVector } from '@/features/gateway/lib/billing';
-import {
-  publishModelRoute,
-  publishPriceVersion,
-} from '@/features/routing-admin/server/route-service';
-import { getRoutingMatrix } from '@/features/routing-admin/server/admin-service';
 import {
   authorizeAdminRoute,
   setAdminRouteAuthDepsForTest,
 } from '@/features/routing-admin/server/admin-route-auth';
+import { getRoutingMatrix } from '@/features/routing-admin/server/admin-service';
+import {
+  publishModelRoute,
+  publishPriceVersion,
+} from '@/features/routing-admin/server/route-service';
+
+import { PERMISSIONS } from '@/core/rbac/permission-codes';
 import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr } from '@/shared/lib/resp';
 
@@ -29,16 +30,10 @@ function parsePrice(value: unknown): PriceVector | null {
   const result: Record<string, number> = {};
   for (const key of PRICE_KEYS) {
     const number = Number(source[key]);
-    if (!Number.isSafeInteger(number) || number <= 0) return null;
+    if (!Number.isSafeInteger(number) || number < 0) return null;
     result[key] = number;
   }
   return result as unknown as PriceVector;
-}
-
-function serializeResult(result: any) {
-  return typeof result?.worstCaseMicroUsd === 'bigint'
-    ? { ...result, worstCaseMicroUsd: result.worstCaseMicroUsd.toString() }
-    : result;
 }
 
 export async function GET() {
@@ -59,11 +54,17 @@ export async function POST(req: Request) {
     const portalGroupId = String(body.portalGroupId ?? '').trim();
     const portalModelId = String(body.portalModelId ?? '').trim();
     if (!portalGroupId || !portalModelId) {
-      return withNoStore(respErr('portalGroupId and portalModelId are required'));
+      return withNoStore(
+        respErr('portalGroupId and portalModelId are required')
+      );
     }
     if (body.kind === 'price' || body.action === 'publish_price') {
       const price = parsePrice(body.price);
-      if (!price) return withNoStore(respErr('valid five-dimensional price is required'));
+      if (!price) {
+        return withNoStore(
+          respErr('valid non-negative price vector is required')
+        );
+      }
       const result = await publishPriceVersion({
         portalGroupId,
         portalModelId,
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
         sourceNote: String(body.sourceNote ?? '').trim() || undefined,
         operatorUserId: auth.operatorId,
       });
-      return withNoStore(respData(serializeResult(result)));
+      return withNoStore(respData(result));
     }
     const newapiGroup = String(body.newapiGroup ?? '').trim();
     if (!newapiGroup) return withNoStore(respErr('newapiGroup is required'));
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
           }
         : undefined,
     });
-    return withNoStore(respData(serializeResult(result)));
+    return withNoStore(respData(result));
   } catch (error) {
     const message =
       error instanceof Error && error.name === 'ConcurrentPublishError'

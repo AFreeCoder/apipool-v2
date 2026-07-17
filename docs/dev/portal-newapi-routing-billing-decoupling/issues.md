@@ -21,7 +21,9 @@
 并全部收编到对应 Task，本清单不重复登记勘误。
 
 - [ ] Spike S1：截至 2026-07-15，管理员 `GET /api/log/` 从当前实现机返回空响应（Node `UND_ERR_SOCKET`、curl 52），字段形态尚未得到线上 fixture 证实。运行时保留管理员主路径，失败立即回退逐绑定用户 `/api/log/self`，并兼容顶层和 `other.request_id`；取得受信 fixture 后补契约测试。详见 [S1 记录](./s1-admin-usage-log-spike.md)。
-- [ ] Spike S2：截至 2026-07-15，`GET /api/pricing` 同样无法取得响应，cache read、5m write、1h write 三维价格不能自动预填；继续要求管理员明确录入并锁定复核，不猜字段、不从 input/output 推导、不用零值代替未知。详见 [S2 记录](./s2-cache-pricing-spike.md)。
+- [x] Spike S2：2026-07-16 已从生产 `GET /api/pricing` 取得脱敏价格事实，并对照生产提交结算源码复核倍率公式。`gpt-5.5` 改为 input/cached input/output 三维；5m/1h write 不适用。原失败现场保留在 [S2 记录](./s2-cache-pricing-spike.md)，后续调整见 [OpenAI 计价维度调整记录](./openai-pricing-adjustment.md)。
+- [ ] OpenAI 长上下文阶梯：官方 GPT-5.5/GPT-5.6 对超长输入存在额外倍率，当前生产 `/api/pricing` 未返回 `billing_mode/billing_expr`。本阶段按 New API 当前实际倍率结算；若 New API 开启阶梯计费，必须扩展价格快照和账本测试后再同步门户规则。
+- [ ] GPT-5.6 cache write：官方为单一 write 价格，当前生产 `/api/pricing` 未返回 `create_cache_ratio`。该系列正式发布前必须取得字段或真实 usage/log 证据，并验证 Chat/Responses 的 `cache_write_tokens` 结算；不得沿用 `gpt-5.5` 三维快照直接发布。
 - [ ] 风险槽模型以并发近似未决消费，默认上限 10 对 Claude Code/Codex 类高并发客户端可能正常撞 429；按目标用户群和实际 `pending_backfill` 水位调参，不在无证据时直接放宽。
 - [ ] 已接受局限 1：上游错误 body 可能残留 New API 品牌；只通过 New API 文案治理和运营巡检处理，不改只读响应体。
 - [ ] 已接受局限 2：SQLite 单文件只保证同文件进程组内的原子准入；跨机扩容前必须先迁 PostgreSQL。
