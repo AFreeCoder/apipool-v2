@@ -18,10 +18,13 @@
 排空期 v2 只接管新增用户入口，不接管老站契约域名：
 
 - `app.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，承载站点、登录、控制台、支付回调和 OAuth 回调。
-- `api2.apipool.dev`：DNS only（灰云），直接指向 v2 VPS，承载 v2 用户 API 调用，绕开 Cloudflare HTTP 请求时长上限。
+- `api2.apipool.dev`：DNS only（灰云），直接指向 v2 VPS，临时把全部
+  `/v1*` 请求转发到 New API，供单一测试用户使用原生 Key，绕开
+  Cloudflare HTTP 请求时长上限。
 - `newapi.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，仅运营访问，继续 noindex。
 - `apipool.dev`：排空期继续指向老站，保留品牌与 SEO；cutover 后回收给 v2 营销站。
-- `api.apipool.dev`：排空期继续指向老站，保证老用户无需改代码；cutover 后回收给 v2 正牌 API，`api2.apipool.dev` 永久保留为别名。
+- `api.apipool.dev`：排空期继续指向老站；老用户改用旧站新的迁移域名后，
+  回收给门户正式 API。`api2.apipool.dev` 仅保留到单一临时测试用户迁移完成。
 
 Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool.dev` 或 `api.apipool.dev` 提前切到 v2 的操作，都会打断老用户或制造迁移风险。
 
@@ -40,7 +43,9 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - `NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID`
 - `NEWAPI_QUOTA_PER_UNIT`（与实例核对）
 - `APIPOOL_KEY_CREATION_ENABLED=true`
-- `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev`（排空期 v2 用户公开 endpoint，不含协议路径；`api.apipool.dev` 暂归老站，cutover 后回收给 v2 并保留 `api2` 作为永久别名）
+- `NEXT_PUBLIC_APIPOOL_API_BASE_URL`（不含协议路径；门户正式上线时设为
+  `https://api.apipool.dev`。临时直连 `api2` 使用 New API 原生 Key，不作为门户
+  Key 的公开 endpoint）
 - `APIPOOL_CREDENTIALS_SECRET`（AES-256-GCM 凭据加密密钥；与 `AUTH_SECRET` 同样被 entrypoint fail-fast 校验非空 ≥16 字符）
 - 集成开启时（默认开），`NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID` 必填，否则 entrypoint 拒绝启动（避免绑定/建 Key 拖到用户操作时才失败）
 - **凭据隔离**：仅引导脚本用的 `NEWAPI_ROOT_USER` / `NEWAPI_ROOT_PASS` 不进门户容器（compose 用 `environment:` allowlist 而非 `env_file:`）
@@ -95,7 +100,9 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - 不出现在公开导航、文档、sitemap、客服文案中。
 - 门户桥接流量走 `NEWAPI_BASE_URL` 内部地址。
 
-`api2.apipool.dev` 与 New API 管理面共用同一个上游容器（`127.0.0.1:3001`），因此 Caddy **只放行 `/v1*` 数据面**，其余路径（含 `/api/*` 管理接口）一律返回 404。
+`api2.apipool.dev` 与 New API 管理面共用同一个上游容器（`127.0.0.1:3001`）。
+Caddy 允许 `/v1*` 下的所有路径原样进入 New API，不再套用门户网关端点
+白名单；其余路径（含 `/api/*` 管理接口）一律返回 404。
 
 上线前实测三个子域的可达面（预期结果）：
 
@@ -122,7 +129,9 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 4. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
 5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → ledger applied → New API quota 增加 → 控制台余额一致。
 6. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
-7. **调用冒烟**：用该 Key 通过 `https://api2.apipool.dev` 的 OpenAI 兼容路径调用发布模型成功，用量页可见日志。
+7. **调用冒烟**：门户 Key 通过容器内网网关调用发布模型；临时公网
+   `https://api2.apipool.dev` 另用 New API 原生 Key 验证真实 `/v1/models`、
+   图片等实际端点可调用。
 8. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
 9. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
@@ -398,12 +407,17 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 
 ## 6. 最终态上线 runbook
 
+> **临时直连期间暂停本节**：`api2.apipool.dev/v1*` 当前绕过门户钱包
+> 直连 New API，必须保持 `APIPOOL_CHECKOUT_ENABLED=false`，不执行
+> `go-live verify` 或 `go-live open-checkout`。本节在 `api.apipool.dev` 切到门户正式
+> 数据面并完成全链路验收后恢复执行。
+
 本次首次上线基于“线上没有真实用户和真实流量”的事实，直接部署最终态，不维护渐进切流
 状态。真实客户开始使用后，不得继续套用“无流量”前提：
 
 - 充值始终写钱包账本并停写 credit；
 - Dashboard 与公开 API 始终读取钱包和请求账本；
-- `api2.apipool.dev/v1*` 始终进入门户网关；
+- `api2.apipool.dev/v1*` 当前临时全量直连 New API；该域名不作为门户正式数据面；
 - `newapi.apipool.dev/v1*` 始终返回 404；
 - 仅 `APIPOOL_CHECKOUT_ENABLED` 控制是否允许创建支付订单。
 
@@ -552,7 +566,8 @@ cd /opt/apipool-v2
 ./deploy/go-live.sh verify
 ```
 
-Caddy 的安全终态不随镜像回滚改变：`api2 /v1` 仍进入门户，`newapi /v1` 仍固定 404。
+Caddy 的当前临时路由不随镜像回滚改变：`api2 /v1*` 仍直连 New API，
+`newapi /v1*` 仍固定 404。
 若回滚后的旧镜像不兼容当前数据库迁移，停止并按备份恢复流程处理；不得删除流水、伪造
 充值或临时把 New API `/v1` 暴露到公网。SQLite 数据恢复、重建环境或轮换
 `APIPOOL_CREDENTIALS_SECRET` 仍需新的明确确认。
@@ -621,4 +636,4 @@ FROM newapi_key_binding WHERE status<>'deleted' ORDER BY portal_user_id,newapi_k
 
 按 `newapi_key_id` 在 New API 运营面逐个 disabled/deleted，回读远端状态并保存审计证据；
 不得通过 SQL 删除本地 binding 或 token。全部作废后再次确认 api2 三探测仍为 401/404/404，
-并保留 `api2.apipool.dev` 作为永久门户网关别名。
+该收尾步骤延后到临时测试用户迁移完成；此前不得作废其 New API 原生 Key。

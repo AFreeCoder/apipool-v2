@@ -248,8 +248,8 @@ test('Caddy fails closed when the Cloudflare range file is unavailable', () => {
   assert.match(stderr, /missing Cloudflare IP list/);
 });
 
-test('Caddy exposes only the /v1 data plane on the public API domain', async () => {
-  // api2 只允许门户 /v1；不限路径就等于把门户管理接口也代理出去
+test('Caddy exposes all /v1 paths but no management paths on api2', async () => {
+  // api2 将任意 /v1* 路径交给 New API；不限公网 vhost 路径会暴露管理接口。
   const { status, stdout } = printCaddyConfig(NEWAPI_BASIC_AUTH);
   assert.equal(status, 0);
 
@@ -452,14 +452,17 @@ test('the fail-closed guard can be explicitly opted out, but stays closed by def
   assert.match(open.stdout, /handle \/v1\*/);
 });
 
-test('Caddy 固定以门户承接 api2 数据面并封锁 newapi /v1', () => {
+test('Caddy 以 New API 承接 api2 的全部 /v1 路径并封锁 newapi /v1', () => {
   const result = printCaddyConfig(NEWAPI_BASIC_AUTH);
   assert.equal(result.status, 0, result.stderr);
   const api = result.stdout.split('api2.apipool.dev {')[1].split('\n}')[0];
   const newapi = result.stdout.split('newapi.apipool.dev {')[1];
   assert.match(api, /handle \/v1\*/);
-  assert.match(api, /reverse_proxy 127\.0\.0\.1:3000/);
-  assert.doesNotMatch(api, /127\.0\.0\.1:3001|service maintenance/);
+  assert.match(api, /reverse_proxy 127\.0\.0\.1:3001/);
+  assert.doesNotMatch(
+    api,
+    /reverse_proxy 127\.0\.0\.1:3000|service maintenance/
+  );
   assert.match(newapi, /handle \/v1\*/);
   assert.match(newapi, /respond "not found" 404/);
 });

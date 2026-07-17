@@ -50,8 +50,11 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）。
 - `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`，并按实际 TCP 对端只接受
   `deploy/cloudflare-ips.txt` 中的 Cloudflare 官方代理网段，其他来源返回 403。
-- `api2.apipool.dev` 是 DNS-only 公共数据面，`/v1*` 固定代理到门户网关
-  `127.0.0.1:3000`；非 `/v1*` 路径固定返回 404。
+- `api2.apipool.dev` 是 DNS-only 临时 New API 数据面，所有 `/v1*` 路径
+  均直接代理到 `127.0.0.1:3001`，避开 Cloudflare 超时和门户网关
+  端点白名单；非 `/v1*` 路径固定返回 404，不暴露 New API 管理面。
+- 临时直连期间必须保持 `APIPOOL_CHECKOUT_ENABLED=false`，不得执行
+  `go-live open-checkout`；该公网数据面不经过门户钱包。
 - `newapi.apipool.dev/v1*` 固定返回 404，禁止绕过门户鉴权和钱包计费直连
   New API。
 
@@ -123,10 +126,11 @@ NewAPI 元信息。
 当前处于老站排空期：
 
 - `app.apipool.dev`、`newapi.apipool.dev` 保持 Cloudflare proxied，并指向 v2 VPS。
-- `api2.apipool.dev` 指向 v2 VPS 且使用 DNS-only，避免长耗时图片请求继续受
-  Cloudflare HTTP 代理超时限制；该记录会公开 VPS IP。
+- `api2.apipool.dev` 指向 v2 VPS 且使用 DNS-only，临时直连 New API，避免
+  长耗时图片请求受 Cloudflare HTTP 代理超时限制；该记录会公开 VPS IP。
 - `apipool.dev` 和 `api.apipool.dev` 保持指向老站；不要在排空期发布中改到 v2。
-- final cutover 才把 `apipool.dev` 回收给 v2 营销站、把 `api.apipool.dev` 回收给 v2 API；`api2.apipool.dev` 永久保留为别名。
+- final cutover 才把 `apipool.dev` 回收给 v2 营销站、把 `api.apipool.dev` 回收给
+  门户正式 API；`api2.apipool.dev` 在临时测试用户迁移后下线。
 
 ## Pre-Deploy Checks
 
@@ -294,9 +298,10 @@ APIPOOL_API_ENDPOINT=https://api2.apipool.dev
 test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIPOOL_API_ENDPOINT/v1/models")" = "401"
 ```
 
-`https://api2.apipool.dev` 是排空期 v2 用户 API endpoint；无 API key 访问
-OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性由 VPS 本地
-`./deploy/live-smoke.sh` 覆盖。`api.apipool.dev` 在老站排空期继续服务老用户，
+`https://api2.apipool.dev` 是临时 New API 直连 endpoint；无 API key 访问
+OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性使用临时用户的
+New API 原生 Key 做外部 smoke；`deploy/live-smoke.sh --gateway` 只验证门户内部网关。
+`api.apipool.dev` 在老站排空期继续服务老用户，
 cutover 后再回收给 v2。
 
 ## Success Criteria
@@ -314,7 +319,8 @@ cutover 后再回收给 v2。
   `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`，经 Cloudflare 预期 200，但绕过 Cloudflare
   的源站直连必须返回 403。
 - 外部 `https://api2.apipool.dev/api/status` 返回 404（管理接口未经 api2 暴露）。
-- 外部 `https://api2.apipool.dev` 的 OpenAI-compatible `/v1/models` 无 API key 返回 401 认证错误；带 Key
+- 外部 `https://api2.apipool.dev` 的任意 `/v1*` 路径均进入 New API；
+  `/v1/models` 无 API key 返回 401 认证错误，带 New API 原生 Key
   真实调用由 live smoke 验证。
 - 新的 `pre-deploy-*.tar.gz` 存在并能列出内容。
 - 上一个稳定镜像 tag 或 commit 可用于快速恢复。

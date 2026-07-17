@@ -152,7 +152,9 @@ newapi_site_body="	handle /v1* {
 $newapi_fallback_inner
 	}"
 
-# api2 只放行门户 /v1 数据面，其余路径一律 404。
+# api2 是临时 DNS-only New API 数据面：所有 /v1* 路径均原样转发给
+# New API，避开 Cloudflare 长请求超时和门户网关端点白名单。
+# 非 /v1* 路径仍固定 404，不从该公网域名暴露 New API 管理面。
 read -r -d '' CADDYFILE <<EOF || true
 $PORTAL_DOMAIN {
 	encode zstd gzip
@@ -164,7 +166,7 @@ $API_DOMAIN {
 	encode zstd gzip
 
 	handle /v1* {
-		reverse_proxy $PORTAL_UPSTREAM
+		reverse_proxy $NEWAPI_UPSTREAM
 	}
 
 	handle {
