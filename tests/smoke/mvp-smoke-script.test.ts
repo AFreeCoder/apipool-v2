@@ -15,31 +15,19 @@ import {
   resolveSmokeLaunchModel,
 } from '../../scripts/smoke-mvp';
 
-test('MVP smoke verifies request count, token count, and recent logs', async () => {
+test('MVP smoke verifies a settled local request ledger entry', async () => {
   const script = await readFile(
     join(process.cwd(), 'scripts/smoke-mvp.ts'),
     'utf8'
   );
 
   assert.match(script, /waitForUsageVisibility/);
-  assert.match(script, /usage\.summary\.requestCount\s*>\s*0/);
-  assert.match(
-    script,
-    /usage\.summary\.inputTokens\s*\+\s*usage\.summary\.outputTokens\s*>\s*0/
-  );
-  assert.match(script, /usage\.logs\.length\s*>\s*0/);
-});
-
-test('MVP smoke verifies launch model distribution', async () => {
-  const script = await readFile(
-    join(process.cwd(), 'scripts/smoke-mvp.ts'),
-    'utf8'
-  );
-
-  assert.match(script, /byModel/);
-  assert.match(script, /modelId\s*===\s*expectedModel/);
-  assert.match(script, /modelUsage\.requests\s*>\s*0/);
-  assert.match(script, /modelUsage\.tokens\s*>\s*0/);
+  assert.match(script, /usage\?\.status === ['"]settled['"]/);
+  assert.match(script, /usage\.newapiRequestId/);
+  assert.match(script, /usage\.chargedMicroUsd !== null/);
+  assert.match(script, /from\(requestLedger\)/);
+  assert.doesNotMatch(script, /getPortalUsage/);
+  assert.doesNotMatch(script, /usageSnapshot/);
 });
 
 test('MVP smoke verifies that launch model returns assistant content', () => {
@@ -197,7 +185,7 @@ test('MVP smoke exposes an opt-in price reconciliation gate', async () => {
 
   assert.deepEqual(getSmokePriceReconciliationConfig({}), {
     enabled: false,
-    toleranceQuota: 1,
+    toleranceMicroUsd: 0,
   });
   assert.deepEqual(
     getSmokePriceReconciliationConfig({
@@ -205,7 +193,7 @@ test('MVP smoke exposes an opt-in price reconciliation gate', async () => {
     }),
     {
       enabled: false,
-      toleranceQuota: 1,
+      toleranceMicroUsd: 0,
     }
   );
   assert.deepEqual(
@@ -215,7 +203,7 @@ test('MVP smoke exposes an opt-in price reconciliation gate', async () => {
     }),
     {
       enabled: true,
-      toleranceQuota: 7,
+      toleranceMicroUsd: 7,
     }
   );
   assert.match(script, /APIPOOL_SMOKE_PRICE_RECONCILIATION/);
@@ -233,225 +221,72 @@ test('MVP smoke price reconciliation gate fails instead of skipping when live en
   );
 });
 
-test('MVP smoke price reconciliation reports expected actual delta and tolerance', () => {
+test('MVP smoke price reconciliation uses local usage buckets and immutable price', () => {
   const report = buildSmokePriceReconciliationReport({
     model: 'gpt-4o-mini',
     groupSlug: 'official',
-    effectiveInputMicroUsd: 1_000_000,
-    effectiveOutputMicroUsd: 2_000_000,
-    quotaPerUnit: 500_000,
-    toleranceQuota: 1,
-    beforeUsage: usageView({
-      quotaRemaining: 10_000,
-      logs: [{ id: 'old', modelId: 'gpt-4o-mini' }],
-    }),
-    afterUsage: usageView({
-      quotaRemaining: 9_000,
-      logs: [
-        { id: 'old', modelId: 'gpt-4o-mini' },
-        {
-          id: 'new',
-          modelId: 'gpt-4o-mini',
-          inputTokens: 1_000,
-          outputTokens: 500,
-          spendUsd: 0.002,
-        },
-      ],
-    }),
+    usage: {
+      uncachedInput: 1_000,
+      cachedRead: 200,
+      cacheWrite5m: 100,
+      cacheWrite1h: 50,
+      output: 500,
+      reasoning: 0,
+    },
+    price: {
+      inputMicroUsdPerM: 1_000_000,
+      cachedInputMicroUsdPerM: 500_000,
+      cacheWrite5mMicroUsdPerM: 1_250_000,
+      cacheWrite1hMicroUsdPerM: 2_000_000,
+      outputMicroUsdPerM: 2_000_000,
+    },
+    actualChargedMicroUsd: 2_325,
+    toleranceMicroUsd: 0,
   });
 
   assert.equal(report.ok, true);
   assert.match(report.detail, /model=gpt-4o-mini/);
   assert.match(report.detail, /groupSlug=official/);
-  assert.match(report.detail, /effectiveInputMicroUsd=1000000/);
-  assert.match(report.detail, /effectiveOutputMicroUsd=2000000/);
-  assert.match(report.detail, /inputTokens=1000/);
+  assert.match(report.detail, /uncachedInputTokens=1000/);
+  assert.match(report.detail, /cachedReadTokens=200/);
+  assert.match(report.detail, /cacheWrite5mTokens=100/);
+  assert.match(report.detail, /cacheWrite1hTokens=50/);
   assert.match(report.detail, /outputTokens=500/);
-  assert.match(report.detail, /expectedQuota=1000/);
-  assert.match(report.detail, /actualQuota=1000/);
-  assert.match(report.detail, /deltaQuota=0/);
-  assert.match(report.detail, /toleranceQuota=1/);
-  assert.match(report.detail, /source=usage_log/);
+  assert.match(report.detail, /expectedMicroUsd=2325/);
+  assert.match(report.detail, /actualMicroUsd=2325/);
+  assert.match(report.detail, /deltaMicroUsd=0/);
+  assert.match(report.detail, /toleranceMicroUsd=0/);
+  assert.match(report.detail, /source=request_ledger/);
 });
 
-test('MVP smoke price reconciliation applies New API cache token discounts', () => {
-  const report = buildSmokePriceReconciliationReport({
-    model: 'gpt-5.5',
-    groupSlug: 'discount-1',
-    effectiveInputMicroUsd: 5_000_000,
-    effectiveOutputMicroUsd: 30_000_000,
-    quotaPerUnit: 500_000,
-    toleranceQuota: 1,
-    beforeUsage: usageView({
-      quotaRemaining: 10_000,
-      logs: [],
-    }),
-    afterUsage: usageView({
-      quotaRemaining: 7_595,
-      logs: [
-        {
-          id: 'new',
-          modelId: 'gpt-5.5',
-          inputTokens: 4_388,
-          outputTokens: 5,
-          cacheTokens: 3_840,
-          cacheRatio: 0.1,
-          spendUsd: 0.00481,
-        },
-      ],
-    }),
-  });
-
-  assert.equal(report.ok, true);
-  assert.match(report.detail, /inputTokens=4388/);
-  assert.match(report.detail, /cacheTokens=3840/);
-  assert.match(report.detail, /cacheRatio=0.1/);
-  assert.match(report.detail, /expectedQuota=2405/);
-  assert.match(report.detail, /actualQuota=2405/);
-  assert.match(report.detail, /deltaQuota=0/);
-});
-
-test('MVP smoke price reconciliation applies New API cache creation discounts', () => {
-  const report = buildSmokePriceReconciliationReport({
-    model: 'gpt-5.5',
-    groupSlug: 'discount-1',
-    effectiveInputMicroUsd: 1_000_000,
-    effectiveOutputMicroUsd: 2_000_000,
-    quotaPerUnit: 1_000_000,
-    toleranceQuota: 1,
-    beforeUsage: usageView({
-      quotaRemaining: 10_000,
-      logs: [],
-    }),
-    afterUsage: usageView({
-      quotaRemaining: 8_980,
-      logs: [
-        {
-          id: 'new',
-          modelId: 'gpt-5.5',
-          inputTokens: 1_000,
-          outputTokens: 10,
-          cacheTokens: 100,
-          cacheRatio: 0.5,
-          cacheCreationTokens: 200,
-          cacheCreationRatio: 1.25,
-          usageSemantic: 'openai',
-          spendUsd: 0.00102,
-        },
-      ],
-    }),
-  });
-
-  assert.equal(report.ok, true);
-  assert.match(report.detail, /inputTokens=1000/);
-  assert.match(report.detail, /cacheTokens=100/);
-  assert.match(report.detail, /cacheCreationTokens=200/);
-  assert.match(report.detail, /expectedQuota=1020/);
-  assert.match(report.detail, /actualQuota=1020/);
-  assert.match(report.detail, /deltaQuota=0/);
-});
-
-test('MVP smoke price reconciliation applies Anthropic cache creation semantics', () => {
-  const report = buildSmokePriceReconciliationReport({
-    model: 'claude-sonnet-4',
-    groupSlug: 'discount-1',
-    effectiveInputMicroUsd: 1_000_000,
-    effectiveOutputMicroUsd: 2_000_000,
-    quotaPerUnit: 1_000_000,
-    toleranceQuota: 1,
-    beforeUsage: usageView({
-      quotaRemaining: 10_000,
-      logs: [],
-    }),
-    afterUsage: usageView({
-      quotaRemaining: 8_665,
-      logs: [
-        {
-          id: 'new',
-          modelId: 'claude-sonnet-4',
-          inputTokens: 50,
-          outputTokens: 0,
-          cacheCreationTokens: 1_000,
-          cacheCreationRatio: 1.25,
-          cacheCreationTokens5m: 100,
-          cacheCreationRatio5m: 1.1,
-          cacheCreationTokens1h: 200,
-          cacheCreationRatio1h: 1.5,
-          usageSemantic: 'anthropic',
-          spendUsd: 0.001335,
-        },
-      ],
-    }),
-  });
-
-  assert.equal(report.ok, true);
-  assert.match(report.detail, /inputTokens=50/);
-  assert.match(report.detail, /cacheCreationTokens=1000/);
-  assert.match(report.detail, /expectedQuota=1335/);
-  assert.match(report.detail, /actualQuota=1335/);
-  assert.match(report.detail, /deltaQuota=0/);
-});
-
-test('MVP smoke price reconciliation falls back to quota delta when log spend is unavailable', () => {
+test('MVP smoke price reconciliation fails without a settled local charge', () => {
   const report = buildSmokePriceReconciliationReport({
     model: 'gpt-4o-mini',
     groupSlug: 'official',
-    effectiveInputMicroUsd: 1_000_000,
-    effectiveOutputMicroUsd: 2_000_000,
-    quotaPerUnit: 500_000,
-    toleranceQuota: 1,
-    beforeUsage: usageView({
-      quotaRemaining: 10_000,
-      logs: [],
-    }),
-    afterUsage: usageView({
-      quotaRemaining: 9_000,
-      logs: [
-        {
-          id: 'new',
-          modelId: 'gpt-4o-mini',
-          inputTokens: 1_000,
-          outputTokens: 500,
-          spendUsd: null,
-        },
-      ],
-    }),
-  });
-
-  assert.equal(report.ok, true);
-  assert.match(report.detail, /expectedQuota=1000/);
-  assert.match(report.detail, /actualQuota=1000/);
-  assert.match(report.detail, /actualDelta=1000/);
-  assert.match(report.detail, /source=quota_delta/);
-});
-
-test('MVP smoke price reconciliation fails without usage spend or quota delta', () => {
-  const report = buildSmokePriceReconciliationReport({
-    model: 'gpt-4o-mini',
-    groupSlug: 'official',
-    effectiveInputMicroUsd: 1_000_000,
-    effectiveOutputMicroUsd: 2_000_000,
-    quotaPerUnit: 500_000,
-    toleranceQuota: 1,
-    beforeUsage: usageView({ logs: [] }),
-    afterUsage: usageView({
-      logs: [
-        {
-          id: 'new',
-          modelId: 'gpt-4o-mini',
-          inputTokens: 1_000,
-          outputTokens: 500,
-          spendUsd: null,
-        },
-      ],
-    }),
+    usage: {
+      uncachedInput: 1_000,
+      cachedRead: 0,
+      cacheWrite5m: 0,
+      cacheWrite1h: 0,
+      output: 500,
+      reasoning: 0,
+    },
+    price: {
+      inputMicroUsdPerM: 1_000_000,
+      cachedInputMicroUsdPerM: 500_000,
+      cacheWrite5mMicroUsdPerM: 1_250_000,
+      cacheWrite1hMicroUsdPerM: 2_000_000,
+      outputMicroUsdPerM: 2_000_000,
+    },
+    actualChargedMicroUsd: null,
+    toleranceMicroUsd: 0,
   });
 
   assert.equal(report.ok, false);
-  assert.match(report.detail, /insufficient actual quota data/);
-  assert.match(report.detail, /expectedQuota=1000/);
-  assert.match(report.detail, /actualQuota=unavailable/);
-  assert.match(report.detail, /toleranceQuota=1/);
+  assert.match(report.detail, /missing settled charge/);
+  assert.match(report.detail, /expectedMicroUsd=2000/);
+  assert.match(report.detail, /actualMicroUsd=unavailable/);
+  assert.match(report.detail, /toleranceMicroUsd=0/);
 });
 
 test('MVP smoke price reconciliation requires confirmed effective catalog price', () => {
@@ -507,7 +342,7 @@ test('runbook documents MVP smoke commands, live gate, and prerequisites', async
     runbook,
     /不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions/
   );
-  assert.match(runbook, /usage log 或 quota delta/);
+  assert.match(runbook, /request_ledger/);
   assert.match(runbook, /失败不能发布/);
   assert.match(runbook, /APIPOOL_SMOKE_GROUP_SLUG/);
   assert.match(runbook, /APIPOOL_SMOKE_MODEL/);
@@ -524,56 +359,3 @@ test('New API bridge contract documents the health endpoint', async () => {
 
   assert.match(contract, /健康检查[\s\S]*`GET \/api\/status`/);
 });
-
-function usageView({
-  quotaRemaining,
-  logs,
-}: {
-  quotaRemaining?: number;
-  logs: Array<{
-    id: string;
-    modelId: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheTokens?: number | null;
-    cacheRatio?: number | null;
-    cacheCreationTokens?: number | null;
-    cacheCreationRatio?: number | null;
-    cacheCreationTokens5m?: number | null;
-    cacheCreationRatio5m?: number | null;
-    cacheCreationTokens1h?: number | null;
-    cacheCreationRatio1h?: number | null;
-    usageSemantic?: string | null;
-    spendUsd?: number | null;
-  }>;
-}) {
-  return {
-    summary: {
-      quotaRemaining,
-      requestCount: logs.length,
-      inputTokens: logs.reduce((sum, log) => sum + (log.inputTokens ?? 0), 0),
-      outputTokens: logs.reduce((sum, log) => sum + (log.outputTokens ?? 0), 0),
-      byModel: [],
-      status: logs.length > 0 ? 'ready' : 'empty',
-    },
-    logs: logs.map((log) => ({
-      id: log.id,
-      keyMasked: 'sk-***',
-      modelId: log.modelId,
-      status: 'success',
-      inputTokens: log.inputTokens ?? 0,
-      outputTokens: log.outputTokens ?? 0,
-      cacheTokens: log.cacheTokens,
-      cacheRatio: log.cacheRatio,
-      cacheCreationTokens: log.cacheCreationTokens,
-      cacheCreationRatio: log.cacheCreationRatio,
-      cacheCreationTokens5m: log.cacheCreationTokens5m,
-      cacheCreationRatio5m: log.cacheCreationRatio5m,
-      cacheCreationTokens1h: log.cacheCreationTokens1h,
-      cacheCreationRatio1h: log.cacheCreationRatio1h,
-      usageSemantic: log.usageSemantic,
-      spendUsd: log.spendUsd,
-      createdAt: new Date(0),
-    })),
-  } as any;
-}

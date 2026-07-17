@@ -66,8 +66,8 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
 - `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
 - `APIPOOL_SMOKE_REQUIRE_LIVE=true`：缺少 live smoke 必需配置时让 smoke 失败，而不是跳过。
-- `APIPOOL_SMOKE_PRICE_RECONCILIATION=true`：在 live smoke 调用后强制做展示价与 New API 实际扣费口径对账。
-- `APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA`（可选；默认 `1`）：价格对账允许的 quota 误差。
+- `APIPOOL_SMOKE_PRICE_RECONCILIATION=true`：在 live smoke 调用后强制核对本地不可变价格快照与请求账本实际扣费。
+- `APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA`（兼容旧变量名，可选；默认 `0`）：价格对账允许的 micro-USD 误差。
 
 ## 1.5 New API 实例初始化（每个新实例一次性，✅已实测）
 
@@ -169,7 +169,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 ```
 
-价格对账会读取本次调用对应模型和冒烟分组的 confirmed effective price，并用 usage log 或 quota delta 计算 `expected/actual/delta/tolerance`。若 usage log 没有 token 与 cost/quota，且调用前后 quota delta 也不可用，脚本必须失败；失败不能发布。
+价格对账先确认本次调用对应模型和冒烟分组存在 confirmed effective price，再从本地 `request_ledger` 读取已结算的标准用量桶，并按该请求绑定的不可变 `model_price_version` 重算 `expectedMicroUsd`，与钱包实际写入的 `chargedMicroUsd` 核对 `actual/delta/tolerance`。缺少已结算请求、New API request ID、价格快照或实际扣费时脚本必须失败；失败不能发布。该读取不会再写旧的用量快照，避免与网关结算争用 SQLite 写锁。
 
 `deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再按固定邮箱创建/复用两个不可登录的 production service identity：普通 smoke portal user 固定为 `smoke.portal@apipool.local`，带 `role_operator` 的 smoke operator 固定为 `smoke.operator@apipool.local`，并把邮箱与 user id 写回 `.env.deploy`。两者必须分离，以验证“被调额用户”和“执行调额的权限主体”不是同一身份；live smoke 会同时校验环境变量和数据库中的实际邮箱，避免误用真实用户造成记录污染。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
 

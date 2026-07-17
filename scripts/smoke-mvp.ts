@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
-import { quotaSpendFromEffectivePrice } from '@/features/api-catalog/lib/pricing';
 import type { ListingRow } from '@/features/api-catalog/lib/types';
 import {
   getCallableListingsByGroupUncached,
   getCallableModelIdsByGroupUncached,
 } from '@/features/api-catalog/server/queries';
 import {
-  createNewApiClient,
-  DEFAULT_QUOTA_PER_UNIT,
-} from '@/features/newapi-bridge/server/client';
+  computeChargeMicroUsd,
+  type PriceVector,
+  type UsageBuckets,
+} from '@/features/gateway/lib/billing';
+import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 import {
   createPortalApiKey,
   disablePortalApiKey,
-  getPortalUsage,
-  type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
 import { applyManualAdjustment } from '@/features/wallet/server/ledger';
+import { and, desc, eq } from 'drizzle-orm';
 
+import { db } from '@/core/db';
 import { APIPOOL_CONFIG } from '@/config/apipool';
+import { modelPriceVersion, requestLedger } from '@/config/db/schema';
 import { findUserById } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
 
@@ -47,7 +49,7 @@ const USAGE_VISIBILITY_ATTEMPTS = Number(
 const USAGE_VISIBILITY_DELAY_MS = Number(
   getEnv('APIPOOL_SMOKE_USAGE_DELAY_MS') || '5000'
 );
-const DEFAULT_PRICE_TOLERANCE_QUOTA = 1;
+const DEFAULT_PRICE_TOLERANCE_MICRO_USD = 0;
 
 type ConfirmedSmokeEffectivePrice = {
   effectiveInputMicroUsd: number;
@@ -75,29 +77,24 @@ export function getSmokePriceReconciliationConfig(
 ) {
   const enabled = env.APIPOOL_SMOKE_PRICE_RECONCILIATION === 'true';
   if (!enabled) {
-    return { enabled, toleranceQuota: DEFAULT_PRICE_TOLERANCE_QUOTA };
+    return {
+      enabled,
+      toleranceMicroUsd: DEFAULT_PRICE_TOLERANCE_MICRO_USD,
+    };
   }
 
   const rawTolerance = env.APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA?.trim();
-  const toleranceQuota = rawTolerance
+  const toleranceMicroUsd = rawTolerance
     ? Number(rawTolerance)
-    : DEFAULT_PRICE_TOLERANCE_QUOTA;
+    : DEFAULT_PRICE_TOLERANCE_MICRO_USD;
 
-  if (!Number.isSafeInteger(toleranceQuota) || toleranceQuota < 0) {
+  if (!Number.isSafeInteger(toleranceMicroUsd) || toleranceMicroUsd < 0) {
     throw new Error(
       'APIPOOL_SMOKE_PRICE_TOLERANCE_QUOTA must be a non-negative integer'
     );
   }
 
-  return { enabled, toleranceQuota };
-}
-
-function getSmokeQuotaPerUnit(env: Record<string, string | undefined>) {
-  const value = Number(env.NEWAPI_QUOTA_PER_UNIT || DEFAULT_QUOTA_PER_UNIT);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error('NEWAPI_QUOTA_PER_UNIT must be a positive number');
-  }
-  return value;
+  return { enabled, toleranceMicroUsd };
 }
 
 function missingRequiredEnv() {
@@ -140,110 +137,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getExpectedModelUsage(
-  usage: Awaited<ReturnType<typeof getPortalUsage>>,
-  expectedModel: string
-) {
-  return usage.summary.byModel.find(({ modelId }) => modelId === expectedModel);
-}
-
-function normalizeCacheTokens(log: PortalUsageView['logs'][number]) {
-  const rawCacheTokens = Number(log.cacheTokens ?? 0);
-  if (!Number.isFinite(rawCacheTokens) || rawCacheTokens <= 0) return 0;
-  return rawCacheTokens;
-}
-
-function normalizeTokenCount(value: number | null | undefined) {
-  const raw = Number(value ?? 0);
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return raw;
-}
-
-function normalizeRatio(value: number | null | undefined) {
-  const raw = Number(value ?? 1);
-  if (!Number.isFinite(raw) || raw < 0) return 1;
-  return raw;
-}
-
-function normalizeCacheRatio(log: PortalUsageView['logs'][number]) {
-  return normalizeRatio(log.cacheRatio);
-}
-
-function usesAnthropicCacheSemantics(log: PortalUsageView['logs'][number]) {
-  const semantic = String(log.usageSemantic ?? '').toLowerCase();
-  if (semantic === 'anthropic') return true;
-
-  // New API treats legacy Claude-derived OpenAI-format usage with 5m/1h split
-  // cache write fields as Anthropic cache semantics even without usage_semantic.
-  return (
-    normalizeTokenCount(log.cacheCreationTokens5m) > 0 ||
-    normalizeTokenCount(log.cacheCreationTokens1h) > 0
-  );
-}
-
-function normalizeCacheCreation(log: PortalUsageView['logs'][number]) {
-  const total = normalizeTokenCount(log.cacheCreationTokens);
-  const tokens5m = normalizeTokenCount(log.cacheCreationTokens5m);
-  const tokens1h = normalizeTokenCount(log.cacheCreationTokens1h);
-
-  if (!usesAnthropicCacheSemantics(log)) {
-    return {
-      tokens: total,
-      billableTokens: total * normalizeRatio(log.cacheCreationRatio),
-      ratios: total > 0 ? [normalizeRatio(log.cacheCreationRatio)] : [],
-    };
-  }
-
-  const tokens = Math.max(total, tokens5m + tokens1h);
-  const defaultTokens = Math.max(0, total - tokens5m - tokens1h);
-
-  return {
-    tokens,
-    billableTokens:
-      defaultTokens * normalizeRatio(log.cacheCreationRatio) +
-      tokens5m * normalizeRatio(log.cacheCreationRatio5m) +
-      tokens1h * normalizeRatio(log.cacheCreationRatio1h),
-    ratios: [
-      defaultTokens > 0 ? normalizeRatio(log.cacheCreationRatio) : undefined,
-      tokens5m > 0 ? normalizeRatio(log.cacheCreationRatio5m) : undefined,
-      tokens1h > 0 ? normalizeRatio(log.cacheCreationRatio1h) : undefined,
-    ].filter((ratio): ratio is number => typeof ratio === 'number'),
-  };
-}
-
-function quotaSpendFromUsageLogs({
-  logs,
-  effectiveInputMicroUsd,
-  effectiveOutputMicroUsd,
-  quotaPerUnit,
-}: {
-  logs: PortalUsageView['logs'];
-  effectiveInputMicroUsd: number;
-  effectiveOutputMicroUsd: number;
-  quotaPerUnit: number;
-}) {
-  const usd = logs.reduce((sum, log) => {
-    const cacheTokens = normalizeCacheTokens(log);
-    const cacheRatio = normalizeCacheRatio(log);
-    const cacheCreation = normalizeCacheCreation(log);
-    const shouldSubtractCache = !usesAnthropicCacheSemantics(log);
-    const nonCachedInputTokens =
-      log.inputTokens -
-      (shouldSubtractCache ? cacheTokens : 0) -
-      (shouldSubtractCache ? cacheCreation.tokens : 0);
-    const billableInputTokens =
-      nonCachedInputTokens +
-      cacheTokens * cacheRatio +
-      cacheCreation.billableTokens;
-    return (
-      sum +
-      (billableInputTokens * effectiveInputMicroUsd) / 1_000_000 / 1_000_000 +
-      (log.outputTokens * effectiveOutputMicroUsd) / 1_000_000 / 1_000_000
-    );
-  }, 0);
-  return Math.round(usd * quotaPerUnit);
-}
-
 export function resolveSmokeConfirmedEffectivePrice(
   listings: Array<
     Pick<
@@ -282,172 +175,47 @@ export function resolveSmokeConfirmedEffectivePrice(
 export function buildSmokePriceReconciliationReport({
   model,
   groupSlug,
-  effectiveInputMicroUsd,
-  effectiveOutputMicroUsd,
-  quotaPerUnit,
-  toleranceQuota,
-  beforeUsage,
-  afterUsage,
+  usage,
+  price,
+  actualChargedMicroUsd,
+  toleranceMicroUsd,
 }: {
   model: string;
   groupSlug: string;
-  effectiveInputMicroUsd: number;
-  effectiveOutputMicroUsd: number;
-  quotaPerUnit: number;
-  toleranceQuota: number;
-  beforeUsage?: PortalUsageView;
-  afterUsage: PortalUsageView;
+  usage: UsageBuckets;
+  price: PriceVector;
+  actualChargedMicroUsd: number | null;
+  toleranceMicroUsd: number;
 }): SmokePriceReconciliationReport {
-  const beforeLogIds = new Set((beforeUsage?.logs ?? []).map((log) => log.id));
-  const newLogs = afterUsage.logs.filter(
-    (log) =>
-      log.modelId === model &&
-      log.status === 'success' &&
-      !beforeLogIds.has(log.id)
-  );
-  const loggedInputTokens = newLogs.reduce(
-    (sum, log) => sum + log.inputTokens,
-    0
-  );
-  const loggedOutputTokens = newLogs.reduce(
-    (sum, log) => sum + log.outputTokens,
-    0
-  );
-  const summaryInputDelta = Math.max(
-    0,
-    afterUsage.summary.inputTokens - (beforeUsage?.summary.inputTokens ?? 0)
-  );
-  const summaryOutputDelta = Math.max(
-    0,
-    afterUsage.summary.outputTokens - (beforeUsage?.summary.outputTokens ?? 0)
-  );
-  const inputTokens = loggedInputTokens || summaryInputDelta;
-  const outputTokens = loggedOutputTokens || summaryOutputDelta;
-  const loggedCacheTokens = newLogs.reduce(
-    (sum, log) => sum + normalizeCacheTokens(log),
-    0
-  );
-  const loggedCacheCreationTokens = newLogs.reduce(
-    (sum, log) => sum + normalizeCacheCreation(log).tokens,
-    0
-  );
-  const cacheRatios = [
-    ...new Set(
-      newLogs
-        .filter((log) => normalizeCacheTokens(log) > 0)
-        .map((log) => normalizeCacheRatio(log))
-    ),
-  ];
-  const cacheRatioLabel =
-    cacheRatios.length === 0
-      ? 'none'
-      : cacheRatios.length === 1
-        ? String(cacheRatios[0])
-        : 'mixed';
-  const cacheCreationRatios = [
-    ...new Set(
-      newLogs.flatMap((log) =>
-        normalizeCacheCreation(log).tokens > 0
-          ? normalizeCacheCreation(log).ratios
-          : []
-      )
-    ),
-  ];
-  const cacheCreationRatioLabel =
-    cacheCreationRatios.length === 0
-      ? 'none'
-      : cacheCreationRatios.length === 1
-        ? String(cacheCreationRatios[0])
-        : 'mixed';
-  const expectedQuota =
-    newLogs.length > 0
-      ? quotaSpendFromUsageLogs({
-          logs: newLogs,
-          effectiveInputMicroUsd,
-          effectiveOutputMicroUsd,
-          quotaPerUnit,
-        })
-      : inputTokens + outputTokens > 0
-        ? quotaSpendFromEffectivePrice({
-            inputTokens,
-            outputTokens,
-            effectiveInputMicroUsd,
-            effectiveOutputMicroUsd,
-            quotaPerUnit,
-          })
-        : undefined;
-
-  const allNewLogsHaveSpend =
-    newLogs.length > 0 && newLogs.every((log) => Number.isFinite(log.spendUsd));
-  const actualFromUsageLog = allNewLogsHaveSpend
-    ? Math.round(
-        newLogs.reduce((sum, log) => sum + (log.spendUsd ?? 0), 0) *
-          quotaPerUnit
-      )
-    : undefined;
-  const beforeQuota = beforeUsage?.summary.quotaRemaining;
-  const afterQuota = afterUsage.summary.quotaRemaining;
-  const actualFromQuotaDelta =
-    typeof beforeQuota === 'number' && typeof afterQuota === 'number'
-      ? beforeQuota - afterQuota
-      : undefined;
-  const actualQuota = actualFromUsageLog ?? actualFromQuotaDelta;
-  const source = actualFromUsageLog !== undefined ? 'usage_log' : 'quota_delta';
-  const deltaQuota =
-    expectedQuota !== undefined && actualQuota !== undefined
-      ? Math.abs(expectedQuota - actualQuota)
-      : undefined;
-  const ok =
-    expectedQuota !== undefined &&
-    actualQuota !== undefined &&
-    deltaQuota !== undefined &&
-    deltaQuota <= toleranceQuota;
+  const expectedMicroUsd = Number(computeChargeMicroUsd(usage, price));
+  const deltaMicroUsd =
+    actualChargedMicroUsd === null
+      ? undefined
+      : Math.abs(expectedMicroUsd - actualChargedMicroUsd);
+  const ok = deltaMicroUsd !== undefined && deltaMicroUsd <= toleranceMicroUsd;
   const reason =
-    expectedQuota === undefined
-      ? 'insufficient token data'
-      : actualQuota === undefined
-        ? 'insufficient actual quota data'
-        : ok
-          ? 'matched'
-          : 'quota delta exceeds tolerance';
+    actualChargedMicroUsd === null
+      ? 'missing settled charge'
+      : ok
+        ? 'matched'
+        : 'micro-USD delta exceeds tolerance';
   const detail = [
     `model=${model}`,
     `groupSlug=${groupSlug}`,
-    `effectiveInputMicroUsd=${effectiveInputMicroUsd}`,
-    `effectiveOutputMicroUsd=${effectiveOutputMicroUsd}`,
-    `inputTokens=${inputTokens}`,
-    `outputTokens=${outputTokens}`,
-    `cacheTokens=${loggedCacheTokens}`,
-    `cacheRatio=${cacheRatioLabel}`,
-    `cacheCreationTokens=${loggedCacheCreationTokens}`,
-    `cacheCreationRatio=${cacheCreationRatioLabel}`,
-    `expectedQuota=${expectedQuota ?? 'unavailable'}`,
-    `actualQuota=${actualQuota ?? 'unavailable'}`,
-    `actualDelta=${source === 'quota_delta' ? (actualQuota ?? 'unavailable') : 'n/a'}`,
-    `deltaQuota=${deltaQuota ?? 'unavailable'}`,
-    `toleranceQuota=${toleranceQuota}`,
-    `source=${actualQuota === undefined ? 'unavailable' : source}`,
+    `uncachedInputTokens=${usage.uncachedInput}`,
+    `cachedReadTokens=${usage.cachedRead}`,
+    `cacheWrite5mTokens=${usage.cacheWrite5m}`,
+    `cacheWrite1hTokens=${usage.cacheWrite1h}`,
+    `outputTokens=${usage.output}`,
+    `expectedMicroUsd=${expectedMicroUsd}`,
+    `actualMicroUsd=${actualChargedMicroUsd ?? 'unavailable'}`,
+    `deltaMicroUsd=${deltaMicroUsd ?? 'unavailable'}`,
+    `toleranceMicroUsd=${toleranceMicroUsd}`,
+    'source=request_ledger',
     `result=${reason}`,
   ].join(', ');
 
   return { ok, detail };
-}
-
-function hasVisibleUsage(
-  usage: Awaited<ReturnType<typeof getPortalUsage>>,
-  expectedModel: string
-) {
-  const modelUsage = getExpectedModelUsage(usage, expectedModel);
-
-  return (
-    usage.summary.status !== 'failed' &&
-    usage.summary.requestCount > 0 &&
-    usage.summary.inputTokens + usage.summary.outputTokens > 0 &&
-    usage.logs.length > 0 &&
-    modelUsage !== undefined &&
-    modelUsage.requests > 0 &&
-    modelUsage.tokens > 0
-  );
 }
 
 export function isDisabledKeyRejected(call: { ok: boolean; status: number }) {
@@ -530,19 +298,35 @@ export function buildCleanupStateDetail({
 }
 
 async function waitForUsageVisibility(
-  user: Awaited<ReturnType<typeof findUserById>>,
+  portalKeyId: string,
   expectedModel: string
 ) {
-  if (!user) {
-    throw new Error('Portal user is required for usage visibility check');
-  }
-
-  let lastUsage: Awaited<ReturnType<typeof getPortalUsage>> | undefined;
+  let lastUsage: typeof requestLedger.$inferSelect | undefined;
   for (let attempt = 1; attempt <= USAGE_VISIBILITY_ATTEMPTS; attempt += 1) {
-    const usage = await getPortalUsage(user, '7d');
+    const [usage] = await db()
+      .select()
+      .from(requestLedger)
+      .where(
+        and(
+          eq(requestLedger.portalKeyId, portalKeyId),
+          eq(requestLedger.portalModelId, expectedModel)
+        )
+      )
+      .orderBy(desc(requestLedger.createdAt))
+      .limit(1);
     lastUsage = usage;
-    if (hasVisibleUsage(usage, expectedModel)) {
+    if (
+      usage?.status === 'settled' &&
+      usage.newapiRequestId &&
+      usage.chargedMicroUsd !== null
+    ) {
       return usage;
+    }
+    if (usage && !['open', 'pending_backfill'].includes(usage.status)) {
+      throw new Error(
+        `Usage visibility smoke failed: request=${usage.id}, ` +
+          `status=${usage.status}, newapiRequestId=${usage.newapiRequestId ?? 'missing'}`
+      );
     }
 
     if (attempt < USAGE_VISIBILITY_ATTEMPTS) {
@@ -550,14 +334,12 @@ async function waitForUsageVisibility(
     }
   }
 
-  const summary = lastUsage?.summary;
   throw new Error(
     'Usage visibility smoke failed: ' +
-      `status=${summary?.status ?? 'unknown'}, ` +
-      `requests=${summary?.requestCount ?? 0}, ` +
-      `tokens=${(summary?.inputTokens ?? 0) + (summary?.outputTokens ?? 0)}, ` +
-      `logs=${lastUsage?.logs.length ?? 0}, ` +
-      `byModel=${JSON.stringify(summary?.byModel ?? [])}`
+      `request=${lastUsage?.id ?? 'missing'}, ` +
+      `status=${lastUsage?.status ?? 'missing'}, ` +
+      `newapiRequestId=${lastUsage?.newapiRequestId ?? 'missing'}, ` +
+      `chargedMicroUsd=${lastUsage?.chargedMicroUsd ?? 'missing'}`
   );
 }
 
@@ -613,9 +395,6 @@ export async function main() {
   const operatorUserId = getEnv('APIPOOL_SMOKE_OPERATOR_USER_ID')!;
   const amountUsd = Number(getEnv('APIPOOL_SMOKE_QUOTA_USD') || '1');
   const smokeGroupSlug = getEnv('APIPOOL_SMOKE_GROUP_SLUG') || 'official';
-  const quotaPerUnit = priceReconciliation.enabled
-    ? getSmokeQuotaPerUnit(process.env)
-    : DEFAULT_QUOTA_PER_UNIT;
   const callableListings =
     await getCallableListingsByGroupUncached(smokeGroupSlug);
   const callableModelIds = [
@@ -732,10 +511,6 @@ export async function main() {
       throw new Error('Quota adjustment was not applied');
     }
 
-    const priceBaselineUsage = priceReconciliation.enabled
-      ? await getPortalUsage(user, '7d')
-      : undefined;
-
     const firstCall = await callLaunchModel({ apiKey: plainKey, model });
     record(
       'call launch model',
@@ -749,27 +524,48 @@ export async function main() {
     if (!firstCall.ok) {
       throw new Error('Launch model smoke call failed');
     }
+    if (!keyId) {
+      throw new Error('Created key id is missing before usage check');
+    }
 
-    const usage = await waitForUsageVisibility(user, model);
-    const modelUsage = getExpectedModelUsage(usage, model);
+    const usage = await waitForUsageVisibility(keyId, model);
+    const inputTokens =
+      (usage.uncachedInputTokens ?? 0) +
+      (usage.cachedReadTokens ?? 0) +
+      (usage.cacheWrite5mTokens ?? 0) +
+      (usage.cacheWrite1hTokens ?? 0);
     record(
       'sync usage summary',
       true,
-      `${usage.summary.requestCount} requests, ${
-        usage.summary.inputTokens + usage.summary.outputTokens
-      } tokens, ${usage.logs.length} logs, ${modelUsage?.modelId} model distribution`
+      `1 request, ${inputTokens + (usage.outputTokens ?? 0)} tokens, ` +
+        `${usage.portalModelId} local request ledger`
     );
 
     if (priceReconciliation.enabled && smokeEffectivePrice) {
+      const [price] = await db()
+        .select()
+        .from(modelPriceVersion)
+        .where(eq(modelPriceVersion.id, usage.priceVersionId))
+        .limit(1);
+      if (!price) {
+        throw new Error(
+          `Immutable price snapshot is missing: ${usage.priceVersionId}`
+        );
+      }
       const report = buildSmokePriceReconciliationReport({
         model,
         groupSlug: smokeGroupSlug,
-        effectiveInputMicroUsd: smokeEffectivePrice.effectiveInputMicroUsd,
-        effectiveOutputMicroUsd: smokeEffectivePrice.effectiveOutputMicroUsd,
-        quotaPerUnit,
-        toleranceQuota: priceReconciliation.toleranceQuota,
-        beforeUsage: priceBaselineUsage,
-        afterUsage: usage,
+        usage: {
+          uncachedInput: usage.uncachedInputTokens ?? 0,
+          cachedRead: usage.cachedReadTokens ?? 0,
+          cacheWrite5m: usage.cacheWrite5mTokens ?? 0,
+          cacheWrite1h: usage.cacheWrite1hTokens ?? 0,
+          output: usage.outputTokens ?? 0,
+          reasoning: usage.reasoningTokens ?? 0,
+        },
+        price,
+        actualChargedMicroUsd: usage.chargedMicroUsd,
+        toleranceMicroUsd: priceReconciliation.toleranceMicroUsd,
       });
       record('reconcile smoke price', report.ok, report.detail);
       if (!report.ok) {
