@@ -159,8 +159,7 @@ export function resolveTopUpCheckout(input: {
   const interval = (pricingItem.interval ||
     PaymentInterval.ONE_TIME) as PaymentInterval;
 
-  // 充值只接受一次性套餐。applyApipoolRecharge 对 SUBSCRIPTION 直接跳过，
-  // 一旦 pricing.json 里出现带 interval 的套餐，用户会按月扣钱而 quota 一分不加。
+  // 充值只接受一次性套餐，避免订阅订单混入本地钱包的一次性入账链路。
   if (interval !== PaymentInterval.ONE_TIME) {
     throw new Error('top-up products must be one-time purchases');
   }

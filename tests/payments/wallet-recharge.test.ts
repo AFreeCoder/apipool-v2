@@ -120,7 +120,7 @@ test.after(() => {
   delete process.env.APIPOOL_CHECKOUT_ENABLED;
 });
 
-test('PAID 事务始终写 recharge 流水并停写 credit', async () => {
+test('PAID 事务只写本地钱包 recharge 流水并停写旧余额表', async () => {
   await insertUser('wallet-recharge-on');
   const order = await insertOrder('wallet-recharge-on', 'wallet-order-on');
   await modules.payment.handleCheckoutSuccess({
@@ -133,7 +133,7 @@ test('PAID 事务始终写 recharge 流水并停写 credit', async () => {
   assert.equal(rows[0].entryType, 'recharge');
   assert.equal(rows[0].signedAmountMicroUsd, 5_000_000);
   assert.equal(rows[0].balanceAfterMicroUsd, 5_000_000);
-  assert.equal((await apipoolRechargeRows('wallet-order-on')).length, 1);
+  assert.equal((await apipoolRechargeRows('wallet-order-on')).length, 0);
 });
 
 test('wallet-only 事务路径：无 credit/subscription 仍把订单与钱包一起落库', async () => {
@@ -170,7 +170,7 @@ test('webhook 重放幂等：二次 handleCheckoutSuccess 仍只有一条 rechar
     session: successSession(),
   });
   assert.equal((await walletRows('wallet-order-replay')).length, 1);
-  assert.equal((await apipoolRechargeRows('wallet-order-replay')).length, 1);
+  assert.equal((await apipoolRechargeRows('wallet-order-replay')).length, 0);
 });
 
 test('注册 after 钩子建 wallet_account，初始余额为 0', async () => {
@@ -224,6 +224,6 @@ test('结算不受 checkout 门控：冻结创建期仍写 wallet recharge', asy
   assert.equal((await walletRows('wallet-order-frozen-checkout')).length, 1);
   assert.equal(
     (await apipoolRechargeRows('wallet-order-frozen-checkout')).length,
-    1
+    0
   );
 });

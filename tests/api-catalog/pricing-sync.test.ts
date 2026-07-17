@@ -540,7 +540,7 @@ test('syncCatalogPricingFromSnapshot keeps non-inherit policies out of matched w
   }
 });
 
-test('backfillCatalogModelPrices prefers official list price, official effective, consistent listing price, then smoke callable fallback', async () => {
+test('backfillCatalogModelPrices prefers official list price, official effective, consistent listing price, then callable fallback', async () => {
   const {
     catalogGroup,
     catalogModelListing,
@@ -571,7 +571,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         outputMicroUsd: 1000,
         listInputMicroUsd: 1000,
         listOutputMicroUsd: 2000,
-        smokeTested: true,
         sortOrder: 20,
       },
       {
@@ -579,7 +578,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 300,
         outputMicroUsd: 600,
-        smokeTested: true,
         sortOrder: 1,
       },
     ],
@@ -592,7 +590,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 111,
         outputMicroUsd: 222,
-        smokeTested: false,
         sortOrder: 20,
       },
       {
@@ -600,7 +597,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 333,
         outputMicroUsd: 444,
-        smokeTested: true,
         sortOrder: 1,
       },
     ],
@@ -613,7 +609,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 77,
         outputMicroUsd: 88,
-        smokeTested: false,
         sortOrder: 20,
       },
       {
@@ -621,7 +616,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 77,
         outputMicroUsd: 88,
-        smokeTested: true,
         sortOrder: 1,
       },
     ],
@@ -634,7 +628,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 10,
         outputMicroUsd: 20,
-        smokeTested: false,
         sortOrder: 1,
       },
       {
@@ -642,7 +635,6 @@ test('backfillCatalogModelPrices prefers official list price, official effective
         statusId: available.id,
         inputMicroUsd: 30,
         outputMicroUsd: 40,
-        smokeTested: true,
         sortOrder: 30,
       },
     ],
@@ -676,7 +668,7 @@ test('backfillCatalogModelPrices prefers official list price, official effective
     111
   );
   assert.equal((await modelPrice(consistentModel.id)).baseInputMicroUsd, 77);
-  assert.equal((await modelPrice(fallbackModel.id)).baseInputMicroUsd, 30);
+  assert.equal((await modelPrice(fallbackModel.id)).baseInputMicroUsd, 10);
 
   const conflictedListings = await modules
     .db()

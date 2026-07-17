@@ -1,27 +1,21 @@
-import { and, count, eq, inArray, ne, notInArray } from 'drizzle-orm';
+import { count, isNotNull, lt, ne, notInArray } from 'drizzle-orm';
 
+import { db } from '@/core/db';
 import {
-  apipoolLedgerEntry,
   catalogModelListing,
   newApiUserBinding,
+  walletAccount,
 } from '@/config/db/schema';
-import { db } from '@/core/db';
 
 /**
- * 后台首页运维信号。全部直接查表，不经过 portal.ts——首页只做只读计数，
- * 不应把远端调用/兑换码语义那一大坨依赖拖进来。
+ * 后台首页运维信号。资金类信号只读取本地钱包，New API 用户绑定仅用于
+ * 运行凭证供给，不再承担门户余额或调额状态。
  */
 export interface AdminOverviewSignals {
-  /**
-   * 资金对账告警：ledger 卡在 `reconciliation_required`。最高危信号，
-   * 非 0 说明有一笔调额/充值的远端结果无法确认，必须人工介入。
-   */
-  reconciliationRequired: number;
-  /**
-   * 未结清的人工调额：`source='manual_adjustment'` 且 `status` 仍是
-   * pending/processing。存在时新调额会被服务端守卫拒绝。
-   */
-  pendingManualAdjustments: number;
+  /** 余额已经透支，需要运营核对并通过 APIPool 调额入口处理。 */
+  negativeWallets: number;
+  /** 已冻结的钱包，需要运营核对冻结原因。 */
+  frozenWallets: number;
   /**
    * 绑定同步异常：`newapi_user_binding.status` 既不是 active 也不是 deleted，
    * 说明用户开号/改名/停用链路卡在中间态。
@@ -40,21 +34,16 @@ export interface AdminOverviewSignals {
 export async function getAdminOverviewSignals(): Promise<AdminOverviewSignals> {
   const conn = db();
 
-  const [reconciliation, pendingAdjustments, syncIssues, priceDrift] =
+  const [negativeWallets, frozenWallets, syncIssues, priceDrift] =
     await Promise.all([
       conn
         .select({ value: count() })
-        .from(apipoolLedgerEntry)
-        .where(eq(apipoolLedgerEntry.status, 'reconciliation_required')),
+        .from(walletAccount)
+        .where(lt(walletAccount.balanceMicroUsd, 0)),
       conn
         .select({ value: count() })
-        .from(apipoolLedgerEntry)
-        .where(
-          and(
-            eq(apipoolLedgerEntry.source, 'manual_adjustment'),
-            inArray(apipoolLedgerEntry.status, ['pending', 'processing'])
-          )
-        ),
+        .from(walletAccount)
+        .where(isNotNull(walletAccount.frozenAt)),
       conn
         .select({ value: count() })
         .from(newApiUserBinding)
@@ -66,8 +55,8 @@ export async function getAdminOverviewSignals(): Promise<AdminOverviewSignals> {
     ]);
 
   return {
-    reconciliationRequired: Number(reconciliation[0]?.value ?? 0),
-    pendingManualAdjustments: Number(pendingAdjustments[0]?.value ?? 0),
+    negativeWallets: Number(negativeWallets[0]?.value ?? 0),
+    frozenWallets: Number(frozenWallets[0]?.value ?? 0),
     bindingSyncIssues: Number(syncIssues[0]?.value ?? 0),
     priceDriftListings: Number(priceDrift[0]?.value ?? 0),
   };

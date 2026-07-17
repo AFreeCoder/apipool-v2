@@ -3,10 +3,11 @@
 APIPool v2 is the MVP portal for a real API key lifecycle:
 
 - login and portal account binding
-- server-side New API bridge for key creation, disable/delete, quota, usage, and recent logs
+- local portal API keys with server-side New API runtime credential provisioning
 - model catalog with one launch `available` model and other candidates marked `coming_soon`
-- customer dashboard for balance, requests, tokens, recent logs, API keys, and billing ledger
-- operator-only manual quota adjustment with ledger v0 and bridge audit logs
+- catalog-driven routing and immutable request price snapshots
+- customer dashboard backed by the local wallet and request ledger
+- operator-only APIPool wallet adjustment with an append-only audit trail
 
 ## Local Development
 
@@ -81,7 +82,7 @@ Local MVP smoke:
 pnpm smoke:mvp
 ```
 
-`smoke:mvp` creates a portal API key, applies a manual quota adjustment with an
+`smoke:mvp` creates a portal API key, applies a local wallet adjustment with an
 operator that has `admin.apipool.quota.adjust`, calls the configured API base,
 disables the key, and checks that the disabled key is rejected. It skips when live New API credentials,
 `APIPOOL_SMOKE_PORTAL_USER_ID`, or `APIPOOL_SMOKE_OPERATOR_USER_ID` are missing.

@@ -108,17 +108,10 @@ export default async function CatalogModelListingEditPage({
         type: 'textarea',
         title: t('fields.description'),
       },
-      {
-        name: 'smokeTested',
-        type: 'switch',
-        title: t('fields.smokeTested'),
-        tip: t('fields.smokeTestedTip'),
-      },
     ],
     data: {
       ...listing,
       discountFold: bpsToDiscountFold(listing.discountRateBps) || '',
-      smokeTested: listing.smokeTested ? 'true' : 'false',
     },
     submit: {
       button: {
@@ -158,7 +151,6 @@ export default async function CatalogModelListingEditPage({
               (data.get('discountNote') as string | null)?.trim() || null,
             description:
               (data.get('description') as string | null)?.trim() || null,
-            smokeTested: data.get('smokeTested') === 'true',
           };
         } catch {
           return { status: 'error' as const, message: invalidPriceMessage };

@@ -172,7 +172,6 @@ async function getListingsForModels(modelIds: string[]) {
       effectivePriceFormula: catalogModelListing.effectivePriceFormula,
       priceDriftStatus: catalogModelListing.priceDriftStatus,
       description: catalogModelListing.description,
-      smokeTested: catalogModelListing.smokeTested,
       featured: catalogModelListing.featured,
       sortOrder: catalogModelListing.sortOrder,
       createdAt: catalogModelListing.createdAt,
@@ -232,7 +231,6 @@ function chooseBackfillBase(listings: BackfillListingRow[]) {
   const sorted = [...listings].sort((a, b) => {
     if (a.groupSlug === 'official' && b.groupSlug !== 'official') return -1;
     if (a.groupSlug !== 'official' && b.groupSlug === 'official') return 1;
-    if (a.smokeTested !== b.smokeTested) return a.smokeTested ? -1 : 1;
     if (a.statusIsCallable !== b.statusIsCallable) {
       return a.statusIsCallable ? -1 : 1;
     }
@@ -260,10 +258,8 @@ function chooseBackfillBase(listings: BackfillListingRow[]) {
     if (keys.size === 1) return backfillBaseFromListing(comparableListings[0]);
   }
 
-  const smokeCallable = sorted.find(
-    (listing) => listing.smokeTested && listing.statusIsCallable
-  );
-  if (smokeCallable) return backfillBaseFromListing(smokeCallable);
+  const callable = sorted.find((listing) => listing.statusIsCallable);
+  if (callable) return backfillBaseFromListing(callable);
 
   const fallback = sorted[0];
   return fallback ? backfillBaseFromListing(fallback) : undefined;

@@ -1,6 +1,10 @@
 import { BalanceWarning } from '@/features/api-console/components/balance-warning';
 import { StatCard } from '@/features/api-console/components/stat-card';
 import {
+  formatConsoleDateTime,
+  formatConsoleNumber,
+} from '@/features/api-console/lib/datetime';
+import {
   formatBalanceUsdAmount,
   formatUsdAmount,
 } from '@/features/api-console/lib/money';
@@ -8,30 +12,25 @@ import {
   getUsageLogRowKey,
   getUsageSyncDescription,
 } from '@/features/api-console/lib/status';
-import {
-  getPortalUsage,
-  listPortalApiKeys,
-  type PortalUsageView,
-} from '@/features/newapi-bridge/server/portal';
+import { listPortalApiKeys } from '@/features/newapi-bridge/server/portal';
+import { getWalletUsageView } from '@/features/wallet/server/usage-view';
 import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { Button } from '@/shared/components/ui/button';
-import {
-  formatConsoleDateTime,
-  formatConsoleNumber,
-} from '@/features/api-console/lib/datetime';
 import { getUserInfo } from '@/shared/models/user';
 
-const EMPTY_USAGE: PortalUsageView = {
+const EMPTY_USAGE = {
   summary: {
+    balanceUsd: 0,
     requestCount: 0,
     inputTokens: 0,
     outputTokens: 0,
+    spendUsd: 0,
     byModel: [],
-    status: 'empty',
+    status: 'empty' as const,
   },
   logs: [],
 };
@@ -48,12 +47,12 @@ export default async function DashboardPage({
     getTranslations({ locale, namespace: 'dashboard.common' }),
   ]);
   const user = await getUserInfo();
-  const [usage, keys]: [
-    PortalUsageView,
-    Awaited<ReturnType<typeof listPortalApiKeys>>,
-  ] = user
+  const [usage, keys] = user
     ? await Promise.all([
-        getPortalUsage(user as any, '7d'),
+        getWalletUsageView(user.id, '7d').then((view) => ({
+          summary: { ...view.summary, status: 'ready' as const },
+          logs: view.logs,
+        })),
         listPortalApiKeys(user.id),
       ])
     : [EMPTY_USAGE, []];
@@ -194,7 +193,7 @@ export default async function DashboardPage({
                       {formatConsoleNumber(log.outputTokens, locale)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono">
-                      {formatUsdAmount(log.spendUsd)}
+                      {formatUsdAmount(log.chargedUsd)}
                     </td>
                   </tr>
                 ))}

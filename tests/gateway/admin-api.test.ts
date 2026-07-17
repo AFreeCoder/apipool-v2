@@ -31,20 +31,10 @@ async function setupDb() {
   const { db } = await import('@/core/db');
   const admission = await import('@/features/gateway/server/admission');
   const routes = {
-    routing: await import('@/app/api/apipool/admin/gateway/routing/route'),
-    retire: await import(
-      '@/app/api/apipool/admin/gateway/routing/retire/route'
-    ),
-    requests: await import(
-      '@/app/api/apipool/admin/gateway/requests/route'
-    ),
+    requests: await import('@/app/api/apipool/admin/gateway/requests/route'),
     wallet: await import('@/app/api/apipool/admin/gateway/wallet/route'),
-    adjust: await import(
-      '@/app/api/apipool/admin/gateway/wallet/adjust/route'
-    ),
-    freeze: await import(
-      '@/app/api/apipool/admin/gateway/wallet/freeze/route'
-    ),
+    adjust: await import('@/app/api/apipool/admin/gateway/wallet/adjust/route'),
+    freeze: await import('@/app/api/apipool/admin/gateway/wallet/freeze/route'),
     reconciliation: await import(
       '@/app/api/apipool/admin/gateway/reconciliation/route'
     ),
@@ -65,11 +55,14 @@ test.before(setupDb);
 test.after(() => client.close());
 
 async function seedUser(userId: string, balance: number) {
-  await modules?.db?.().insert(modules.schema.user).values({
-    id: userId,
-    name: userId,
-    email: `${userId}@admin-api.test`,
-  });
+  await modules
+    ?.db?.()
+    .insert(modules.schema.user)
+    .values({
+      id: userId,
+      name: userId,
+      email: `${userId}@admin-api.test`,
+    });
   await modules?.db?.().insert(modules.schema.walletAccount).values({
     userId,
     balanceMicroUsd: balance,
@@ -90,11 +83,16 @@ function allowAll() {
 }
 
 function request(url: string, body?: unknown) {
-  return new Request(url, body === undefined ? undefined : {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return new Request(
+    url,
+    body === undefined
+      ? undefined
+      : {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+  );
 }
 
 async function json(response: Response) {
@@ -136,17 +134,38 @@ function ledgerValues(input: {
 
 test('无权限时每个管理路由均返回 respErr', async () => {
   const cases: Array<[any, () => Promise<Response>]> = [
-    [modules.routes.routing, () => modules.routes.routing.GET(request('http://local/api'))],
-    [modules.routes.routing, () => modules.routes.routing.POST(request('http://local/api', {}))],
-    [modules.routes.retire, () => modules.routes.retire.POST(request('http://local/api', {}))],
-    [modules.routes.requests, () => modules.routes.requests.GET(request('http://local/api'))],
-    [modules.routes.wallet, () => modules.routes.wallet.GET(request('http://local/api'))],
-    [modules.routes.adjust, () => modules.routes.adjust.POST(request('http://local/api', {}))],
-    [modules.routes.freeze, () => modules.routes.freeze.POST(request('http://local/api', {}))],
-    [modules.routes.reconciliation, () => modules.routes.reconciliation.GET(request('http://local/api'))],
-    [modules.routes.resolve, () => modules.routes.resolve.POST(request('http://local/api', {}))],
-    [modules.routes.metrics, () => modules.routes.metrics.GET(request('http://local/api'))],
-    [modules.routes.audit, () => modules.routes.audit.GET(request('http://local/api'))],
+    [
+      modules.routes.requests,
+      () => modules.routes.requests.GET(request('http://local/api')),
+    ],
+    [
+      modules.routes.wallet,
+      () => modules.routes.wallet.GET(request('http://local/api')),
+    ],
+    [
+      modules.routes.adjust,
+      () => modules.routes.adjust.POST(request('http://local/api', {})),
+    ],
+    [
+      modules.routes.freeze,
+      () => modules.routes.freeze.POST(request('http://local/api', {})),
+    ],
+    [
+      modules.routes.reconciliation,
+      () => modules.routes.reconciliation.GET(request('http://local/api')),
+    ],
+    [
+      modules.routes.resolve,
+      () => modules.routes.resolve.POST(request('http://local/api', {})),
+    ],
+    [
+      modules.routes.metrics,
+      () => modules.routes.metrics.GET(request('http://local/api')),
+    ],
+    [
+      modules.routes.audit,
+      () => modules.routes.audit.GET(request('http://local/api')),
+    ],
   ];
   for (const [route, invoke] of cases) {
     setAuth(route, false);
@@ -157,78 +176,8 @@ test('无权限时每个管理路由均返回 respErr', async () => {
   }
 });
 
-test('adjust 缺失或非法 operationId 时拒绝', async () => {
-  for (const operationId of [undefined, 'bad id']) {
-    const body = await json(
-      await modules.routes.adjust.POST(
-        request('http://local/api', {
-          userId: 'admin-user-a',
-          signedAmountMicroUsd: 100,
-          reason: 'manual',
-          operationId,
-        })
-      )
-    );
-    assert.equal(body.code, -1);
-    assert.match(body.message, /operationId/);
-  }
-});
-
-test('adjust 同 operationId 同载荷重试只入账和审计一次', async () => {
-  const payload = {
-    userId: 'admin-user-a',
-    signedAmountMicroUsd: 100,
-    reason: 'retry-safe',
-    operationId: 'operation_retry_001',
-  };
-  const first = await json(
-    await modules.routes.adjust.POST(request('http://local/api', payload))
-  );
-  const second = await json(
-    await modules.routes.adjust.POST(request('http://local/api', payload))
-  );
-  assert.equal(first.code, 0);
-  assert.equal(second.data.alreadyApplied, true);
-  const ledger = await modules
-    .db()
-    .select()
-    .from(modules.schema.walletLedger)
-    .where(eq(modules.schema.walletLedger.idempotencyKey, 'manual:operation_retry_001'));
-  assert.equal(ledger.length, 1);
-  const audits = await modules
-    .db()
-    .select()
-    .from(modules.schema.portalAdminAuditLog)
-    .where(eq(modules.schema.portalAdminAuditLog.action, 'wallet.adjust'));
-  assert.equal(audits.filter((row: any) => row.afterJson.includes('operation_retry_001')).length, 1);
-});
-
-test('adjust 同 operationId 改金额或 userId 返回 409 且余额不变', async () => {
-  const base = {
-    userId: 'admin-user-a',
-    signedAmountMicroUsd: 50,
-    reason: 'conflict',
-    operationId: 'operation_conflict_001',
-  };
-  assert.equal((await json(await modules.routes.adjust.POST(request('http://local/api', base)))).code, 0);
-  const [beforeA] = await modules.db().select().from(modules.schema.walletAccount).where(eq(modules.schema.walletAccount.userId, 'admin-user-a'));
-  const [beforeB] = await modules.db().select().from(modules.schema.walletAccount).where(eq(modules.schema.walletAccount.userId, 'admin-user-b'));
-  for (const changed of [
-    { ...base, signedAmountMicroUsd: 51 },
-    { ...base, userId: 'admin-user-b' },
-  ]) {
-    const body = await json(await modules.routes.adjust.POST(request('http://local/api', changed)));
-    assert.equal(body.code, 409);
-    assert.match(body.message, /idempotency_conflict/);
-  }
-  const [afterA] = await modules.db().select().from(modules.schema.walletAccount).where(eq(modules.schema.walletAccount.userId, 'admin-user-a'));
-  const [afterB] = await modules.db().select().from(modules.schema.walletAccount).where(eq(modules.schema.walletAccount.userId, 'admin-user-b'));
-  assert.equal(afterA.balanceMicroUsd, beforeA.balanceMicroUsd);
-  assert.equal(afterB.balanceMicroUsd, beforeB.balanceMicroUsd);
-});
-
-test('adjust manual 审计同事务；reverse 不收金额且取原扣费绝对值', async () => {
-  const manual = await json(
+test('网关钱包接口拒绝任意调额，仅保留请求扣费冲正', async () => {
+  const rejected = await json(
     await modules.routes.adjust.POST(
       request('http://local/api', {
         userId: 'admin-user-b',
@@ -238,7 +187,8 @@ test('adjust manual 审计同事务；reverse 不收金额且取原扣费绝对�
       })
     )
   );
-  assert.equal(manual.code, 0);
+  assert.equal(rejected.code, -1);
+  assert.match(rejected.message, /APIPool 调额/);
   await modules.db().insert(modules.schema.walletLedger).values({
     id: 'charge-to-reverse',
     userId: 'admin-user-b',
@@ -247,7 +197,11 @@ test('adjust manual 审计同事务；reverse 不收金额且取原扣费绝对�
     balanceAfterMicroUsd: 275,
     requestLedgerId: 'request-for-reverse',
   });
-  await modules.db().update(modules.schema.walletAccount).set({ balanceMicroUsd: 275 }).where(eq(modules.schema.walletAccount.userId, 'admin-user-b'));
+  await modules
+    .db()
+    .update(modules.schema.walletAccount)
+    .set({ balanceMicroUsd: 275 })
+    .where(eq(modules.schema.walletAccount.userId, 'admin-user-b'));
   const reversed = await json(
     await modules.routes.adjust.POST(
       request('http://local/api', {
@@ -257,9 +211,22 @@ test('adjust manual 审计同事务；reverse 不收金额且取原扣费绝对�
     )
   );
   assert.equal(reversed.code, 0);
-  const [account] = await modules.db().select().from(modules.schema.walletAccount).where(eq(modules.schema.walletAccount.userId, 'admin-user-b'));
+  const [account] = await modules
+    .db()
+    .select()
+    .from(modules.schema.walletAccount)
+    .where(eq(modules.schema.walletAccount.userId, 'admin-user-b'));
   assert.equal(account.balanceMicroUsd, 475);
-  const [reverse] = await modules.db().select().from(modules.schema.walletLedger).where(eq(modules.schema.walletLedger.idempotencyKey, 'reverse:charge-to-reverse'));
+  const [reverse] = await modules
+    .db()
+    .select()
+    .from(modules.schema.walletLedger)
+    .where(
+      eq(
+        modules.schema.walletLedger.idempotencyKey,
+        'reverse:charge-to-reverse'
+      )
+    );
   assert.equal(reverse.signedAmountMicroUsd, 200);
 });
 
@@ -274,24 +241,52 @@ test('freeze/unfreeze 要求 reason，成功操作均有审计', async () => {
   );
   assert.equal(missing.code, -1);
   assert.match(missing.message, /reason/);
-  assert.equal((await json(await modules.routes.freeze.POST(request('http://local/api', {
-    userId: 'admin-user-a', action: 'freeze', reason: 'risk review',
-  })))).code, 0);
-  assert.equal((await json(await modules.routes.freeze.POST(request('http://local/api', {
-    userId: 'admin-user-a', action: 'unfreeze', reason: 'review done',
-  })))).code, 0);
-  const audits = await modules.db().select().from(modules.schema.portalAdminAuditLog);
+  assert.equal(
+    (
+      await json(
+        await modules.routes.freeze.POST(
+          request('http://local/api', {
+            userId: 'admin-user-a',
+            action: 'freeze',
+            reason: 'risk review',
+          })
+        )
+      )
+    ).code,
+    0
+  );
+  assert.equal(
+    (
+      await json(
+        await modules.routes.freeze.POST(
+          request('http://local/api', {
+            userId: 'admin-user-a',
+            action: 'unfreeze',
+            reason: 'review done',
+          })
+        )
+      )
+    ).code,
+    0
+  );
+  const audits = await modules
+    .db()
+    .select()
+    .from(modules.schema.portalAdminAuditLog);
   assert.ok(audits.some((row: any) => row.action === 'wallet.freeze'));
   assert.ok(audits.some((row: any) => row.action === 'wallet.unfreeze'));
 });
 
 test('requests 支持门户 ID 与 New API request ID 精确检索', async () => {
-  await modules.db().insert(modules.schema.requestLedger).values(
-    ledgerValues({
-      id: 'preq_admin_lookup',
-      newapiRequestId: 'newapi-admin-lookup',
-    })
-  );
+  await modules
+    .db()
+    .insert(modules.schema.requestLedger)
+    .values(
+      ledgerValues({
+        id: 'preq_admin_lookup',
+        newapiRequestId: 'newapi-admin-lookup',
+      })
+    );
   const byPortal = await json(
     await modules.routes.requests.GET(
       request('http://local/api?id=preq_admin_lookup')
@@ -307,11 +302,26 @@ test('requests 支持门户 ID 与 New API request ID 精确检索', async () =>
 });
 
 test('reconciliation 分列并将 explained 仅写 reconcile_status', async () => {
-  await modules.db().insert(modules.schema.requestLedger).values([
-    ledgerValues({ id: 'reconcile-mismatch', reconcileStatus: 'token_mismatch' }),
-    ledgerValues({ id: 'reconcile-waived', status: 'failed_unbilled', reconcileStatus: 'waived_by_failure' }),
-    ledgerValues({ id: 'reconcile-stuck', status: 'pending_backfill', reconcileStatus: 'pending', nextBackfillAt: null }),
-  ]);
+  await modules
+    .db()
+    .insert(modules.schema.requestLedger)
+    .values([
+      ledgerValues({
+        id: 'reconcile-mismatch',
+        reconcileStatus: 'token_mismatch',
+      }),
+      ledgerValues({
+        id: 'reconcile-waived',
+        status: 'failed_unbilled',
+        reconcileStatus: 'waived_by_failure',
+      }),
+      ledgerValues({
+        id: 'reconcile-stuck',
+        status: 'pending_backfill',
+        reconcileStatus: 'pending',
+        nextBackfillAt: null,
+      }),
+    ]);
   await modules.db().insert(modules.schema.reconcileOrphanObservation).values({
     id: 'reconcile-orphan',
     newapiRequestId: 'newapi-orphan-admin',
@@ -320,7 +330,9 @@ test('reconciliation 分列并将 explained 仅写 reconcile_status', async () =
   const listed = await json(
     await modules.routes.reconciliation.GET(request('http://local/api'))
   );
-  assert.ok(listed.data.mismatches.some((row: any) => row.id === 'reconcile-mismatch'));
+  assert.ok(
+    listed.data.mismatches.some((row: any) => row.id === 'reconcile-mismatch')
+  );
   assert.ok(listed.data.waived.some((row: any) => row.source === 'ledger'));
   assert.ok(listed.data.waived.some((row: any) => row.source === 'orphan'));
   assert.ok(listed.data.stuck.some((row: any) => row.id === 'reconcile-stuck'));
@@ -336,7 +348,11 @@ test('reconciliation 分列并将 explained 仅写 reconcile_status', async () =
     )
   );
   assert.equal(resolved.code, 0);
-  const [row] = await modules.db().select().from(modules.schema.requestLedger).where(eq(modules.schema.requestLedger.id, 'reconcile-mismatch'));
+  const [row] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, 'reconcile-mismatch'));
   assert.equal(row.reconcileStatus, 'explained');
   assert.equal(row.status, 'settled');
   assert.equal(row.resolvedAt, null);
@@ -372,7 +388,11 @@ test('manual_closed 原子转 failed_unbilled 并立即释放风险槽；孤儿�
     )
   );
   assert.equal(result.code, 0);
-  const [closed] = await modules.db().select().from(modules.schema.requestLedger).where(eq(modules.schema.requestLedger.id, 'reconcile-stuck'));
+  const [closed] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, 'reconcile-stuck'));
   assert.equal(closed.status, 'failed_unbilled');
   assert.ok(closed.resolvedAt instanceof Date);
   assert.equal(
@@ -406,7 +426,13 @@ test('manual_closed 原子转 failed_unbilled 并立即释放风险槽；孤儿�
     )
   );
   assert.equal(orphan.code, 0);
-  const [observation] = await modules.db().select().from(modules.schema.reconcileOrphanObservation).where(eq(modules.schema.reconcileOrphanObservation.id, 'reconcile-orphan'));
+  const [observation] = await modules
+    .db()
+    .select()
+    .from(modules.schema.reconcileOrphanObservation)
+    .where(
+      eq(modules.schema.reconcileOrphanObservation.id, 'reconcile-orphan')
+    );
   assert.ok(observation.resolvedAt instanceof Date);
 });
 
@@ -434,6 +460,8 @@ test('RBAC 常量与初始化种子保持双写一致', async () => {
     ],
     expected
   );
-  const codes = new Set(defaultPermissions.map((permission: any) => permission.code));
+  const codes = new Set(
+    defaultPermissions.map((permission: any) => permission.code)
+  );
   assert.ok(expected.every((code) => codes.has(code)));
 });

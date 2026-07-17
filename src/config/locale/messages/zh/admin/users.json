@@ -116,12 +116,13 @@
       }
     },
     "balance": {
-      "title": "余额与额度",
-      "description": "该用户的只读 APIPool 余额快照。",
+      "title": "APIPool 钱包",
+      "description": "本地钱包是网关准入与扣费的余额事实源。",
       "fields": {
         "balance": "余额",
         "quota_remaining": "剩余额度",
-        "status": "同步状态"
+        "status": "同步状态",
+        "wallet_status": "钱包状态"
       }
     },
     "usage": {
@@ -170,6 +171,7 @@
         "operator": "操作人",
         "source": "来源",
         "order_no": "订单",
+        "balance_after": "变更后余额",
         "actions": "操作"
       },
       "resolve": {
@@ -215,7 +217,14 @@
       "request": {
         "success": "成功",
         "failed": "失败",
-        "error": "错误"
+        "error": "错误",
+        "settled": "已结算",
+        "billing": "计费中",
+        "failed_unbilled": "失败且未扣费"
+      },
+      "wallet": {
+        "active": "正常",
+        "frozen": "已冻结"
       },
       "binding": {
         "pending": "待处理",
@@ -228,7 +237,8 @@
       },
       "ledger_source": {
         "manual_adjustment": "手动调额",
-        "recharge": "充值"
+        "recharge": "充值",
+        "request_charge": "请求扣费"
       }
     }
   },

@@ -5,8 +5,8 @@ import test from 'node:test';
 
 import {
   assertHealthyNewApi,
-  buildSmokePriceReconciliationReport,
   buildCleanupStateDetail,
+  buildSmokePriceReconciliationReport,
   finishSkipped,
   getSmokePriceReconciliationConfig,
   isDisabledKeyRejected,
@@ -75,12 +75,9 @@ test('MVP smoke only accepts verified launch models', () => {
   );
   assert.throws(
     () =>
-      resolveSmokeLaunchModel(
-        'gpt-4o',
-        ['gpt-4o-mini'],
+      resolveSmokeLaunchModel('gpt-4o', ['gpt-4o-mini'], 'gpt-4o-mini', [
         'gpt-4o-mini',
-        ['gpt-4o-mini']
-      ),
+      ]),
     /must be callable in the smoke group/
   );
   assert.equal(
@@ -88,12 +85,10 @@ test('MVP smoke only accepts verified launch models', () => {
     'gpt-4o-mini'
   );
   assert.equal(
-    resolveSmokeLaunchModel(
+    resolveSmokeLaunchModel('gpt-4o', ['gpt-4o-mini'], 'gpt-4o-mini', [
       'gpt-4o',
-      ['gpt-4o-mini'],
       'gpt-4o-mini',
-      ['gpt-4o', 'gpt-4o-mini']
-    ),
+    ]),
     'gpt-4o'
   );
 });
@@ -104,7 +99,8 @@ test('MVP smoke resolves launch candidates from the database catalog', async () 
     'utf8'
   );
 
-  assert.match(script, /getSmokeTestedCallableModelIdsByGroupUncached/);
+  assert.match(script, /getCallableModelIdsByGroupUncached/);
+  assert.doesNotMatch(script, /smokeTested/);
   assert.doesNotMatch(script, /publicModels/);
   assert.doesNotMatch(script, /getDefaultCallableModelId/);
   assert.doesNotMatch(script, /isModelCallable/);
@@ -506,7 +502,10 @@ test('runbook documents MVP smoke commands, live gate, and prerequisites', async
   assert.match(runbook, /deploy\/setup-smoke-users\.sh --apply/);
   assert.match(runbook, /deploy\/live-smoke\.sh --no-price-reconciliation/);
   assert.match(runbook, /deploy\/live-smoke\.sh/);
-  assert.match(runbook, /不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions/);
+  assert.match(
+    runbook,
+    /不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions/
+  );
   assert.match(runbook, /usage log 或 quota delta/);
   assert.match(runbook, /失败不能发布/);
   assert.match(runbook, /APIPOOL_SMOKE_GROUP_SLUG/);

@@ -95,29 +95,35 @@ async function createFixtureModel(input: {
 
 async function seedActiveRoutePrice(groupId: string, modelId: string) {
   const safeId = `${groupId}-${modelId}`;
-  await modules.db().insert(modules.schema.modelPriceVersion).values({
-    id: `price-${safeId}`,
-    portalGroupId: groupId,
-    portalModelId: modelId,
-    version: 1,
-    status: 'active',
-    inputMicroUsdPerM: 100_000,
-    cachedInputMicroUsdPerM: 50_000,
-    cacheWrite5mMicroUsdPerM: 125_000,
-    cacheWrite1hMicroUsdPerM: 200_000,
-    outputMicroUsdPerM: 200_000,
-    publishedBy: 'queries-test',
-  });
-  await modules.db().insert(modules.schema.modelRoute).values({
-    id: `route-${safeId}`,
-    portalGroupId: groupId,
-    portalModelId: modelId,
-    newapiGroup: `test-${groupId}`,
-    newapiModelId: modelId,
-    version: 1,
-    status: 'active',
-    publishedBy: 'queries-test',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id: `price-${safeId}`,
+      portalGroupId: groupId,
+      portalModelId: modelId,
+      version: 1,
+      status: 'active',
+      inputMicroUsdPerM: 100_000,
+      cachedInputMicroUsdPerM: 50_000,
+      cacheWrite5mMicroUsdPerM: 125_000,
+      cacheWrite1hMicroUsdPerM: 200_000,
+      outputMicroUsdPerM: 200_000,
+      publishedBy: 'queries-test',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.modelRoute)
+    .values({
+      id: `route-${safeId}`,
+      portalGroupId: groupId,
+      portalModelId: modelId,
+      newapiGroup: `test-${groupId}`,
+      newapiModelId: modelId,
+      version: 1,
+      status: 'active',
+      publishedBy: 'queries-test',
+    });
 }
 
 async function seedQueryFixtures() {
@@ -842,7 +848,7 @@ test('getCallableListingsByGroup returns only callable listings in the selected 
   );
 });
 
-test('public listings remain visible but are not callable without an active route and price', async () => {
+test('public listings remain visible but are not callable with incomplete catalog routing data', async () => {
   const official = await findBySlug(
     modules.schema.catalogGroup,
     modules.schema.catalogGroup.slug,
@@ -871,23 +877,19 @@ test('public listings remain visible but are not callable without an active rout
   );
 });
 
-test('getSmokeTestedCallableModelIdsByGroup returns only publicly callable catalog models', async () => {
+test('getCallableModelIdsByGroup returns catalog-callable models without a manual smoke flag', async () => {
   const officialModelIds =
-    await modules.queries.getSmokeTestedCallableModelIdsByGroupUncached(
-      'official'
-    );
+    await modules.queries.getCallableModelIdsByGroupUncached('official');
 
   assert.deepEqual(officialModelIds, [...new Set(officialModelIds)]);
   assert.ok(officialModelIds.includes('gpt-4o-mini'));
   assert.equal(officialModelIds.includes('query-hidden-capability'), false);
   assert.deepEqual(
-    await modules.queries.getSmokeTestedCallableModelIdsByGroupUncached(
-      'disabled-route'
-    ),
+    await modules.queries.getCallableModelIdsByGroupUncached('disabled-route'),
     []
   );
   assert.deepEqual(
-    await modules.queries.getSmokeTestedCallableModelIdsByGroupUncached(
+    await modules.queries.getCallableModelIdsByGroupUncached(
       'capability-only-group'
     ),
     []

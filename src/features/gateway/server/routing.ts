@@ -1,11 +1,15 @@
 import 'server-only';
 
-import { isListingCallable } from '@/features/api-catalog/server/queries';
 import type { PriceVector } from '@/features/gateway/lib/billing';
+import { ensureCatalogRouteSnapshot } from '@/features/gateway/server/catalog-route-snapshot';
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
-import { modelPriceVersion, modelRoute } from '@/config/db/schema';
+import {
+  catalogGroup,
+  catalogModel,
+  catalogModelListing,
+} from '@/config/db/schema';
 
 export interface ResolvedRoute {
   routeId: string;
@@ -22,42 +26,12 @@ export async function resolveActiveRoute(
   portalGroupId: string,
   portalModelId: string
 ): Promise<ResolvedRoute | null> {
-  const [route] = await db()
-    .select()
-    .from(modelRoute)
-    .where(
-      and(
-        eq(modelRoute.portalGroupId, portalGroupId),
-        eq(modelRoute.portalModelId, portalModelId),
-        eq(modelRoute.status, 'active')
-      )
-    )
-    .limit(1);
-  if (!route) return null;
-
-  const [price] = await db()
-    .select()
-    .from(modelPriceVersion)
-    .where(
-      and(
-        eq(modelPriceVersion.portalGroupId, portalGroupId),
-        eq(modelPriceVersion.portalModelId, portalModelId),
-        eq(modelPriceVersion.status, 'active')
-      )
-    )
-    .limit(1);
-  if (!price) return null;
-
-  if (price.refNewapiGroup !== route.newapiGroup) {
-    console.error('[gateway] route_price_group_mismatch', {
-      portalGroupId,
-      portalModelId,
-      routeGroup: route.newapiGroup,
-      priceRefGroup: price.refNewapiGroup,
-    });
-    return null;
-  }
-  if (!(await isListingCallable(portalGroupId, portalModelId))) return null;
+  const snapshot = await ensureCatalogRouteSnapshot(
+    portalGroupId,
+    portalModelId
+  );
+  if (!snapshot) return null;
+  const { route, price } = snapshot;
 
   return {
     routeId: route.id,
@@ -80,19 +54,18 @@ export async function resolveActiveRoute(
 export async function getCallableModelIds(
   portalGroupId: string
 ): Promise<string[]> {
-  const routes = await db()
-    .select({ portalModelId: modelRoute.portalModelId })
-    .from(modelRoute)
+  const listings = await db()
+    .select({ portalModelId: catalogModel.modelId })
+    .from(catalogModelListing)
+    .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
+    .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
     .where(
-      and(
-        eq(modelRoute.portalGroupId, portalGroupId),
-        eq(modelRoute.status, 'active')
-      )
+      and(eq(catalogGroup.id, portalGroupId), eq(catalogGroup.status, 'active'))
     );
   const modelIds: string[] = [];
-  for (const route of routes) {
-    if (await resolveActiveRoute(portalGroupId, route.portalModelId)) {
-      modelIds.push(route.portalModelId);
+  for (const listing of listings) {
+    if (await resolveActiveRoute(portalGroupId, listing.portalModelId)) {
+      modelIds.push(listing.portalModelId);
     }
   }
   return modelIds.sort();

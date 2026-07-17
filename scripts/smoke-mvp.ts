@@ -4,19 +4,19 @@ import { quotaSpendFromEffectivePrice } from '@/features/api-catalog/lib/pricing
 import type { ListingRow } from '@/features/api-catalog/lib/types';
 import {
   getCallableListingsByGroupUncached,
-  getSmokeTestedCallableModelIdsByGroupUncached,
+  getCallableModelIdsByGroupUncached,
 } from '@/features/api-catalog/server/queries';
 import {
   createNewApiClient,
   DEFAULT_QUOTA_PER_UNIT,
 } from '@/features/newapi-bridge/server/client';
 import {
-  adjustPortalQuota,
   createPortalApiKey,
   disablePortalApiKey,
   getPortalUsage,
   type PortalUsageView,
 } from '@/features/newapi-bridge/server/portal';
+import { applyManualAdjustment } from '@/features/wallet/server/ledger';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
 import { findUserById } from '@/shared/models/user';
@@ -298,9 +298,7 @@ export function buildSmokePriceReconciliationReport({
   beforeUsage?: PortalUsageView;
   afterUsage: PortalUsageView;
 }): SmokePriceReconciliationReport {
-  const beforeLogIds = new Set(
-    (beforeUsage?.logs ?? []).map((log) => log.id)
-  );
+  const beforeLogIds = new Set((beforeUsage?.logs ?? []).map((log) => log.id));
   const newLogs = afterUsage.logs.filter(
     (log) =>
       log.modelId === model &&
@@ -380,8 +378,7 @@ export function buildSmokePriceReconciliationReport({
         : undefined;
 
   const allNewLogsHaveSpend =
-    newLogs.length > 0 &&
-    newLogs.every((log) => Number.isFinite(log.spendUsd));
+    newLogs.length > 0 && newLogs.every((log) => Number.isFinite(log.spendUsd));
   const actualFromUsageLog = allNewLogsHaveSpend
     ? Math.round(
         newLogs.reduce((sum, log) => sum + (log.spendUsd ?? 0), 0) *
@@ -471,9 +468,9 @@ export function parseLaunchModelAssistantText(body: string) {
 
 export function resolveSmokeLaunchModel(
   requestedModel?: string,
-  smokeTestedCallableModelIds: string[] = [],
+  catalogCallableModelIds: string[] = [],
   configuredDefault = APIPOOL_CONFIG.defaultLaunchModel,
-  callableModelIds: string[] = smokeTestedCallableModelIds
+  callableModelIds: string[] = catalogCallableModelIds
 ) {
   if (requestedModel) {
     if (!callableModelIds.includes(requestedModel)) {
@@ -485,15 +482,13 @@ export function resolveSmokeLaunchModel(
     return requestedModel;
   }
 
-  if (smokeTestedCallableModelIds.length === 0) {
-    throw new Error(
-      'No smoke-tested callable model is configured for MVP smoke'
-    );
+  if (catalogCallableModelIds.length === 0) {
+    throw new Error('No callable model is configured for MVP smoke');
   }
 
-  return smokeTestedCallableModelIds.includes(configuredDefault)
+  return catalogCallableModelIds.includes(configuredDefault)
     ? configuredDefault
-    : smokeTestedCallableModelIds[0];
+    : catalogCallableModelIds[0];
 }
 
 export function assertHealthyNewApi(health: {
@@ -625,11 +620,11 @@ export async function main() {
   const callableModelIds = [
     ...new Set(callableListings.map((listing) => listing.modelId)),
   ];
-  const smokeTestedModelIds =
-    await getSmokeTestedCallableModelIdsByGroupUncached(smokeGroupSlug);
+  const catalogCallableModelIds =
+    await getCallableModelIdsByGroupUncached(smokeGroupSlug);
   const model = resolveSmokeLaunchModel(
     getEnv('APIPOOL_SMOKE_MODEL'),
-    smokeTestedModelIds,
+    catalogCallableModelIds,
     APIPOOL_CONFIG.defaultLaunchModel,
     callableModelIds
   );
@@ -700,8 +695,8 @@ export async function main() {
   let plainKey: string | undefined;
 
   try {
-    // The smoke group must align its catalog_group.newapiGroup with an external
-    // New API group that has callable channels and abilities.
+    // 冒烟分组必须通过 catalog_group.newapiGroup 映射到具备可调用渠道和能力的
+    // New API 分组；门户 Key 本身只在 APIPool 保存。
     const created = await createPortalApiKey(user, {
       name: `MVP smoke ${new Date().toISOString()}`,
       groupSlug: smokeGroupSlug,
@@ -711,21 +706,28 @@ export async function main() {
     record('create real API key', !!plainKey, created.binding.keyMasked);
 
     if (!plainKey) {
-      throw new Error('Remote key creation did not return a plaintext key');
+      throw new Error('API key creation did not return a plaintext key');
     }
 
-    const adjusted = await adjustPortalQuota({
-      portalUser: user,
+    const adjusted = await applyManualAdjustment({
+      userId: user.id,
       operatorUserId,
-      amountUsd,
+      signedAmountMicroUsd: amountUsd * 1_000_000,
       reason: 'MVP smoke test quota adjustment',
+      idempotencyKey: `mvp-smoke:${user.id}:${keyId}`,
+      audit: {
+        action: 'wallet.adjust',
+        targetType: 'wallet_account',
+        targetId: user.id,
+        afterJson: { amountUsd, smokeKeyId: keyId },
+      },
     });
     record(
       'manual quota adjustment',
-      adjusted.status === 'applied',
-      adjusted.status
+      adjusted.balanceAfterMicroUsd > 0,
+      adjusted.alreadyApplied ? 'already applied' : 'applied'
     );
-    if (adjusted.status !== 'applied') {
+    if (adjusted.balanceAfterMicroUsd <= 0) {
       throw new Error('Quota adjustment was not applied');
     }
 

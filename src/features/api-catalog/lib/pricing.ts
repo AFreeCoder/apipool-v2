@@ -289,37 +289,37 @@ export function resolveEffectiveCatalogPrice(
 
   if (policy === 'inherit_group') {
     if (!input.groupRatioBps) return hidden();
-    effectiveInput = scaleMicroUsd(
+    effectiveInput = scaleMicroUsdByBps(
       input.baseInputMicroUsd,
       input.groupRatioBps
     );
-    effectiveOutput = scaleMicroUsd(
+    effectiveOutput = scaleMicroUsdByBps(
       input.baseOutputMicroUsd,
       input.groupRatioBps
     );
-    effectiveImageInput = scaleMicroUsd(
+    effectiveImageInput = scaleMicroUsdByBps(
       input.baseImageInputMicroUsd,
       input.groupRatioBps
     );
-    effectiveImageOutput = scaleMicroUsd(
+    effectiveImageOutput = scaleMicroUsdByBps(
       input.baseImageOutputMicroUsd,
       input.groupRatioBps
     );
   } else if (policy === 'listing_multiplier') {
     if (!input.discountRateBps) return hidden();
-    effectiveInput = scaleMicroUsd(
+    effectiveInput = scaleMicroUsdByBps(
       input.baseInputMicroUsd,
       input.discountRateBps
     );
-    effectiveOutput = scaleMicroUsd(
+    effectiveOutput = scaleMicroUsdByBps(
       input.baseOutputMicroUsd,
       input.discountRateBps
     );
-    effectiveImageInput = scaleMicroUsd(
+    effectiveImageInput = scaleMicroUsdByBps(
       input.baseImageInputMicroUsd,
       input.discountRateBps
     );
-    effectiveImageOutput = scaleMicroUsd(
+    effectiveImageOutput = scaleMicroUsdByBps(
       input.baseImageOutputMicroUsd,
       input.discountRateBps
     );
@@ -400,9 +400,13 @@ function numberToDecimalInput(value: number) {
   return String(value);
 }
 
-function scaleMicroUsd(value: number | null | undefined, bps: number) {
+export function scaleMicroUsdByBps(
+  value: number | null | undefined,
+  bps: number
+) {
   if (value === null || value === undefined) return null;
-  return Math.round((value * bps) / 10_000);
+  const numerator = BigInt(value) * BigInt(bps);
+  return Number((numerator + BigInt(9_999)) / BigInt(10_000));
 }
 
 function computeEffectiveDiscountBps(

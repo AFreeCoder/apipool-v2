@@ -1,5 +1,5 @@
-import { createServer, type IncomingHttpHeaders } from 'node:http';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { createServer, type IncomingHttpHeaders } from 'node:http';
 import { join } from 'node:path';
 import { createClient } from '@libsql/client';
 
@@ -268,39 +268,53 @@ export async function seedGatewayFixture(
   const newapiGroup = options.newapiGroup ?? 'official';
   const runtimeKey = options.runtimeKey ?? `sk-upstream-${suffix}`;
 
-  await modules.db().insert(modules.schema.user).values({
-    id: userId,
-    name: suffix,
-    email: options.email ?? `${suffix}@gateway-integration.test`,
-  });
-  await modules.db().insert(modules.schema.walletAccount).values({
-    userId,
-    balanceMicroUsd: options.balanceMicroUsd ?? 10_000_000,
-    riskLimitOverride: options.riskLimit,
-  });
+  await modules
+    .db()
+    .insert(modules.schema.user)
+    .values({
+      id: userId,
+      name: suffix,
+      email: options.email ?? `${suffix}@gateway-integration.test`,
+    });
+  await modules
+    .db()
+    .insert(modules.schema.walletAccount)
+    .values({
+      userId,
+      balanceMicroUsd: options.balanceMicroUsd ?? 10_000_000,
+      riskLimitOverride: options.riskLimit,
+    });
   await modules.db().insert(modules.schema.catalogGroup).values({
     id: groupId,
     slug: groupId,
     name: groupId,
     newapiGroup,
+    newapiGroupRatioBps: 10_000,
+    pricingSyncStatus: 'synced',
   });
-  await modules.db().insert(modules.schema.portalApiKey).values({
-    id: `integration-key-${suffix}`,
-    userId,
-    groupId,
-    keyHash: modules.auth.hashPortalKey(plainKey),
-    keyPrefix: `sk-ap-…${plainKey.slice(-4)}`,
-    name: '默认 Key',
-  });
-  await modules.db().insert(modules.schema.newApiUserBinding).values({
-    id: `integration-binding-${suffix}`,
-    portalUserId: userId,
-    newapiUserId: `integration-remote-user-${suffix}`,
-    status: options.bindingStatus ?? 'active',
-    newapiAccessTokenEnc: modules.crypto.encryptCredential(
-      `integration-access-${suffix}`
-    ),
-  });
+  await modules
+    .db()
+    .insert(modules.schema.portalApiKey)
+    .values({
+      id: `integration-key-${suffix}`,
+      userId,
+      groupId,
+      keyHash: modules.auth.hashPortalKey(plainKey),
+      keyPrefix: `sk-ap-…${plainKey.slice(-4)}`,
+      name: '默认 Key',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.newApiUserBinding)
+    .values({
+      id: `integration-binding-${suffix}`,
+      portalUserId: userId,
+      newapiUserId: `integration-remote-user-${suffix}`,
+      status: options.bindingStatus ?? 'active',
+      newapiAccessTokenEnc: modules.crypto.encryptCredential(
+        `integration-access-${suffix}`
+      ),
+    });
   await modules.db().insert(modules.schema.catalogModel).values({
     id: modelPk,
     modelId,
@@ -308,58 +322,88 @@ export async function seedGatewayFixture(
     vendorId: 'integration-vendor',
     category: 'integration-category',
   });
-  await modules.db().insert(modules.schema.catalogModelCapability).values({
-    id: `integration-model-capability-${suffix}`,
-    modelId: modelPk,
-    capabilityId: 'integration-capability',
-  });
-  await modules.db().insert(modules.schema.catalogModelListing).values({
-    id: `integration-listing-${suffix}`,
-    modelId: modelPk,
-    groupId,
-    statusId: 'integration-callable',
-    inputMicroUsd: 1_000_000,
-    outputMicroUsd: 2_000_000,
-  });
-  await modules.db().insert(modules.schema.modelRoute).values({
-    id: `integration-route-${suffix}`,
-    portalGroupId: groupId,
-    portalModelId: modelId,
-    newapiGroup,
-    newapiModelId: modelId,
-    version: 1,
-    publishedBy: 'integration-test',
-  });
-  await modules.db().insert(modules.schema.modelPriceVersion).values({
-    id: `integration-price-${suffix}`,
-    portalGroupId: groupId,
-    portalModelId: modelId,
-    version: 1,
-    inputMicroUsdPerM: options.price?.input ?? 1_000_000,
-    cachedInputMicroUsdPerM: options.price?.cached ?? 500_000,
-    cacheWrite5mMicroUsdPerM: options.price?.write5m ?? 1_250_000,
-    cacheWrite1hMicroUsdPerM: options.price?.write1h ?? 2_000_000,
-    outputMicroUsdPerM: options.price?.output ?? 2_000_000,
-    refNewapiGroup: newapiGroup,
-    publishedBy: 'integration-test',
-  });
-  await modules.db().insert(modules.schema.runtimeCredential).values({
-    id: `integration-credential-${suffix}`,
-    portalUserId: userId,
-    newapiGroup,
-    newapiUserId: `integration-remote-user-${suffix}`,
-    remoteName: modules.credentials.buildRuntimeCredentialName(
-      userId,
-      newapiGroup
-    ),
-    newapiTokenId: `integration-token-${suffix}`,
-    tokenEnc:
-      (options.credentialStatus ?? 'active') === 'active'
-        ? modules.crypto.encryptCredential(runtimeKey)
-        : null,
-    keyMasked: `sk-…${runtimeKey.slice(-4)}`,
-    status: options.credentialStatus ?? 'active',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelCapability)
+    .values({
+      id: `integration-model-capability-${suffix}`,
+      modelId: modelPk,
+      capabilityId: 'integration-capability',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelListing)
+    .values({
+      id: `integration-listing-${suffix}`,
+      modelId: modelPk,
+      groupId,
+      statusId: 'integration-callable',
+      inputMicroUsd: 1_000_000,
+      outputMicroUsd: 2_000_000,
+      priceDriftStatus: 'matched',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPrice)
+    .values({
+      id: `integration-model-price-${suffix}`,
+      modelId: modelPk,
+      baseInputMicroUsd: options.price?.input ?? 1_000_000,
+      baseCachedInputMicroUsd: options.price?.cached ?? 500_000,
+      baseCacheWrite5mMicroUsd: options.price?.write5m ?? 1_250_000,
+      baseCacheWrite1hMicroUsd: options.price?.write1h ?? 2_000_000,
+      baseOutputMicroUsd: options.price?.output ?? 2_000_000,
+      syncStatus: 'synced',
+      driftStatus: 'matched',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.modelRoute)
+    .values({
+      id: `integration-route-${suffix}`,
+      portalGroupId: groupId,
+      portalModelId: modelId,
+      newapiGroup,
+      newapiModelId: modelId,
+      version: 1,
+      publishedBy: 'integration-test',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id: `integration-price-${suffix}`,
+      portalGroupId: groupId,
+      portalModelId: modelId,
+      version: 1,
+      inputMicroUsdPerM: options.price?.input ?? 1_000_000,
+      cachedInputMicroUsdPerM: options.price?.cached ?? 500_000,
+      cacheWrite5mMicroUsdPerM: options.price?.write5m ?? 1_250_000,
+      cacheWrite1hMicroUsdPerM: options.price?.write1h ?? 2_000_000,
+      outputMicroUsdPerM: options.price?.output ?? 2_000_000,
+      refNewapiGroup: newapiGroup,
+      publishedBy: 'integration-test',
+    });
+  await modules
+    .db()
+    .insert(modules.schema.runtimeCredential)
+    .values({
+      id: `integration-credential-${suffix}`,
+      portalUserId: userId,
+      newapiGroup,
+      newapiUserId: `integration-remote-user-${suffix}`,
+      remoteName: modules.credentials.buildRuntimeCredentialName(
+        userId,
+        newapiGroup
+      ),
+      newapiTokenId: `integration-token-${suffix}`,
+      tokenEnc:
+        (options.credentialStatus ?? 'active') === 'active'
+          ? modules.crypto.encryptCredential(runtimeKey)
+          : null,
+      keyMasked: `sk-…${runtimeKey.slice(-4)}`,
+      status: options.credentialStatus ?? 'active',
+    });
 
   return {
     credentialId: `integration-credential-${suffix}`,

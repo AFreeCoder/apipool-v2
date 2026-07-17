@@ -9,19 +9,19 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, inArray } from 'drizzle-orm';
 
+import { db } from '@/core/db';
+import { envConfigs } from '@/config';
 import type {
   catalogCapability as catalogCapabilityTable,
   catalogCategory as catalogCategoryTable,
   catalogGroup as catalogGroupTable,
-  catalogModel as catalogModelTable,
   catalogModelCapability as catalogModelCapabilityTable,
-  catalogModelPrice as catalogModelPriceTable,
   catalogModelListing as catalogModelListingTable,
+  catalogModelPrice as catalogModelPriceTable,
+  catalogModel as catalogModelTable,
   catalogStatus as catalogStatusTable,
   catalogVendor as catalogVendorTable,
 } from '@/config/db/schema';
-import { db } from '@/core/db';
-import { envConfigs } from '@/config';
 import { getUuid } from '@/shared/lib/hash';
 
 type CatalogSchemaTables = {
@@ -120,7 +120,6 @@ const listings = [
     statusSlug: 'available',
     inputMicroUsd: 150000,
     outputMicroUsd: 600000,
-    smokeTested: true,
     sortOrder: 10,
   },
 ];
@@ -296,10 +295,7 @@ export async function initCatalog() {
       .update(catalogGroup)
       .set({ newapiGroup: 'official' })
       .where(
-        and(
-          eq(catalogGroup.slug, 'official'),
-          eq(catalogGroup.newapiGroup, '')
-        )
+        and(eq(catalogGroup.slug, 'official'), eq(catalogGroup.newapiGroup, ''))
       );
 
     const groupBySlug = indexBy<CatalogGroupRow, 'slug'>(
@@ -390,7 +386,6 @@ export async function initCatalog() {
           statusId: requireRow(statusBySlug, listing.statusSlug, 'status').id,
           inputMicroUsd: listing.inputMicroUsd,
           outputMicroUsd: listing.outputMicroUsd,
-          smokeTested: listing.smokeTested,
           sortOrder: listing.sortOrder,
         }))
       )

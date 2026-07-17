@@ -116,12 +116,13 @@
       }
     },
     "balance": {
-      "title": "Balance and Quota",
-      "description": "Read-only APIPool balance snapshot for this user.",
+      "title": "APIPool Wallet",
+      "description": "The local wallet is the balance source of truth for gateway admission and billing.",
       "fields": {
         "balance": "Balance",
         "quota_remaining": "Quota Remaining",
-        "status": "Sync Status"
+        "status": "Sync Status",
+        "wallet_status": "Wallet Status"
       }
     },
     "usage": {
@@ -170,6 +171,7 @@
         "operator": "Operator",
         "source": "Source",
         "order_no": "Order",
+        "balance_after": "Balance After",
         "actions": "Actions"
       },
       "resolve": {
@@ -215,7 +217,14 @@
       "request": {
         "success": "Success",
         "failed": "Failed",
-        "error": "Error"
+        "error": "Error",
+        "settled": "Settled",
+        "billing": "Billing",
+        "failed_unbilled": "Failed, unbilled"
+      },
+      "wallet": {
+        "active": "Active",
+        "frozen": "Frozen"
       },
       "binding": {
         "pending": "Pending",
@@ -228,7 +237,8 @@
       },
       "ledger_source": {
         "manual_adjustment": "Manual adjustment",
-        "recharge": "Top-up"
+        "recharge": "Top-up",
+        "request_charge": "Request charge"
       }
     }
   },

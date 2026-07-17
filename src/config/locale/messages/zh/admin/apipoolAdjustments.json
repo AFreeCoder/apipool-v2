@@ -37,7 +37,7 @@
       "lookupFailed": "查询失败",
       "adjustmentFailed": "调整失败",
       "ledgerStatus": "账本记录 {id} 当前状态为 {status}。",
-      "failureReason": "原因：{reason}",
+      "alreadyApplied": "该请求此前已入账，本次未重复修改余额。",
       "resolvedFromLink": "调整对象：{user}"
     },
     "links": {

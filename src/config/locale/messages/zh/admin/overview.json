@@ -6,13 +6,13 @@
   },
   "viewAction": "查看",
   "cards": {
-    "reconciliation": {
-      "title": "待对账",
-      "description": "远端结果无法确认的账本记录。处理完再做任何额度变更。"
+    "negativeWallets": {
+      "title": "透支钱包",
+      "description": "余额低于零的钱包，请核对请求结算并通过 APIPool 调额入口处理。"
     },
-    "pendingAdjustments": {
-      "title": "未结清调额",
-      "description": "仍在结算中的人工调额。只要存在，新的调额都会被拦截。"
+    "frozenWallets": {
+      "title": "冻结钱包",
+      "description": "当前已冻结的钱包，请核对冻结原因和恢复条件。"
     },
     "syncIssues": {
       "title": "绑定同步异常",

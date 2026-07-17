@@ -177,7 +177,7 @@ test('3 模型级路由：两模型按 newapiGroup 使用不同运行 Key', asyn
   );
 });
 
-test('4 重映射发布 v2 后新请求锁 v2，旧账本仍按 v1 价格', async () => {
+test('4 目录价格变化自动生成 v2，新请求锁 v2，旧账本仍按 v1 价格', async () => {
   const fixture = await seedGatewayFixture(modules, 'route-v2', {
     price: { input: 1_000_000, output: 1_000_000 },
   });
@@ -203,43 +203,27 @@ test('4 重映射发布 v2 后新请求锁 v2，旧账本仍按 v1 价格', asyn
     true
   );
   await admission.captureRequestId('preq-inflight-v1', 'rid-inflight-v1');
-  await modules.db().transaction(async (tx: any) => {
-    await tx
-      .update(modules.schema.modelRoute)
-      .set({ status: 'retired', retiredAt: new Date() })
-      .where(eq(modules.schema.modelRoute.id, `integration-route-route-v2`));
-    await tx
-      .update(modules.schema.modelPriceVersion)
-      .set({ status: 'retired', retiredAt: new Date() })
-      .where(eq(modules.schema.modelPriceVersion.id, fixture.priceVersionId));
-    await tx.insert(modules.schema.modelRoute).values({
-      id: 'integration-route-route-v2-v2',
-      portalGroupId: fixture.groupId,
-      portalModelId: fixture.modelId,
-      newapiGroup: 'official',
-      newapiModelId: fixture.modelId,
-      version: 2,
-      publishedBy: 'integration-test',
-    });
-    await tx.insert(modules.schema.modelPriceVersion).values({
-      id: 'integration-price-route-v2-v2',
-      portalGroupId: fixture.groupId,
-      portalModelId: fixture.modelId,
-      version: 2,
-      inputMicroUsdPerM: 9_000_000,
-      cachedInputMicroUsdPerM: 0,
-      cacheWrite5mMicroUsdPerM: 0,
-      cacheWrite1hMicroUsdPerM: 0,
-      outputMicroUsdPerM: 9_000_000,
-      refNewapiGroup: 'official',
-      publishedBy: 'integration-test',
-    });
-  });
+  await modules
+    .db()
+    .update(modules.schema.catalogModelPrice)
+    .set({ baseInputMicroUsd: 9_000_000, baseOutputMicroUsd: 9_000_000 })
+    .where(
+      eq(
+        modules.schema.catalogModelPrice.modelId,
+        `integration-model-pk-route-v2`
+      )
+    );
   const current = await invoke(fixture);
   await consumeAndWait(current, fixture.userId);
   const rows = await ledgers(fixture.userId);
   assert.equal(rows[0].routeVersion, 2);
-  assert.equal(rows[0].priceVersionId, 'integration-price-route-v2-v2');
+  assert.notEqual(rows[0].priceVersionId, fixture.priceVersionId);
+  const [currentPrice] = await modules
+    .db()
+    .select()
+    .from(modules.schema.modelPriceVersion)
+    .where(eq(modules.schema.modelPriceVersion.id, rows[0].priceVersionId));
+  assert.equal(currentPrice.inputMicroUsdPerM, 9_000_000);
   assert.equal(
     await modules.settlement.settleByLedgerId('preq-inflight-v1', {
       buckets: {

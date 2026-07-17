@@ -15,8 +15,6 @@ import {
   catalogModelPrice,
   catalogStatus,
   catalogVendor,
-  modelPriceVersion,
-  modelRoute,
 } from '@/config/db/schema';
 
 import type { FilterDimensions, ListingRow } from '../lib/types';
@@ -51,6 +49,8 @@ type ListingBaseRow = {
   discountNote: string | null;
   description: string | null;
   groupRatioBps: number | null;
+  groupNewapiGroup: string;
+  groupPricingSyncStatus: string;
   pricePolicy: string;
   overrideInputMicroUsd: number | null;
   overrideOutputMicroUsd: number | null;
@@ -60,6 +60,11 @@ type ListingBaseRow = {
   priceDriftStatus: string;
   baseInputMicroUsd: number | null;
   baseOutputMicroUsd: number | null;
+  baseCachedInputMicroUsd: number | null;
+  baseCacheWrite5mMicroUsd: number | null;
+  baseCacheWrite1hMicroUsd: number | null;
+  basePriceSyncStatus: string | null;
+  basePriceReviewedAt: Date | null;
   baseImageInputMicroUsd: number | null;
   baseImageOutputMicroUsd: number | null;
   statusSlug: string;
@@ -184,6 +189,8 @@ async function queryListingRows({
       discountNote: catalogModelListing.discountNote,
       description: catalogModelListing.description,
       groupRatioBps: catalogGroup.newapiGroupRatioBps,
+      groupNewapiGroup: catalogGroup.newapiGroup,
+      groupPricingSyncStatus: catalogGroup.pricingSyncStatus,
       pricePolicy: catalogModelListing.pricePolicy,
       overrideInputMicroUsd: catalogModelListing.overrideInputMicroUsd,
       overrideOutputMicroUsd: catalogModelListing.overrideOutputMicroUsd,
@@ -195,6 +202,11 @@ async function queryListingRows({
       priceDriftStatus: catalogModelListing.priceDriftStatus,
       baseInputMicroUsd: catalogModelPrice.baseInputMicroUsd,
       baseOutputMicroUsd: catalogModelPrice.baseOutputMicroUsd,
+      baseCachedInputMicroUsd: catalogModelPrice.baseCachedInputMicroUsd,
+      baseCacheWrite5mMicroUsd: catalogModelPrice.baseCacheWrite5mMicroUsd,
+      baseCacheWrite1hMicroUsd: catalogModelPrice.baseCacheWrite1hMicroUsd,
+      basePriceSyncStatus: catalogModelPrice.syncStatus,
+      basePriceReviewedAt: catalogModelPrice.reviewedAt,
       baseImageInputMicroUsd: catalogModelPrice.baseImageInputMicroUsd,
       baseImageOutputMicroUsd: catalogModelPrice.baseImageOutputMicroUsd,
       statusSlug: catalogStatus.slug,
@@ -215,63 +227,25 @@ async function queryListingRows({
     .orderBy(asc(catalogModelListing.sortOrder));
 }
 
-function routePriceKey(portalGroupId: string, portalModelId: string) {
-  return `${portalGroupId}\u0000${portalModelId}`;
-}
-
-async function getActiveRoutePriceKeys(
-  listings: Pick<ListingBaseRow, 'groupId' | 'modelId'>[]
-): Promise<Set<string>> {
-  if (listings.length === 0) return new Set();
-
-  const groupIds = [...new Set(listings.map((listing) => listing.groupId))];
-  const modelIds = [...new Set(listings.map((listing) => listing.modelId))];
-  let rows: { portalGroupId: string; portalModelId: string }[];
-  try {
-    rows = await db()
-      .select({
-        portalGroupId: modelRoute.portalGroupId,
-        portalModelId: modelRoute.portalModelId,
-      })
-      .from(modelRoute)
-      .innerJoin(
-        modelPriceVersion,
-        and(
-          eq(modelPriceVersion.portalGroupId, modelRoute.portalGroupId),
-          eq(modelPriceVersion.portalModelId, modelRoute.portalModelId),
-          eq(modelPriceVersion.status, 'active')
-        )
-      )
-      .where(
-        and(
-          eq(modelRoute.status, 'active'),
-          inArray(modelRoute.portalGroupId, groupIds),
-          inArray(modelRoute.portalModelId, modelIds)
-        )
-      );
-  } catch (error) {
-    // 旧迁移隔离检查会有意运行在路由表出现前的 schema。此时只把 CTA
-    // 关闭（fail-closed）；连接、SQL 等其他错误仍必须向上传播。
-    let cause: unknown = error;
-    for (let depth = 0; depth < 4 && cause; depth += 1) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      if (/no such table: (model_route|model_price_version)/.test(message)) {
-        return new Set();
-      }
-      cause = cause instanceof Error ? cause.cause : undefined;
-    }
-    throw error;
-  }
-
-  return new Set(
-    rows.map((row) =>
-      routePriceKey(row.portalGroupId, row.portalModelId)
-    )
+function isCatalogRouteReady(row: ListingBaseRow) {
+  return (
+    row.isCallable &&
+    row.pricePolicy === 'inherit_group' &&
+    row.priceDriftStatus === 'matched' &&
+    row.groupNewapiGroup.trim().length > 0 &&
+    row.groupPricingSyncStatus === 'synced' &&
+    (row.basePriceSyncStatus === 'synced' ||
+      (row.basePriceSyncStatus === 'manual' &&
+        row.basePriceReviewedAt !== null)) &&
+    typeof row.groupRatioBps === 'number' &&
+    row.groupRatioBps > 0 &&
+    typeof row.baseInputMicroUsd === 'number' &&
+    typeof row.baseOutputMicroUsd === 'number'
   );
 }
 
-// 网关与公开目录复用同一条完整 catalog + active route + active price
-// 判定，避免紧急下线维度漂移。
+// 路由可用性只取决于模型目录中的分组映射、基准价和售卖状态。
+// model_route/model_price_version 是请求审计快照，不再是第二套人工配置。
 export async function isListingCallable(
   portalGroupId: string,
   portalModelId: string
@@ -281,10 +255,7 @@ export async function isListingCallable(
     exactGroupId: portalGroupId,
     exactPortalModelId: portalModelId,
   });
-  const activeRoutePriceKeys = await getActiveRoutePriceKeys(rows);
-  return rows.some((row) =>
-    activeRoutePriceKeys.has(routePriceKey(row.groupId, row.modelId))
-  );
+  return rows.some(isCatalogRouteReady);
 }
 
 async function getCapabilitiesByModelPk(modelPks: string[]) {
@@ -320,10 +291,7 @@ async function getCapabilitiesByModelPk(modelPks: string[]) {
 
 async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
   const modelPks = [...new Set(rows.map((row) => row.modelPk))];
-  const [capabilitiesByModelPk, activeRoutePriceKeys] = await Promise.all([
-    getCapabilitiesByModelPk(modelPks),
-    getActiveRoutePriceKeys(rows),
-  ]);
+  const capabilitiesByModelPk = await getCapabilitiesByModelPk(modelPks);
 
   return rows
     .map((row) => {
@@ -383,9 +351,7 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
         description: row.description ?? undefined,
         statusSlug: row.statusSlug,
         statusName: row.statusName,
-        isCallable:
-          row.isCallable &&
-          activeRoutePriceKeys.has(routePriceKey(row.groupId, row.modelId)),
+        isCallable: isCatalogRouteReady(row) && effective.publicConfirmed,
         effectiveInputMicroUsd: effective.publicConfirmed
           ? (effective.effectiveInputMicroUsd ?? undefined)
           : undefined,
@@ -483,45 +449,11 @@ export async function getCallableListingsByGroupUncached(
   return (await mapListingRows(rows)).filter((listing) => listing.isCallable);
 }
 
-export async function getSmokeTestedCallableModelIdsByGroupUncached(
+export async function getCallableModelIdsByGroupUncached(
   groupSlug: string
 ): Promise<string[]> {
-  const rows = await db()
-    .selectDistinct({
-      modelId: catalogModel.modelId,
-    })
-    .from(catalogModelListing)
-    .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
-    .innerJoin(catalogVendor, eq(catalogModel.vendorId, catalogVendor.id))
-    .innerJoin(catalogCategory, eq(catalogModel.category, catalogCategory.slug))
-    .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
-    .innerJoin(
-      catalogModelCapability,
-      eq(catalogModelCapability.modelId, catalogModel.id)
-    )
-    .innerJoin(
-      catalogCapability,
-      eq(catalogModelCapability.capabilityId, catalogCapability.id)
-    )
-    .innerJoin(
-      catalogStatus,
-      eq(catalogModelListing.statusId, catalogStatus.id)
-    )
-    .where(
-      and(
-        eq(catalogGroup.slug, groupSlug),
-        eq(catalogGroup.status, 'active'),
-        eq(catalogVendor.status, 'active'),
-        eq(catalogCategory.status, 'active'),
-        eq(catalogStatus.status, 'active'),
-        eq(catalogCapability.status, 'active'),
-        eq(catalogStatus.isCallable, true),
-        eq(catalogModelListing.smokeTested, true)
-      )
-    )
-    .orderBy(asc(catalogModelListing.sortOrder));
-
-  return rows.map((row: { modelId: string }) => row.modelId);
+  const listings = await getCallableListingsByGroupUncached(groupSlug);
+  return [...new Set(listings.map((listing) => listing.modelId))];
 }
 
 export async function getGroupsForKeyCreationUncached(): Promise<

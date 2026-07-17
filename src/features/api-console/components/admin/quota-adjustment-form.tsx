@@ -6,7 +6,6 @@ import { Search, Send } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Link } from '@/core/i18n/navigation';
-
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Textarea } from '@/shared/components/ui/textarea';
@@ -106,10 +105,8 @@ export function QuotaAdjustmentForm({
       const parts = [
         t('messages.ledgerStatus', { id: ledger.id, status: ledger.status }),
       ];
-      // 「status failed」本身不说明任何事，真实原因（例如扣减会使余额为负）
-      // 只在审计里，route 已把它一并带回。
-      if (ledger.failureReason) {
-        parts.push(t('messages.failureReason', { reason: ledger.failureReason }));
+      if (ledger.alreadyApplied) {
+        parts.push(t('messages.alreadyApplied'));
       }
       setMessage(parts.join(' '));
       requestDraftRef.current = null;
@@ -205,7 +202,6 @@ export function QuotaAdjustmentForm({
               : t('buttons.applyIncrease')}
         </Button>
         {message && <p className="text-muted-foreground text-sm">{message}</p>}
-        {/* 调完之后没有任何地方能核对结果：详情页才有余额与调额账本。 */}
         {portalUserId.trim() && (
           <Link
             href={`/admin/users/${portalUserId.trim()}/detail`}

@@ -42,6 +42,7 @@ sed -i '' "s|^NEWAPI_ADMIN_TOKEN=.*|NEWAPI_ADMIN_TOKEN=$TOKEN|" .env.deploy
 ## 3. 在 New API 配真实上游渠道
 
 浏览器开 `http://localhost:3001` 用 root 登录 → 渠道 → 新建:
+
 - 类型:OpenAI
 - 名称:apipool-upstream
 - 代理/BaseURL:`https://apipool.dev`
@@ -50,6 +51,7 @@ sed -i '' "s|^NEWAPI_ADMIN_TOKEN=.*|NEWAPI_ADMIN_TOKEN=$TOKEN|" .env.deploy
 - 密钥:你的测试 key
 
 或用 API(`$TOKEN` 为上一步 token)。**注意 New API rc.10 建渠道要 `{"mode":"single","channel":{…}}` 包装**(裸 channel 对象会触发服务端 panic):
+
 ```bash
 # 1) 启用门户 official 对应的 New API 分组
 curl -s -X PUT http://localhost:3001/api/option/ \
@@ -78,7 +80,7 @@ docker compose --env-file .env.deploy logs -f apipool-v2   # 看到 [entrypoint]
 
 ## 5. 走闭环验收
 
-见仓库 spec 第 7 节,或实现计划 Task 9:健康 → 注册绑定 → New API 调额 → 建 Key → curl 真返回 → 禁用 Key 后 401。
+见仓库运行手册：健康检查 → 注册绑定 → APIPool 本地钱包调额 → 建 Key → curl 真返回 → 禁用 Key 后拒绝访问。门户余额不得通过 New API quota 调整。
 
 ## 后验(等有 Stripe 账户)
 

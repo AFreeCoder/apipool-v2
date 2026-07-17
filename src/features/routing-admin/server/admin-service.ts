@@ -1,21 +1,10 @@
 import 'server-only';
 
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNull,
-  sql,
-} from 'drizzle-orm';
+import { runWalletInvariantCheckOnce } from '@/features/gateway/server/reconcile';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { db } from '@/core/db';
 import {
-  catalogGroup,
-  catalogModel,
-  catalogModelListing,
-  catalogModelPrice,
-  modelPriceVersion,
-  modelRoute,
   portalAdminAuditLog,
   reconcileOrphanObservation,
   requestLedger,
@@ -23,8 +12,6 @@ import {
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
-import { db } from '@/core/db';
-import { runWalletInvariantCheckOnce } from '@/features/gateway/server/reconcile';
 import { recordPortalAdminAudit } from '@/shared/models/portal-admin-audit';
 
 function boundedPage(raw: string | null) {
@@ -39,25 +26,6 @@ function affectedRows(result: any) {
     return Number(result[0]?.rowsAffected ?? result[0]?.affectedRows ?? 0);
   }
   return 0;
-}
-
-export async function getRoutingMatrix() {
-  const [groups, models, listings, basePrices, routes, prices] =
-    await Promise.all([
-      db().select().from(catalogGroup).orderBy(catalogGroup.sortOrder),
-      db().select().from(catalogModel).orderBy(catalogModel.modelId),
-      db().select().from(catalogModelListing),
-      db().select().from(catalogModelPrice),
-      db()
-        .select()
-        .from(modelRoute)
-        .where(eq(modelRoute.status, 'active')),
-      db()
-        .select()
-        .from(modelPriceVersion)
-        .where(eq(modelPriceVersion.status, 'active')),
-    ]);
-  return { groups, models, listings, basePrices, routes, prices };
 }
 
 export async function findRequests(url: URL) {

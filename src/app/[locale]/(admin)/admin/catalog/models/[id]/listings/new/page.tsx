@@ -126,12 +126,6 @@ export default async function CatalogModelListingNewPage({
         type: 'textarea',
         title: t('fields.description'),
       },
-      {
-        name: 'smokeTested',
-        type: 'switch',
-        title: t('fields.smokeTested'),
-        tip: t('fields.smokeTestedTip'),
-      },
     ],
     data: {
       groupId: groups[0]?.id ?? '',
@@ -139,7 +133,6 @@ export default async function CatalogModelListingNewPage({
       discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '',
       discountNote: '',
       description: '',
-      smokeTested: 'false',
     },
     submit: {
       button: {
@@ -204,7 +197,6 @@ export default async function CatalogModelListingNewPage({
               (data.get('discountNote') as string | null)?.trim() || null,
             description:
               (data.get('description') as string | null)?.trim() || null,
-            smokeTested: data.get('smokeTested') === 'true',
             featured: false,
             sortOrder: 0,
           } as NewListing;

@@ -101,7 +101,8 @@ test('quota adjustment submits a request idempotency key once per click flow', a
   assert.match(form, /idempotencyKey/);
   assert.match(form, /portal-adjustment:\$\{portalUserId\}/);
   assert.match(route, /idempotencyKey/);
-  assert.match(route, /adjustPortalQuota\([\s\S]*idempotencyKey/);
+  assert.match(route, /applyManualAdjustment\([\s\S]*idempotencyKey/);
+  assert.doesNotMatch(route, /adjustPortalQuota/);
 });
 
 test('RBAC seed includes a narrow APIPool operator role for manual quota work', async () => {

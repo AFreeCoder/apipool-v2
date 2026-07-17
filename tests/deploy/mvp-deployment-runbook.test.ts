@@ -32,7 +32,7 @@ test('MVP deployment runbook preserves live smoke order and rollback order', asy
     'APIPOOL_KEY_CREATION_ENABLED=false',
     '暂停支付',
     '回滚到上一个稳定部署',
-    '不删除已有 New API key',
+    '不删除已有门户 Key',
     '审计日志',
   ];
 

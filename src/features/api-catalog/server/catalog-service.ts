@@ -73,7 +73,6 @@ export type ModelAdminConfigInput = {
     discountRateBps?: number | null;
     discountNote?: string | null;
     description?: string | null;
-    smokeTested?: boolean;
     featured?: boolean;
     sortOrder?: number;
   };
@@ -163,7 +162,9 @@ function ensureNoCatalogReferences(
   label: string,
   references: CatalogReference[]
 ) {
-  const blockingReferences = references.filter((reference) => reference.count > 0);
+  const blockingReferences = references.filter(
+    (reference) => reference.count > 0
+  );
   if (blockingReferences.length > 0) {
     throw new CatalogDeleteBlockedError(label, blockingReferences);
   }
@@ -915,7 +916,6 @@ export async function upsertModelAdminConfig(
       effectivePriceFormula: null,
       effectivePriceSyncedAt: null,
       description: listingInput.description ?? null,
-      smokeTested: listingInput.smokeTested ?? false,
       featured: listingInput.featured ?? false,
       sortOrder: listingInput.sortOrder ?? 0,
     };
@@ -932,11 +932,7 @@ export async function upsertModelAdminConfig(
 
     const existingListing = listingInput.id
       ? await getListingByIdInTx(tx, listingInput.id)
-      : await getListingByModelAndGroupInTx(
-          tx,
-          model.id,
-          listingInput.groupId
-        );
+      : await getListingByModelAndGroupInTx(tx, model.id, listingInput.groupId);
 
     const [listing] = existingListing
       ? await tx

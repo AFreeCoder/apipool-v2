@@ -328,9 +328,8 @@ test('checkout handler rejects invalid custom top-up requests before order or pa
   }
 });
 
-test('checkout refuses subscription pricing items so recharge can never silently skip quota', async () => {
-  // applyApipoolRecharge 对 SUBSCRIPTION 直接跳过（payment.ts）。若将来在
-  // pricing.json 加一个带 interval 的套餐，用户按月扣钱但 quota 一分不加。
+test('checkout refuses subscription pricing items for one-time wallet top-ups', async () => {
+  // 一次性钱包充值不能混入按月扣款的订阅套餐。
   const { deps, createdOrders, createPaymentCalls } = createCheckoutDeps();
 
   const response = await createTopUpCheckoutResponse({

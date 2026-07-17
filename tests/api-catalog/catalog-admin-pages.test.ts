@@ -53,7 +53,8 @@ const entities = [
 function pagePath(route: string, page: 'list' | 'new' | 'edit' | 'delete') {
   if (page === 'list') return join(catalogRoot, route, 'page.tsx');
   if (page === 'new') return join(catalogRoot, route, 'new/page.tsx');
-  if (page === 'delete') return join(catalogRoot, route, '[id]/delete/page.tsx');
+  if (page === 'delete')
+    return join(catalogRoot, route, '[id]/delete/page.tsx');
   return join(catalogRoot, route, '[id]/edit/page.tsx');
 }
 
@@ -119,10 +120,7 @@ test('catalog dictionary admin pages exist with read/write permissions and i18n'
     const listPage = await readFile(pagePath(entity.route, 'list'), 'utf8');
     const newPage = await readFile(pagePath(entity.route, 'new'), 'utf8');
     const editPage = await readFile(pagePath(entity.route, 'edit'), 'utf8');
-    const deletePage = await readFile(
-      pagePath(entity.route, 'delete'),
-      'utf8'
-    );
+    const deletePage = await readFile(pagePath(entity.route, 'delete'), 'utf8');
 
     assert.match(listPage, /PERMISSIONS\.CATALOG_READ/);
     assert.match(newPage, /PERMISSIONS\.CATALOG_WRITE/);
@@ -140,10 +138,7 @@ test('catalog dictionary pages use TableCard/FormCard and catalog service handle
     const listPage = await readFile(pagePath(entity.route, 'list'), 'utf8');
     const newPage = await readFile(pagePath(entity.route, 'new'), 'utf8');
     const editPage = await readFile(pagePath(entity.route, 'edit'), 'utf8');
-    const deletePage = await readFile(
-      pagePath(entity.route, 'delete'),
-      'utf8'
-    );
+    const deletePage = await readFile(pagePath(entity.route, 'delete'), 'utf8');
 
     assert.match(listPage, /<TableCard[\s\S]*buttons=/);
     assert.match(listPage, callPattern(entity.list));
@@ -310,12 +305,24 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   assert.match(deletePage, /revalidateCatalog\s*\(/);
   assert.match(deletePage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
 
-  assert.match(pricingControls, /\/api\/apipool\/admin\/catalog\/pricing\/sync/);
-  assert.match(pricingControls, /\/api\/apipool\/admin\/catalog\/pricing\/drift/);
-  assert.match(pricingControls, /useState<['"]sync['"] \| ['"]drift['"] \| null>/);
+  assert.match(
+    pricingControls,
+    /\/api\/apipool\/admin\/catalog\/pricing\/sync/
+  );
+  assert.match(
+    pricingControls,
+    /\/api\/apipool\/admin\/catalog\/pricing\/drift/
+  );
+  assert.match(
+    pricingControls,
+    /useState<['"]sync['"] \| ['"]drift['"] \| null>/
+  );
   assert.match(pricingControls, /labels\.success/);
   assert.match(pricingControls, /labels\.error/);
-  assert.doesNotMatch(pricingControls, /NEWAPI|NEW_API|admin-token|Bearer|internal|newapiGroup/);
+  assert.doesNotMatch(
+    pricingControls,
+    /NEWAPI|NEW_API|admin-token|Bearer|internal|newapiGroup/
+  );
 
   assert.match(capabilitiesPage, /<FormCard/);
   assert.match(capabilitiesPage, callPattern('getModelById'));
@@ -351,7 +358,7 @@ test('catalog pricing sync and drift admin routes require permissions and call p
   assert.doesNotMatch(driftRoute, /newapiGroup/);
 });
 
-test('catalog listing child pages expose per-model group discount CRUD with the smoke toggle', async () => {
+test('catalog listing child pages expose per-model group discount CRUD without a manual smoke toggle', async () => {
   const listPage = await readFile(listingPagePath('list'), 'utf8');
   const newPage = await readFile(listingPagePath('new'), 'utf8');
   const editPage = await readFile(listingPagePath('edit'), 'utf8');
@@ -411,9 +418,8 @@ test('catalog listing child pages expose per-model group discount CRUD with the 
     assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
     assert.match(source, typedFieldPattern('description', 'textarea'));
-    // smokeTested 是运维标记：没有入口时新模型永远进不了部署冒烟候选池
-    assert.match(source, switchFieldPattern('smokeTested'));
-    assert.match(source, /t\(['"]fields\.smokeTestedTip['"]\)/);
+    assert.doesNotMatch(source, switchFieldPattern('smokeTested'));
+    assert.doesNotMatch(source, /fields\.smokeTested/);
     for (const hiddenField of [
       'inputMicroUsd',
       'outputMicroUsd',
@@ -521,10 +527,7 @@ test('catalog sidebar exposes every model catalog route in both locales', async 
   for (const catalog of [enCatalog, zhCatalog]) {
     const leaves = collectCatalogLeaves(catalog.items);
     // Every catalog admin route is present exactly once...
-    assert.deepEqual(
-      leaves.map((item) => item.url).sort(),
-      expectedUrls
-    );
+    assert.deepEqual(leaves.map((item) => item.url).sort(), expectedUrls);
     // ...and each carries an icon.
     assert.ok(leaves.every((item) => item.icon));
   }
@@ -565,10 +568,7 @@ test('catalog model candidate form surfaces empty and error states', async () =>
   );
 
   assert.match(source, /searchError/);
-  assert.match(
-    source,
-    /new URLSearchParams\(\{\s*vendorId,\s*keyword\s*\}\)/
-  );
+  assert.match(source, /new URLSearchParams\(\{\s*vendorId,\s*keyword\s*\}\)/);
   assert.match(source, /messages\.noCandidates/);
   assert.match(source, /setSearchError\s*\(/);
 });
@@ -609,10 +609,10 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
   assert.match(zh.models.delete.description, /分组折扣/);
   assert.equal(en.fields.groupSlug, 'Group ID');
   assert.equal(zh.fields.groupSlug, '分组 ID');
-  assert.ok(en.fields.smokeTested);
-  assert.ok(zh.fields.smokeTested);
-  assert.ok(en.fields.smokeTestedTip);
-  assert.ok(zh.fields.smokeTestedTip);
+  assert.equal(en.fields.smokeTested, undefined);
+  assert.equal(zh.fields.smokeTested, undefined);
+  assert.equal(en.fields.smokeTestedTip, undefined);
+  assert.equal(zh.fields.smokeTestedTip, undefined);
   assert.ok(en.listings.delete);
   assert.ok(zh.listings.delete);
   assert.ok(en.errors.missingBasePrice);
@@ -625,22 +625,16 @@ test('catalog admin locale files exist, parse, and share nested keys', async () 
   assert.deepEqual(collectKeyPaths(en).sort(), collectKeyPaths(zh).sort());
 });
 
-test('listing forms expose the smoke-tested switch so new models can enter the smoke candidate pool', async () => {
+test('listing forms omit the manual smoke-tested switch', async () => {
   const { readFile } = await import('node:fs/promises');
 
-  // ede2dc4 把开关从两个表单都删掉且无替代入口，新模型的 smoke_tested 永远是
-  // false → getSmokeTestedCallableModelIdsByGroup 返回空 → 部署冒烟直接抛错。
   for (const page of [
     'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx',
     'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/[listingId]/edit/page.tsx',
   ]) {
     const source = await readFile(page, 'utf8');
-    assert.match(source, /name: 'smokeTested'/, `${page} needs the switch`);
-    assert.match(
-      source,
-      /smokeTested: data\.get\('smokeTested'\) === 'true'/,
-      `${page} must read the switch instead of hardcoding`
-    );
+    assert.doesNotMatch(source, /name: 'smokeTested'/);
+    assert.doesNotMatch(source, /data\.get\('smokeTested'\)/);
     assert.doesNotMatch(source, /smokeTested: false,/);
   }
 });
@@ -663,7 +657,7 @@ test('creating a duplicate listing surfaces a translated message, not a raw cons
       )
     );
     assert.ok(messages.errors?.duplicateListing, `${locale} duplicateListing`);
-    assert.ok(messages.fields?.smokeTested, `${locale} fields.smokeTested`);
+    assert.equal(messages.fields?.smokeTested, undefined);
   }
 });
 

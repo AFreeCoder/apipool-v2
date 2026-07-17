@@ -18,7 +18,6 @@ export type ApiModel = {
   longDescription: string;
   contextWindow: number;
   featured: boolean;
-  smokeTested: boolean;
   status: ApiModelStatus;
   sortOrder: number;
   channelTier?: ApiModelChannelTier; // 缺省视为 official
@@ -153,7 +152,6 @@ export const publicModels: ApiModel[] = [
       'GPT-4o mini is the APIPool MVP launch model for validating key creation, quota, usage, and disable flows.',
     contextWindow: 128000,
     featured: true,
-    smokeTested: true,
     status: 'available',
     sortOrder: 10,
     pricing: {
@@ -162,7 +160,7 @@ export const publicModels: ApiModel[] = [
       officialInputPerMillionUsd: 0.15,
       officialOutputPerMillionUsd: 0.6,
       source: 'manual',
-      note: 'Launch smoke model. Recheck billing multiplier before public traffic.',
+      note: 'Launch model. Recheck billing multiplier before public traffic.',
     },
   },
   {
@@ -178,7 +176,6 @@ export const publicModels: ApiModel[] = [
       'Short-term discounted channel for GPT-4o mini. Same model and API, separate route that may rotate without notice.',
     contextWindow: 128000,
     featured: false,
-    smokeTested: false,
     status: 'coming_soon',
     sortOrder: 11,
     channelTier: 'deal',
@@ -201,10 +198,9 @@ export const publicModels: ApiModel[] = [
     capabilities: ['text', 'vision', 'reasoning'],
     shortDescription: 'General purpose multimodal model.',
     longDescription:
-      'GPT-4o is listed as a candidate model until APIPool supply and smoke calls are confirmed.',
+      'GPT-4o is listed as a candidate model until APIPool supply is confirmed.',
     contextWindow: 128000,
     featured: true,
-    smokeTested: false,
     status: 'coming_soon',
     sortOrder: 20,
     pricing: {
@@ -225,7 +221,6 @@ export const publicModels: ApiModel[] = [
       'GPT-4.1 mini is kept as a candidate until routing is verified.',
     contextWindow: 1047576,
     featured: true,
-    smokeTested: false,
     status: 'coming_soon',
     sortOrder: 30,
     pricing: {
@@ -246,7 +241,6 @@ export const publicModels: ApiModel[] = [
       'Claude Sonnet 4 is a candidate model for APIPool users after supply validation.',
     contextWindow: 200000,
     featured: true,
-    smokeTested: false,
     status: 'coming_soon',
     sortOrder: 40,
     pricing: {
@@ -264,10 +258,9 @@ export const publicModels: ApiModel[] = [
     capabilities: ['text', 'vision', 'coding'],
     shortDescription: 'Balanced Anthropic model for developer workloads.',
     longDescription:
-      'Claude 3.5 Sonnet remains hidden from available inventory until smoke calls pass.',
+      'Claude 3.5 Sonnet remains hidden until its listing becomes available.',
     contextWindow: 200000,
     featured: true,
-    smokeTested: false,
     status: 'coming_soon',
     sortOrder: 50,
     pricing: {
@@ -288,7 +281,6 @@ export const publicModels: ApiModel[] = [
       'Claude Haiku is staged as a coming soon model until route and quota behavior are verified.',
     contextWindow: 200000,
     featured: false,
-    smokeTested: false,
     status: 'coming_soon',
     sortOrder: 60,
     pricing: {
@@ -339,7 +331,7 @@ export function getModelBySlug(slug: string) {
 }
 
 export function isModelCallable(model: ApiModel) {
-  return model.status === 'available' && model.smokeTested;
+  return model.status === 'available';
 }
 
 export function getFeaturedModels(models = publicModels, limit = 6) {
@@ -364,7 +356,7 @@ export function getDefaultCallableModelId(
 
   const fallbackModel = publicModels.find(isModelCallable);
   if (!fallbackModel) {
-    throw new Error('No smoke-tested APIPool launch model is configured');
+    throw new Error('No available APIPool launch model is configured');
   }
 
   return fallbackModel.modelId;

@@ -6,23 +6,21 @@ import {
   formatUsdAmount,
 } from '@/features/api-console/lib/money';
 import {
-  getPortalUserBinding,
-  getPortalUsage,
-  listAdjustmentLedgerByPortalUser,
-  listKeysByPortalUser,
-  toAdminBindingDto,
-  type PortalUsageView,
-} from '@/features/newapi-bridge/server/portal';
-import {
   confirmNewapiUserConflictAction,
   disableNewapiUserBindingAction,
   restoreNewapiUserBindingAction,
   retryNewapiUserBindingAction,
 } from '@/features/newapi-bridge/server/admin-user-binding-actions';
+import {
+  getPortalUserBinding,
+  listPortalApiKeys,
+  toAdminBindingDto,
+} from '@/features/newapi-bridge/server/portal';
+import {
+  getWalletBillingView,
+  getWalletUsageView,
+} from '@/features/wallet/server/usage-view';
 import { getTranslations } from 'next-intl/server';
-
-import { ResolveAdjustmentButton } from '@/features/api-console/components/admin/resolve-adjustment-button';
-import { resolveQuotaAdjustmentAction } from '@/features/newapi-bridge/server/admin-ledger-actions';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { ConfirmActionButton } from '@/shared/blocks/common/confirm-action-button';
@@ -42,29 +40,34 @@ import { findUserById, getUserInfo } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
 import { Crumb } from '@/shared/types/blocks/common';
 
-// 与 portal.ts 的 UNRESOLVED_ADJUSTMENT_STATUSES 对应：这些状态的行会挡住
-// 该用户的后续调额，必须暴露人工结清入口。
-const UNRESOLVED_LEDGER_STATUSES = [
-  'pending',
-  'processing',
-  'reconciliation_required',
-];
-
 type LoadResult<T> = {
   data: T;
   failed: boolean;
 };
 
-function emptyUsageView(): PortalUsageView {
+type WalletUsageView = Awaited<ReturnType<typeof getWalletUsageView>>;
+type WalletBillingView = Awaited<ReturnType<typeof getWalletBillingView>>;
+
+function emptyUsageView(): WalletUsageView {
   return {
     summary: {
+      balanceUsd: 0,
       requestCount: 0,
       inputTokens: 0,
       outputTokens: 0,
+      spendUsd: 0,
       byModel: [],
-      status: 'failed',
+      status: 'ok',
+      syncedAt: new Date(0).toISOString(),
     },
     logs: [],
+  };
+}
+
+function emptyBillingView(): WalletBillingView {
+  return {
+    balance: { balanceUsd: 0, frozen: false },
+    ledger: [],
   };
 }
 
@@ -103,15 +106,6 @@ function formatOptionalBalanceUsd(
 ) {
   if (value === undefined || value === null) return fallback;
   return formatBalanceUsdAmount(value);
-}
-
-function formatOptionalQuotaUnits(
-  value: number | null | undefined,
-  locale: string,
-  fallback: string
-) {
-  if (value === undefined || value === null) return fallback;
-  return new Intl.NumberFormat(localeTag(locale)).format(value);
 }
 
 function formatOptionalLedgerUsd(
@@ -221,30 +215,24 @@ export default async function AdminUserDetailPage({
     notFound();
   }
 
-  const [bindingResult, usageResult, keysResult, ledgerResult] =
+  const [bindingResult, usageResult, keysResult, billingResult] =
     await Promise.all([
       loadOrFallback(async () => {
         const binding = await getPortalUserBinding(targetUser.id);
         return binding ? toAdminBindingDto(binding) : null;
       }, null),
-      loadOrFallback(() => getPortalUsage(targetUser), emptyUsageView()),
-      loadOrFallback(() => listKeysByPortalUser(targetUser.id), []),
       loadOrFallback(
-        () => listAdjustmentLedgerByPortalUser(targetUser.id),
-        []
+        () => getWalletUsageView(targetUser.id, '7d'),
+        emptyUsageView()
+      ),
+      loadOrFallback(() => listPortalApiKeys(targetUser.id), []),
+      loadOrFallback(
+        () => getWalletBillingView(targetUser.id),
+        emptyBillingView()
       ),
     ]);
 
   const emptyValue = t('detail.empty.value');
-  const balanceUnavailable =
-    usageResult.data.summary.status === 'failed' ||
-    usageResult.data.summary.status === 'stale';
-  const usageStatus = translateStatus(
-    t,
-    'detail.status.usage',
-    usageResult.data.summary.status,
-    emptyValue
-  );
 
   const crumbs: Crumb[] = [
     { title: t('detail.crumbs.admin'), url: '/admin' },
@@ -258,11 +246,6 @@ export default async function AdminUserDetailPage({
       title: t('detail.usage.logs.columns.created_at'),
       callback: (item: any) =>
         formatDateTime(item.createdAt, locale, emptyValue),
-    },
-    {
-      name: 'keyMasked',
-      title: t('detail.usage.logs.columns.key'),
-      placeholder: emptyValue,
     },
     {
       name: 'modelId',
@@ -291,9 +274,9 @@ export default async function AdminUserDetailPage({
         formatCount(item.outputTokens, locale, emptyValue),
     },
     {
-      name: 'spendUsd',
+      name: 'chargedUsd',
       title: t('detail.usage.logs.columns.spend'),
-      callback: (item: any) => formatOptionalUsd(item.spendUsd, emptyValue),
+      callback: (item: any) => formatOptionalUsd(item.chargedUsd, emptyValue),
     },
   ];
 
@@ -337,20 +320,6 @@ export default async function AdminUserDetailPage({
     },
   ];
 
-  const resolveLabels = {
-    trigger: t('detail.ledger.resolve.trigger'),
-    title: t('detail.ledger.resolve.title'),
-    description: t('detail.ledger.resolve.description'),
-    changeIdLabel: t('detail.ledger.resolve.changeIdLabel'),
-    noteLabel: t('detail.ledger.resolve.noteLabel'),
-    notePlaceholder: t('detail.ledger.resolve.notePlaceholder'),
-    confirmApplied: t('detail.ledger.resolve.confirmApplied'),
-    markVoid: t('detail.ledger.resolve.markVoid'),
-    cancel: t('detail.ledger.resolve.cancel'),
-    noteRequired: t('detail.ledger.resolve.noteRequired'),
-    failed: t('detail.ledger.resolve.failed'),
-  };
-
   const ledgerColumns = [
     {
       name: 'createdAt',
@@ -359,10 +328,15 @@ export default async function AdminUserDetailPage({
       placeholder: emptyValue,
     },
     {
-      name: 'source',
+      name: 'entryType',
       title: t('detail.ledger.columns.source'),
       callback: (item: any) =>
-        translateStatus(t, 'detail.status.ledger_source', item.source, item.source),
+        translateStatus(
+          t,
+          'detail.status.ledger_source',
+          item.entryType,
+          item.entryType
+        ),
     },
     {
       name: 'orderNo',
@@ -375,81 +349,22 @@ export default async function AdminUserDetailPage({
         ),
     },
     {
-      name: 'amountUsd',
+      name: 'signedAmountUsd',
       title: t('detail.ledger.columns.amount'),
       callback: (item: any) =>
-        formatOptionalLedgerUsd(item.amountUsd, emptyValue),
+        formatOptionalLedgerUsd(item.signedAmountUsd, emptyValue),
     },
     {
-      name: 'status',
-      title: t('detail.ledger.columns.status'),
-      callback: (item: any) => (
-        <Badge variant={statusVariant(item.status)}>
-          {translateStatus(t, 'detail.status.ledger', item.status, emptyValue)}
-        </Badge>
-      ),
+      name: 'balanceAfterUsd',
+      title: t('detail.ledger.columns.balance_after'),
+      callback: (item: any) =>
+        formatOptionalLedgerUsd(item.balanceAfterUsd, emptyValue),
     },
     {
       name: 'reason',
       title: t('detail.ledger.columns.reason'),
       placeholder: emptyValue,
     },
-    {
-      name: 'newapiChangeId',
-      title: t('detail.ledger.columns.newapi_change'),
-      callback: (item: any) => item.newapiChangeId || emptyValue,
-    },
-    {
-      name: 'audit',
-      title: t('detail.ledger.columns.audit'),
-      callback: (item: any) =>
-        item.audit ? (
-          <div className="flex flex-col gap-1">
-            <span>{item.audit.idempotencyKey || item.audit.id}</span>
-            <span className="text-muted-foreground text-xs">
-              {item.audit.errorMessage || item.audit.status}
-            </span>
-          </div>
-        ) : (
-          emptyValue
-        ),
-    },
-    {
-      name: 'operator',
-      title: t('detail.ledger.columns.operator'),
-      callback: (item: any) =>
-        item.operator ? (
-          <div className="flex flex-col gap-1">
-            <span>{item.operator.name || item.operator.email}</span>
-            <span className="text-muted-foreground text-xs">
-              {item.operator.email}
-            </span>
-          </div>
-        ) : (
-          emptyValue
-        ),
-    },
-    // 卡在未结清状态的行会 fail-closed 地挡住该用户的后续调额。
-    // 没有这个入口，解封就只能靠人工改数据库。
-    ...(canAdjustApipoolQuota
-      ? [
-          {
-            name: 'actions',
-            title: t('detail.ledger.columns.actions'),
-            callback: (item: any) =>
-              UNRESOLVED_LEDGER_STATUSES.includes(item.status) ? (
-                <ResolveAdjustmentButton
-                  ledgerId={item.id}
-                  newapiChangeId={item.newapiChangeId}
-                  labels={resolveLabels}
-                  action={resolveQuotaAdjustmentAction}
-                />
-              ) : (
-                emptyValue
-              ),
-          },
-        ]
-      : []),
   ];
 
   return (
@@ -532,79 +447,81 @@ export default async function AdminUserDetailPage({
                   admin means the click is the first sign of the missing
                   permission — and the thrown error is masked in production. */}
               {canWriteUsers ? (
-              <div className="flex flex-wrap gap-2">
-                {bindingResult.data?.status === 'disabled' ? (
-                  // While disabled, retry/disable are both no-ops that only
-                  // error out; restore is the sole meaningful action.
-                  <ConfirmActionButton
-                    variant="default"
-                    label={t('detail.binding.actions.restore')}
-                    title={t('detail.binding.restore_confirm.title')}
-                    description={t(
-                      'detail.binding.restore_confirm.description'
-                    )}
-                    confirmLabel={t('detail.binding.restore_confirm.confirm')}
-                    cancelLabel={t('detail.binding.restore_confirm.cancel')}
-                    errorMessage={t('detail.binding.restore_confirm.error')}
-                    action={async () => {
-                      'use server';
-                      await restoreNewapiUserBindingAction({
-                        portalUserId: targetUser.id,
-                      });
-                    }}
-                  />
-                ) : (
-                  <>
-                    <form
+                <div className="flex flex-wrap gap-2">
+                  {bindingResult.data?.status === 'disabled' ? (
+                    // While disabled, retry/disable are both no-ops that only
+                    // error out; restore is the sole meaningful action.
+                    <ConfirmActionButton
+                      variant="default"
+                      label={t('detail.binding.actions.restore')}
+                      title={t('detail.binding.restore_confirm.title')}
+                      description={t(
+                        'detail.binding.restore_confirm.description'
+                      )}
+                      confirmLabel={t('detail.binding.restore_confirm.confirm')}
+                      cancelLabel={t('detail.binding.restore_confirm.cancel')}
+                      errorMessage={t('detail.binding.restore_confirm.error')}
                       action={async () => {
                         'use server';
-                        await retryNewapiUserBindingAction({
+                        await restoreNewapiUserBindingAction({
                           portalUserId: targetUser.id,
                         });
                       }}
-                    >
-                      <Button type="submit" variant="outline" size="sm">
-                        {t('detail.binding.actions.retry')}
-                      </Button>
-                    </form>
-                    {bindingResult.data?.status ===
-                      'conflict_requires_review' &&
-                    bindingResult.data.conflictNewapiUserId ? (
+                    />
+                  ) : (
+                    <>
                       <form
                         action={async () => {
                           'use server';
-                          await confirmNewapiUserConflictAction({
+                          await retryNewapiUserBindingAction({
                             portalUserId: targetUser.id,
-                            newapiUserId:
-                              bindingResult.data!.conflictNewapiUserId!,
                           });
                         }}
                       >
                         <Button type="submit" variant="outline" size="sm">
-                          {t('detail.binding.actions.confirm_conflict')}
+                          {t('detail.binding.actions.retry')}
                         </Button>
                       </form>
-                    ) : null}
-                    <ConfirmActionButton
-                      label={t('detail.binding.actions.disable')}
-                      title={t('detail.binding.disable_confirm.title')}
-                      description={t(
-                        'detail.binding.disable_confirm.description'
-                      )}
-                      confirmLabel={t('detail.binding.disable_confirm.confirm')}
-                      cancelLabel={t('detail.binding.disable_confirm.cancel')}
-                      errorMessage={t('detail.binding.disable_confirm.error')}
-                      action={async () => {
-                        'use server';
-                        await disableNewapiUserBindingAction({
-                          portalUserId: targetUser.id,
-                          reason: 'admin detail action',
-                        });
-                      }}
-                    />
-                  </>
-                )}
-              </div>
+                      {bindingResult.data?.status ===
+                        'conflict_requires_review' &&
+                      bindingResult.data.conflictNewapiUserId ? (
+                        <form
+                          action={async () => {
+                            'use server';
+                            await confirmNewapiUserConflictAction({
+                              portalUserId: targetUser.id,
+                              newapiUserId:
+                                bindingResult.data!.conflictNewapiUserId!,
+                            });
+                          }}
+                        >
+                          <Button type="submit" variant="outline" size="sm">
+                            {t('detail.binding.actions.confirm_conflict')}
+                          </Button>
+                        </form>
+                      ) : null}
+                      <ConfirmActionButton
+                        label={t('detail.binding.actions.disable')}
+                        title={t('detail.binding.disable_confirm.title')}
+                        description={t(
+                          'detail.binding.disable_confirm.description'
+                        )}
+                        confirmLabel={t(
+                          'detail.binding.disable_confirm.confirm'
+                        )}
+                        cancelLabel={t('detail.binding.disable_confirm.cancel')}
+                        errorMessage={t('detail.binding.disable_confirm.error')}
+                        action={async () => {
+                          'use server';
+                          await disableNewapiUserBindingAction({
+                            portalUserId: targetUser.id,
+                            reason: 'admin detail action',
+                          });
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
               ) : null}
             </CardContent>
           </Card>
@@ -617,50 +534,24 @@ export default async function AdminUserDetailPage({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {usageResult.failed ? (
+              {billingResult.failed ? (
                 <DataNotice>{t('detail.errors.usage')}</DataNotice>
               ) : null}
-              {/* getPortalUsage 内部吞掉异常，failed 恒为 false；真正的
-                  原因只在 summary.errorMessage 里，不显示就永远看不到。 */}
-              {usageResult.data.summary.errorMessage ? (
-                <DataNotice>
-                  {usageResult.data.summary.errorMessage}
-                </DataNotice>
-              ) : null}
-              <dl className="grid gap-4 md:grid-cols-3">
+              <dl className="grid gap-4 md:grid-cols-2">
                 <Metric
                   label={t('detail.balance.fields.balance')}
-                  value={
-                    // 同步失败/过期时余额未知：显示「—」而不是「未初始化」，
-                    // 后者会被误读成「该用户还没开通」。
-                    balanceUnavailable
-                      ? emptyValue
-                      : formatOptionalBalanceUsd(
-                          usageResult.data.summary.balanceUsd,
-                          t('detail.empty.not_initialized')
-                        )
-                  }
-                />
-                <Metric
-                  label={t('detail.balance.fields.quota_remaining')}
-                  value={
-                    balanceUnavailable
-                      ? emptyValue
-                      : formatOptionalQuotaUnits(
-                          usageResult.data.summary.quotaRemaining,
-                          locale,
-                          t('detail.empty.not_initialized')
-                        )
-                  }
-                />
-                <Metric
-                  label={t('detail.balance.fields.status')}
-                  value={usageStatus}
-                  description={formatDateTime(
-                    usageResult.data.summary.syncedAt,
-                    locale,
-                    t('detail.empty.never_synced')
+                  value={formatOptionalBalanceUsd(
+                    billingResult.data.balance.balanceUsd,
+                    t('detail.empty.not_initialized')
                   )}
+                />
+                <Metric
+                  label={t('detail.balance.fields.wallet_status')}
+                  value={
+                    billingResult.data.balance.frozen
+                      ? t('detail.status.wallet.frozen')
+                      : t('detail.status.wallet.active')
+                  }
                 />
               </dl>
             </CardContent>
@@ -731,7 +622,7 @@ export default async function AdminUserDetailPage({
             }}
           />
 
-          {ledgerResult.failed ? (
+          {billingResult.failed ? (
             <DataNotice>{t('detail.errors.ledger')}</DataNotice>
           ) : null}
           <TableCard
@@ -739,7 +630,7 @@ export default async function AdminUserDetailPage({
             description={t('detail.ledger.description')}
             table={{
               columns: ledgerColumns,
-              data: ledgerResult.data,
+              data: billingResult.data.ledger,
               emptyMessage: t('detail.empty.ledger'),
             }}
           />

@@ -34,8 +34,6 @@
     "createdAt": "Created At",
     "actions": "Actions",
     "pricingStatus": "Pricing Status",
-    "smokeTested": "Smoke tested",
-    "smokeTestedTip": "Only smoke-tested listings are eligible for the deploy smoke test.",
     "discountFoldTip": "The public discount is currently driven by the group ratio; this field is recorded for reference only and does not change the public price."
   },
   "discount": {

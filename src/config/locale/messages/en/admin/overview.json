@@ -6,13 +6,13 @@
   },
   "viewAction": "View",
   "cards": {
-    "reconciliation": {
-      "title": "Reconciliation required",
-      "description": "Ledger entries whose remote result could not be confirmed. Resolve before any further quota changes."
+    "negativeWallets": {
+      "title": "Overdrawn wallets",
+      "description": "Wallets below zero. Review request settlement and use the APIPool adjustment entry."
     },
-    "pendingAdjustments": {
-      "title": "Pending adjustments",
-      "description": "Manual quota adjustments still settling. New adjustments are blocked while any remain."
+    "frozenWallets": {
+      "title": "Frozen wallets",
+      "description": "Wallets currently frozen. Review the freeze reason and recovery condition."
     },
     "syncIssues": {
       "title": "Binding sync issues",

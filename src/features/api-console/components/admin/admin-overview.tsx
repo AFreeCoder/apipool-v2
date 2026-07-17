@@ -11,13 +11,12 @@ interface SignalCard {
   value: number;
   icon: string;
   href?: string;
-  /** 非 0 时用 destructive 色（仅资金对账卡片开启）。 */
+  /** 非 0 时使用告警色。 */
   alertWhenNonZero?: boolean;
 }
 
 /**
- * 后台首页运维信号卡片。展示逻辑放在服务端：资金卡片按 `canAdjustQuota`
- * 整卡渲染，读列表的跳转链接按各自读权限出现（无权则只显示数字不给死链）。
+ * 后台首页运维信号卡片。钱包卡片统一跳到 APIPool 调额入口。
  */
 export async function AdminOverview({
   signals,
@@ -36,17 +35,16 @@ export async function AdminOverview({
 
   if (canAdjustQuota) {
     cards.push({
-      key: 'reconciliation',
-      value: signals.reconciliationRequired,
+      key: 'negativeWallets',
+      value: signals.negativeWallets,
       icon: 'AlertTriangle',
       alertWhenNonZero: true,
-      // 结清入口在用户详情页的账本行上（R-7），先把告警落到具体的人
-      href: canReadUsers ? '/admin/users?ledger=unresolved' : undefined,
+      href: '/admin/apipool-adjustments',
     });
     cards.push({
-      key: 'pendingAdjustments',
-      value: signals.pendingManualAdjustments,
-      icon: 'Clock',
+      key: 'frozenWallets',
+      value: signals.frozenWallets,
+      icon: 'Lock',
       href: '/admin/apipool-adjustments',
     });
   }

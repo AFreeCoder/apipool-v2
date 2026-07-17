@@ -37,7 +37,7 @@
       "lookupFailed": "Lookup failed",
       "adjustmentFailed": "Adjustment failed",
       "ledgerStatus": "Ledger entry {id} is {status}.",
-      "failureReason": "Reason: {reason}",
+      "alreadyApplied": "This request was already recorded; the balance was not changed again.",
       "resolvedFromLink": "Adjusting: {user}"
     },
     "links": {

@@ -16,7 +16,7 @@ MVP 是一个**垂直闭环切片**，而不是一组展示页面。验收只看
 
 | 决策点   | 结论                                                                                   |
 | -------- | -------------------------------------------------------------------------------------- |
-| 付费形态 | 充值美元余额、按量扣费（对齐 New API quota 机制）                                      |
+| 付费形态 | 充值美元余额、按量扣费；余额与扣费统一记入 APIPool 本地 micro-USD 钱包                 |
 | 支付渠道 | Stripe + Creem 双接（模板现成），账号并行申请、先批先用                                |
 | 首批模型 | OpenAI + Anthropic 提供商分组，至少 1 个模型真实可调                                   |
 | 品牌     | APIPool / `apipool.dev`，Logo 与主色不阻塞上线（视觉规范见 05-design-system.md）       |
@@ -66,6 +66,6 @@ MVP 是一个**垂直闭环切片**，而不是一组展示页面。验收只看
 
 - `pnpm test` / `pnpm lint` / `pnpm build` 全绿。
 - 支付幂等：同一 webhook 重放多次，只入账一次、只加额一次。
-- New API 故障时支付不丢账：本地账本停 pending，恢复后可重试补加额（见 06-payments-ledger.md）。
+- New API 故障不阻断支付入账：支付确认后订单与本地钱包充值在同一事务提交，不存在等待远端补加额的中间态（见 06-payments-ledger.md）。
 - 浏览器侧永不出现 `newapiUserId`、`newapiKeyId`、admin token、内部域名。
 - 视觉验收：5 个页面逐页通过 05-design-system.md 的 checklist，首页与控制台由产品负责人（用户本人）确认。

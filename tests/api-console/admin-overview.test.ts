@@ -36,7 +36,7 @@ async function setupOverviewDb() {
 
   const {
     user,
-    apipoolLedgerEntry,
+    walletAccount,
     newApiUserBinding,
     catalogVendor,
     catalogGroup,
@@ -45,14 +45,12 @@ async function setupOverviewDb() {
     catalogModelListing,
   } = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
-  const overview = await import(
-    '@/features/api-console/server/admin-overview'
-  );
+  const overview = await import('@/features/api-console/server/admin-overview');
 
   modules = {
     db,
     user,
-    apipoolLedgerEntry,
+    walletAccount,
     newApiUserBinding,
     catalogVendor,
     catalogGroup,
@@ -72,47 +70,30 @@ test('admin overview counters isolate each operational signal', async () => {
 
   const before = await modules.overview.getAdminOverviewSignals();
 
-  // Users: 0 = operator, 1..6 back the bindings / ledger portal user.
+  // Users: 0..6 back the bindings and local wallet signals.
   const users: string[] = [];
   for (let i = 0; i < 7; i += 1) {
     const id = `${p}_user_${i}`;
     users.push(id);
-    await modules.db().insert(modules.user).values({
-      id,
-      name: id,
-      email: `${id}@example.com`,
-    });
+    await modules
+      .db()
+      .insert(modules.user)
+      .values({
+        id,
+        name: id,
+        email: `${id}@example.com`,
+      });
   }
-  const operator = users[0];
-
-  // --- ledger: reconciliation (any source) vs pending manual adjustment ---
-  const ledgerRows = [
-    // reconciliation_required across mixed sources -> reconciliation delta = 3
-    { source: 'recharge', status: 'reconciliation_required' },
-    { source: 'manual_adjustment', status: 'reconciliation_required' },
-    { source: 'recharge', status: 'reconciliation_required' },
-    // manual adjustment pending/processing -> pending delta = 2
-    { source: 'manual_adjustment', status: 'pending' },
-    { source: 'manual_adjustment', status: 'processing' },
-    // noise that must NOT land in either counter above
-    { source: 'manual_adjustment', status: 'applied' },
-    { source: 'recharge', status: 'pending' },
-  ];
-  let ledgerSeq = 0;
-  for (const row of ledgerRows) {
-    ledgerSeq += 1;
-    await modules.db().insert(modules.apipoolLedgerEntry).values({
-      id: `${p}_ledger_${ledgerSeq}`,
-      portalUserId: users[1],
-      operatorUserId: operator,
-      newapiUserId: `${p}_remote_${ledgerSeq}`,
-      amountUsd: 100,
-      source: row.source,
-      status: row.status,
-      executor: 'admin',
-      reason: 'test',
-    });
-  }
+  // --- 本地钱包：负余额与冻结分别计数，可同时命中 ---
+  await modules
+    .db()
+    .insert(modules.walletAccount)
+    .values([
+      { userId: users[0], balanceMicroUsd: 10 },
+      { userId: users[1], balanceMicroUsd: -1 },
+      { userId: users[2], balanceMicroUsd: -2, frozenAt: new Date() },
+      { userId: users[3], balanceMicroUsd: 0, frozenAt: new Date() },
+    ]);
 
   // --- bindings: status not in (active, deleted) -> sync delta = 4 ---
   const bindingRows = [
@@ -126,70 +107,86 @@ test('admin overview counters isolate each operational signal', async () => {
   let bindingSeq = 0;
   for (const row of bindingRows) {
     bindingSeq += 1;
-    await modules.db().insert(modules.newApiUserBinding).values({
-      id: `${p}_binding_${bindingSeq}`,
-      portalUserId: row.user,
-      newapiUserId: `${p}_newapi_${bindingSeq}`,
-      status: row.status,
-    });
+    await modules
+      .db()
+      .insert(modules.newApiUserBinding)
+      .values({
+        id: `${p}_binding_${bindingSeq}`,
+        portalUserId: row.user,
+        newapiUserId: `${p}_newapi_${bindingSeq}`,
+        status: row.status,
+      });
   }
 
   // --- listings: price_drift_status != matched -> drift delta = 1 ---
-  await modules.db().insert(modules.catalogVendor).values({
-    id: `${p}_vendor`,
-    slug: `${p}-vendor`,
-    name: 'Vendor',
-  });
-  await modules.db().insert(modules.catalogGroup).values([
-    { id: `${p}_group_1`, slug: `${p}-group-1`, name: 'Group 1' },
-    { id: `${p}_group_2`, slug: `${p}-group-2`, name: 'Group 2' },
-  ]);
-  await modules.db().insert(modules.catalogStatus).values({
-    id: `${p}_status`,
-    slug: `${p}-status`,
-    name: 'Status',
-  });
-  await modules.db().insert(modules.catalogModel).values({
-    id: `${p}_model`,
-    modelId: `${p}-model`,
-    displayName: 'Model',
-    vendorId: `${p}_vendor`,
-  });
-  await modules.db().insert(modules.catalogModelListing).values([
-    {
-      id: `${p}_listing_matched`,
-      modelId: `${p}_model`,
-      groupId: `${p}_group_1`,
-      statusId: `${p}_status`,
-      inputMicroUsd: 1,
-      outputMicroUsd: 1,
-      priceDriftStatus: 'matched',
-    },
-    {
-      id: `${p}_listing_drift`,
-      modelId: `${p}_model`,
-      groupId: `${p}_group_2`,
-      statusId: `${p}_status`,
-      inputMicroUsd: 1,
-      outputMicroUsd: 1,
-      priceDriftStatus: 'needs_live_check',
-    },
-  ]);
+  await modules
+    .db()
+    .insert(modules.catalogVendor)
+    .values({
+      id: `${p}_vendor`,
+      slug: `${p}-vendor`,
+      name: 'Vendor',
+    });
+  await modules
+    .db()
+    .insert(modules.catalogGroup)
+    .values([
+      { id: `${p}_group_1`, slug: `${p}-group-1`, name: 'Group 1' },
+      { id: `${p}_group_2`, slug: `${p}-group-2`, name: 'Group 2' },
+    ]);
+  await modules
+    .db()
+    .insert(modules.catalogStatus)
+    .values({
+      id: `${p}_status`,
+      slug: `${p}-status`,
+      name: 'Status',
+    });
+  await modules
+    .db()
+    .insert(modules.catalogModel)
+    .values({
+      id: `${p}_model`,
+      modelId: `${p}-model`,
+      displayName: 'Model',
+      vendorId: `${p}_vendor`,
+    });
+  await modules
+    .db()
+    .insert(modules.catalogModelListing)
+    .values([
+      {
+        id: `${p}_listing_matched`,
+        modelId: `${p}_model`,
+        groupId: `${p}_group_1`,
+        statusId: `${p}_status`,
+        inputMicroUsd: 1,
+        outputMicroUsd: 1,
+        priceDriftStatus: 'matched',
+      },
+      {
+        id: `${p}_listing_drift`,
+        modelId: `${p}_model`,
+        groupId: `${p}_group_2`,
+        statusId: `${p}_status`,
+        inputMicroUsd: 1,
+        outputMicroUsd: 1,
+        priceDriftStatus: 'needs_live_check',
+      },
+    ]);
 
   const after = await modules.overview.getAdminOverviewSignals();
 
   assert.deepEqual(
     {
-      reconciliationRequired:
-        after.reconciliationRequired - before.reconciliationRequired,
-      pendingManualAdjustments:
-        after.pendingManualAdjustments - before.pendingManualAdjustments,
+      negativeWallets: after.negativeWallets - before.negativeWallets,
+      frozenWallets: after.frozenWallets - before.frozenWallets,
       bindingSyncIssues: after.bindingSyncIssues - before.bindingSyncIssues,
       priceDriftListings: after.priceDriftListings - before.priceDriftListings,
     },
     {
-      reconciliationRequired: 3,
-      pendingManualAdjustments: 2,
+      negativeWallets: 2,
+      frozenWallets: 2,
       bindingSyncIssues: 4,
       priceDriftListings: 1,
     }
@@ -202,8 +199,8 @@ test('admin overview counters return non-negative integers', async () => {
   const signals = await modules.overview.getAdminOverviewSignals();
 
   for (const key of [
-    'reconciliationRequired',
-    'pendingManualAdjustments',
+    'negativeWallets',
+    'frozenWallets',
     'bindingSyncIssues',
     'priceDriftListings',
   ] as const) {

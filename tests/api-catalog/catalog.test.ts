@@ -12,13 +12,12 @@ import {
   publicModels,
 } from '@/features/api-catalog/lib/catalog';
 
-test('catalog exposes one available smoke-tested model and hides no provider data', () => {
+test('catalog exposes one available model and hides no provider data', () => {
   const available = publicModels.filter(
     (model) => model.status === 'available'
   );
 
   assert.equal(available.length, 1);
-  assert.equal(available[0].smokeTested, true);
   assert.equal(available[0].provider, 'OpenAI');
 });
 
@@ -100,25 +99,21 @@ test('getFeaturedModels returns stable sort order and excludes coming soon by de
   );
 });
 
-test('featured and default launch models require smoke-tested availability', () => {
-  const unsafeAvailableModel = {
+test('featured and default launch models只依赖可用状态', () => {
+  const availableModel = {
     ...publicModels.find((model) => model.slug === 'gpt-4o')!,
     slug: 'unsafe-available',
     modelId: 'unsafe-available',
     status: 'available' as const,
-    smokeTested: false,
     featured: true,
     sortOrder: 1,
   };
 
-  const featured = getFeaturedModels(
-    [unsafeAvailableModel, ...publicModels],
-    6
-  );
+  const featured = getFeaturedModels([availableModel, ...publicModels], 6);
 
   assert.deepEqual(
     featured.map((model) => model.modelId),
-    ['gpt-4o-mini']
+    ['unsafe-available', 'gpt-4o-mini']
   );
   assert.equal(getDefaultCallableModelId('gpt-4o'), 'gpt-4o-mini');
   assert.equal(getDefaultCallableModelId('gpt-4o-mini'), 'gpt-4o-mini');
@@ -131,7 +126,7 @@ test('formatModelPrice includes reference billing copy', () => {
   assert.match(price.disclaimer, /页面价格仅供参考/);
 });
 
-test('quickstart curl is only generated for available smoke-tested models', () => {
+test('quickstart curl is only generated for available models', () => {
   const available = publicModels.find((model) => model.status === 'available');
   const comingSoon = publicModels.find(
     (model) => model.status === 'coming_soon'

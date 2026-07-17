@@ -58,7 +58,8 @@ test('New API bridge base URL has no public production fallback', async () => {
   );
   assert.match(readme, /NEWAPI_BASE_URL=http:\/\/newapi-internal:3000/);
   assert.doesNotMatch(readme, /NEWAPI_BASE_URL=https:\/\/newapi\.apipool\.dev/);
-  assert.match(contract, /新建 New API 用户初始额度为 0/);
+  assert.match(contract, /门户用户余额由门户本地钱包管理/);
+  assert.match(contract, /不接受门户充值或 APIPool 调额同步/);
 });
 
 test('client modules import only public APIPool config', async () => {

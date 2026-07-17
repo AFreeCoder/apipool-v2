@@ -1,5 +1,3 @@
-import { applyRechargeForOrder } from '@/features/newapi-bridge/server/recharge';
-
 import {
   CreemProvider,
   PaymentManager,
@@ -122,30 +120,6 @@ export async function getPaymentService(
 }
 
 /**
- * APIPool：订单入账后把同额 quota 加到 New API（兑换码模式，见 docs/06）。
- * 不抛出——webhook 必须成功返回；未完成加额留给 ledger 状态和 admin 补偿入口处理。
- * 仅处理一次性 credits 订单（订阅不在 MVP 范围）。
- */
-async function applyApipoolRecharge(order: Order) {
-  if (order.paymentType !== PaymentType.ONE_TIME) return;
-  if (!order.creditsAmount || order.creditsAmount <= 0) return;
-  if (!order.orderNo) return;
-
-  const result = await applyRechargeForOrder({
-    orderNo: order.orderNo,
-    userId: order.userId,
-    userEmail: order.userEmail,
-    amount: order.amount,
-    currency: order.currency,
-  });
-  if (result.outcome !== 'applied' && result.outcome !== 'already_applied') {
-    console.error(
-      `apipool recharge not applied for order ${order.orderNo}: ${result.outcome} ${result.detail || ''}`
-    );
-  }
-}
-
-/**
  * handle checkout success
  */
 export async function handleCheckoutSuccess({
@@ -163,9 +137,6 @@ export async function handleCheckoutSuccess({
   // Idempotency check: if order is already paid, skip processing
   if (order.status === OrderStatus.PAID) {
     console.log(`Order ${orderNo} is already paid, skipping`);
-    // Webhook replay is also the recovery path when the order was marked paid
-    // but recharge ledger creation failed before it could be recorded.
-    await applyApipoolRecharge(order);
     return;
   }
 
@@ -256,16 +227,12 @@ export async function handleCheckoutSuccess({
           }
         : undefined;
 
-    const transaction = await updateOrderInTransaction({
+    await updateOrderInTransaction({
       orderNo,
       updateOrder,
       newSubscription,
       newWalletRecharge,
     });
-
-    if (transaction?.order) {
-      await applyApipoolRecharge(order);
-    }
   } else if (
     session.paymentStatus === PaymentStatus.FAILED ||
     session.paymentStatus === PaymentStatus.CANCELED
@@ -302,7 +269,6 @@ export async function handlePaymentSuccess({
 
   if (order.status === OrderStatus.PAID) {
     console.log(`Order ${orderNo} is already paid, skipping`);
-    await applyApipoolRecharge(order);
     return;
   }
 
@@ -379,16 +345,12 @@ export async function handlePaymentSuccess({
           }
         : undefined;
 
-    const transaction = await updateOrderInTransaction({
+    await updateOrderInTransaction({
       orderNo,
       updateOrder,
       newSubscription,
       newWalletRecharge,
     });
-
-    if (transaction?.order) {
-      await applyApipoolRecharge(order);
-    }
   } else {
     throw new Error('unknown payment status');
   }

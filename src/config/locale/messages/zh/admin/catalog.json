@@ -34,8 +34,6 @@
     "createdAt": "创建时间",
     "actions": "操作",
     "pricingStatus": "定价状态",
-    "smokeTested": "已冒烟验证",
-    "smokeTestedTip": "只有通过冒烟验证的售卖项才会进入部署冒烟测试的候选。",
     "discountFoldTip": "当前公开折扣由分组倍率决定，本字段仅作记录/预留，不影响公开价。"
   },
   "discount": {

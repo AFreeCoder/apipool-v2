@@ -62,7 +62,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
 - `APIPOOL_SMOKE_PORTAL_EMAIL=smoke.portal@apipool.local` / `APIPOOL_SMOKE_OPERATOR_EMAIL=smoke.operator@apipool.local`（固定值；`deploy/setup-smoke-users.sh --apply` 创建/复用专用 service identity，live smoke 会拒绝其它邮箱）
 - `APIPOOL_SMOKE_GROUP_SLUG`（可选；默认 `official`，可指定实际售卖分组如 `discount-1`）
-- `APIPOOL_SMOKE_MODEL`（可选；设置时必须在 `APIPOOL_SMOKE_GROUP_SLUG` 对应分组中可调用；不设置时使用该分组的 smoke-tested launch model）
+- `APIPOOL_SMOKE_MODEL`（可选；设置时必须在 `APIPOOL_SMOKE_GROUP_SLUG` 对应分组中可调用；不设置时使用该分组的默认或首个可调用模型）
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
 - `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
 - `APIPOOL_SMOKE_REQUIRE_LIVE=true`：缺少 live smoke 必需配置时让 smoke 失败，而不是跳过。
@@ -79,7 +79,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 5. 配置至少一个上游渠道，否则 `/v1/chat/completions` 报 `model_not_found: No available channel`。**实测要点（calciumion/new-api rc.10）**：
    - 建渠道 API 必须用 `{"mode":"single","channel":{…}}` 包装（裸 channel 对象触发服务端 panic）。
    - 模型需配价，否则调用报 `model_price_error`；最小化可开**自用模式** `PUT /api/option/` body `{"key":"SelfUseModeEnabled","value":"true"}` 绕过逐模型配价。
-   - **给用户充值额度**：`PUT /api/user/` 不改 `quota`；正路是**兑换码模式**（需步骤 3 的 payment_compliance + 门户运营 RBAC，门户 `adjustPortalQuota` 走这条），本地最小验证可直接改 New API SQLite。
+   - New API 原生直连账户如需调整其自身 quota，`PUT /api/user/` 不改 `quota`，应使用兑换码模式。门户用户的可用余额不走这条链路，统一由 APIPool 本地钱包管理。
    - 具体 curl 见 `deploy/bootstrap.md` §3。
 
 本地开发实例：宿主机端口 3001（`NEWAPI_BASE_URL=http://127.0.0.1:3001`），数据落 `data/new-api/`（已 gitignore）。
@@ -127,7 +127,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 2. **New API 健康检查**：内部地址 `GET /api/status` 返回 `success=true`。
 3. **bridge 冒烟**：门户服务端能以管理员上下文认证，且浏览器侧无内部标识泄漏。
 4. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
-5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → ledger applied → New API quota 增加 → 控制台余额一致。
+5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → 控制台余额一致；不得再以 New API quota 作为门户余额。
 6. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
 7. **调用冒烟**：门户 Key 通过容器内网网关调用发布模型；临时公网
    `https://api2.apipool.dev` 另用 New API 原生 Key 验证真实 `/v1/models`、
@@ -147,7 +147,7 @@ npm run catalog:init
 
 冒烟分组默认是 `official`，也可以通过 `APIPOOL_SMOKE_GROUP_SLUG` 指向实际售卖分组。该分组必须在后台维护好 `newapiGroup`，并与 New API 侧真实可调用 group 对齐；不能让 `newapiGroup` 为空落入 New API 默认分组。New API 侧也必须启用同名或指定分组：`GroupRatio` 包含该 group，相关 channel 的 group 包含该 group，并通过 New API 后台保存渠道或重建 abilities 使选路表生效。门户创建 Key 时会把 New API 用户 group 补齐到本次 `newapiGroup`，否则 New API 会以无权访问该分组拒绝 `/v1` 调用。
 
-冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。`APIPOOL_SMOKE_MODEL` 设置时必须指向当前冒烟分组中可调用的模型；不设置时使用该分组中的默认或首个 smoke-tested launch model。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
+冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。冒烟调额写入本地钱包，不修改 New API quota。`APIPOOL_SMOKE_MODEL` 设置时必须指向当前冒烟分组中可调用的模型；不设置时使用该分组中的默认或首个可调用模型。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
 
 普通本地验证允许缺少 live smoke 必需配置时跳过：
 
@@ -392,18 +392,18 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 ## 4. 告警最低配置
 
 - webhook 处理失败（5xx 或入账异常）→ 告警。
-- ledger 行停留 `pending` 超过 10 分钟 → 告警。
-- bridge 连续 `unauthorized`/`timeout` → 告警。
+- `request_ledger` 行停留 `open`/`pending_backfill` 超过 10 分钟 → 告警。
+- 运行时凭证桥接连续 `unauthorized`/`timeout` → 告警。
 
 ## 5. 回滚顺序（保留用户资产与审计）
 
 1. 置 `APIPOOL_KEY_CREATION_ENABLED=false`，停止新 Key 创建。
 2. 在支付渠道后台暂停支付（或下架套餐），避免回滚窗口内新订单。
 3. 门户回滚到上一个稳定部署。
-4. 不删除已有 New API key、不删除 ledger、不删除订单。
-5. 保留调额记录与 bridge 审计日志用于对账；窗口期内的 paid 订单按 06 文档对账流程补加额。
+4. 不删除已有门户 Key、运行时凭证、钱包/请求账本或订单。
+5. 保留钱包调额记录与管理审计日志用于对账；窗口期内的 paid 订单按 06 文档对账流程补记本地钱包充值，禁止通过 New API quota 补偿门户余额。
 
-远端成功但本地绑定失败的 Key 保持 `remote_created_binding_failed`，从审计日志人工补偿；本地与远端一致前，不在用户界面显示成功。
+运行时凭证创建或停用失败时保留 `runtime_credential`/`credential_retirement` 状态与审计证据，先核对 New API 同名 token 再人工补偿；门户 Key 与运行时凭证未一致前，不得把凭证状态标记为可用。
 
 ## 6. 最终态上线 runbook
 
@@ -431,11 +431,11 @@ checkout 前态、恢复演练证据、当前镜像 smoke 标志或人工确认�
    演练并保存证据；数据库与 `APIPOOL_CREDENTIALS_SECRET` 必须能在恢复环境重聚。
 2. 确认 `.env.deploy` 中 `APIPOOL_CHECKOUT_ENABLED=false`。
 3. 部署目标 `IMAGE_TAG`，等待数据库迁移和容器健康检查完成。
-4. 立即发布并复核模型路由与价格；短暂“不可调用”只允许出现在本步骤完成前。
+4. 在“模型目录 → 分组折扣”确认门户分组只映射一个 New API 分组，执行价格同步并复核模型基准价与售卖项状态。网关会据此自动生成路由和不可变价格快照，不再人工发布第二套路由/价格。
 5. 执行生产库只读核验（§6.2）。
 6. 执行 `./deploy/go-live.sh verify`。脚本依次验证固定路由、MVP smoke、充值
    smoke 和 Gateway smoke，并把两类专项标志绑定到当前 `IMAGE_TAG`。
-7. 人工核对 Dashboard 钱包、请求账本和 New API 回充结果。
+7. 人工核对 Dashboard 本地钱包、请求账本和钱包充值流水；New API quota 不作为门户余额核对项。
 8. 执行 `./deploy/go-live.sh open-checkout --evidence "$RESTORE_EVIDENCE"`，
    输入 `yes` 后才开放收款。
 9. 按 §6.5 观察并收尾。

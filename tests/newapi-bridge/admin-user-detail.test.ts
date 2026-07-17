@@ -380,34 +380,24 @@ test('admin detail queries return empty arrays for users without bindings or led
   );
 });
 
-test('admin user detail page keeps the required read-only data sources and i18n guardrails', async () => {
-  const page = await readFile(
-    join(
-      process.cwd(),
-      detailPagePath
-    ),
-    'utf8'
-  );
+test('admin user detail page uses local wallet, request ledger, and portal keys', async () => {
+  const page = await readFile(join(process.cwd(), detailPagePath), 'utf8');
 
   assert.match(page, /requirePermission\s*\(/);
   assert.match(page, /PERMISSIONS\.USERS_READ/);
-  assert.match(page, /getPortalUsage\s*\(/);
-  assert.match(page, /listKeysByPortalUser\s*\(/);
-  assert.match(page, /listAdjustmentLedgerByPortalUser\s*\(/);
+  assert.match(page, /getWalletUsageView\s*\(/);
+  assert.match(page, /getWalletBillingView\s*\(/);
+  assert.match(page, /listPortalApiKeys\s*\(/);
+  assert.doesNotMatch(page, /getPortalUsage\s*\(/);
+  assert.doesNotMatch(page, /listAdjustmentLedgerByPortalUser\s*\(/);
   assert.match(page, /hasPermission\s*\(/);
   assert.match(page, /PERMISSIONS\.APIPOOL_QUOTA_ADJUST/);
   assert.match(page, /canAdjustApipoolQuota/);
-  assert.match(page, /formatOptionalQuotaUnits/);
-  assert.doesNotMatch(
-    page,
-    /formatOptionalBalanceUsd\(\s*usageResult\.data\.summary\.quotaRemaining/
-  );
-  assert.match(page, /detail\.ledger\.columns\.newapi_change/);
-  assert.match(page, /detail\.ledger\.columns\.audit/);
+  assert.doesNotMatch(page, /formatOptionalQuotaUnits/);
+  assert.match(page, /detail\.ledger\.columns\.balance_after/);
   assert.match(page, /getTranslations\(['"]admin\.users['"]\)/);
 
-  // \u672a\u7ed3\u6e05\u7684\u8d26\u672c\u884c\u5fc5\u987b\u66b4\u9732\u4eba\u5de5\u7ed3\u6e05\u5165\u53e3\uff0c\u5426\u5219 fail-closed \u5b88\u536b\u53ea\u80fd\u9760\u6539\u5e93\u89e3\u5c01
-  assert.match(page, /ResolveAdjustmentButton/);
+  assert.doesNotMatch(page, /ResolveAdjustmentButton/);
   assert.match(page, /detail\.ledger\.columns\.source/);
   // \u53ea\u8bfb\u7ba1\u7406\u5458\u4e0d\u8be5\u770b\u5230 USERS_WRITE \u7684\u6309\u94ae
   assert.match(page, /canWriteUsers/);

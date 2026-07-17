@@ -1,15 +1,14 @@
-import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
+import { parseWalletAdjustmentAmount } from '@/features/wallet/lib/adjustment-input';
 import {
-  adjustPortalQuota,
-  getAdjustmentFailureReason,
-} from '@/features/newapi-bridge/server/portal';
+  applyManualAdjustment,
+  IdempotencyConflictError,
+} from '@/features/wallet/server/ledger';
 
 import { PERMISSIONS } from '@/core/rbac';
 import { withNoStore } from '@/shared/lib/http-cache';
-import { respData, respErr } from '@/shared/lib/resp';
+import { respData, respErr, respJson } from '@/shared/lib/resp';
 import { findUserById, getUserInfo } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
-import { parseQuotaAdjustmentAmount } from '@/features/newapi-bridge/lib/quota-input';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +36,7 @@ export async function POST(req: Request) {
 
     let amountUsd: number;
     try {
-      ({ amountUsd } = parseQuotaAdjustmentAmount(body.amountUsd));
+      ({ amountUsd } = parseWalletAdjustmentAmount(body.amountUsd));
     } catch (error: any) {
       return withNoStore(respErr(error?.message || 'invalid amountUsd'));
     }
@@ -47,30 +46,41 @@ export async function POST(req: Request) {
     const portalUser = await findUserById(portalUserId);
     if (!portalUser) return withNoStore(respErr('portal user not found'));
 
-    const ledger = await adjustPortalQuota({
-      portalUser,
+    if (!idempotencyKey) {
+      return withNoStore(respErr('idempotencyKey is required'));
+    }
+    const signedAmountMicroUsd = amountUsd * 1_000_000;
+    const result = await applyManualAdjustment({
+      userId: portalUser.id,
       operatorUserId: operator.id,
-      amountUsd,
+      signedAmountMicroUsd,
       reason,
-      idempotencyKey: idempotencyKey || undefined,
+      idempotencyKey,
+      audit: {
+        action: 'wallet.adjust',
+        targetType: 'wallet_account',
+        targetId: portalUser.id,
+        afterJson: { signedAmountMicroUsd, idempotencyKey },
+      },
     });
-
-    // 失败时把审计里的真实原因一并回传：受众是管理员，
-    // 只给一个英文 `failed` 等于什么都没说。
-    const failureReason =
-      ledger.status === 'applied'
-        ? null
-        : await getAdjustmentFailureReason(ledger.id);
-
-    return withNoStore(respData({ ledger: { ...ledger, failureReason } }));
-  } catch (error: any) {
     return withNoStore(
-      respErr(
-        getPublicPortalErrorMessage(
-          error,
-          'Quota adjustment could not start. Try again later.'
-        )
-      )
+      respData({
+        ledger: {
+          id: result.ledgerId,
+          status: 'applied',
+          balanceAfterMicroUsd: result.balanceAfterMicroUsd,
+          alreadyApplied: result.alreadyApplied,
+        },
+      })
+    );
+  } catch (error: unknown) {
+    if (error instanceof IdempotencyConflictError) {
+      return withNoStore(
+        respJson(409, 'idempotency_conflict: 调额请求标识已被不同载荷使用')
+      );
+    }
+    return withNoStore(
+      respErr(error instanceof Error ? error.message : '钱包调额失败')
     );
   }
 }
