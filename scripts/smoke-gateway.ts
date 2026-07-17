@@ -6,6 +6,8 @@ import { eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
+  catalogModel,
+  catalogModelPrice,
   modelPriceVersion,
   portalApiKey,
   requestLedger,
@@ -37,6 +39,73 @@ function invariant(ok: unknown, message: string): asserts ok {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export type GatewaySmokeEndpoint =
+  | 'chat'
+  | 'responses'
+  | 'messages'
+  | 'embeddings';
+
+export function resolveGatewaySmokeEndpoints(
+  sourceSupportedEndpointTypes: string[]
+): GatewaySmokeEndpoint[] {
+  const types = new Set(
+    sourceSupportedEndpointTypes.map((type) => type.trim().toLowerCase())
+  );
+  const supports = (...candidates: string[]) =>
+    candidates.some((candidate) => types.has(candidate));
+  const endpoints: GatewaySmokeEndpoint[] = [];
+
+  if (supports('openai', 'chat', 'chat-completions', 'chat_completions')) {
+    endpoints.push('chat', 'messages');
+  } else if (supports('anthropic', 'claude', 'messages')) {
+    endpoints.push('messages');
+  }
+  if (supports('openai-response', 'openai-responses', 'responses')) {
+    endpoints.push('responses');
+  }
+  if (
+    supports(
+      'embedding',
+      'embeddings',
+      'openai-embedding',
+      'openai-embeddings'
+    )
+  ) {
+    endpoints.push('embeddings');
+  }
+
+  return [...new Set(endpoints)];
+}
+
+async function loadGatewaySmokeEndpoints(model: string) {
+  const [row] = await db()
+    .select({
+      sourceSupportedEndpointTypes:
+        catalogModelPrice.sourceSupportedEndpointTypes,
+    })
+    .from(catalogModelPrice)
+    .innerJoin(catalogModel, eq(catalogModel.id, catalogModelPrice.modelId))
+    .where(eq(catalogModel.modelId, model))
+    .limit(1);
+  invariant(row, `catalog price metadata missing for ${model}`);
+
+  let endpointTypes: unknown;
+  try {
+    endpointTypes = JSON.parse(row.sourceSupportedEndpointTypes || '[]');
+  } catch {
+    throw new Error(`gateway smoke endpoint metadata is invalid for ${model}`);
+  }
+  invariant(
+    Array.isArray(endpointTypes),
+    `gateway smoke endpoint metadata is not an array for ${model}`
+  );
+  const endpoints = resolveGatewaySmokeEndpoints(
+    endpointTypes.map((type) => String(type))
+  );
+  invariant(endpoints.length > 0, `no supported smoke endpoint for ${model}`);
+  return endpoints;
 }
 
 async function remoteTokenCount() {
@@ -147,6 +216,7 @@ export async function main() {
   ).replace(/\/$/, '');
   const user = await findUserById(userId);
   invariant(user, `smoke user not found: ${userId}`);
+  const smokeEndpoints = await loadGatewaySmokeEndpoints(model);
 
   const runId = `${Date.now()}`;
   const beforeTokenCount = await remoteTokenCount();
@@ -196,59 +266,71 @@ export async function main() {
     baseURL: baseUrl.replace(/\/v1$/, ''),
   });
   try {
-    await capture(
-      'chat non-stream',
-      openai.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: 'Reply pong.' }],
-        max_tokens: 8,
-      })
-    );
-    await capture(
-      'responses non-stream',
-      openai.responses.create({
-        model,
-        input: 'Reply pong.',
-        max_output_tokens: 8,
-      })
-    );
-    await capture(
-      'messages non-stream',
-      anthropic.messages.create({
-        model,
-        messages: [{ role: 'user', content: 'Reply pong.' }],
-        max_tokens: 8,
-      })
-    );
-    await capture(
-      'embeddings non-stream',
-      openai.embeddings.create({ model, input: 'gateway smoke embedding' })
-    );
-    await capture(
-      'chat stream',
-      openai.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: 'Reply pong.' }],
-        max_tokens: 8,
-        stream: true,
-        stream_options: { include_usage: true },
-      }),
-      async (stream) => {
-        for await (const _chunk of stream as any) void _chunk;
-      }
-    );
-    await capture(
-      'messages stream',
-      anthropic.messages.create({
-        model,
-        messages: [{ role: 'user', content: 'Reply pong.' }],
-        max_tokens: 8,
-        stream: true,
-      }),
-      async (stream) => {
-        for await (const _event of stream as any) void _event;
-      }
-    );
+    if (smokeEndpoints.includes('chat')) {
+      await capture(
+        'chat non-stream',
+        openai.chat.completions.create({
+          model,
+          messages: [{ role: 'user', content: 'Reply pong.' }],
+          max_tokens: 8,
+        })
+      );
+    }
+    if (smokeEndpoints.includes('responses')) {
+      await capture(
+        'responses non-stream',
+        openai.responses.create({
+          model,
+          input: 'Reply pong.',
+          max_output_tokens: 8,
+        })
+      );
+    }
+    if (smokeEndpoints.includes('messages')) {
+      await capture(
+        'messages non-stream',
+        anthropic.messages.create({
+          model,
+          messages: [{ role: 'user', content: 'Reply pong.' }],
+          max_tokens: 8,
+        })
+      );
+    }
+    if (smokeEndpoints.includes('embeddings')) {
+      await capture(
+        'embeddings non-stream',
+        openai.embeddings.create({ model, input: 'gateway smoke embedding' })
+      );
+    }
+    if (smokeEndpoints.includes('chat')) {
+      await capture(
+        'chat stream',
+        openai.chat.completions.create({
+          model,
+          messages: [{ role: 'user', content: 'Reply pong.' }],
+          max_tokens: 8,
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+        async (stream) => {
+          for await (const _chunk of stream as any) void _chunk;
+        }
+      );
+    }
+    if (smokeEndpoints.includes('messages')) {
+      await capture(
+        'messages stream',
+        anthropic.messages.create({
+          model,
+          messages: [{ role: 'user', content: 'Reply pong.' }],
+          max_tokens: 8,
+          stream: true,
+        }),
+        async (stream) => {
+          for await (const _event of stream as any) void _event;
+        }
+      );
+    }
 
     const rows = await waitForSettled(requestIds);
     for (const row of rows) {
@@ -322,7 +404,7 @@ export async function main() {
     await disablePortalApiKey(userId, keyId);
     await expectGatewayStatus(baseUrl, apiKey, model, 401);
     console.log(
-      `Gateway smoke passed: requests=${requestIds.length}, settled=${rows.length}, runtime=rk_, balance=closed, key=disabled, zero=429`
+      `Gateway smoke passed: endpoints=${smokeEndpoints.join(',')}, requests=${requestIds.length}, settled=${rows.length}, runtime=rk_, balance=closed, key=disabled, zero=429`
     );
   } finally {
     await disablePortalApiKey(userId, keyId).catch(() => undefined);
