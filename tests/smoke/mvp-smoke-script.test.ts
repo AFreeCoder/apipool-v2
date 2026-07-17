@@ -10,6 +10,7 @@ import {
   finishSkipped,
   getSmokePriceReconciliationConfig,
   isDisabledKeyRejected,
+  isRetryableSmokeDatabaseError,
   parseLaunchModelAssistantText,
   resolveSmokeConfirmedEffectivePrice,
   resolveSmokeLaunchModel,
@@ -28,6 +29,27 @@ test('MVP smoke verifies a settled local request ledger entry', async () => {
   assert.match(script, /from\(requestLedger\)/);
   assert.doesNotMatch(script, /getPortalUsage/);
   assert.doesNotMatch(script, /usageSnapshot/);
+  assert.match(script, /disablePortalApiKeyWithRetry/);
+});
+
+test('MVP smoke retries only transient SQLite contention', () => {
+  const busy = Object.assign(new Error('Failed query'), {
+    cause: Object.assign(new Error('database is locked'), {
+      code: 'SQLITE_BUSY',
+    }),
+  });
+
+  assert.equal(isRetryableSmokeDatabaseError(busy), true);
+  assert.equal(
+    isRetryableSmokeDatabaseError(
+      Object.assign(new Error('Failed query'), {
+        cause: Object.assign(new Error('no such table'), {
+          code: 'SQLITE_ERROR',
+        }),
+      })
+    ),
+    false
+  );
 });
 
 test('MVP smoke verifies that launch model returns assistant content', () => {

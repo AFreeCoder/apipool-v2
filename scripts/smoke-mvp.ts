@@ -137,6 +137,34 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function smokeErrorDetails(error: unknown) {
+  const details: string[] = [];
+  const seen = new Set<unknown>();
+  let current = error;
+  for (let depth = 0; depth < 5 && current && !seen.has(current); depth += 1) {
+    seen.add(current);
+    if (current instanceof Error) {
+      details.push(current.message);
+    }
+    if (typeof current !== 'object') break;
+    const record = current as {
+      cause?: unknown;
+      code?: unknown;
+      rawCode?: unknown;
+    };
+    if (typeof record.code === 'string') details.push(record.code);
+    if (typeof record.rawCode === 'string') details.push(record.rawCode);
+    current = record.cause;
+  }
+  return details.join(' | ');
+}
+
+export function isRetryableSmokeDatabaseError(error: unknown) {
+  return /SQLITE_(?:BUSY|LOCKED)|database is locked/i.test(
+    smokeErrorDetails(error)
+  );
+}
+
 export function resolveSmokeConfirmedEffectivePrice(
   listings: Array<
     Pick<
@@ -302,31 +330,38 @@ async function waitForUsageVisibility(
   expectedModel: string
 ) {
   let lastUsage: typeof requestLedger.$inferSelect | undefined;
+  let lastReadError: string | undefined;
   for (let attempt = 1; attempt <= USAGE_VISIBILITY_ATTEMPTS; attempt += 1) {
-    const [usage] = await db()
-      .select()
-      .from(requestLedger)
-      .where(
-        and(
-          eq(requestLedger.portalKeyId, portalKeyId),
-          eq(requestLedger.portalModelId, expectedModel)
+    try {
+      const [usage] = await db()
+        .select()
+        .from(requestLedger)
+        .where(
+          and(
+            eq(requestLedger.portalKeyId, portalKeyId),
+            eq(requestLedger.portalModelId, expectedModel)
+          )
         )
-      )
-      .orderBy(desc(requestLedger.createdAt))
-      .limit(1);
-    lastUsage = usage;
-    if (
-      usage?.status === 'settled' &&
-      usage.newapiRequestId &&
-      usage.chargedMicroUsd !== null
-    ) {
-      return usage;
-    }
-    if (usage && !['open', 'pending_backfill'].includes(usage.status)) {
-      throw new Error(
-        `Usage visibility smoke failed: request=${usage.id}, ` +
-          `status=${usage.status}, newapiRequestId=${usage.newapiRequestId ?? 'missing'}`
-      );
+        .orderBy(desc(requestLedger.createdAt))
+        .limit(1);
+      lastUsage = usage;
+      lastReadError = undefined;
+      if (
+        usage?.status === 'settled' &&
+        usage.newapiRequestId &&
+        usage.chargedMicroUsd !== null
+      ) {
+        return usage;
+      }
+      if (usage && !['open', 'pending_backfill'].includes(usage.status)) {
+        throw new Error(
+          `Usage visibility smoke failed: request=${usage.id}, ` +
+            `status=${usage.status}, newapiRequestId=${usage.newapiRequestId ?? 'missing'}`
+        );
+      }
+    } catch (error) {
+      if (!isRetryableSmokeDatabaseError(error)) throw error;
+      lastReadError = smokeErrorDetails(error);
     }
 
     if (attempt < USAGE_VISIBILITY_ATTEMPTS) {
@@ -339,8 +374,26 @@ async function waitForUsageVisibility(
       `request=${lastUsage?.id ?? 'missing'}, ` +
       `status=${lastUsage?.status ?? 'missing'}, ` +
       `newapiRequestId=${lastUsage?.newapiRequestId ?? 'missing'}, ` +
-      `chargedMicroUsd=${lastUsage?.chargedMicroUsd ?? 'missing'}`
+      `chargedMicroUsd=${lastUsage?.chargedMicroUsd ?? 'missing'}, ` +
+      `lastReadError=${lastReadError ?? 'none'}`
   );
+}
+
+async function disablePortalApiKeyWithRetry(userId: string, keyId: string) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= USAGE_VISIBILITY_ATTEMPTS; attempt += 1) {
+    try {
+      await disablePortalApiKey(userId, keyId);
+      return;
+    } catch (error) {
+      if (!isRetryableSmokeDatabaseError(error)) throw error;
+      lastError = error;
+      if (attempt < USAGE_VISIBILITY_ATTEMPTS) {
+        await sleep(USAGE_VISIBILITY_DELAY_MS);
+      }
+    }
+  }
+  throw lastError;
 }
 
 async function callLaunchModel({
@@ -576,7 +629,7 @@ export async function main() {
     if (!keyId) {
       throw new Error('Created key id is missing before disable step');
     }
-    await disablePortalApiKey(user.id, keyId);
+    await disablePortalApiKeyWithRetry(user.id, keyId);
     record('disable API key', true);
 
     const disabledCall = await callLaunchModel({ apiKey: plainKey, model });
@@ -597,7 +650,7 @@ export async function main() {
   } catch (error) {
     if (keyId) {
       try {
-        await disablePortalApiKey(user.id, keyId);
+        await disablePortalApiKeyWithRetry(user.id, keyId);
         record(
           'cleanup state',
           true,

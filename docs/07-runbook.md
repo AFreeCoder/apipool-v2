@@ -169,7 +169,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 ```
 
-价格对账先确认本次调用对应模型和冒烟分组存在 confirmed effective price，再从本地 `request_ledger` 读取已结算的标准用量桶，并按该请求绑定的不可变 `model_price_version` 重算 `expectedMicroUsd`，与钱包实际写入的 `chargedMicroUsd` 核对 `actual/delta/tolerance`。缺少已结算请求、New API request ID、价格快照或实际扣费时脚本必须失败；失败不能发布。该读取不会再写旧的用量快照，避免与网关结算争用 SQLite 写锁。
+价格对账先确认本次调用对应模型和冒烟分组存在 confirmed effective price，再从本地 `request_ledger` 读取已结算的标准用量桶，并按该请求绑定的不可变 `model_price_version` 重算 `expectedMicroUsd`，与钱包实际写入的 `chargedMicroUsd` 核对 `actual/delta/tolerance`。缺少已结算请求、New API request ID、价格快照或实际扣费时脚本必须失败；失败不能发布。该读取不会再写旧的用量快照；若恰好与网关结算发生瞬时 `SQLITE_BUSY`/`SQLITE_LOCKED`，读账本和禁用临时 key 会按用量轮询参数做有界重试，其他数据库错误仍立即失败。
 
 `deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再按固定邮箱创建/复用两个不可登录的 production service identity：普通 smoke portal user 固定为 `smoke.portal@apipool.local`，带 `role_operator` 的 smoke operator 固定为 `smoke.operator@apipool.local`，并把邮箱与 user id 写回 `.env.deploy`。两者必须分离，以验证“被调额用户”和“执行调额的权限主体”不是同一身份；live smoke 会同时校验环境变量和数据库中的实际邮箱，避免误用真实用户造成记录污染。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
 
