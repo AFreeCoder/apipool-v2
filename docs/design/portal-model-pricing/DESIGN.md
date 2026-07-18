@@ -1,7 +1,7 @@
 # 模型价格配置与调用计费方案（设计）
 
 - 日期：2026-07-18
-- 状态：待评审
+- 状态：评审中（第 1 轮裁决已并入正文，评审过程见 [review-log.md](./review-log.md)）
 - 关联调研：[research.md](./research.md)（厂商计费模式事实、newapi/LiteLLM 方案对比）
 - 承接遗留：`docs/dev/portal-newapi-routing-billing-decoupling/issues.md` 中"gpt-5.5 三维价格（S2）""OpenAI 长上下文阶梯计费未支持""GPT-5.6 cache write 单一价"三项（本设计给出承载结构；勾选在实现合入时进行）
 
@@ -49,7 +49,7 @@ catalog_group（分组倍率 bps）                    ▼
 
 1. 一套模型价格配置结构，覆盖首发清单全部模型（文本多档缓存 + token 制图片 + 按次图片），并让"加计费项"退化为加数据而非改公式。
 2. 计费引擎一般化：usage 归一化 → meter 数量向量 × 单价向量 → 单舍入点，两种计费方案（token / per_call）同一骨架。
-3. 折扣闭环：让模型级折扣真实参与定价并进入账本快照；策略态收敛。
+3. 折扣闭环：卖价公式收敛为「手填基准价 × 折扣」唯一策略，折扣真实参与定价并进入账本快照。
 4. 价格完备性前移到发布门禁（配置时校验），运行期只做确定性计算与保守回退。
 5. 给出首发清单的落地配置示例与迁移顺序。
 
@@ -58,7 +58,7 @@ catalog_group（分组倍率 bps）                    ▼
 - 长上下文阶梯计价（>200K 溢价档）——预留 meter 命名空间，不实现。
 - 音频、视频模型计费——结构预留（per_call 同构扩展 per_second），不实现。
 - 多币种、用户级/时段级折扣、生效时间调度、用量阶梯（volume tier）。
-- newapi 同步管线重写——仅做边界调整（§9）。
+- newapi 同步管线重写——仅做降级改造（§9）。
 
 ## 3. 候选方案对比与裁决
 
@@ -84,15 +84,15 @@ catalog_group（分组倍率 bps）                    ▼
 
 - 结算唯一事实源是不可变 `model_price_version`，准入时锁定 `priceVersionId`，账本审计不依赖目录层现值。
 - 全链路整数运算：单价 micro-USD（token 类为 per 1M tokens），BigInt 求和，唯一舍入点向上取整，最低扣费 1 micro-USD。
-- 折扣/倍率在**配置期**折算进快照单价，运行期引擎只做 Σ(数量 × 单价)。
+- 折扣在**配置期**折算进快照单价，运行期引擎只做 Σ(数量 × 单价)。
 
 新增的核心抽象是两个：**计费词表（meter）**与**计费方案（billing scheme）**。
 
 ```
                      ┌────────── 目录层（人工配置）──────────┐
-                     │ catalog_model_price（列式基准价）      │
+                     │ catalog_model_price（列式基准价，手填）│
                      │ catalog_model_price_tier（按次价表）   │
-                     │ catalog_group.ratioBps × listing.discountRateBps
+                     │ listing.discountRateBps（折扣，默认1.0）│
                      └──────────────┬───────────────────────┘
                                     │ 快照桥：折算 + 发布门禁（§7.4）
                                     ▼
@@ -201,7 +201,7 @@ CREATE TABLE catalog_model_price_tier (
 
 演进预留：当价格列超过约 12 个（音频/视频等模态进清单）时，再评估把低频 meter 收进 `extra_rates_json` 一列，高频列不动；本期不做（§3 裁决 4）。
 
-`catalog_model_listing` 变更：策略态收敛（配合 §8），schema 不加列——`discountRateBps` 已存在，本设计只是让它生效；`pricePolicy` 允许值收敛为 `'inherit_group' | 'price_override'` 两态，`listing_multiplier`/`legacy_override` 删除（未上线无存量，seed 重建）。
+`catalog_model_listing` 变更：定价策略机制整体删除（配合 §8 单一公式，评审裁决 O2）——`pricePolicy` 与 `override*` 系列列随迁移移除（未上线无存量，seed 重建）；`discountRateBps` 保留并真实生效（默认 10000 = 不打折）。listing 继续承载展示缓存、上架、排序、冒烟标记等售卖属性；不同分组如需差异价，用各自 listing 的折扣字段表达，不引入新机制。
 
 ### 6.2 网关层（结算事实源，一次性一般化）
 
@@ -221,16 +221,23 @@ CHECK (billing_scheme != 'per_call' OR json_extract(tiers_json,'$.default') IS N
 
 ### 6.3 账本层（审计与报表）
 
-`request_ledger` 变更（增列，不删列）：
+`request_ledger` 变更（增列，不删列；评审裁决 O3：用量一律列式）：
 
 ```sql
-ALTER TABLE request_ledger ADD COLUMN billing_scheme TEXT;        -- 结算时从价格版本冗余
-ALTER TABLE request_ledger ADD COLUMN usage_meters_json TEXT;     -- 全量 {meter: qty} + 回退标记（§7.4）
-ALTER TABLE request_ledger ADD COLUMN sku_key TEXT;               -- per_call：命中的 SKU（含回退后实际用的）
-ALTER TABLE request_ledger ADD COLUMN unit_count INTEGER;         -- per_call：实际张数/次数
+ALTER TABLE request_ledger ADD COLUMN billing_scheme TEXT;               -- 结算时从价格版本冗余
+-- token 用量补齐为"每 meter 一列"（与现有五桶列同构；列名实现时对齐既有命名风格）：
+ALTER TABLE request_ledger ADD COLUMN cache_write_tokens INTEGER;        -- meter: cache_write
+ALTER TABLE request_ledger ADD COLUMN image_input_tokens INTEGER;        -- meter: image_input
+ALTER TABLE request_ledger ADD COLUMN cached_image_input_tokens INTEGER; -- meter: cached_image_input
+ALTER TABLE request_ledger ADD COLUMN image_output_tokens INTEGER;       -- meter: image_output
+-- 按次计费独立承载：
+ALTER TABLE request_ledger ADD COLUMN sku_key TEXT;                      -- 命中的 SKU（含回退后实际用的）
+ALTER TABLE request_ledger ADD COLUMN unit_count INTEGER;                -- 实际张数/次数
+ALTER TABLE request_ledger ADD COLUMN billing_flags_json TEXT;           -- 仅异常时非空：缺价回退/SKU 回退等标记
 ```
 
-- 现有五桶列**保留且语义不变**（仅承载同名文本 meter），既有 usage 视图/对账 SQL 不破坏；图片 meter 数量只入 `usage_meters_json`。报表若需图片量物化列，等真实报表需求出现再加（开放问题 O3）。
+- 现有五桶列**保留且语义不变**；全部 meter 数量都有专列，报表/对账 SQL 直查（裁决 O3：不走"图片量入 JSON"的方案）。未来新增 meter 时账本同步加列——与目录层同一取舍，频率低、可接受。
+- `billing_flags_json` 只承载异常标记（§7.4 回退、SKU 回退），不承载数量。
 - 单价快照依旧通过 `priceVersionId` 指向不可变版本，不在账本重复存 rates。
 
 ## 7. 计费流水线
@@ -255,7 +262,7 @@ ALTER TABLE request_ledger ADD COLUMN unit_count INTEGER;         -- per_call：
 
 - **SKU**：从请求体参数派生（图片：`quality`、`size`；参数名白名单按模型能力配置，默认取这两个），按 §5.2 规范拼 key。
 - **量 n**：优先响应实际张数（`data.length`），响应异常时回退请求参数 `n ?? 1`。
-- **查表回退链**：`tiers[skuKey]` → 未命中则 `tiers['default']`，并在账本 `sku_key` 记录实际命中的 key、`usage_meters_json` 打回退标记（对账可见）。按次模型请求失败（上游 4xx/5xx 无产出）沿用现状失败路径（`failed_unbilled`），不扣费。
+- **查表回退链**：`tiers[skuKey]` → 未命中则 `tiers['default']`，并在账本 `sku_key` 记录实际命中的 key、`billing_flags_json` 打回退标记（对账可见）。按次模型请求失败（上游 4xx/5xx 无产出）沿用现状失败路径（`failed_unbilled`），不扣费。
 
 ### 7.3 计价（唯一舍入点，公式一般化）
 
@@ -281,51 +288,49 @@ charged = max(BigInt(n) × tierPrice, 1n)
 
 **发布期告警（不阻断）**——模型能力表明存在某可选计费项（如同步带出的 `cache_ratio`/`create_cache_ratio` 非零）而对应缓存价未配：发布成功但产生告警，防"忘配"与"确无此项"混淆（gpt-5.4-pro 无缓存能力，不告警；GPT-5.6 漏配 cache_write，会告警）。
 
-**运行期保守回退（可选 meter 缺价时）**——上游返回了某可选 meter 的用量而版本未定价：按其**回退基 meter**（§5.1 表）单价计费，回退事件写入 `usage_meters_json` 标记并计数告警。方向性说明：对 `cached_*`（折扣档）回退到 `input`/`image_input` 是向上计费（用户失去缓存折扣、平台不亏）；对 `cache_write*`（溢价档，真实成本 1.25×–2× input）回退到 `input` 价是**成本低估**（低估幅度有界：该部分用量 × 写价与输入价之差），靠发布期告警 + 对账（`newapiQuota` 参照）驱动尽快补配。基础 meter（input/output/image_*）不存在"回退"，它们由门禁保证必有价。
+**运行期保守回退（可选 meter 缺价时）**——上游返回了某可选 meter 的用量而版本未定价：按其**回退基 meter**（§5.1 表）单价计费，回退事件写入 `billing_flags_json` 标记并计数告警。方向性说明：对 `cached_*`（折扣档）回退到 `input`/`image_input` 是向上计费（用户失去缓存折扣、平台不亏）；对 `cache_write*`（溢价档，真实成本 1.25×–2× input）回退到 `input` 价是**成本低估**（低估幅度有界：该部分用量 × 写价与输入价之差），靠发布期告警 + 对账（`newapiQuota` 参照）驱动尽快补配。基础 meter（input/output/image_*）不存在"回退"，它们由门禁保证必有价。
 
 这组规则替代现状"五维全量必填正整数"（修复 G6：embeddings 不再配 output 假价；gpt-5.4-pro 不配 cached_input 是合法明确的"无此计费项"）。
 
 ### 7.5 结算入账
 
-结算事务结构不变（账本行终态 + 钱包流水 + 余额回填 + 透支冻结）。新增写入：`billing_scheme`、`usage_meters_json`、`sku_key`、`unit_count`；五桶列继续按同名 meter 写入。`newapiQuota` 等对账参照列不变。
+结算事务结构不变（账本行终态 + 钱包流水 + 余额回填 + 透支冻结）。新增写入：`billing_scheme`、各新增 meter 数量列、`sku_key`、`unit_count`、异常时 `billing_flags_json`；既有五桶列继续按同名 meter 写入。`newapiQuota` 等对账参照列不变。
 
-## 8. 折扣与分组定价闭环
+## 8. 定价公式（单一策略）
 
-现状唯一生效的定价乘数是分组倍率；listing 折扣字段是"死"的（G5）。收敛后的定价模型：
+评审裁决（O2）：卖价公式收敛为**唯一一种**，不设策略判别器：
 
 ```
-有效单价(meter) = 基准价(目录列) × 分组倍率(newapiGroupRatioBps/10000) × 模型折扣(discountRateBps/10000)
-per_call tier 同式。全部在快照桥配置期折算，round-half-up 到整数 micro-USD，产出不可变版本。
+有效单价(meter) = 手填基准价(目录列) × 折扣(discountRateBps/10000)
+per_call tier 同式。快照桥配置期折算，round-half-up 到整数 micro-USD，产出不可变版本。
 ```
 
-1. `pricePolicy` 收敛两态：
-   - `inherit_group`（默认）：上式全乘链生效，`discountRateBps` 默认 10000（不打折）。
-   - `price_override`：`override* 列`直接作为该 listing 的有效单价（不再乘分组倍率与折扣——覆盖即终价，语义最直白），保留 `overrideReason` 审计；该态下 `discountRateBps` 字段在 UI 禁用置灰，避免"填了不生效"的歧义。
-2. **解除快照桥的 `inherit_group` 硬门**：两态均可发布路由（修复"配折扣即不可调用"）。
-3. 展示与计费同源：`/models` 页与管理后台展示价直接读快照折算结果（`effectivePriceFormula` 继续记录换算式），吸取 newapi"倍率心算"教训——运营界面永远同时显示 基准价 / 倍率 / 折扣 / 最终价四个数。
-4. 折扣进账本：账本经 `priceVersionId` 引用的版本即含折后单价，审计天然闭环；`discountRateBps`、分组倍率作为版本的元数据字段随版本留存（快照桥写入），便于追溯"当时打了几折"。
-5. 促销价（如 sonnet-5 限时 $2/$10）的处理：直接改基准价（或将来改折扣），快照桥发新版本；历史账本引用旧版本不受影响。到期切换靠人工改价，不做生效时间调度（YAGNI，开放问题 O4）。
+1. **分组倍率退出卖价链**：`catalog_group.newapiGroupRatioBps` 不再乘入门户卖价，仅作为成本守卫的输入（§9，计算该分组的上游成本用）。不同分组默认同价；确需分组差异价时，用各自 listing 的折扣字段表达，不引入新机制。
+2. **策略态全部删除**：O1 裁决（手填定价）后，"覆盖价"失去存在理由——基准价本身就是手填值，想改价直接改基准价或折扣。`pricePolicy`、`override*` 列随迁移移除；快照桥不再设策略硬门，配齐必需价即可发布（§7.4 门禁），修复"配折扣即不可调用"（G5）。
+3. 折扣默认 10000（不打折）。
+4. 展示与计费同源：`/models` 页与管理后台展示价直接读快照折算结果（`effectivePriceFormula` 继续记录换算式）——运营界面同屏显示 基准价 / 折扣 / 最终价 / 成本参照（§9）四个数，杜绝 newapi 式倍率心算。
+5. 折扣进账本：账本经 `priceVersionId` 引用的版本即含折后单价，审计天然闭环；`discountRateBps` 作为版本元数据留存（快照桥写入），追溯"当时打几折"。
+6. 促销价（如 sonnet-5 限时 $2/$10）：直接改基准价或设折扣，发新版本；历史账本引用旧版本不受影响。到期切换靠人工，不做生效时间调度（O4 裁决接受；远期可加官网价监控任务辅助盯价，见 §12）。
 
-## 9. newapi 同步边界调整
+## 9. newapi 同步：降级为只读成本守卫
 
-同步管线保留（成本参照源），按新结构微调：
+评审裁决（O1）：门户价格全部手填、唯一事实源在门户；同步管线保留但**永不写入任何门户价格**，职责收敛为三件事：
 
-1. 推导映射补全：`cache_ratio → cached_input`、`create_cache_ratio → cache_write`（OpenAI 系）/`cache_write_5m`（Anthropic 系，1h 沿用 ×1.6 推导 + 人工复核锁定，现状规则）；`image_ratio → image_input/image_output` 维持现状推导。
-2. `quota_type=1`（按次）→ `billing_scheme='per_call'` + `model_price` 导入为 `default` tier；**阶梯 SKU 行只支持手工录入**（newapi 无此数据）。
-3. **token 制图片模型（gpt-image-2）基准价强制 `manual`**：newapi 的单一 `image_ratio` 表达不了"文本/图片输入分价 + 各自缓存档"，同步只做方向校验（漂移告警），不覆盖人工录入值。
-4. 漂移检测范围扩展到新列与 tier 表（default tier 对 `model_price`）。
+1. **成本参照采集**：定期拉取 `/api/pricing` 快照（沿用现有 client/fixture 体系），按可比子集换算成本参照价：`成本(meter) = ratio 系推导价 × 该分组 group_ratio`（推导规则沿用现状：`model_ratio × $2/1M`、`completion_ratio`、`cache_ratio`；`quota_type=1` 对 default tier）。newapi 表达不了的 meter（OpenAI 无 TTL 缓存写、图片输入缓存、阶梯 SKU）**不参与对比**——字段不匹配的兼容问题自然消解。
+2. **倒挂与变动告警**：逐「模型 × 分组」比较 有效卖价（§8）vs 成本参照，卖价低于成本 → 倒挂告警；成本参照较上次快照变动 → 调价提醒。只告警，不改数。现有 `driftStatus`/告警管道复用，语义从"漂移检测"转为"成本守卫"。
+3. **录入辅助（预填）**：管理台价格表单提供"按 newapi 参照价预填"按钮，换算值填入表单、人工确认才保存——同步进程不落库，预填只是打字的替代。首次建库可用现有 `backfill-catalog-pricing.ts` 一次性生成草稿，人工复核后定稿。
 
-门户定价独立性的口径确认见开放问题 O1。
+配套简化：`catalog_model_price.syncStatus` 语义收敛（价格一律 `manual`，参照数据新鲜度另行标记）；`source*` 参照列保留用于对比展示；`model_price_version.newapiRef*` 列保留（发布方向校验与成本守卫共用）。
 
 ## 10. 首发清单落地示例
 
-（基准价为 2026-07-18 官方价，见 research；micro-USD/1M。示例含分组倍率 0.5 的 official 分组、九折 `discountRateBps=9000` 的演示值。）
+（基准价为 2026-07-18 官方价，见 research；micro-USD/1M。示例含九折 `discountRateBps=9000` 演示值；分组不参与卖价，见 §8。）
 
 **gpt-5.6-sol（token，四维）**
 
 ```
 目录: base_input=5_000_000  base_cached_input=500_000  base_cache_write=6_250_000  base_output=30_000_000
-快照(official 0.5×, 九折): rates_json = {"input":2250000,"cached_input":225000,"cache_write":2812500,"output":13500000}
+快照(九折): rates_json = {"input":4500000,"cached_input":450000,"cache_write":5625000,"output":27000000}
 ```
 
 **claude-fable-5（token，五维）**
@@ -365,10 +370,10 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 2. **网关引擎一般化**（tests 先行）：`normalizeUsage` 输出 meter 向量（五桶键名映射）、`computeChargeMicroUsd` 按 map 遍历 + per_call 分支；`billing.test.ts` 重写为向量断言，新增 images/per_call 用例。
 3. **网关 schema**：`model_price_version` 重建（rates/tiers/billing_scheme），`request_ledger` 增列；迁移 0013+。
 4. **目录 schema**：增 2 列 + tier 表 + NULL 语义放开；fixed_price 迁移到 default tier；`catalog-pricing-migration.test.ts` 扩展。
-5. **快照桥改造**：折算全 meter + tiers、发布门禁、策略两态、折扣生效；`catalog-route-snapshot` 测试补门禁/折扣矩阵。
+5. **快照桥改造**：折算全 meter + tiers（基准 × 折扣单一公式）、发布门禁、策略字段移除；`catalog-route-snapshot` 测试补门禁/折扣矩阵。
 6. **images 端点接入**：usage 适配器 + per_call SKU 判定 + 结算写新列；`handler/integration` 用例补 gpt-image-2、dall-e-3 fixture（tests/fixtures/newapi/ 增补）。
-7. **同步管线微调**（§9）+ 漂移检测扩展。
-8. **管理 UI**：价格表单补 2 档、tier 编辑、四数展示（基准/倍率/折扣/最终）、门禁错误提示。
+7. **同步降级为成本守卫**（§9）：停写价格、可比子集成本换算、倒挂/变动告警、预填接口。
+8. **管理 UI**：价格表单补 2 档、tier 编辑、四数展示（基准/折扣/最终价/成本参照）、预填按钮、门禁错误提示。
 9. **对账与冒烟**：reconcile 覆盖回退标记统计；dev smoke 增图片模型一跑。
 
 依赖关系：1→2→3 严格串行；4/5 可与 2/3 并行开发但发布门禁依赖 3；6 依赖 2+3+5。
@@ -377,20 +382,22 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 
 | 项 | 处理 | 回链 |
 |---|---|---|
-| GPT-5.6 `create_cache_ratio` 生产未返回，cache_write 成本价需人工锁定或抓真实证据 | 结构已承载（`cache_write` meter + manual 列）；数值证据仍是发布前置 | issues.md 行 26，实现合入时勾选升级 |
+| GPT-5.6 缓存写成本侧无 newapi 参照（`create_cache_ratio` 生产未返回） | O1 裁决后卖价手填即可发布、不再阻塞；但成本守卫对 `cache_write` 是盲区，倒挂监控不覆盖该 meter | issues.md 行 26，实现合入时勾选升级 |
 | OpenAI 长上下文阶梯（`billing_mode/billing_expr`） | defer；meter 命名空间已预留 `*_above_200k` | issues.md 行 25，保持未勾 |
 | gpt-image-2 缓存 usage 字段形态未证实 | 适配器留口 + 缓存量计 0 告警观察 | §7.1 |
 | 同模型跨分组不同 scheme | 不支持（与 newapi 同边界） | research §2.1 |
 | 多币种 / 用户级折扣 / 时段折扣 / volume 阶梯 / per_second | defer，结构已说明扩展位 | §2 非目标 |
-| 报表图片量物化列 | 等真实报表需求 | O3 |
+| 官网价格监控定时任务（各厂商官网价自动比对） | 远期（O4 衍生想法）；成本守卫架构可挂第二参照源 | §9 |
 
-## 13. 开放问题（需产品/用户裁决）
+## 13. 评审裁决记录
 
-- **O1 定价独立性口径**：需求表述"独立于 newapi"，现状是"newapi 为成本参照源 + 门户折算/覆盖"。本设计默认保留同步作为参照（可 manual 完全脱钩），是否要求彻底断开同步？（推荐：保留参照，manual 优先）
-- **O2 策略收敛确认**：`listing_multiplier`/`legacy_override` 两态直接删除（未上线无存量）。若有隐藏依赖请指出。
-- **O3 账本图片量是否需要物化列**（当前入 JSON）：取决于报表/用量页需求。
-- **O4 促销价到期切换**是否需要定时生效机制（当前：人工改价发新版本）。
-- **O5 per_call SKU 参数白名单**放模型元数据还是代码常量（当前设计：代码常量起步，进元数据等第二个按次模型出现再说）。
+第 1 轮评审（2026-07-18，用户）裁决已全部并入正文，往返过程见 [review-log.md](./review-log.md)：
+
+- **O1** → 手填定价 + newapi 降级为只读成本守卫（§9 重写）。
+- **O2** → 比原两态提案更进一步：删除全部策略态，唯一公式 基准价 × 折扣；分组倍率退出卖价链（§8 重写、§6.1）。
+- **O3** → 账本用量全列式：token 每 meter 一列、按次独立 sku/数量列（§6.3 重写）。
+- **O4** → 接受人工改价；官网价监控任务记远期 defer（§12）。
+- **O5** → 同意：计费方式（token/per_call）配置在模型元数据（§6.1 `billing_scheme`），SKU 参数白名单先代码常量（§5.2）。
 
 ## 14. 需求映射自查
 
@@ -399,4 +406,4 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 | 未上线阶段、方案简单 | 目录层仅 +2 列 +1 表；文本模型配置零变化；破坏性迁移一次到位不留双轨 |
 | 首发清单全覆盖 | §5.3 逐模型自检通过（含 gpt-image-2 五 meter、Claude 双 TTL 缓存写） |
 | 扩展性 | 加计费项=加 meter 键（网关零公式改动）；加计费方式=新 scheme 复用 tiers 结构（per_second 同构）；长上下文/音频命名空间已预留 |
-| 参考 newapi | 保留分组倍率层与按次/按量二选一；吸取倍率制教训改为绝对单价 + 四数展示；缓存计费一等公民化 |
+| 参考 newapi | 保留按次/按量二选一经验；吸取倍率制教训改为绝对单价 + 四数展示；其价格数据转作成本守卫参照（§9）；缓存计费一等公民化 |
