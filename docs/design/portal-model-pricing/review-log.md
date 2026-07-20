@@ -32,4 +32,24 @@ codex 反评审中被驳回的部分：per_call 运行面 fail-closed 的"featur
 
 第 2 轮验证过的代码事实：`parseBufferMax = 33_554_432`（32 MiB 响应解析缓冲上限，config.ts）；请求侧 `service_tier` 零拦截（billing.ts 仅 usage 白名单）；`isCatalogRouteReady` 三硬门（queries.ts）。
 
-后续：按 codex 案 review-log 24 条技术题对本方案跑对抗评审 → 终审 GO → §11 移入 `docs/plan/portal-model-pricing/`。
+后续：按 codex 案 review-log 技术题对本方案跑对抗评审 → 终审 GO → §11 移入 `docs/plan/portal-model-pricing/`。
+
+## 第 3 轮（2026-07-20，对抗评审：codex 案 25+5 题对本方案的适用性验证）
+
+题源：codex 案 review-log 三组审查 25 条 + 5 条上线门槛（此前口径"24 题"系点数错误）。初筛：已消解/已吸收 12、机制不存在不适用 8、真题 7 + 轻确认 2。真题逐条取证（main 代码 + newapi 上游）后裁定：
+
+| 题 | 取证 | 裁定 | 落点 |
+|---|---|---|---|
+| R1 GPT-5.6 `cache_write` 字段可得性 | 适配器读 `input_tokens_details.cache_write_tokens`，端点不返回则写入量混入 input 低收 20%；官方 Responses 参考页未列该字段 | **成立**：加上线门槛——模型 × 端点逐组合真实非零 smoke；取不到则暂缓或显式按"无独立写入价"定价 | §12 新行 |
+| R9 缓存写聚合等式校验 | billing.ts messages 分支确认无校验；"5m 明细在、1h 字段缺失"时 1h 归 0 漏计 | **成立**：聚合与细分同存时校验相等，不等按细分结算 + 标记 + 告警 | §7.1 |
+| R10 server tools / iterations 防御 | 三层实锤：handler 请求侧不拦截 `tools`；`server_tool_use` 在 MAPPED_KEYS 白名单但无桶映射（次数静默忽略）；`unmappedNonZero` 只过滤**顶层数值**字段，对象/数组（iterations）逃逸 | **成立且加重**：请求侧拦截 server-side tools（client function calling 放行）+ 检测升级覆盖结构化未知项与白名单内无映射字段 | §7.1 新段、§11 步骤 8 |
+| R16 异常运营闭环 | 现状告警 = console.error；方案已升级账本标记 + reconcile 统计 | 已覆盖；内测期告警 + 人工足够，不加熔断 | 无 |
+| R21 归一化回填一致性 | 归一化在 finalize 同步执行；backfill 走 newapi 日志结构化字段（normalizeBackfillUsage），无跨版本重解释 | **不成立** | 无 |
+| R23 无 usage 结算路径 | 现状有 pending → `usage_log_snapshot` 补差路径，设计未写；日志粒度只有 input/output，无缓存细分 → 补差按全价 input 收（方向 = 多收，触 O10） | **部分成立**：路径显式化 + 补差结算打 `billing_flags` 粒度降级标记；per_call 免疫（张数可数） | §7.5 |
+| R-门槛 newapi images 透传 | newapi 有 generations/edits（multipart）支持；gpt-image-2 经 issue #4480 转换路径；issue #4478 记录长耗时被切断、流式未按 Images SSE 处理的缺陷 | **成立**：§7.6 增第 5 条——JSON 生成/multipart 编辑/长耗时三场景实测 + 部署版本含 gpt-image-2 支持，callable 前置 | §7.6 |
+| R4 rolling ID defer | 自营 newapi 渠道，模型解析在渠道侧 | defer 合理，维持 §12 | 无 |
+| R6 272K 误套防护 | §5.4 逐型号核对 + 能力声明门禁已覆盖 | 已覆盖 | 无 |
+
+评审衍生新发现（**待用户裁决**）：
+
+- **N1 原始 usage 凭证不留存**：现状账本只存归一化后的五桶数量（+usageSource），原始响应 usage JSON 不落盘。O10 确立"争议/退款成本"维度后，用户争议时无法复核"当时上游返回了什么"（只能间接引 newapi 侧日志）。codex 案有 `rawProviderUsageJson` 对应物。选项：a) 账本加原始 usage 凭证列（与 O3 不冲突——O3 禁的是用量数量入 JSON 查询，凭证是审计证据非查询字段）；b) 独立留存（日志/表）；c) 不留，依赖 newapi 日志。

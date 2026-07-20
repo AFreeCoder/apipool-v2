@@ -297,13 +297,19 @@ ALTER TABLE request_ledger ADD COLUMN billing_flags_json TEXT;           -- 仅�
 |---|---|
 | chat_completions | `cached_input = prompt_tokens_details.cached_tokens`；`cache_write = cache_creation_tokens ?? cache_creation_input_tokens`；`input = max(0, prompt_tokens − cached_input − cache_write)`（OpenAI 子集语义做减法）；`output = completion_tokens` |
 | responses | 同上，字段取自 `input_tokens_details.*`（cache_write_tokens） |
-| messages（Anthropic） | `input = input_tokens`（互斥语义不减）；`cached_input = cache_read_input_tokens`；`cache_write_5m/1h = cache_creation.ephemeral_*_input_tokens`（缺细分时汇总额入 5m，现状规则不变） |
+| messages（Anthropic） | `input = input_tokens`（互斥语义不减）；`cached_input = cache_read_input_tokens`；`cache_write_5m/1h = cache_creation.ephemeral_*_input_tokens`（缺细分时汇总额入 5m）。**新增等式校验**（第 3 轮 R9，现状无）：聚合字段与细分同时存在时校验 `cache_creation_input_tokens = 5m + 1h`，不等则按细分结算 + `billing_flags` 标记 + 告警——可抓住"5m 在、1h 字段缺失"类漏计 |
 | embeddings | `input = prompt_tokens` |
 | **images（新增）** | `input = input_tokens_details.text_tokens`；`image_input = input_tokens_details.image_tokens`；`image_output = output_tokens`；缓存细分字段（若上游提供）映射到 `cached_input`/`cached_image_input`，未提供细分时缓存量计 0 并进对账观察（调研未取到 gpt-image-2 缓存 usage 字段样例，适配器留口）。**gpt-image-2 为 per_call：以上 token 归一化照常执行但只入账不计费**（O11，成本核算用） |
 
 关键规范：归一化输出的 meter 数量**互斥不重叠**；"OpenAI cached 是输入子集、Anthropic 各桶互斥"的语义差异只允许在适配器内消化（research §1.5），计价公式不感知来源。
 
 **长档判定（O9，归一化的最后一步）**：价格版本含 `long_context_threshold_tokens` 且 `inputTotalTokens`（= input + cached_input + cache_write* 之和，口径见 §5.4）≥ 阈值时，把全部 meter 键改写为对应 `*_long` 键；否则保持普通键。计价层只按键查 `rates_json`，不感知档位逻辑。
+
+**server-side tools 与结构化未知项防御（第 3 轮 R10，三处现状缺口的修补）**：
+
+1. **请求侧拦截**：首版不开放会产生独立计费的 server-side tools（Anthropic `web_search` 等按次收费工具）。转发层检查 `tools` 数组，含 server-side 工具类型即拒绝（4xx 明示未开放）；客户端 function calling（普通 tool use，无独立计费）放行。不拦截 = 放任一个未定价计费项被触发（工具费成本经渠道传导、门户收入侧为零），与 O10 完备性原则直接冲突。
+2. **检测升级**：现状 `unmappedNonZero` 只检测**顶层数值**字段——`iterations[]`（数组）、`server_tool_use`（对象）会静默逃逸，且 `server_tool_use` 在已知字段白名单中但无任何桶映射（次数被静默忽略）。升级为：未知的**对象/数组结构**、以及白名单内但无 meter 映射的非零字段，一律触发 O10 兜底（零计 + `billing_flags` 标记 + 强告警）。
+3. 拦截与检测双层并存：拦截防正门，检测防"上游行为变化/拦截遗漏"的旁路。
 
 流式提取（sse-parser）不变；images 端点非流式，但**不走现有整体缓冲的 `extractBodyUsage` 路径**——响应含 base64 图片数据，受 32 MiB 解析缓冲上限约束，接入约束见 §7.6。
 
@@ -350,6 +356,8 @@ charged = max(BigInt(n) × tierPrice, 1n)
 
 结算事务结构不变（账本行终态 + 钱包流水 + 余额回填 + 透支冻结）。新增写入：`billing_scheme`、各新增 meter 数量列、`sku_key`、`unit_count`、`long_context_applied`、异常时 `billing_flags_json`；既有五桶列继续按同名 meter 写入（长档请求写同名数量列 + 标志位，§6.3）。`newapiQuota` 等对账参照列不变。
 
+**usage 缺失路径（第 3 轮 R23 显式化，机制沿用现状）**：响应完整但无可靠 usage 时进 `pending`，由 newapi 日志（`usage_log_snapshot`）补差结算——meter 化后补差同样走归一化。已知局限：日志粒度粗于响应 usage（只有 input/output 总量，无缓存细分），补差结算等于按全价 input 收费（用户失去缓存折扣）；按 O10"不收错"方向，补差结算的请求必须打 `billing_flags` 标记（粒度降级可追溯）。per_call 模型无此问题（张数可数，计费不依赖 usage）。
+
 ### 7.6 images 端点接入约束（首发含 gpt-image-2 的必要成本）
 
 网关现只开放 chat/responses/messages/embeddings/models，images 是全新端点。以下四条是设计约束，机制细节归 plan：
@@ -358,8 +366,9 @@ charged = max(BigInt(n) × tierPrice, 1n)
 2. **multipart 白名单提取**（edits）：只解析 `model`、SKU 参数（`quality`/`size`）、`n` 等白名单文本字段且内存有界；图片文件部分流式透传，不整体读入内存、不进日志。SKU 参数在 per_call 下**直接决定计费档位**（O11），提取错误即计费错误，需 fixture 覆盖。
 3. **跳过媒体正文的响应解析**：现有非流式 usage 提取整体缓冲响应、上限 32 MiB（`GATEWAY_PARSE_BUFFER_MAX`），base64 图片响应可能超限导致"图已交付、无法结算"。解析必须跳过 `b64_json` 大块内容，只提取顶层 usage、张数（`data.length`）与必要元数据；若上游支持 URL 返回格式可配置优先，但不得作为唯一依赖。
 4. **张数以响应实际为准**：`unit_count` 取实际返回；部分成功按实际；解析不出张数走失败复核路径（§7.2）。
+5. **newapi 透传实测（第 3 轮 R-门槛）**：以上四条全部建立在 newapi 能正确透传 images 端点的前提上，该前提必须实测——JSON 生成、multipart 编辑、长耗时请求（上游 issue #4478 记录过长请求被切断、流式未按 Images SSE 处理的缺陷）三个场景真实跑通，且本地部署的 newapi 版本需确认含 gpt-image-2 支持（上游 issue #4480 为其支持路径）。
 
-四条未齐前，gpt-image-2 不得标记为可调用。
+五条未齐前，gpt-image-2 不得标记为可调用。
 
 ## 8. 定价公式（单一策略）
 
@@ -455,13 +464,13 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 每步以现有测试缝为锚（tests/gateway/*、tests/api-catalog/*、tests/db/*）：
 
 1. **词表与类型**：`meters.ts` 常量模块（含 `*_long` 键）+ scheme 类型；schema-guard 测试更新预告。
-2. **网关引擎一般化**（tests 先行）：`normalizeUsage` 输出 meter 向量（五桶键名映射）+ 长档判定（§7.1）、`computeChargeMicroUsd` 按 map 遍历 + per_call 分支；`billing.test.ts` 重写为向量断言，新增 images/per_call/272K 边界（含 272000/272001）用例。
+2. **网关引擎一般化**（tests 先行）：`normalizeUsage` 输出 meter 向量（五桶键名映射）+ 长档判定 + 缓存写等式校验 + 结构化未知项检测升级（§7.1）、`computeChargeMicroUsd` 按 map 遍历 + per_call 分支；`billing.test.ts` 重写为向量断言，新增 images/per_call/272K 边界（含 272000/272001）/聚合不等式/iterations 结构逃逸用例。
 3. **网关 schema**：`model_price_version` 重建（rates/tiers/billing_scheme/threshold），`request_ledger` 增列（含 `long_context_applied`）；迁移 0013+。
 4. **目录 schema**：增 7 列（2 计费档 + 阈值 + 4 长档）+ tier 表 + listing `allow_long_context` + NULL 语义放开；fixed_price 迁移到 default tier；`catalog-pricing-migration.test.ts` 扩展。
 5. **快照桥改造**：折算全 meter + tiers + 长档（基准 × 折扣单一公式；开关编译进版本，§6.2）、完备集发布硬门（§7.4）、策略字段移除；`catalog-route-snapshot` 测试补门禁/折扣/长档矩阵。
 6. **images 端点接入**（§7.6 四项约束）：端点注册 + multipart 白名单提取 + 跳过 b64 的响应解析 + usage 适配器 + SKU 准入判定 + 结算写新列；`handler/integration` 用例补 gpt-image-2、dall-e-3 fixture（tests/fixtures/newapi/ 增补）。
 7. **同步降级为成本守卫 + callable 重定义**（§9）：停写价格、可比子集成本换算（含按次 default 档）、倒挂/变动告警、预填接口；`isCatalogRouteReady` 删三硬门。
-8. **转发层准入**：272K 保守估算拦截（listing 开关关时）+ per_call 未知 SKU 拒绝。
+8. **转发层准入**：272K 保守估算拦截（listing 开关关时）+ per_call 未知 SKU 拒绝 + server-side tools 拦截（§7.1）。
 9. **管理 UI**：价格表单补计费档与长档列（按阈值有无展示）、listing 长上下文开关、tier 编辑、四数展示（基准/折扣/最终价/成本参照）、预填按钮、门禁错误提示。
 10. **对账与冒烟**：reconcile 覆盖 `billing_flags` 统计（未知计量零计、漏拦超阈值）；dev smoke 增图片模型一跑；272K 实际切档一跑（开着开关的分组）。
 
@@ -472,6 +481,7 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 | 项 | 处理 | 回链 |
 |---|---|---|
 | GPT-5.6 缓存写成本侧无 newapi 参照（`create_cache_ratio` 生产未返回） | 完备集硬门下卖价必手填、漏配即发布失败；成本守卫对 `cache_write` 仍是盲区，倒挂监控不覆盖该 meter | issues.md 行 26，实现合入时勾选升级 |
+| GPT-5.6 `cache_write` 字段可得性未证实（第 3 轮 R1）：官方 Responses API 参考页未列该字段；取不到时写入量混入 input 按 input 价收（低收 20%） | 上线门槛：每个开放的模型 × 端点组合，能力声明的缓存写字段须经真实非零 smoke 证明可得；取不到的组合暂缓开放，或显式按"无独立写入价"定价并接受成本差 | §7.1、§11 步骤 10 |
 | OpenAI 长上下文阶梯 | **第 2 轮 O9 裁决转为首版实现**（§5.4，整请求切档 + listing 开关）；1.05M 型号清单与长档价发布前逐型号按官方页核对 | issues.md 行 25，实现合入时勾选 |
 | 272K 保守估算系数 | 关开关分组的拦截靠估算，低估即漏拦（按普通档结算 + 标记，平台自担差价）；靠 `billing_flags` 漏拦统计持续校准系数 | §5.4 |
 | gpt-image-2 缓存 usage 字段形态未证实 | 按次售卖（O11）后不影响计费，仅影响成本核算精度；适配器留口 + 观察 | §7.1 |
