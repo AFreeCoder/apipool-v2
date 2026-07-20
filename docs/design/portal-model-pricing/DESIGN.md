@@ -162,7 +162,7 @@ meter 是"一种被计量计价的量"。键名全局唯一、snake_case，与�
 |---|---|---|
 | gpt-5.4 / 5.4-mini / 5.4-nano / gpt-5.5 | token | input, cached_input, output（三维，S2 结论的正式承载）；1.05M 上下文型号另配长档（§5.4） |
 | gpt-5.4-pro / 5.5-pro | token | input, output（无缓存价） |
-| gpt-5.6-sol / terra / luna | token | input, cached_input, output（**第 4 轮实测：当前渠道缓存写入量逐请求不可得——chat 无字段、responses `cache_write_tokens` 恒 0，能力声明按"无独立写入价"，cache_write 列留空、写入量并入 input，少收 20% 平台自担**）；1.05M 上下文型号另配长档三价（§5.4） |
+| gpt-5.6-sol / terra / luna | token | input, cached_input, cache_write, output（**按官方满配，O13**；第 4 轮实测当前订阅池渠道写入量恒 0 → 运行期 qty=0 自然按 input 价收，换渠道后自动按写入价生效，无需改配置）；1.05M 上下文型号另配长档四价（§5.4） |
 | claude 全系（fable-5 → haiku-4.5） | token | input, cached_input, cache_write_5m, cache_write_1h, output（当前官方无长上下文溢价，不配长档，§5.4） |
 | gpt-image-2 | per_call | tiers: default（缺省/auto 档）+ 各 质量×尺寸（O11 裁决：门户按次售卖；token 用量照记不计费） |
 | dall-e-3（同构对照） | per_call | tiers: default + 各 质量×尺寸（与 gpt-image-2 同一结构） |
@@ -359,10 +359,17 @@ charged = max(BigInt(n) × tierPrice, 1n)
 
 **发布门禁 = 完备集硬门（快照桥，配置期 fail-closed）**：
 
-- 判定基准是**模型计费能力声明**（人工维护的模型级事实：有无缓存读/写、写入是否分 TTL、有无长档等；newapi 同步的 `cache_ratio`/`create_cache_ratio` 等仅作预填提示信号，不是判定源）。
-- 能力声明所列的每个计费项**必须显式配价**，任何一项缺失即拒绝发布，错误信息指明缺哪个 meter——GPT-5.6 漏配 `cache_write` 是发布失败，不是告警。能力声明无此项 → 对应列留空合法（"无此计费项"，如 gpt-5.4-pro 无缓存价）。
-- scheme/endpoint 基础必需集兜底：token 类要求 `input`（及按 endpoint 的 `output`/`image_*`）；per_call 类要求 `tiers.default`；配有长档阈值的模型要求长档四价齐全（§5.4）。
+- 判定基准是**模型计费能力声明**，其内容 = **官方计费说明书**（该模型官方定价页列了哪些计费项：有无缓存读/写、写入是否分 TTL、有无长档等——稳定事实，不随渠道变；newapi 同步的 `cache_ratio` 等仅作预填提示信号，渠道实测结果也不改变声明，只作知情与成本核算参考，O13）。
+- 能力声明所列的每个计费项**必须按官方价满配**，任何一项缺失即拒绝发布，错误信息指明缺哪个 meter——GPT-5.6 漏配 `cache_write` 是发布失败，不是告警。能力声明无此项 → 对应列留空合法（"无此计费项"，如 gpt-5.4-pro 无缓存价）。
+- scheme/endpoint 基础必需集兜底：token 类要求 `input`（及按 endpoint 的 `output`/`image_*`）；per_call 类要求 `tiers.default`；配有长档阈值的模型要求长档价齐全（§5.4）。
 - 第 1 轮的"发布期告警（不阻断）"层取消，其防混淆职责由能力声明承担。
+
+**统一运行期原则（O13）：价格表满配官方计费项，usage 缺什么字段就按 0 套标准公式**——公式 Σ qty × rate 对任何渠道形态都成立，无渠道分支：
+
+- 订阅池渠道（写入量恒 0/缺失）：`cache_write` qty=0，写入量自然留在 input 按 input 价收——与上游"不区分写入"的口径一致，且换渠道/直连后字段一旦有真值**自动开始按写入价结算，无需改任何配置**。
+- 官方直连渠道（usage 类别齐全）：全部计费项如实计入，同一公式同一配置。
+- 各渠道卖价结构完全一致（官方价 × 折扣），差异只在成本侧，由成本守卫（§9）处理，不进卖价链。
+- **方向性说明（两种上游语义下"缺字段 = 0"都不会多收，但量级不同）**：OpenAI 子集语义下缺字段只是**分类粗化**（总输入量守恒，该量按 input 价收，如写入价 1.25× 的差额少收）；Anthropic 互斥语义下缺字段是**整段漏计**（互斥桶的量不会回落到 input，直接免费）。两者方向都是平台少收、绝不多收用户（O10 精神），Anthropic 侧官方 usage 字段齐全、缺失属异常，R9 等式校验可抓其中的聚合不一致类漏计。
 
 **运行期无回退**（第 1 轮"运行期保守回退"机制删除）：完备集门禁下，已知计费项必有精确价。运行期仍出现无价非零计量的场景只剩上游给存量端点追加 usage 字段一类（有先例：`prompt_tokens_details`、`cache_creation` 5m/1h 细分都是后加的），兜底为：该部分**零计费 + 账本 `billing_flags` 标记 + 强告警**——宁少收平台自担，绝不按替代价格向用户收费。管理员补配能力声明与价格后新请求正确计费，历史不追收。
 
@@ -430,18 +437,19 @@ per_call tier 同式。快照桥配置期折算，round-half-up 到整数 micro-
 
 （基准价为 2026-07-18 官方价，见 research；micro-USD/1M。示例含九折 `discountRateBps=9000` 演示值；分组不参与卖价，见 §8。）
 
-**gpt-5.6-sol（token，三维 + 长档；cache_write 留空 = 第 4 轮实测裁决"无独立写入价"，写入量并入 input）**
+**gpt-5.6-sol（token，四维 + 长档，官方满配；O13：渠道拿不到的字段运行期自然为 0）**
 
 ```
-目录: base_input=5_000_000  base_cached_input=500_000  base_output=30_000_000
-      （base_cache_write 留空：当前渠道写入量不可得，官方 6.25 写入价无法逐请求结算，
-       写入量按 input 价 5.00 收、20% 让利平台自担；换渠道实测可得后补配发新版本）
+目录: base_input=5_000_000  base_cached_input=500_000  base_cache_write=6_250_000  base_output=30_000_000
+      （cache_write 照官方配 6.25：当前订阅池渠道写入量恒 0 → 该 meter qty=0、写入量留在 input
+       按 5.00 收，与上游订阅制口径一致；换渠道/直连后字段有真值即自动按 6.25 结算，配置不动）
       long_context_threshold_tokens=272_000（官方长档价，§5.4）:
-      base_input_long=10_000_000  base_cached_input_long=1_000_000  base_output_long=45_000_000
-快照(九折, listing 开长上下文): rates_json = {"input":4500000,"cached_input":450000,"output":27000000,
-      "input_long":9000000,"cached_input_long":900000,"output_long":40500000}，
-      long_context_threshold_tokens=272000
-快照(同折扣, listing 关长上下文): rates_json 只含普通三键、无阈值——超阈值请求在转发层被估算拦截
+      base_input_long=10_000_000  base_cached_input_long=1_000_000
+      base_cache_write_long=12_500_000  base_output_long=45_000_000
+快照(九折, listing 开长上下文): rates_json = {"input":4500000,"cached_input":450000,"cache_write":5625000,
+      "output":27000000,"input_long":9000000,"cached_input_long":900000,"cache_write_long":11250000,
+      "output_long":40500000}，long_context_threshold_tokens=272000
+快照(同折扣, listing 关长上下文): rates_json 只含普通四键、无阈值——超阈值请求在转发层被估算拦截
 ```
 
 **claude-fable-5（token，五维）**
@@ -504,7 +512,7 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 | 项 | 处理 | 回链 |
 |---|---|---|
 | GPT-5.6 缓存写成本侧无 newapi 参照（`create_cache_ratio` 生产未返回） | 完备集硬门下卖价必手填、漏配即发布失败；成本守卫对 `cache_write` 仍是盲区，倒挂监控不覆盖该 meter | issues.md 行 26，实现合入时勾选升级 |
-| GPT-5.6 `cache_write` 字段可得性（第 3 轮 R1 提出，**第 4 轮已实测并溯源**）：经 gpt-discount-1 渠道实调 gpt-5.6-luna——chat completions 首次调用无任何写入字段、responses `cache_write_tokens` 存在但恒 0（二次调用 cached 3840→4864 证明写入发生却报 0）。**根因（查旧 apipool 源码定案）**：该渠道上游是 ChatGPT 订阅账号池（订阅制不透出缓存写入量），apipool 透传上游 usage 原文，chat 端点的 details 缺失是其转换层全零省略逻辑（responses_to_chatcompletions.go）——结构性限制非 bug。另观测共享账号池缓存串扰（首次调用即命中 3840 缓存） | 已裁决：GPT-5.6 能力声明按当前渠道 = "无独立写入价"，cache_write 列留空、写入量并入 input；且该渠道成本为订阅制包月，20% 名义让利**无边际成本损失**。cached_input 字段可得、正常配价。换渠道/直连后重测可补配发新版本。"模型 × 端点 × 渠道逐组合 smoke"仍为新模型上线门槛 | §5.3、§10、§11 步骤 10 |
+| GPT-5.6 `cache_write` 字段可得性（第 3 轮 R1 提出，第 4 轮实测溯源，**第 5 轮 O13 定稿**）：经 gpt-discount-1 渠道实调——chat 首次调用无写入字段、responses `cache_write_tokens` 恒 0（cached 3840→4864 证明写入发生却报 0）。根因：上游是 ChatGPT 订阅账号池（订阅制不透出写入量），apipool 透传原文，结构性限制非 bug；另观测共享账号池缓存串扰 | **O13 定稿**：价格表按官方满配（cache_write 照配 6.25），运行期字段缺失/恒 0 → qty=0 自然按 input 价收，与订阅上游口径一致且该渠道成本为包月、无边际损失；换渠道后自动按写入价生效、配置不动。渠道 smoke 的作用降为知情与成本核算，不再决定配置 | §5.3、§7.4、§10 |
 | OpenAI 长上下文阶梯 | **第 2 轮 O9 裁决转为首版实现**（§5.4，整请求切档 + listing 开关）；1.05M 型号清单与长档价发布前逐型号按官方页核对 | issues.md 行 25，实现合入时勾选 |
 | 272K 保守估算系数 | 关开关分组的拦截靠估算，低估即漏拦（按普通档结算 + 标记，平台自担差价）；靠 `billing_flags` 漏拦统计持续校准系数 | §5.4 |
 | gpt-image-2 缓存 usage 字段形态未证实 | 按次售卖（O11）后不影响计费，仅影响成本核算精度；适配器留口 + 观察 | §7.1 |
@@ -536,6 +544,11 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 - **O10** → 计价完备性：完备集发布硬门 + 删除运行期回退；未知计量项零计费 + 账本标记 + 告警，绝不按替代价收费（§7.4 重写）。
 - **O11** → gpt-image-2 门户按次售卖（newapi 侧同步配按次）；per_call 首发启用，SKU 准入 fail-closed、数量按响应实际、token 照记不计费（§5.2、§7.2、§7.6）。
 - 反评审补充 → callable 判定删 newapi 三硬门（实施阻断级发现，§9）。
+
+第 5 轮（2026-07-20，用户收敛裁决）：
+
+- **O13** → token 制计费的统一原则：**价格表按官方计费说明满配、usage 缺什么字段就按 0 套标准公式**——公式无渠道分支，订阅池渠道自然退化为按 input 收（与上游口径一致）、官方渠道全项如实计入、换渠道自动生效无需改配置；能力声明基准回归官方计费说明书（稳定事实），渠道 smoke 降为知情项（§7.4、§5.3、§10、§12）。取代第 4 轮"按渠道能力留空 cache_write"的落地方式（多收方向的防线不变：usage 多出未知字段仍零计 + 标记）。
+- images 覆盖确认 → 图片模型"按次 / 按 token"二选一由 `billing_scheme` 承载，现有结构满足，切换 = 改字段发新版本；无新增设计项，遗留为执行清单（sub2api 账号开通、edits 补测、tier 价目表按官方合法 SKU 枚举定价、URL 转存决策）。
 
 第 4 轮（2026-07-20，用户对第 3 轮修补的裁决 + 实测/调研执行）：
 
