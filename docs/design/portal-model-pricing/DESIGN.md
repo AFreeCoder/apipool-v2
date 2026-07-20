@@ -1,7 +1,7 @@
 # 模型价格配置与调用计费方案（设计）
 
-- 日期：2026-07-18（第 2 轮裁决并入 2026-07-19）
-- 状态：评审中（第 1、2 轮裁决已并入正文，评审过程见 [review-log.md](./review-log.md)；第 2 轮源自与 codex 独立方案的双线对比及其反评审）
+- 日期：2026-07-18（第 2 轮裁决并入 2026-07-19，第 3–5 轮并入 2026-07-20）
+- 状态：**终审 GO（2026-07-20，用户）**——五轮评审 O1–O13 全部并入正文，评审过程见 [review-log.md](./review-log.md)；执行计划见 [../../plan/portal-model-pricing/PLAN.md](../../plan/portal-model-pricing/PLAN.md)
 - 关联调研：[research.md](./research.md)（厂商计费模式事实、newapi/LiteLLM 方案对比）
 - 承接遗留：`docs/dev/portal-newapi-routing-billing-decoupling/issues.md` 中"gpt-5.5 三维价格（S2）""OpenAI 长上下文阶梯计费未支持""GPT-5.6 cache write 单一价"三项（前两项本设计直接实现，第三项为承载结构+发布硬门；勾选在实现合入时进行）
 
@@ -492,20 +492,7 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 - 实施时列出"清理/迁移哪些表"的清单（价格版本、请求账本清理或等价迁移；`wallet_ledger` 是否保留一并列明），**经人工确认后执行**；清空是显式批准的独立操作，不得作为迁移脚本的自动 fallback 分支。
 - 迁移在停写窗口内执行（窗口内无 open 请求）；执行前备份 + 恢复验证，执行后 SQLite 完整性检查；失败回滚到备份。
 
-每步以现有测试缝为锚（tests/gateway/*、tests/api-catalog/*、tests/db/*）：
-
-1. **词表与类型**：`meters.ts` 常量模块（含 `*_long` 键）+ scheme 类型；schema-guard 测试更新预告。
-2. **网关引擎一般化**（tests 先行）：`normalizeUsage` 输出 meter 向量（五桶键名映射）+ 长档判定 + 缓存写等式校验 + 结构化未知项检测升级（§7.1）、`computeChargeMicroUsd` 按 map 遍历 + per_call 分支；`billing.test.ts` 重写为向量断言，新增 images/per_call/272K 边界（含 272000/272001）/聚合不等式/iterations 结构逃逸用例。
-3. **网关 schema**：`model_price_version` 重建（rates/tiers/billing_scheme/threshold），`request_ledger` 增列（含 `long_context_applied`）；迁移 0013+。
-4. **目录 schema**：增 7 列（2 计费档 + 阈值 + 4 长档）+ tier 表 + listing `allow_long_context` + NULL 语义放开；fixed_price 迁移到 default tier；`catalog-pricing-migration.test.ts` 扩展。
-5. **快照桥改造**：折算全 meter + tiers + 长档（基准 × 折扣单一公式；开关编译进版本，§6.2）、完备集发布硬门（§7.4）、策略字段移除；`catalog-route-snapshot` 测试补门禁/折扣/长档矩阵。
-6. **images 端点接入**（§7.6 四项约束）：端点注册 + multipart 白名单提取 + 跳过 b64 的响应解析 + usage 适配器 + SKU 准入判定 + 结算写新列；`handler/integration` 用例补 gpt-image-2、dall-e-3 fixture（tests/fixtures/newapi/ 增补）。
-7. **同步降级为成本守卫 + callable 重定义**（§9）：停写价格、可比子集成本换算（含按次 default 档）、倒挂/变动告警、预填接口；`isCatalogRouteReady` 删三硬门。
-8. **转发层准入**：272K 保守估算拦截（listing 开关关时）+ per_call 未知 SKU 拒绝 + server-side tools 未配价拒绝（O12，§7.1）。
-9. **管理 UI**：价格表单补计费档与长档列（按阈值有无展示）、工具价格项（web_search）、listing 长上下文开关、tier 编辑、四数展示（基准/折扣/最终价/成本参照）、预填按钮、门禁错误提示。
-10. **对账与冒烟**：reconcile 覆盖 `billing_flags` 统计（未知计量零计、漏拦超阈值）；dev smoke 增图片模型一跑；272K 实际切档一跑（开着开关的分组）。
-
-依赖关系：1→2→3 严格串行；4/5 可与 2/3 并行开发但发布门禁依赖 3；6/8 依赖 2+3+5。
+任务拆分、执行顺序、依赖关系与逐任务验收见执行计划 [../../plan/portal-model-pricing/PLAN.md](../../plan/portal-model-pricing/PLAN.md)（终审 GO 后自本节移出——设计只保留上述迁移策略约束，排期与任务细节属 plan，遵循文档边界规范）。
 
 ## 12. 已知局限与 defer 清单
 
