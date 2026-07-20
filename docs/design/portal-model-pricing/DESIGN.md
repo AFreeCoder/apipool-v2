@@ -279,12 +279,15 @@ ALTER TABLE request_ledger ADD COLUMN unit_count INTEGER;                -- 实�
 -- 长上下文档标志（O9）：
 ALTER TABLE request_ledger ADD COLUMN long_context_applied INTEGER;      -- 1 = 本请求按长档结算
 ALTER TABLE request_ledger ADD COLUMN billing_flags_json TEXT;           -- 仅异常时非空：未知计量项零计、漏拦超阈值等标记
+-- 原始 usage 凭证（第 3 轮 N1 裁决）：
+ALTER TABLE request_ledger ADD COLUMN raw_usage_json TEXT;               -- 上游返回的原始 usage 原文
 ```
 
 - 现有五桶列**保留且语义不变**；全部 meter 数量都有专列，报表/对账 SQL 直查（裁决 O3：不走"图片量入 JSON"的方案）。未来新增 meter 时账本同步加列——与目录层同一取舍，频率低、可接受。
 - 长档**不加平行数量列**：`*_long` 与普通档整请求互斥（§5.1 规则 4），数量语义相同，复用同名数量列 + `long_context_applied` 标志即可无损表达，报表仍是列式直查（O3 精神不变）。
 - `billing_flags_json` 只承载异常标记（§7.4 未知计量项零计、§5.4 漏拦超阈值），不承载数量。
 - `billing_scheme = per_call` 的请求：`sku_key`/`unit_count` 承载计费依据，token 数量列**照常写入实际用量**（不参与计费，供成本核算与对账，O11）。
+- `raw_usage_json`（N1 裁决：门户自留凭证，不引 newapi 日志作证据——它只是对照参照）：上游返回的原始 usage 原文，仅作审计凭证——争议时可复核"上游当时返回了什么"及归一化推导链。不参与计费与查询，与 O3 不冲突（O3 约束的是用量**数量**的查询形态，凭证是证据不是查询字段）；usage 对象只含计量数字与字段名、无用户内容，无脱敏负担。pending 补差的请求此列存 newapi 日志记录原文，配合粒度降级标记（§7.5）。
 - 单价快照依旧通过 `priceVersionId` 指向不可变版本，不在账本重复存 rates。
 
 ## 7. 计费流水线
