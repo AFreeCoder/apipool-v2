@@ -67,3 +67,9 @@ codex 反评审中被驳回的部分：per_call 运行面 fail-closed 的"featur
 | R23 | "同意短期先这样" | 维持第 3 轮修补 | §7.5 |
 
 实测凭据：dev newapi（127.0.0.1:3001，容器 apipool_v2-new-api-1），探针 token #35（spike-responses-probe，gpt-discount-1）；成本约 $0.02。
+
+**第 4 轮实测续（同日，用户对初测结论的两处纠偏与复核）**：
+
+1. 用户指出 gpt-discount-1 上游是旧 APIPool 项目（`~/project/apipool`），要求溯源"怎么算的"。查源码定案：apipool 透传 ChatGPT 订阅 backend 的 usage 原文（订阅制不透出缓存写入量，`cache_write_tokens: 0` 是上游原文非 apipool 合成）；chat 端点 details 整体缺失是其转换层全零省略逻辑（`responses_to_chatcompletions.go` L370：cached/write 全零时省略 details）——与实测现象完全吻合，结构性限制非 bug。衍生结论：该渠道成本为订阅包月，"20% 让利"无边际成本损失。
+2. 用户指出两分组的 gpt-image-2 "肯定可以"。复测反转初测结论：**runapi 渠道（channel 3）实际已通**——直调上游 200（31s）、经 newapi 端到端成功（93s、quota 10000 落库、matched_tier=1k_low），且发现 07-12 历史成功记录佐证用户记忆；初测 403 为上游瞬时错误。**sub2api 仍 404**：直调 apipool.dev 复现，源码定案为持久配置层诊断（`no_account_error.go`：HasAccountsInPool && !HasModelSupport）——账号池无账号配置 gpt-image-2 支持，需旧 apipool 管理面开通（外部待办）。
+3. 重要副产物：解码 newapi 对 gpt-image-2 的 `tiered_expr` 计费表达式——quality × size 最长边 3×3 档位阵（1k/2k/4k × low/medium/high = 15000–31104 quota/张）+ 张数乘数 + `p×5` 文本项，缺省/auto size **兜底最贵 4K 档**；runapi 返回 URL 格式（无 b64）、usage 为合成整千值（token 计费不可依赖，佐证 O11 按次制）。落 §7.6、§9。

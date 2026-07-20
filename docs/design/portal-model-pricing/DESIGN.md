@@ -382,9 +382,13 @@ charged = max(BigInt(n) × tierPrice, 1n)
 2. **multipart 白名单提取**（edits）：只解析 `model`、SKU 参数（`quality`/`size`）、`n` 等白名单文本字段且内存有界；图片文件部分流式透传，不整体读入内存、不进日志。SKU 参数在 per_call 下**直接决定计费档位**（O11），提取错误即计费错误，需 fixture 覆盖。
 3. **跳过媒体正文的响应解析**：现有非流式 usage 提取整体缓冲响应、上限 32 MiB（`GATEWAY_PARSE_BUFFER_MAX`），base64 图片响应可能超限导致"图已交付、无法结算"。解析必须跳过 `b64_json` 大块内容，只提取顶层 usage、张数（`data.length`）与必要元数据；若上游支持 URL 返回格式可配置优先，但不得作为唯一依赖。
 4. **张数以响应实际为准**：`unit_count` 取实际返回；部分成功按实际；解析不出张数走失败复核路径（§7.2）。
-5. **渠道能力开通 + newapi 透传实测（第 3 轮 R-门槛，第 4 轮部分实测）**：以上四条全部建立在"渠道真正开通了 gpt-image-2"的前提上。第 4 轮实测（2026-07-20，dev newapi）：两条声明了 gpt-image-2 的渠道**实际都调不通**——sub2api 上游账号池不支持（404 "no configured account"）、runapi-official 上游 403 未开通 images 权限；newapi 侧路由与转发本身正常（错误均来自上游）。**"渠道声明了模型 ≠ 能调"**。待渠道侧开通后，仍需完成：JSON 生成、multipart 编辑、长耗时请求（同机部署无 CDN 链路，上游 issue #4478 的 524 切断风险较低但需确认超时配置）三场景实测与响应结构（usage/b64/张数）验证。
+5. **渠道链路实测（第 3 轮 R-门槛，第 4 轮已实测）**：2026-07-20 实测结论——
+   - **runapi 渠道（official 分组）已打通**：JSON 生成经 newapi 端到端成功（93 秒完成、计费落库；另有 07-12 历史成功记录）。首测一次 3 秒 403 为上游瞬时错误，重试即成功——images 端点存在**瞬时失败 + 长耗时（13–93 秒方差）**的运营现实：门户网关对 images 的上游超时须 ≥180 秒，失败走不扣费路径由用户重试。
+   - **上游响应形态**（runapi）：`data[]` 为 **URL 格式**（无 b64，32MiB 顾虑在此渠道消解，但 URL 指向第三方 CDN 有失效期，是否转存实现时定）；usage 为双风格并存的**合成整千值**（纯文本请求也报 `image_tokens=1000`）——**token 数不可作计费依据，佐证 O11 按次制**；张数取 `data.length` 可靠。
+   - **sub2api 渠道（gpt-discount-1）待配置**：上游（旧 apipool，订阅转 API）返回持久配置层 404——账号池中无账号配置了 gpt-image-2 支持，需在旧 apipool 管理面为该分组账号开通（外部待办，非链路问题）。
+   - 待补测：multipart 编辑场景；sub2api 侧开通后的同套验证。
 
-五条未齐前，gpt-image-2 不得标记为可调用。
+五条未齐前，gpt-image-2 不得标记为可调用（runapi 渠道已满足 1/3/4 的生成侧验证）。
 
 ## 8. 定价公式（单一策略）
 
@@ -406,7 +410,7 @@ per_call tier 同式。快照桥配置期折算，round-half-up 到整数 micro-
 
 评审裁决（O1）：门户价格全部手填、唯一事实源在门户；同步管线保留但**永不写入任何门户价格**，职责收敛为三件事：
 
-1. **成本参照采集**：定期拉取 `/api/pricing` 快照（沿用现有 client/fixture 体系），按可比子集换算成本参照价：`成本(meter) = ratio 系推导价 × 该分组 group_ratio`（推导规则沿用现状：`model_ratio × $2/1M`、`completion_ratio`、`cache_ratio`；`quota_type=1` 对 default tier）。newapi 表达不了的 meter（OpenAI 无 TTL 缓存写、图片输入缓存、长档价）**不参与对比**——字段不匹配的兼容问题自然消解。gpt-image-2 在 newapi 侧将同步配置为按次（`quota_type=1`，O11 确认），其 `model_price × group_ratio` 与门户 `default` tier 直接可比；非 default 的 SKU 档位 newapi 单价制表达不了，不参与自动对比，毛利由人工核价保障（官方每图成本估算做参考，§10 示例）。
+1. **成本参照采集**：定期拉取 `/api/pricing` 快照（沿用现有 client/fixture 体系），按可比子集换算成本参照价：`成本(meter) = ratio 系推导价 × 该分组 group_ratio`（推导规则沿用现状：`model_ratio × $2/1M`、`completion_ratio`、`cache_ratio`；`quota_type=1` 对 default tier）。newapi 表达不了的 meter（OpenAI 无 TTL 缓存写、图片输入缓存、长档价）**不参与对比**——字段不匹配的兼容问题自然消解。**gpt-image-2 成本侧实况（第 4 轮实测）**：newapi 已配 `tiered_expr` 阶梯表达式——`quality × size 最长边` 的 3×3 档位阵（1k/2k/4k × low/medium/high，15000–31104 quota/张）+ 张数乘数 + `p × 5` 文本项，**缺省/auto size 兜底最贵 4K 档**；与门户 per_call tier 口径同构，default 档自动对比、其余档位按矩阵人工核对（自动解析 expr 不做）。门户 default 档定价方向与 newapi 兜底一致：按最贵档假设。
 2. **倒挂与变动告警**：逐「模型 × 分组」比较 有效卖价（§8）vs 成本参照，卖价低于成本 → 倒挂告警；成本参照较上次快照变动 → 调价提醒。只告警，不改数。现有 `driftStatus`/告警管道复用，语义从"漂移检测"转为"成本守卫"。
 3. **录入辅助（预填）**：管理台价格表单提供"按 newapi 参照价预填"按钮，换算值填入表单、人工确认才保存——同步进程不落库，预填只是打字的替代。首次建库可用现有 `backfill-catalog-pricing.ts` 一次性生成草稿，人工复核后定稿。
 
@@ -500,7 +504,7 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 | 项 | 处理 | 回链 |
 |---|---|---|
 | GPT-5.6 缓存写成本侧无 newapi 参照（`create_cache_ratio` 生产未返回） | 完备集硬门下卖价必手填、漏配即发布失败；成本守卫对 `cache_write` 仍是盲区，倒挂监控不覆盖该 meter | issues.md 行 26，实现合入时勾选升级 |
-| GPT-5.6 `cache_write` 字段可得性（第 3 轮 R1 提出，**第 4 轮已实测**）：经 gpt-discount-1 渠道实调 gpt-5.6-luna——chat completions 首次调用无任何写入字段、responses `cache_write_tokens` 存在但恒 0（二次调用 cached 3840→4864 证明写入发生却报 0）；另观测到共享账号池缓存串扰（首次调用即命中 3840 缓存） | 已裁决：GPT-5.6 能力声明按当前渠道 = "无独立写入价"，cache_write 列留空、写入量并入 input（20% 让利平台自担）；cached_input 字段可得、正常配价。换渠道/直连后重测可补配发新版本。"模型 × 端点 × 渠道逐组合 smoke"仍为新模型上线门槛 | §5.3、§10、§11 步骤 10 |
+| GPT-5.6 `cache_write` 字段可得性（第 3 轮 R1 提出，**第 4 轮已实测并溯源**）：经 gpt-discount-1 渠道实调 gpt-5.6-luna——chat completions 首次调用无任何写入字段、responses `cache_write_tokens` 存在但恒 0（二次调用 cached 3840→4864 证明写入发生却报 0）。**根因（查旧 apipool 源码定案）**：该渠道上游是 ChatGPT 订阅账号池（订阅制不透出缓存写入量），apipool 透传上游 usage 原文，chat 端点的 details 缺失是其转换层全零省略逻辑（responses_to_chatcompletions.go）——结构性限制非 bug。另观测共享账号池缓存串扰（首次调用即命中 3840 缓存） | 已裁决：GPT-5.6 能力声明按当前渠道 = "无独立写入价"，cache_write 列留空、写入量并入 input；且该渠道成本为订阅制包月，20% 名义让利**无边际成本损失**。cached_input 字段可得、正常配价。换渠道/直连后重测可补配发新版本。"模型 × 端点 × 渠道逐组合 smoke"仍为新模型上线门槛 | §5.3、§10、§11 步骤 10 |
 | OpenAI 长上下文阶梯 | **第 2 轮 O9 裁决转为首版实现**（§5.4，整请求切档 + listing 开关）；1.05M 型号清单与长档价发布前逐型号按官方页核对 | issues.md 行 25，实现合入时勾选 |
 | 272K 保守估算系数 | 关开关分组的拦截靠估算，低估即漏拦（按普通档结算 + 标记，平台自担差价）；靠 `billing_flags` 漏拦统计持续校准系数 | §5.4 |
 | gpt-image-2 缓存 usage 字段形态未证实 | 按次售卖（O11）后不影响计费，仅影响成本核算精度；适配器留口 + 观察 | §7.1 |
