@@ -128,7 +128,13 @@ meter 是"一种被计量计价的量"。键名全局唯一、snake_case，与�
 
 **长上下文档（首发启用，O9 裁决）：** 上述文本 meter 各有一个同名 `_long` 后缀变体（`input_long` / `cached_input_long` / `cache_write_long` / `output_long`），承载 OpenAI 1.05M 上下文型号的整请求切档价，详见 §5.4。
 
-**预留命名空间（不实现，仅约定命名规则以防未来冲突）：** `audio_input` / `audio_output`（音频 token）、`duration_seconds`（视频秒数）。
+**工具按次计费项（首发启用，O12 裁决）：**
+
+| meter 键 | 单位 | 语义 |
+|---|---|---|
+| `web_search` | 次 | server-side 网页搜索成功次数（Anthropic `server_tool_use.web_search_requests`），单价 micro-USD/次，叠加在 token 费之上 |
+
+**预留命名空间（不实现，仅约定命名规则以防未来冲突）：** `audio_input` / `audio_output`（音频 token）、`duration_seconds`（视频秒数）、`file_search` / `code_execution`（其他 server-side 工具，结构与 `web_search` 同构）。
 
 设计规则：
 
@@ -156,7 +162,7 @@ meter 是"一种被计量计价的量"。键名全局唯一、snake_case，与�
 |---|---|---|
 | gpt-5.4 / 5.4-mini / 5.4-nano / gpt-5.5 | token | input, cached_input, output（三维，S2 结论的正式承载）；1.05M 上下文型号另配长档（§5.4） |
 | gpt-5.4-pro / 5.5-pro | token | input, output（无缓存价） |
-| gpt-5.6-sol / terra / luna | token | input, cached_input, cache_write, output；1.05M 上下文型号另配长档四价（§5.4） |
+| gpt-5.6-sol / terra / luna | token | input, cached_input, output（**第 4 轮实测：当前渠道缓存写入量逐请求不可得——chat 无字段、responses `cache_write_tokens` 恒 0，能力声明按"无独立写入价"，cache_write 列留空、写入量并入 input，少收 20% 平台自担**）；1.05M 上下文型号另配长档三价（§5.4） |
 | claude 全系（fable-5 → haiku-4.5） | token | input, cached_input, cache_write_5m, cache_write_1h, output（当前官方无长上下文溢价，不配长档，§5.4） |
 | gpt-image-2 | per_call | tiers: default（缺省/auto 档）+ 各 质量×尺寸（O11 裁决：门户按次售卖；token 用量照记不计费） |
 | dall-e-3（同构对照） | per_call | tiers: default + 各 质量×尺寸（与 gpt-image-2 同一结构） |
@@ -197,6 +203,8 @@ ALTER TABLE catalog_model_price ADD COLUMN base_input_long_micro_usd INTEGER;
 ALTER TABLE catalog_model_price ADD COLUMN base_cached_input_long_micro_usd INTEGER;
 ALTER TABLE catalog_model_price ADD COLUMN base_cache_write_long_micro_usd INTEGER;
 ALTER TABLE catalog_model_price ADD COLUMN base_output_long_micro_usd INTEGER;
+-- 工具按次价（O12）：NULL = 该模型不开放此工具（转发层拒绝）；0 = 允许且免费；正数 = 按次计费
+ALTER TABLE catalog_model_price ADD COLUMN base_web_search_micro_usd INTEGER;
 -- 语义调整（不改列）：全部价格列允许 NULL = "该模型无此计费项"；
 -- 必需性不再由列级 notNull 承担，统一交给发布门禁按模型计费能力声明判定（§7.4 完备集硬门）
 ```
@@ -281,6 +289,8 @@ ALTER TABLE request_ledger ADD COLUMN long_context_applied INTEGER;      -- 1 = 
 ALTER TABLE request_ledger ADD COLUMN billing_flags_json TEXT;           -- 仅异常时非空：未知计量项零计、漏拦超阈值等标记
 -- 原始 usage 凭证（第 3 轮 N1 裁决）：
 ALTER TABLE request_ledger ADD COLUMN raw_usage_json TEXT;               -- 上游返回的原始 usage 原文
+-- 工具按次计数（O12）：
+ALTER TABLE request_ledger ADD COLUMN web_search_count INTEGER;          -- meter: web_search 成功次数
 ```
 
 - 现有五桶列**保留且语义不变**；全部 meter 数量都有专列，报表/对账 SQL 直查（裁决 O3：不走"图片量入 JSON"的方案）。未来新增 meter 时账本同步加列——与目录层同一取舍，频率低、可接受。
@@ -308,11 +318,13 @@ ALTER TABLE request_ledger ADD COLUMN raw_usage_json TEXT;               -- 上�
 
 **长档判定（O9，归一化的最后一步）**：价格版本含 `long_context_threshold_tokens` 且 `inputTotalTokens`（= input + cached_input + cache_write* 之和，口径见 §5.4）≥ 阈值时，把全部 meter 键改写为对应 `*_long` 键；否则保持普通键。计价层只按键查 `rates_json`，不感知档位逻辑。
 
-**server-side tools 与结构化未知项防御（第 3 轮 R10，三处现状缺口的修补）**：
+**server-side tools 计费与结构化未知项防御（第 3 轮 R10 + 第 4 轮 O12 裁决：可配置工具计费）**：
 
-1. **请求侧拦截**：首版不开放会产生独立计费的 server-side tools（Anthropic `web_search` 等按次收费工具）。转发层检查 `tools` 数组，含 server-side 工具类型即拒绝（4xx 明示未开放）；客户端 function calling（普通 tool use，无独立计费）放行。不拦截 = 放任一个未定价计费项被触发（工具费成本经渠道传导、门户收入侧为零），与 O10 完备性原则直接冲突。
-2. **检测升级**：现状 `unmappedNonZero` 只检测**顶层数值**字段——`iterations[]`（数组）、`server_tool_use`（对象）会静默逃逸，且 `server_tool_use` 在已知字段白名单中但无任何桶映射（次数被静默忽略）。升级为：未知的**对象/数组结构**、以及白名单内但无 meter 映射的非零字段，一律触发 O10 兜底（零计 + `billing_flags` 标记 + 强告警）。
-3. 拦截与检测双层并存：拦截防正门，检测防"上游行为变化/拦截遗漏"的旁路。
+server-side tools（Anthropic `web_search` 等）是官方**按次收费**的独立计费项（$10/1000 次量级），叠加在 token 费之上。O12 裁决：不做一刀切拦截，改为**可配置的工具计费**，机制参考 newapi 实现（`service/text_quota.go`：运营配置工具单价 USD/1000 次、支持模型级覆盖、计次来源 usage、附加费叠加）：
+
+1. **配价即开、未配即禁**：模型价格配置增加工具价格项（首版仅 `web_search`，micro-USD/次）。一个价格字段表达全部三态——未配（NULL）= 该模型不开放此工具，转发层检查 `tools` 数组含 server-side 工具即拒绝（4xx 明示未开放）；配 0 = 允许且免费；配正数 = 允许并按次计费。与 O10 完备集门禁同构，无需独立开关字段。客户端 function calling（普通 tool use，无独立计费）始终放行、不受影响。
+2. **计次与结算**：计次来源与 newapi 一致——Anthropic 取 `usage.server_tool_use.web_search_requests`（该字段从"白名单静默忽略"升级为计次读取）；OpenAI Responses 的 built-in tools 计数留扩展位（首版 OpenAI 侧不开放）。费用 = 次数 × 工具单价 × 折扣，作为附加项进入总额（§7.3），账本记 `web_search_count` 列。
+3. **检测升级**（防旁路）：现状 `unmappedNonZero` 只检测**顶层数值**字段——`iterations[]`（数组）、对象结构会静默逃逸。升级为：未知的**对象/数组结构**、以及已知但无 meter 映射的非零字段，一律触发 O10 兜底（零计 + `billing_flags` 标记 + 强告警）。工具未配价而 usage 出现非零计次时同样落此兜底（拦截遗漏的旁路）。
 
 流式提取（sse-parser）不变；images 端点非流式，但**不走现有整体缓冲的 `extractBodyUsage` 路径**——响应含 base64 图片数据，受 32 MiB 解析缓冲上限约束，接入约束见 §7.6。
 
@@ -331,8 +343,9 @@ ALTER TABLE request_ledger ADD COLUMN raw_usage_json TEXT;               -- 上�
 
 ```ts
 // scheme = token：qty、rate 均 BigInt；rates 仅含已定价 meter
-total = Σ_m qty[m] × rates[m]          // 键必在 rates 中（§7.4 完备集门禁保证）；无价的未知键零计 + 标记，不参与求和
-charged = max(ceilDiv(total, 1_000_000n), 1n)
+tokenTotal = Σ_m qty[m] × rates[m]     // 键必在 rates 中（§7.4 完备集门禁保证）；无价的未知键零计 + 标记，不参与求和
+toolSurcharge = webSearchCount × webSearchPrice × 1_000_000n   // 工具附加费（O12）；单价已折后 micro-USD/次，统一分母参与一次取整
+charged = max(ceilDiv(tokenTotal + toolSurcharge, 1_000_000n), 1n)
 
 // scheme = per_call：单价已是 micro-USD/次，整数直乘，无除法舍入
 charged = max(BigInt(n) × tierPrice, 1n)
@@ -369,7 +382,7 @@ charged = max(BigInt(n) × tierPrice, 1n)
 2. **multipart 白名单提取**（edits）：只解析 `model`、SKU 参数（`quality`/`size`）、`n` 等白名单文本字段且内存有界；图片文件部分流式透传，不整体读入内存、不进日志。SKU 参数在 per_call 下**直接决定计费档位**（O11），提取错误即计费错误，需 fixture 覆盖。
 3. **跳过媒体正文的响应解析**：现有非流式 usage 提取整体缓冲响应、上限 32 MiB（`GATEWAY_PARSE_BUFFER_MAX`），base64 图片响应可能超限导致"图已交付、无法结算"。解析必须跳过 `b64_json` 大块内容，只提取顶层 usage、张数（`data.length`）与必要元数据；若上游支持 URL 返回格式可配置优先，但不得作为唯一依赖。
 4. **张数以响应实际为准**：`unit_count` 取实际返回；部分成功按实际；解析不出张数走失败复核路径（§7.2）。
-5. **newapi 透传实测（第 3 轮 R-门槛）**：以上四条全部建立在 newapi 能正确透传 images 端点的前提上，该前提必须实测——JSON 生成、multipart 编辑、长耗时请求（上游 issue #4478 记录过长请求被切断、流式未按 Images SSE 处理的缺陷）三个场景真实跑通，且本地部署的 newapi 版本需确认含 gpt-image-2 支持（上游 issue #4480 为其支持路径）。
+5. **渠道能力开通 + newapi 透传实测（第 3 轮 R-门槛，第 4 轮部分实测）**：以上四条全部建立在"渠道真正开通了 gpt-image-2"的前提上。第 4 轮实测（2026-07-20，dev newapi）：两条声明了 gpt-image-2 的渠道**实际都调不通**——sub2api 上游账号池不支持（404 "no configured account"）、runapi-official 上游 403 未开通 images 权限；newapi 侧路由与转发本身正常（错误均来自上游）。**"渠道声明了模型 ≠ 能调"**。待渠道侧开通后，仍需完成：JSON 生成、multipart 编辑、长耗时请求（同机部署无 CDN 链路，上游 issue #4478 的 524 切断风险较低但需确认超时配置）三场景实测与响应结构（usage/b64/张数）验证。
 
 五条未齐前，gpt-image-2 不得标记为可调用。
 
@@ -399,6 +412,8 @@ per_call tier 同式。快照桥配置期折算，round-half-up 到整数 micro-
 
 配套简化：`catalog_model_price.syncStatus` 语义收敛（价格一律 `manual`，参照数据新鲜度另行标记）；`source*` 参照列保留用于对比展示；`model_price_version.newapiRef*` 列保留（发布方向校验与成本守卫共用）。
 
+**工具价成本参照（O12 配套）**：newapi 侧工具计费机制（`service/text_quota.go`）为运营配置的工具单价（USD/1000 次，`GetToolPriceForModel` 模型级覆盖 + 全局回退），计费 `次数 × 单价 / 1000 × 分组倍率` 叠加为附加 quota。门户 `web_search` 卖价与 newapi 工具价 × group_ratio 可比（若 `/api/pricing` 不暴露工具价则人工核对）；对照另记：newapi 对缓存写聚合与细分不一致时取 `max(聚合, 细分和)` 保守收费，门户 R9 采用"按细分 + 标记"，两者对账时注意口径差异。
+
 **callable 判定重定义（第 2 轮反评审发现，实施阻断级）**：现状 `isCatalogRouteReady`（`src/features/api-catalog/server/queries.ts`）要求 `priceDriftStatus === 'matched'`、`groupPricingSyncStatus === 'synced'`、`groupRatioBps > 0` 三个 newapi 同步硬门同时成立。O1 手填定价后门户价是售价、newapi 参照是成本价，漂移状态几乎必然不再 matched——**不删这三个门，手填价格发布后所有模型直接不可调用**。新条件集：
 
 - 售卖状态可调用（`catalogStatus.isCallable`）；
@@ -411,17 +426,18 @@ per_call tier 同式。快照桥配置期折算，round-half-up 到整数 micro-
 
 （基准价为 2026-07-18 官方价，见 research；micro-USD/1M。示例含九折 `discountRateBps=9000` 演示值；分组不参与卖价，见 §8。）
 
-**gpt-5.6-sol（token，四维 + 长档，1.05M 型号）**
+**gpt-5.6-sol（token，三维 + 长档；cache_write 留空 = 第 4 轮实测裁决"无独立写入价"，写入量并入 input）**
 
 ```
-目录: base_input=5_000_000  base_cached_input=500_000  base_cache_write=6_250_000  base_output=30_000_000
+目录: base_input=5_000_000  base_cached_input=500_000  base_output=30_000_000
+      （base_cache_write 留空：当前渠道写入量不可得，官方 6.25 写入价无法逐请求结算，
+       写入量按 input 价 5.00 收、20% 让利平台自担；换渠道实测可得后补配发新版本）
       long_context_threshold_tokens=272_000（官方长档价，§5.4）:
-      base_input_long=10_000_000  base_cached_input_long=1_000_000
-      base_cache_write_long=12_500_000  base_output_long=45_000_000
-快照(九折, listing 开长上下文): rates_json = {"input":4500000,"cached_input":450000,"cache_write":5625000,
-      "output":27000000,"input_long":9000000,"cached_input_long":900000,"cache_write_long":11250000,
-      "output_long":40500000}，long_context_threshold_tokens=272000
-快照(同折扣, listing 关长上下文): rates_json 只含普通四键、无阈值——超阈值请求在转发层被估算拦截
+      base_input_long=10_000_000  base_cached_input_long=1_000_000  base_output_long=45_000_000
+快照(九折, listing 开长上下文): rates_json = {"input":4500000,"cached_input":450000,"output":27000000,
+      "input_long":9000000,"cached_input_long":900000,"output_long":40500000}，
+      long_context_threshold_tokens=272000
+快照(同折扣, listing 关长上下文): rates_json 只含普通三键、无阈值——超阈值请求在转发层被估算拦截
 ```
 
 **claude-fable-5（token，五维）**
@@ -473,8 +489,8 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 5. **快照桥改造**：折算全 meter + tiers + 长档（基准 × 折扣单一公式；开关编译进版本，§6.2）、完备集发布硬门（§7.4）、策略字段移除；`catalog-route-snapshot` 测试补门禁/折扣/长档矩阵。
 6. **images 端点接入**（§7.6 四项约束）：端点注册 + multipart 白名单提取 + 跳过 b64 的响应解析 + usage 适配器 + SKU 准入判定 + 结算写新列；`handler/integration` 用例补 gpt-image-2、dall-e-3 fixture（tests/fixtures/newapi/ 增补）。
 7. **同步降级为成本守卫 + callable 重定义**（§9）：停写价格、可比子集成本换算（含按次 default 档）、倒挂/变动告警、预填接口；`isCatalogRouteReady` 删三硬门。
-8. **转发层准入**：272K 保守估算拦截（listing 开关关时）+ per_call 未知 SKU 拒绝 + server-side tools 拦截（§7.1）。
-9. **管理 UI**：价格表单补计费档与长档列（按阈值有无展示）、listing 长上下文开关、tier 编辑、四数展示（基准/折扣/最终价/成本参照）、预填按钮、门禁错误提示。
+8. **转发层准入**：272K 保守估算拦截（listing 开关关时）+ per_call 未知 SKU 拒绝 + server-side tools 未配价拒绝（O12，§7.1）。
+9. **管理 UI**：价格表单补计费档与长档列（按阈值有无展示）、工具价格项（web_search）、listing 长上下文开关、tier 编辑、四数展示（基准/折扣/最终价/成本参照）、预填按钮、门禁错误提示。
 10. **对账与冒烟**：reconcile 覆盖 `billing_flags` 统计（未知计量零计、漏拦超阈值）；dev smoke 增图片模型一跑；272K 实际切档一跑（开着开关的分组）。
 
 依赖关系：1→2→3 严格串行；4/5 可与 2/3 并行开发但发布门禁依赖 3；6/8 依赖 2+3+5。
@@ -484,7 +500,7 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 | 项 | 处理 | 回链 |
 |---|---|---|
 | GPT-5.6 缓存写成本侧无 newapi 参照（`create_cache_ratio` 生产未返回） | 完备集硬门下卖价必手填、漏配即发布失败；成本守卫对 `cache_write` 仍是盲区，倒挂监控不覆盖该 meter | issues.md 行 26，实现合入时勾选升级 |
-| GPT-5.6 `cache_write` 字段可得性未证实（第 3 轮 R1）：官方 Responses API 参考页未列该字段；取不到时写入量混入 input 按 input 价收（低收 20%） | 上线门槛：每个开放的模型 × 端点组合，能力声明的缓存写字段须经真实非零 smoke 证明可得；取不到的组合暂缓开放，或显式按"无独立写入价"定价并接受成本差 | §7.1、§11 步骤 10 |
+| GPT-5.6 `cache_write` 字段可得性（第 3 轮 R1 提出，**第 4 轮已实测**）：经 gpt-discount-1 渠道实调 gpt-5.6-luna——chat completions 首次调用无任何写入字段、responses `cache_write_tokens` 存在但恒 0（二次调用 cached 3840→4864 证明写入发生却报 0）；另观测到共享账号池缓存串扰（首次调用即命中 3840 缓存） | 已裁决：GPT-5.6 能力声明按当前渠道 = "无独立写入价"，cache_write 列留空、写入量并入 input（20% 让利平台自担）；cached_input 字段可得、正常配价。换渠道/直连后重测可补配发新版本。"模型 × 端点 × 渠道逐组合 smoke"仍为新模型上线门槛 | §5.3、§10、§11 步骤 10 |
 | OpenAI 长上下文阶梯 | **第 2 轮 O9 裁决转为首版实现**（§5.4，整请求切档 + listing 开关）；1.05M 型号清单与长档价发布前逐型号按官方页核对 | issues.md 行 25，实现合入时勾选 |
 | 272K 保守估算系数 | 关开关分组的拦截靠估算，低估即漏拦（按普通档结算 + 标记，平台自担差价）；靠 `billing_flags` 漏拦统计持续校准系数 | §5.4 |
 | gpt-image-2 缓存 usage 字段形态未证实 | 按次售卖（O11）后不影响计费，仅影响成本核算精度；适配器留口 + 观察 | §7.1 |
@@ -516,6 +532,13 @@ tiers: default=40_000 ；quality=hd;size=1024x1024 → 80_000 ；quality=hd;size
 - **O10** → 计价完备性：完备集发布硬门 + 删除运行期回退；未知计量项零计费 + 账本标记 + 告警，绝不按替代价收费（§7.4 重写）。
 - **O11** → gpt-image-2 门户按次售卖（newapi 侧同步配按次）；per_call 首发启用，SKU 准入 fail-closed、数量按响应实际、token 照记不计费（§5.2、§7.2、§7.6）。
 - 反评审补充 → callable 判定删 newapi 三硬门（实施阻断级发现，§9）。
+
+第 4 轮（2026-07-20，用户对第 3 轮修补的裁决 + 实测/调研执行）：
+
+- **O12** → server tools 从"一刀切拦截"改为**可配置工具计费**：配价即开、未配即禁（NULL/0/正数三态），机制参考 newapi（工具单价 + 模型级覆盖 + 附加费叠加）；首版仅 `web_search`（§5.1、§6.1、§7.1、§7.3）。
+- R1 实测定案 → GPT-5.6 当前渠道缓存写入量不可得（chat 无字段、responses 恒 0），能力声明按"无独立写入价"（§5.3、§10、§12）。
+- R-门槛实测 → newapi 侧 images 路由转发正常，但两条声明渠道均未真正开通 gpt-image-2（上游 404/403）；渠道能力开通列为 §7.6 先决。
+- R9/R23 维持第 3 轮修补（用户确认："需要细分清楚，否则不好计价、不好和 newapi 对比"；R23 短期方案同意）。
 
 ## 14. 需求映射自查
 

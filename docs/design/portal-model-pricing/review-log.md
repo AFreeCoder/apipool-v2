@@ -53,3 +53,17 @@ codex 反评审中被驳回的部分：per_call 运行面 fail-closed 的"featur
 评审衍生新发现：
 
 - **N1 原始 usage 凭证不留存**（2026-07-20 用户已裁决）：现状账本只存归一化后的五桶数量（+usageSource），原始响应 usage JSON 不落盘，争议时无法复核"上游当时返回了什么"。用户裁决：门户必须自留凭证，**不引 newapi 日志作证据**（newapi 只是对照参照，引作凭证就失去对照意义）；实现方式账本加列与独立留存均可接受。落地：取账本加列（`raw_usage_json`，凭证与账行同生命周期、SQLite 单库下独立留存无运维优势），§6.3 已写入。同时澄清：归一化后各类型 token 的分桶数量列一直存在且继续保留（O3 列式），N1 是在其之外补"归一化之前的上游原文"。
+
+## 第 4 轮（2026-07-20，用户对第 3 轮修补的裁决 + 按指令实测/调研）
+
+用户逐条反馈第 3 轮五项修补，其中三项要求当场执行（调研 newapi 工具计费、实测 cache_write、实测 images 透传），执行结果与裁决：
+
+| 项 | 用户裁决/指令 | 执行结果 | 落点 |
+|---|---|---|---|
+| R10 → **O12** | 不要一刀切拦截，要"开关控制是否对工具收费 + 管理工具价格"，先调研 newapi 实现 | newapi 机制（`service/text_quota.go`）：运营配置工具单价 USD/1000 次、`GetToolPriceForModel` 模型级覆盖 + 全局回退、计次来源 usage（Claude `server_tool_use.web_search_requests` / OpenAI Responses built-in tools 计数）、附加费叠加吃分组倍率。门户落地：**配价即开、未配即禁**（价格字段 NULL/0/正数三态，无独立开关），首版仅 `web_search`，meter + 目录列 + 账本列 + 公式附加项 | §5.1、§6.1、§6.3、§7.1、§7.3、§9 |
+| R1 | "不要猜，直接用 newapi 的官方折扣分组调用试一下" | 实测 gpt-5.6-luna（经 gpt-discount-1/sub2api 渠道，两端点各两次同前缀长 prompt）：**chat completions 首次调用无任何写入字段**（连 prompt_tokens_details 都没有），二次返回 cached_tokens=4864；**responses 有 `cache_write_tokens` 字段但恒 0**（首次 cached 3840 → 二次 4864，写入确实发生却报 0）；另观测共享账号池缓存串扰（首次即命中 3840）。裁决落地：GPT-5.6 能力声明按当前渠道="无独立写入价"，cache_write 列留空、写入量并入 input（20% 让利平台自担）；换渠道重测可补配 | §5.3、§10、§12 |
+| R-门槛 images | "问题不大（同机内部通信），其他现在就可以测试" | 实测：newapi 路由与转发正常（错误均来自上游），但两条声明 gpt-image-2 的渠道**均调不通**——sub2api 上游账号池不支持（404 "no configured account"）、runapi-official 上游 403 未开通 images 权限。**"渠道声明了模型 ≠ 能调"**；渠道能力开通列为 §7.6 先决，响应结构验证（usage/b64/张数/multipart）待开通后补测 | §7.6 |
+| R9 | 同意："需要细分清楚，否则后面不好计价，也不好和 newapi 对比" | 维持第 3 轮修补；调研补充对照：newapi 对聚合与细分不一致取 `max(聚合, 细分和)` 保守收费，门户"按细分 + 标记"，对账注意口径差异 | §7.1、§9 |
+| R23 | "同意短期先这样" | 维持第 3 轮修补 | §7.5 |
+
+实测凭据：dev newapi（127.0.0.1:3001，容器 apipool_v2-new-api-1），探针 token #35（spike-responses-probe，gpt-discount-1）；成本约 $0.02。
