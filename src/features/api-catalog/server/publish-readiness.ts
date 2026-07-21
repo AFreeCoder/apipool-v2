@@ -338,7 +338,9 @@ export async function assessPublishReadiness(
   if (!row.isCallable) reasons.add('售卖状态不可调用');
   if (!row.newapiGroup.trim()) reasons.add('缺少 New API 分组映射');
   if (!row.priceId) reasons.add('缺少模型基础价');
-  if (row.syncStatus !== 'manual' || row.reviewedAt === null) {
+  // syncStatus 自成本守卫起只表示参照新鲜度；人工锁定的唯一持久证据是
+  // reviewedAt，New API 参照缺失或变化不得反向阻断已复核售价。
+  if (row.reviewedAt === null) {
     reasons.add('基础价尚未人工锁定并复核');
   }
   const discountRateBps = row.discountRateBps ?? 10_000;

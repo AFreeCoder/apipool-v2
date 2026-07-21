@@ -1,4 +1,4 @@
-import { count, isNotNull, lt, ne, notInArray } from 'drizzle-orm';
+import { count, isNotNull, lt, notInArray } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -22,8 +22,8 @@ export interface AdminOverviewSignals {
    */
   bindingSyncIssues: number;
   /**
-   * 公开价被隐藏：listing 的 `price_drift_status` 不是 matched，
-   * 公开页会显示占位而非价格，直到核验通过。
+   * 成本守卫或待复核异常：ok/matched 之外的状态都需要运营关注，
+   * 但成本告警本身不再阻断公开展示或调用。
    */
   priceDriftListings: number;
 }
@@ -51,7 +51,9 @@ export async function getAdminOverviewSignals(): Promise<AdminOverviewSignals> {
       conn
         .select({ value: count() })
         .from(catalogModelListing)
-        .where(ne(catalogModelListing.priceDriftStatus, 'matched')),
+        .where(
+          notInArray(catalogModelListing.priceDriftStatus, ['matched', 'ok'])
+        ),
     ]);
 
   return {

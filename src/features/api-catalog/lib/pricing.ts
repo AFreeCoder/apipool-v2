@@ -256,7 +256,10 @@ export function resolveEffectiveCatalogPrice(
   input: EffectiveCatalogPriceInput
 ): EffectiveCatalogPrice {
   const driftStatus = input.priceDriftStatus || 'unknown';
-  const isMatched = driftStatus === 'matched';
+  // 成本守卫状态只告警，不再决定门户售价是否展示；matched 兼容旧数据。
+  const isMatched = ['matched', 'ok', 'cost_alert', 'cost_changed'].includes(
+    driftStatus
+  );
 
   const hidden = (): EffectiveCatalogPrice => ({
     publicConfirmed: false,

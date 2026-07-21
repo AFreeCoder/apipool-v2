@@ -3,6 +3,7 @@ import 'server-only';
 import {
   deriveBasePriceFromNewApiPricing,
   normalizeGroupRatio,
+  scaleMicroUsdByBps,
 } from '@/features/api-catalog/lib/pricing';
 import type {
   RemotePricingModel,
@@ -18,6 +19,7 @@ import {
   catalogModelPrice,
   catalogPriceSyncRun,
   catalogStatus,
+  modelPriceVersion,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 
@@ -38,10 +40,24 @@ type SyncListingRow = {
   id: string;
   modelPk: string;
   groupId: string;
-  inputMicroUsd: number;
-  outputMicroUsd: number;
   groupNewapiGroup: string;
 };
+
+type ActiveSaleSnapshot = {
+  portalGroupId: string;
+  portalModelId: string;
+  billingScheme: string;
+  ratesJson: string;
+  tiersJson: string;
+};
+
+type CostReference = {
+  billingScheme: 'token' | 'per_call';
+  rates?: Record<string, number>;
+  defaultTier?: number;
+};
+
+type CostGuardStatus = 'cost_alert' | 'cost_changed' | 'ok';
 
 type BackfillConflict = {
   modelId: string;
@@ -371,7 +387,7 @@ export async function backfillCatalogModelPrices({
   return report;
 }
 
-function remoteToPriceValues(remote: RemotePricingModel) {
+function remoteToReference(remote: RemotePricingModel) {
   const derived = deriveBasePriceFromNewApiPricing({
     model_name: remote.modelId,
     quota_type: remote.quotaType,
@@ -384,43 +400,165 @@ function remoteToPriceValues(remote: RemotePricingModel) {
     supported_endpoint_types: remote.supportedEndpointTypes,
   });
   return {
-    pricingMode:
-      derived.source === 'fixed-price' ? 'fixed_price' : 'token_ratio',
-    source: 'newapi_pricing',
-    sourceModelId: remote.modelId,
-    sourceVendorId: remote.vendorId,
-    sourceQuotaType: remote.quotaType,
-    sourceModelRatio: String(remote.modelRatio),
-    sourceCompletionRatio: String(remote.completionRatio),
-    sourceImageRatio:
-      remote.imageRatio === null || remote.imageRatio === undefined
-        ? null
-        : String(remote.imageRatio),
-    sourceSupportedEndpointTypes: encodeJson(remote.supportedEndpointTypes),
-    baseInputMicroUsd: derived.inputMicroUsd,
-    baseCachedInputMicroUsd: derived.cachedInputMicroUsd,
-    // 现有账本以 5m 桶承载非 Anthropic 的单一 cache write；1h 仅用于
-    // Anthropic 明确返回的独立时长价格。
-    baseCacheWrite5mMicroUsd: derived.cacheWriteMicroUsd,
-    baseCacheWrite1hMicroUsd: derived.cacheWrite1hMicroUsd,
-    cachePriceNote:
-      derived.source === 'fixed-price'
-        ? null
-        : encodeJson({
-            cacheRatio: remote.cacheRatio ?? 1,
-            createCacheRatio: remote.createCacheRatio ?? null,
-            singleWriteBucket: derived.cacheWriteMicroUsd !== null,
-          }),
-    baseOutputMicroUsd: derived.outputMicroUsd,
-    baseImageInputMicroUsd: derived.imageInputMicroUsd,
-    baseImageOutputMicroUsd: derived.imageOutputMicroUsd,
-    fixedPriceMicroUsd: derived.fixedPriceMicroUsd ?? null,
-    fixedPriceUnit: derived.source === 'fixed-price' ? 'unknown' : null,
-    syncStatus: 'synced',
-    driftStatus:
-      derived.source === 'fixed-price' ? 'fixed_needs_review' : 'matched',
-    sourceSyncedAt: now(),
+    derived,
+    patch: {
+      sourceModelId: remote.modelId,
+      sourceVendorId: remote.vendorId,
+      sourceQuotaType: remote.quotaType,
+      sourceModelRatio: String(remote.modelRatio),
+      sourceCompletionRatio: String(remote.completionRatio),
+      sourceImageRatio:
+        remote.imageRatio === null || remote.imageRatio === undefined
+          ? null
+          : String(remote.imageRatio),
+      sourceSupportedEndpointTypes: encodeJson(remote.supportedEndpointTypes),
+      // 历史表没有独立的 cache/model_price 参照列；该 note 只保存 New API
+      // 参照参数，绝不进入门户卖价或发布快照。
+      cachePriceNote: encodeJson({
+        cacheRatio: remote.cacheRatio ?? 1,
+        createCacheRatio: remote.createCacheRatio ?? null,
+        modelPriceMicroUsd: derived.fixedPriceMicroUsd ?? null,
+      }),
+      syncStatus: 'reference_current',
+      sourceSyncedAt: now(),
+    },
   };
+}
+
+function parsePriceMap(raw: string): Record<string, number> | null {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    const result: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!Number.isSafeInteger(value) || Number(value) < 0) return null;
+      result[key] = Number(value);
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+function buildCostReference(
+  remote: RemotePricingModel,
+  groupRatioBps: number
+): CostReference | null {
+  const { derived } = remoteToReference(remote);
+  if (derived.source === 'fixed-price') {
+    if (
+      derived.fixedPriceMicroUsd === null ||
+      derived.fixedPriceMicroUsd === undefined
+    ) {
+      return null;
+    }
+    return {
+      billingScheme: 'per_call',
+      defaultTier: scaleMicroUsdByBps(
+        derived.fixedPriceMicroUsd,
+        groupRatioBps
+      )!,
+    };
+  }
+
+  const candidates: Array<[string, number | null]> = [
+    ['input', derived.inputMicroUsd],
+    ['cached_input', derived.cachedInputMicroUsd],
+    ['cache_write_5m', derived.cacheWriteMicroUsd],
+    ['cache_write_1h', derived.cacheWrite1hMicroUsd],
+    ['output', derived.outputMicroUsd],
+    ['image_input', derived.imageInputMicroUsd],
+    ['image_output', derived.imageOutputMicroUsd],
+  ];
+  const rates: Record<string, number> = {};
+  for (const [key, value] of candidates) {
+    if (value !== null) {
+      rates[key] = scaleMicroUsdByBps(value, groupRatioBps)!;
+    }
+  }
+  return Object.keys(rates).length > 0
+    ? { billingScheme: 'token', rates }
+    : null;
+}
+
+function sameCostReference(
+  previous: CostReference | undefined,
+  current: CostReference
+) {
+  return previous !== undefined && encodeJson(previous) === encodeJson(current);
+}
+
+function compareSaleToCost(
+  sale: ActiveSaleSnapshot | undefined,
+  cost: CostReference
+) {
+  if (!sale) return { comparable: false, alerts: [] as string[] };
+  if (sale.billingScheme !== cost.billingScheme) {
+    return { comparable: false, alerts: [] as string[] };
+  }
+  if (cost.billingScheme === 'per_call') {
+    const tiers = parsePriceMap(sale.tiersJson);
+    const saleDefault = tiers?.default;
+    return {
+      comparable: saleDefault !== undefined,
+      alerts:
+        saleDefault !== undefined &&
+        cost.defaultTier !== undefined &&
+        saleDefault < cost.defaultTier
+          ? ['default']
+          : [],
+    };
+  }
+
+  const saleRates = parsePriceMap(sale.ratesJson);
+  if (!saleRates) return { comparable: false, alerts: [] as string[] };
+  const comparable = Object.entries(cost.rates ?? {}).filter(
+    ([key]) => saleRates[key] !== undefined
+  );
+  return {
+    comparable: comparable.length > 0,
+    alerts: comparable
+      .filter(([key, costRate]) => saleRates[key] < costRate)
+      .map(([key]) => key),
+  };
+}
+
+function aggregateCostStatus(
+  current: CostGuardStatus | undefined,
+  next: CostGuardStatus
+): CostGuardStatus {
+  if (current === 'cost_alert' || next === 'cost_alert') return 'cost_alert';
+  if (current === 'cost_changed' || next === 'cost_changed') {
+    return 'cost_changed';
+  }
+  return 'ok';
+}
+
+async function getLatestCostReferences() {
+  const runs = await db()
+    .select({ reportJson: catalogPriceSyncRun.reportJson })
+    .from(catalogPriceSyncRun)
+    .where(inArray(catalogPriceSyncRun.status, ['success', 'partial']))
+    .orderBy(desc(catalogPriceSyncRun.startedAt))
+    .limit(20);
+  for (const run of runs) {
+    if (!run.reportJson?.trim()) continue;
+    try {
+      const parsed = JSON.parse(run.reportJson);
+      if (
+        parsed?.costReferences &&
+        typeof parsed.costReferences === 'object' &&
+        !Array.isArray(parsed.costReferences)
+      ) {
+        return parsed.costReferences as Record<string, CostReference>;
+      }
+    } catch {
+      // 跳过旧格式或损坏的只读报告，继续找上一份有效成本基线。
+    }
+  }
+  return {};
 }
 
 export async function syncCatalogPricingFromSnapshot({
@@ -431,17 +569,37 @@ export async function syncCatalogPricingFromSnapshot({
   operatorUserId?: string;
 }): Promise<PricingSyncReport> {
   const models = (await db().select().from(catalogModel)) as CatalogModelRow[];
-  const modelsByModelId = new Map(
-    models.map((model) => [model.modelId, model])
-  );
+  const prices = (await db()
+    .select()
+    .from(catalogModelPrice)) as CatalogModelPriceRow[];
   const remoteByModelId = new Map(
     snapshot.models.map((model) => [model.modelId, model])
   );
   const groups = await db().select().from(catalogGroup);
+  const activeSales = (await db()
+    .select({
+      portalGroupId: modelPriceVersion.portalGroupId,
+      portalModelId: modelPriceVersion.portalModelId,
+      billingScheme: modelPriceVersion.billingScheme,
+      ratesJson: modelPriceVersion.ratesJson,
+      tiersJson: modelPriceVersion.tiersJson,
+    })
+    .from(modelPriceVersion)
+    .where(eq(modelPriceVersion.status, 'active'))) as ActiveSaleSnapshot[];
+  const saleByRoute = new Map(
+    activeSales.map((sale) => [
+      `${sale.portalGroupId}\u0000${sale.portalModelId}`,
+      sale,
+    ])
+  );
+  const previousReferences = await getLatestCostReferences();
   const conflicts: Array<Record<string, unknown>> = [];
+  const costReferences: Record<string, CostReference> = {};
+  const modelStatuses = new Map<string, CostGuardStatus>();
   let matchedModelCount = 0;
   let fixedPriceCount = 0;
   let missingGroupCount = 0;
+  let driftCount = 0;
 
   await db().transaction(async (tx: any) => {
     for (const group of groups) {
@@ -452,7 +610,7 @@ export async function syncCatalogPricingFromSnapshot({
         missingGroupCount += 1;
         await tx
           .update(catalogGroup)
-          .set({ pricingSyncStatus: 'missing_remote_group' })
+          .set({ pricingSyncStatus: 'reference_missing' })
           .where(eq(catalogGroup.id, group.id));
         continue;
       }
@@ -462,34 +620,38 @@ export async function syncCatalogPricingFromSnapshot({
           newapiGroupRatioRaw: encodeJson(remoteGroup.raw),
           newapiGroupRatioDecimal: remoteGroup.decimal,
           newapiGroupRatioBps: remoteGroup.bps,
-          pricingSyncStatus: 'synced',
+          pricingSyncStatus: 'reference_current',
           pricingSyncedAt: now(),
         })
         .where(eq(catalogGroup.id, group.id));
     }
 
-    for (const remote of snapshot.models) {
-      const model = modelsByModelId.get(remote.modelId);
-      if (!model) continue;
-      const values = remoteToPriceValues(remote);
-      if (values.pricingMode === 'fixed_price') fixedPriceCount += 1;
+    for (const price of prices) {
+      const model = models.find((item) => item.id === price.modelId);
+      const remote = model ? remoteByModelId.get(model.modelId) : undefined;
+      if (!remote) {
+        await tx
+          .update(catalogModelPrice)
+          .set({
+            syncStatus: 'reference_missing',
+            driftStatus: 'cost_changed',
+            updatedAt: now(),
+          })
+          .where(eq(catalogModelPrice.id, price.id));
+        modelStatuses.set(price.modelId, 'cost_changed');
+        continue;
+      }
+      const reference = remoteToReference(remote);
+      if (reference.derived.source === 'fixed-price') fixedPriceCount += 1;
       matchedModelCount += 1;
       await tx
-        .insert(catalogModelPrice)
-        .values({
-          id: getUuid(),
-          modelId: model.id,
-          ...values,
+        .update(catalogModelPrice)
+        .set({
+          ...reference.patch,
           sourceFingerprint: snapshot.sourceFingerprint,
+          updatedAt: now(),
         })
-        .onConflictDoUpdate({
-          target: catalogModelPrice.modelId,
-          set: {
-            ...values,
-            sourceFingerprint: snapshot.sourceFingerprint,
-            updatedAt: now(),
-          },
-        });
+        .where(eq(catalogModelPrice.id, price.id));
     }
 
     const listings = (await tx
@@ -497,8 +659,6 @@ export async function syncCatalogPricingFromSnapshot({
         id: catalogModelListing.id,
         modelPk: catalogModelListing.modelId,
         groupId: catalogModelListing.groupId,
-        inputMicroUsd: catalogModelListing.inputMicroUsd,
-        outputMicroUsd: catalogModelListing.outputMicroUsd,
         groupNewapiGroup: catalogGroup.newapiGroup,
       })
       .from(catalogModelListing)
@@ -510,81 +670,107 @@ export async function syncCatalogPricingFromSnapshot({
     for (const listing of listings) {
       const model = models.find((item) => item.id === listing.modelPk);
       const remote = model ? remoteByModelId.get(model.modelId) : undefined;
-      const remotePriceValues = remote
-        ? remoteToPriceValues(remote)
-        : undefined;
       const enabled = Boolean(
         remote &&
           listing.groupNewapiGroup &&
           remote.enabledGroups.includes(listing.groupNewapiGroup)
       );
-      const hasCurrentGroupRatio = Boolean(
-        listing.groupNewapiGroup &&
-          snapshot.groupRatios[listing.groupNewapiGroup]
-      );
-      const hasTokenBasePrice = Boolean(
-        remotePriceValues &&
-          remotePriceValues.pricingMode !== 'fixed_price' &&
-          remotePriceValues.baseInputMicroUsd !== null &&
-          remotePriceValues.baseOutputMicroUsd !== null
-      );
-      const canConfirmGroupPrice =
-        enabled && hasCurrentGroupRatio && hasTokenBasePrice;
-      let priceDriftStatus = 'missing_group';
+      const groupRatio = listing.groupNewapiGroup
+        ? snapshot.groupRatios[listing.groupNewapiGroup]
+        : undefined;
+      const cost =
+        remote && enabled && groupRatio
+          ? buildCostReference(remote, groupRatio.bps)
+          : null;
+      let priceDriftStatus: CostGuardStatus = 'ok';
       let reportType: string | null = null;
-      let publicMatched = false;
-
-      priceDriftStatus = canConfirmGroupPrice
-        ? 'matched'
-        : remotePriceValues?.pricingMode === 'fixed_price'
-          ? 'needs_live_check'
-          : 'missing_group';
-      publicMatched = canConfirmGroupPrice;
-      if (!canConfirmGroupPrice) {
-        reportType =
-          remotePriceValues?.pricingMode === 'fixed_price'
-            ? 'fixed_price_needs_review'
-            : enabled
-              ? 'missing_group_ratio'
-              : 'missing_group';
+      let alerts: string[] = [];
+      if (!cost) {
+        priceDriftStatus = 'cost_changed';
+        reportType = remote
+          ? enabled
+            ? 'cost_reference_missing_group_ratio'
+            : 'cost_reference_group_unavailable'
+          : 'cost_reference_model_missing';
+      } else {
+        costReferences[listing.id] = cost;
+        const changed =
+          previousReferences[listing.id] !== undefined &&
+          !sameCostReference(previousReferences[listing.id], cost);
+        const sale = saleByRoute.get(
+          `${listing.groupId}\u0000${model?.modelId ?? ''}`
+        );
+        const comparison = compareSaleToCost(sale, cost);
+        alerts = comparison.alerts;
+        if (alerts.length > 0) {
+          priceDriftStatus = 'cost_alert';
+          reportType = 'cost_alert';
+        } else if (changed) {
+          priceDriftStatus = 'cost_changed';
+          reportType = 'cost_changed';
+        } else if (!comparison.comparable) {
+          reportType = sale
+            ? 'cost_reference_not_comparable'
+            : 'sale_snapshot_missing';
+        }
       }
 
+      if (priceDriftStatus !== 'ok') driftCount += 1;
+      modelStatuses.set(
+        listing.modelPk,
+        aggregateCostStatus(
+          modelStatuses.get(listing.modelPk),
+          priceDriftStatus
+        )
+      );
       if (reportType) {
         conflicts.push({
           type: reportType,
           modelId: model?.modelId,
           listingId: listing.id,
           newapiGroup: listing.groupNewapiGroup,
+          meters: alerts,
         });
       }
       await tx
         .update(catalogModelListing)
         .set({
           priceDriftStatus,
-          effectivePriceFormula: publicMatched
-            ? encodeJson({
-                source: 'newapi_group_ratio',
-                modelId: model?.modelId,
-                newapiGroup: listing.groupNewapiGroup,
-              })
-            : null,
-          effectivePriceSyncedAt: publicMatched ? now() : null,
+          effectivePriceFormula: encodeJson({
+            source: 'catalog_base_price_x_listing_discount',
+          }),
+          effectivePriceSyncedAt: now(),
         })
         .where(eq(catalogModelListing.id, listing.id));
     }
+
+    for (const price of prices) {
+      await tx
+        .update(catalogModelPrice)
+        .set({
+          driftStatus: modelStatuses.get(price.modelId) ?? 'ok',
+          updatedAt: now(),
+        })
+        .where(eq(catalogModelPrice.id, price.id));
+    }
   });
 
-  const status = conflicts.length > 0 ? 'partial' : 'success';
+  const status =
+    driftCount > 0 || missingGroupCount > 0 ? 'partial' : 'success';
   const run = await insertSyncRun({
     operatorUserId,
     status,
     remoteModelCount: snapshot.models.length,
     matchedModelCount,
-    driftCount: conflicts.length,
+    driftCount,
     fixedPriceCount,
     missingGroupCount,
     sourceFingerprint: snapshot.sourceFingerprint,
-    report: { conflicts, groupRatios: snapshot.groupRatios },
+    report: {
+      conflicts,
+      costReferences,
+      groupRatios: snapshot.groupRatios,
+    },
   });
 
   return {
@@ -592,7 +778,7 @@ export async function syncCatalogPricingFromSnapshot({
     status,
     remoteModelCount: snapshot.models.length,
     matchedModelCount,
-    driftCount: conflicts.length,
+    driftCount,
     fixedPriceCount,
     missingGroupCount,
     conflicts,

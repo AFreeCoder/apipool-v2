@@ -118,7 +118,7 @@ test('admin overview counters isolate each operational signal', async () => {
       });
   }
 
-  // --- listings: price_drift_status != matched -> drift delta = 1 ---
+  // --- listings: matched/ok 正常；成本告警与待复核计入运维信号 ---
   await modules
     .db()
     .insert(modules.catalogVendor)
@@ -133,6 +133,8 @@ test('admin overview counters isolate each operational signal', async () => {
     .values([
       { id: `${p}_group_1`, slug: `${p}-group-1`, name: 'Group 1' },
       { id: `${p}_group_2`, slug: `${p}-group-2`, name: 'Group 2' },
+      { id: `${p}_group_3`, slug: `${p}-group-3`, name: 'Group 3' },
+      { id: `${p}_group_4`, slug: `${p}-group-4`, name: 'Group 4' },
     ]);
   await modules
     .db()
@@ -173,6 +175,24 @@ test('admin overview counters isolate each operational signal', async () => {
         outputMicroUsd: 1,
         priceDriftStatus: 'needs_live_check',
       },
+      {
+        id: `${p}_listing_ok`,
+        modelId: `${p}_model`,
+        groupId: `${p}_group_3`,
+        statusId: `${p}_status`,
+        inputMicroUsd: 1,
+        outputMicroUsd: 1,
+        priceDriftStatus: 'ok',
+      },
+      {
+        id: `${p}_listing_cost_alert`,
+        modelId: `${p}_model`,
+        groupId: `${p}_group_4`,
+        statusId: `${p}_status`,
+        inputMicroUsd: 1,
+        outputMicroUsd: 1,
+        priceDriftStatus: 'cost_alert',
+      },
     ]);
 
   const after = await modules.overview.getAdminOverviewSignals();
@@ -188,7 +208,7 @@ test('admin overview counters isolate each operational signal', async () => {
       negativeWallets: 2,
       frozenWallets: 2,
       bindingSyncIssues: 4,
-      priceDriftListings: 1,
+      priceDriftListings: 2,
     }
   );
 });

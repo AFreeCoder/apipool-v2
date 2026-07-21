@@ -231,17 +231,19 @@ test('fixed-price or incomplete token prices stay hidden even when drift is matc
   assert.equal(effective.pricePresentation.showPrice, false);
 });
 
-test('listing discount still requires matched drift status', () => {
-  const matched = resolveEffectiveCatalogPrice({
-    baseInputMicroUsd: 2,
-    baseOutputMicroUsd: 4,
-    discountRateBps: 5000,
-    priceDriftStatus: 'matched',
-  });
+test('成本守卫状态只告警，不隐藏已配置的门户售价', () => {
+  for (const priceDriftStatus of ['ok', 'cost_changed', 'cost_alert']) {
+    const effective = resolveEffectiveCatalogPrice({
+      baseInputMicroUsd: 2,
+      baseOutputMicroUsd: 4,
+      discountRateBps: 5000,
+      priceDriftStatus,
+    });
 
-  assert.equal(matched.publicConfirmed, true);
-  assert.equal(matched.effectiveInputMicroUsd, 1);
-  assert.equal(matched.effectiveOutputMicroUsd, 2);
+    assert.equal(effective.publicConfirmed, true);
+    assert.equal(effective.effectiveInputMicroUsd, 1);
+    assert.equal(effective.effectiveOutputMicroUsd, 2);
+  }
 });
 
 test('quota spend uses the same effective micro-USD integers as public pricing', () => {

@@ -123,7 +123,7 @@ async function createBackfillFixtureModel(input: {
   return model;
 }
 
-test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift, and sync report', async () => {
+test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok 基线', async () => {
   const {
     catalogGroup,
     catalogModel,
@@ -188,15 +188,16 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id))
     .limit(1);
-  assert.equal(price.source, 'newapi_pricing');
+  assert.equal(price.source, 'migration');
   assert.equal(price.baseInputMicroUsd, 150000);
-  assert.equal(price.baseCachedInputMicroUsd, 15000);
+  assert.equal(price.baseCachedInputMicroUsd, null);
   assert.equal(price.baseCacheWrite5mMicroUsd, null);
   assert.equal(price.baseCacheWrite1hMicroUsd, null);
   assert.equal(price.baseOutputMicroUsd, 600000);
   assert.equal(price.sourceFingerprint, 'fingerprint-123');
-  assert.equal(price.syncStatus, 'synced');
-  assert.equal(price.driftStatus, 'matched');
+  assert.equal(price.sourceModelRatio, '0.075');
+  assert.equal(price.syncStatus, 'reference_current');
+  assert.equal(price.driftStatus, 'ok');
 
   const [group] = await modules
     .db()
@@ -206,7 +207,7 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
     .limit(1);
   assert.equal(group.newapiGroupRatioDecimal, '0.5');
   assert.equal(group.newapiGroupRatioBps, 5000);
-  assert.equal(group.pricingSyncStatus, 'synced');
+  assert.equal(group.pricingSyncStatus, 'reference_current');
 
   const [listing] = await modules
     .db()
@@ -214,8 +215,8 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
-  assert.equal(listing.priceDriftStatus, 'matched');
-  assert.match(listing.effectivePriceFormula, /newapi_group_ratio/);
+  assert.equal(listing.priceDriftStatus, 'ok');
+  assert.match(listing.effectivePriceFormula, /catalog_base_price/);
 
   const [run] = await modules
     .db()
@@ -237,7 +238,7 @@ test('syncCatalogPricingFromSnapshot updates prices, group ratio, listing drift,
   });
 });
 
-test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits current group ratio', async () => {
+test('成本参照缺少当前分组倍率时告警，但不清空门户售价展示', async () => {
   const { catalogGroup, catalogModel, catalogModelListing, catalogModelPrice } =
     modules.schema;
   const [model] = await modules
@@ -276,6 +277,7 @@ test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits
     .db()
     .update(catalogModelListing)
     .set({
+      discountRateBps: 10_000,
       priceDriftStatus: 'matched',
       effectivePriceFormula: '{"source":"stale"}',
     })
@@ -312,7 +314,7 @@ test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits
   });
 
   assert.equal(report.status, 'partial');
-  assert.equal(report.conflicts[0]?.type, 'missing_group_ratio');
+  assert.equal(report.conflicts[0]?.type, 'cost_reference_missing_group_ratio');
 
   const [listing] = await modules
     .db()
@@ -320,9 +322,9 @@ test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
-  assert.equal(listing.priceDriftStatus, 'missing_group');
-  assert.equal(listing.effectivePriceFormula, null);
-  assert.equal(listing.effectivePriceSyncedAt, null);
+  assert.equal(listing.priceDriftStatus, 'cost_changed');
+  assert.match(listing.effectivePriceFormula, /catalog_base_price/);
+  assert.ok(listing.effectivePriceSyncedAt);
 
   const publicListings = await modules.queries.getPublicListingsUncached({
     group: 'official',
@@ -333,12 +335,12 @@ test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits
   );
 
   assert.ok(publicListing);
-  assert.equal(publicListing.effectiveInputMicroUsd, undefined);
-  assert.equal(publicListing.effectiveOutputMicroUsd, undefined);
-  assert.equal(publicListing.pricePresentation.showPrice, false);
+  assert.equal(publicListing.effectiveInputMicroUsd, 150000);
+  assert.equal(publicListing.effectiveOutputMicroUsd, 600000);
+  assert.equal(publicListing.pricePresentation.showPrice, true);
 });
 
-test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matched pricing', async () => {
+test('固定价参照不覆盖门户 token 配置，仅作为不可比提示', async () => {
   const { catalogModel, catalogModelListing, catalogModelPrice } =
     modules.schema;
   const [model] = await modules
@@ -394,9 +396,9 @@ test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matc
     },
   });
 
-  assert.equal(report.status, 'partial');
+  assert.equal(report.status, 'success');
   assert.equal(report.fixedPriceCount, 1);
-  assert.equal(report.conflicts[0]?.type, 'fixed_price_needs_review');
+  assert.equal(report.conflicts[0]?.type, 'sale_snapshot_missing');
 
   const [price] = await modules
     .db()
@@ -404,8 +406,9 @@ test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matc
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id))
     .limit(1);
-  assert.equal(price.pricingMode, 'fixed_price');
-  assert.equal(price.driftStatus, 'fixed_needs_review');
+  assert.equal(price.pricingMode, 'manual_token');
+  assert.equal(price.fixedPriceMicroUsd, null);
+  assert.equal(price.driftStatus, 'ok');
 
   const [listing] = await modules
     .db()
@@ -413,8 +416,8 @@ test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matc
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
-  assert.equal(listing.priceDriftStatus, 'needs_live_check');
-  assert.equal(listing.effectivePriceFormula, null);
+  assert.equal(listing.priceDriftStatus, 'ok');
+  assert.match(listing.effectivePriceFormula, /catalog_base_price/);
 
   const publicListings = await modules.queries.getPublicListingsUncached({
     group: 'official',
@@ -425,9 +428,9 @@ test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matc
   );
 
   assert.ok(publicListing);
-  assert.equal(publicListing.inputMicroUsd, undefined);
-  assert.equal(publicListing.effectiveInputMicroUsd, undefined);
-  assert.equal(publicListing.pricePresentation.showPrice, false);
+  assert.equal(publicListing.inputMicroUsd, 150000);
+  assert.equal(publicListing.effectiveInputMicroUsd, 150000);
+  assert.equal(publicListing.pricePresentation.showPrice, true);
 });
 
 test('syncCatalogPricingFromSnapshot preserves the listing discount as the sole sale-price factor', async () => {
@@ -488,7 +491,210 @@ test('syncCatalogPricingFromSnapshot preserves the listing discount as the sole 
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
   assert.equal(listing.discountRateBps, 6500);
-  assert.equal(listing.priceDriftStatus, 'matched');
+  assert.equal(listing.priceDriftStatus, 'cost_changed');
+});
+
+test('成本守卫逐 meter 检出参照变动与售价倒挂，且绝不改门户价格', async () => {
+  const {
+    catalogGroup,
+    catalogModel,
+    catalogModelListing,
+    catalogModelPrice,
+    modelPriceVersion,
+  } = modules.schema;
+  const [model] = await modules
+    .db()
+    .select()
+    .from(catalogModel)
+    .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
+    .limit(1);
+  const [official] = await modules
+    .db()
+    .select()
+    .from(catalogGroup)
+    .where(eq(catalogGroup.slug, 'official'))
+    .limit(1);
+
+  await modules
+    .db()
+    .update(catalogModelPrice)
+    .set({ baseInputMicroUsd: 9_000_000, baseOutputMicroUsd: 12_000_000 })
+    .where(eq(catalogModelPrice.modelId, model.id));
+  const saleId = testId('active-sale');
+  await modules
+    .db()
+    .insert(modelPriceVersion)
+    .values({
+      id: saleId,
+      portalGroupId: official.id,
+      portalModelId: model.modelId,
+      version: 1,
+      status: 'active',
+      billingScheme: 'token',
+      ratesJson: JSON.stringify({ input: 1_000_000, output: 1_000_000 }),
+      tiersJson: '{}',
+      publishedBy: 'test:cost-guard',
+    });
+
+  const snapshot = (modelRatio: number, fingerprint: string) => ({
+    models: [
+      {
+        modelId: model.modelId,
+        displayName: 'GPT-4o mini',
+        vendorId: 'openai',
+        vendorName: 'OpenAI',
+        quotaType: 0,
+        modelRatio,
+        modelPrice: null,
+        completionRatio: 4,
+        cacheRatio: 0.1,
+        createCacheRatio: null,
+        imageRatio: null,
+        source: 'ratio' as const,
+        inputMicroUsd: modelRatio * 2_000_000,
+        outputMicroUsd: modelRatio * 8_000_000,
+        imageInputMicroUsd: null,
+        imageOutputMicroUsd: null,
+        enabledGroups: ['official'],
+        supportedEndpointTypes: ['responses'],
+      },
+    ],
+    vendors: { openai: 'OpenAI' },
+    groupRatios: {
+      official: {
+        raw: '0.5',
+        decimal: '0.5',
+        bps: 5000,
+        sourceKey: 'group_ratio',
+      },
+    },
+    usableGroups: ['official'],
+    sourceFingerprint: fingerprint,
+  });
+
+  await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    snapshot: snapshot(0.075, 'cost-baseline'),
+  });
+  const baseline = await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    snapshot: snapshot(0.075, 'cost-baseline-repeat'),
+  });
+  assert.equal(baseline.status, 'success');
+  assert.equal(baseline.driftCount, 0);
+
+  const changed = await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    snapshot: snapshot(0.08, 'cost-changed'),
+  });
+  assert.equal(changed.status, 'partial');
+  assert.equal(changed.driftCount, 1);
+  assert.equal(changed.conflicts[0]?.type, 'cost_changed');
+
+  await modules
+    .db()
+    .update(modelPriceVersion)
+    .set({
+      ratesJson: JSON.stringify({ input: 79_999, output: 1_000_000 }),
+    })
+    .where(eq(modelPriceVersion.id, saleId));
+  const alert = await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    snapshot: snapshot(0.08, 'cost-alert'),
+  });
+  assert.equal(alert.status, 'partial');
+  assert.equal(alert.driftCount, 1);
+  assert.equal(alert.conflicts[0]?.type, 'cost_alert');
+  assert.deepEqual(alert.conflicts[0]?.meters, ['input']);
+
+  const [price] = await modules
+    .db()
+    .select()
+    .from(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, model.id));
+  assert.equal(price.baseInputMicroUsd, 9_000_000);
+  assert.equal(price.baseOutputMicroUsd, 12_000_000);
+  assert.equal(price.driftStatus, 'cost_alert');
+  assert.equal(price.syncStatus, 'reference_current');
+  const [listing] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.modelId, model.id));
+  assert.equal(listing.priceDriftStatus, 'cost_alert');
+});
+
+test('per_call 成本守卫只比较 default 档，并保留门户 tier 配置', async () => {
+  const { catalogGroup, catalogModel, catalogModelPrice, modelPriceVersion } =
+    modules.schema;
+  const [model] = await modules
+    .db()
+    .select()
+    .from(catalogModel)
+    .where(eq(catalogModel.modelId, 'gpt-4o-mini'));
+  const [official] = await modules
+    .db()
+    .select()
+    .from(catalogGroup)
+    .where(eq(catalogGroup.slug, 'official'));
+  await modules
+    .db()
+    .update(modelPriceVersion)
+    .set({
+      billingScheme: 'per_call',
+      ratesJson: '{}',
+      tiersJson: JSON.stringify({ default: 10_000, premium: 50_000 }),
+    })
+    .where(eq(modelPriceVersion.status, 'active'));
+  await modules
+    .db()
+    .update(catalogModelPrice)
+    .set({ billingScheme: 'per_call', fixedPriceMicroUsd: 777 })
+    .where(eq(catalogModelPrice.modelId, model.id));
+
+  const report = await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    snapshot: {
+      models: [
+        {
+          modelId: model.modelId,
+          displayName: model.displayName,
+          vendorId: 'openai',
+          vendorName: 'OpenAI',
+          quotaType: 1,
+          modelRatio: 0,
+          modelPrice: 0.03,
+          completionRatio: 1,
+          imageRatio: null,
+          source: 'fixed-price',
+          inputMicroUsd: null,
+          outputMicroUsd: null,
+          imageInputMicroUsd: null,
+          imageOutputMicroUsd: null,
+          enabledGroups: ['official'],
+          supportedEndpointTypes: ['images'],
+        },
+      ],
+      vendors: { openai: 'OpenAI' },
+      groupRatios: {
+        official: {
+          raw: '0.5',
+          decimal: '0.5',
+          bps: 5000,
+          sourceKey: 'group_ratio',
+        },
+      },
+      usableGroups: ['official'],
+      sourceFingerprint: 'per-call-cost-alert',
+    },
+  });
+
+  assert.equal(report.status, 'partial');
+  assert.equal(report.conflicts[0]?.type, 'cost_alert');
+  assert.deepEqual(report.conflicts[0]?.meters, ['default']);
+  const [price] = await modules
+    .db()
+    .select()
+    .from(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, model.id));
+  assert.equal(price.fixedPriceMicroUsd, 777);
+  assert.equal(price.driftStatus, 'cost_alert');
+  assert.equal(official.newapiGroup, 'official');
 });
 
 test('backfillCatalogModelPrices prefers official list price, official effective, consistent listing price, then callable fallback', async () => {

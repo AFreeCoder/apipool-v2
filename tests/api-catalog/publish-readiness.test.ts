@@ -249,7 +249,7 @@ test('per_call 必须有 default 档，档位价格按上架折扣半入折算',
   assert.deepEqual(JSON.parse(ready.snapshot.tiersJson), { default: 2 });
 });
 
-test('只有 manual 且已复核的基础价可发布', async () => {
+test('同步状态只表示成本参照新鲜度，只有人工复核时间构成发布门禁', async () => {
   await modules
     .db()
     .update(modules.schema.catalogModelPrice)
@@ -259,8 +259,19 @@ test('只有 manual 且已复核的基础价可发布', async () => {
     IDs.group,
     IDs.modelId
   );
-  assert.equal(result.ready, false);
-  assert.ok(result.reasons.includes('基础价尚未人工锁定并复核'));
+  assert.equal(result.ready, true);
+
+  await modules
+    .db()
+    .update(modules.schema.catalogModelPrice)
+    .set({ syncStatus: 'reference_missing', reviewedAt: null })
+    .where(eq(modules.schema.catalogModelPrice.id, IDs.price));
+  const unreviewed = await modules.publishReadiness.assessPublishReadiness(
+    IDs.group,
+    IDs.modelId
+  );
+  assert.equal(unreviewed.ready, false);
+  assert.ok(unreviewed.reasons.includes('基础价尚未人工锁定并复核'));
 });
 
 test('token 基础必需集按端点区分文本、嵌入与图片', async () => {

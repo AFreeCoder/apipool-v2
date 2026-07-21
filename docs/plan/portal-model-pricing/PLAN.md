@@ -463,7 +463,7 @@ export async function assessPublishReadiness(
 - Test: `tests/api-catalog/` 对应扩展
 
 **契约：** 同步只更新 `source*` 参照列与 `sourceSyncedAt`；倒挂告警 = 有效卖价（rates_json）vs `ratio 推导 × groupRatio` 可比子集逐项对比 + 按次 default 档对比；预填接口返回换算值不落库。`driftStatus` 语义改为 `cost_alert`（倒挂）/`cost_changed`（变动）/`ok`，不再参与 callable（T6 已删门）。
-- [ ] commit：`git commit -m "feat: newapi 同步降级为只读成本守卫"`
+- [x] commit：`git commit -m "feat: newapi 同步降级为只读成本守卫"`
 
 ---
 
