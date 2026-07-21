@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createClient } from '@libsql/client';
@@ -111,12 +111,6 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
     ALTER TABLE catalog_model_price ADD billing_capabilities_json text;
   `);
 
-  const { getPublicListingsUncached } = await import(
-    '@/features/api-catalog/server/queries'
-  );
-  const publicBefore = await getPublicListingsUncached({});
-  assert.ok(publicBefore.length > 0);
-
   const { parseCatalogPricingBackfillArgs, runCatalogPricingBackfill } =
     await import('../../scripts/backfill-catalog-pricing');
   assert.throws(
@@ -155,7 +149,6 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
     join catalog_model_listing on catalog_model_listing.model_id = catalog_model.id
   `);
   assert.equal(prices.rows.length, modelsWithListings.rows.length);
-  assert.deepEqual(await listingCache(client), beforeCache);
 
   const partnerListing = await client.execute({
     sql: `
@@ -169,28 +162,19 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
     price_drift_status: 'needs_live_check',
   });
 
-  const publicAfter = await getPublicListingsUncached({});
-  assert.deepEqual(
-    publicAfter.map((listing) => ({
-      modelId: listing.modelId,
-      groupSlug: listing.groupSlug,
-      inputMicroUsd: listing.inputMicroUsd,
-      outputMicroUsd: listing.outputMicroUsd,
-    })),
-    publicBefore.map((listing) => ({
-      modelId: listing.modelId,
-      groupSlug: listing.groupSlug,
-      inputMicroUsd: listing.inputMicroUsd,
-      outputMicroUsd: listing.outputMicroUsd,
-    }))
-  );
+  // 0008 的职责边界是宽表基价回填与 listing 缓存不变；最新版公开查询依赖
+  // 0014 才建立的 meter/tier 列，应只在完整迁移链测试中执行。
+  assert.deepEqual(await listingCache(client), beforeCache);
+  client.close();
 });
 
 test('0014 migration maps legacy fixed price to per_call default tier', async () => {
   const dbPath = join(process.cwd(), '.tmp', 'catalog-pricing-v2-migration.db');
+  const backupPath = `${dbPath}.backup`;
   await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
   await rm(dbPath, { force: true });
-  const client = createClient({ url: `file:${dbPath}` });
+  await rm(backupPath, { force: true });
+  let client = createClient({ url: `file:${dbPath}` });
   await applyMigrationFiles(client, (file) => file < '0014_');
 
   const vendor = await client.execute(
@@ -211,8 +195,13 @@ test('0014 migration maps legacy fixed price to per_call default tier', async ()
   `);
 
   const dir = join(process.cwd(), 'src/config/db/migrations_sqlite');
-  const migration = (await readdir(dir)).find((file) => file.startsWith('0014_'));
+  const migration = (await readdir(dir)).find((file) =>
+    file.startsWith('0014_')
+  );
   assert.ok(migration, '0014 迁移文件存在');
+  client.close();
+  await copyFile(dbPath, backupPath);
+  client = createClient({ url: `file:${dbPath}` });
   await client.executeMultiple(await readFile(join(dir, migration), 'utf8'));
 
   const price = await client.execute(
@@ -241,7 +230,18 @@ test('0014 migration maps legacy fixed price to per_call default tier', async ()
     computePerCallChargeMicroUsd(2, Number(tier.rows[0].price_micro_usd)),
     BigInt(80_000)
   );
+  const integrity = await client.execute(`PRAGMA integrity_check`);
+  assert.equal(integrity.rows[0].integrity_check, 'ok');
+  const foreignKeys = await client.execute(`PRAGMA foreign_key_check`);
+  assert.equal(foreignKeys.rows.length, 0);
   client.close();
+
+  const backup = createClient({ url: `file:${backupPath}` });
+  const backupTierTable = await backup.execute(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name='catalog_model_price_tier'`
+  );
+  assert.equal(backupTierTable.rows.length, 0, '迁移前备份保持可独立恢复');
+  backup.close();
 });
 
 test('0014 migration rejects an unmappable fixed_price_unit', async () => {
@@ -267,7 +267,9 @@ test('0014 migration rejects an unmappable fixed_price_unit', async () => {
     )
   `);
   const dir = join(process.cwd(), 'src/config/db/migrations_sqlite');
-  const migration = (await readdir(dir)).find((file) => file.startsWith('0014_'));
+  const migration = (await readdir(dir)).find((file) =>
+    file.startsWith('0014_')
+  );
   assert.ok(migration, '0014 迁移文件存在');
   await assert.rejects(
     client.executeMultiple(await readFile(join(dir, migration), 'utf8')),

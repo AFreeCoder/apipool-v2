@@ -248,19 +248,18 @@ test('MVP smoke price reconciliation uses local usage buckets and immutable pric
     model: 'gpt-4o-mini',
     groupSlug: 'official',
     usage: {
-      uncachedInput: 1_000,
-      cachedRead: 200,
-      cacheWrite5m: 100,
-      cacheWrite1h: 50,
+      input: 1_000,
+      cached_input: 200,
+      cache_write_5m: 100,
+      cache_write_1h: 50,
       output: 500,
-      reasoning: 0,
     },
     price: {
-      inputMicroUsdPerM: 1_000_000,
-      cachedInputMicroUsdPerM: 500_000,
-      cacheWrite5mMicroUsdPerM: 1_250_000,
-      cacheWrite1hMicroUsdPerM: 2_000_000,
-      outputMicroUsdPerM: 2_000_000,
+      input: 1_000_000,
+      cached_input: 500_000,
+      cache_write_5m: 1_250_000,
+      cache_write_1h: 2_000_000,
+      output: 2_000_000,
     },
     actualChargedMicroUsd: 2_325,
     toleranceMicroUsd: 0,
@@ -269,11 +268,11 @@ test('MVP smoke price reconciliation uses local usage buckets and immutable pric
   assert.equal(report.ok, true);
   assert.match(report.detail, /model=gpt-4o-mini/);
   assert.match(report.detail, /groupSlug=official/);
-  assert.match(report.detail, /uncachedInputTokens=1000/);
-  assert.match(report.detail, /cachedReadTokens=200/);
-  assert.match(report.detail, /cacheWrite5mTokens=100/);
-  assert.match(report.detail, /cacheWrite1hTokens=50/);
-  assert.match(report.detail, /outputTokens=500/);
+  assert.match(report.detail, /"input":1000/);
+  assert.match(report.detail, /"cached_input":200/);
+  assert.match(report.detail, /"cache_write_5m":100/);
+  assert.match(report.detail, /"cache_write_1h":50/);
+  assert.match(report.detail, /"output":500/);
   assert.match(report.detail, /expectedMicroUsd=2325/);
   assert.match(report.detail, /actualMicroUsd=2325/);
   assert.match(report.detail, /deltaMicroUsd=0/);
@@ -286,19 +285,12 @@ test('MVP smoke price reconciliation fails without a settled local charge', () =
     model: 'gpt-4o-mini',
     groupSlug: 'official',
     usage: {
-      uncachedInput: 1_000,
-      cachedRead: 0,
-      cacheWrite5m: 0,
-      cacheWrite1h: 0,
+      input: 1_000,
       output: 500,
-      reasoning: 0,
     },
     price: {
-      inputMicroUsdPerM: 1_000_000,
-      cachedInputMicroUsdPerM: 500_000,
-      cacheWrite5mMicroUsdPerM: 1_250_000,
-      cacheWrite1hMicroUsdPerM: 2_000_000,
-      outputMicroUsdPerM: 2_000_000,
+      input: 1_000_000,
+      output: 2_000_000,
     },
     actualChargedMicroUsd: null,
     toleranceMicroUsd: 0,

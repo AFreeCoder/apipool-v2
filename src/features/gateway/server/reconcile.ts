@@ -1,11 +1,15 @@
 import 'server-only';
 
 import {
-  computeChargeMicroUsd,
-  priceVectorFromRatesJson,
-  type PriceVector,
-  type UsageBuckets,
+  computePerCallChargeMicroUsd,
+  computeTokenChargeMicroUsd,
+  type RatesMap,
 } from '@/features/gateway/lib/billing';
+import type {
+  BillingScheme,
+  MeterKey,
+  MeterQuantities,
+} from '@/features/gateway/lib/meters';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -50,6 +54,7 @@ type ReconcileCounters = {
   settledByLog: number;
   orphans: number;
   waivedOrOrphans: number;
+  flaggedLedgerIds: Set<string>;
 };
 
 function quotaFromLog(log: UsageLog): number | null {
@@ -70,54 +75,140 @@ function logTokenName(log: UsageLog) {
   return String(log.keyMasked ?? log.tokenName ?? '');
 }
 
-function ledgerBuckets(row: typeof requestLedger.$inferSelect): UsageBuckets {
-  return {
-    uncachedInput: row.uncachedInputTokens ?? 0,
-    cachedRead: row.cachedReadTokens ?? 0,
-    cacheWrite5m: row.cacheWrite5mTokens ?? 0,
-    cacheWrite1h: row.cacheWrite1hTokens ?? 0,
-    output: row.outputTokens ?? 0,
-    reasoning: row.reasoningTokens ?? 0,
-  };
+function addMeter(
+  meters: MeterQuantities,
+  key: MeterKey,
+  value: number | null
+) {
+  if (value && value > 0) meters[key] = value;
 }
 
-function retailPrice(row: typeof modelPriceVersion.$inferSelect): PriceVector {
-  return priceVectorFromRatesJson(row.ratesJson);
+function ledgerMeters(row: typeof requestLedger.$inferSelect): MeterQuantities {
+  const meters: MeterQuantities = {};
+  const long = row.longContextApplied === true;
+  addMeter(meters, long ? 'input_long' : 'input', row.uncachedInputTokens);
+  addMeter(
+    meters,
+    long ? 'cached_input_long' : 'cached_input',
+    row.cachedReadTokens
+  );
+  addMeter(
+    meters,
+    long ? 'cache_write_long' : 'cache_write',
+    row.cacheWriteTokens
+  );
+  addMeter(meters, 'cache_write_5m', row.cacheWrite5mTokens);
+  addMeter(meters, 'cache_write_1h', row.cacheWrite1hTokens);
+  addMeter(meters, long ? 'output_long' : 'output', row.outputTokens);
+  addMeter(meters, 'image_input', row.imageInputTokens);
+  addMeter(meters, 'cached_image_input', row.cachedImageInputTokens);
+  addMeter(meters, 'image_output', row.imageOutputTokens);
+  return meters;
 }
 
-function referencePrice(
-  row: typeof modelPriceVersion.$inferSelect,
-  buckets: UsageBuckets
-): { price: PriceVector | null; missing: string[] } {
+function parsePriceMap(raw: string, label: string): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} 无法解析`, { cause: error });
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} 必须是对象`);
+  }
+  const result: Record<string, number> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!Number.isSafeInteger(value) || Number(value) < 0) {
+      throw new Error(`${label} 的 ${key} 不是有效非负整数`);
+    }
+    result[key] = Number(value);
+  }
+  return result;
+}
+
+function retailExpectedCharge(
+  price: typeof modelPriceVersion.$inferSelect,
+  row: typeof requestLedger.$inferSelect,
+  meters: MeterQuantities
+) {
+  const billingScheme = price.billingScheme as BillingScheme;
+  if (billingScheme === 'token') {
+    const rates = parsePriceMap(price.ratesJson, '价格 rates_json') as RatesMap;
+    return computeTokenChargeMicroUsd(meters, rates, {
+      webSearchCount: row.webSearchCount ?? 0,
+      webSearchPriceMicroUsd: rates.web_search ?? null,
+    }).charged;
+  }
+  if (billingScheme === 'per_call') {
+    const tiers = parsePriceMap(price.tiersJson, '价格 tiers_json');
+    const skuKey = row.skuKey ?? 'default';
+    const unitCount = row.unitCount ?? 0;
+    const tierPrice = tiers[skuKey];
+    if (!Number.isSafeInteger(unitCount) || unitCount <= 0) {
+      throw new Error('per_call 对账缺少正整数 unit_count');
+    }
+    if (!Number.isSafeInteger(tierPrice) || tierPrice <= 0) {
+      throw new Error(`per_call 对账缺少 SKU 价格：${skuKey}`);
+    }
+    return computePerCallChargeMicroUsd(unitCount, tierPrice);
+  }
+  throw new Error(`不支持的计费方案：${price.billingScheme}`);
+}
+
+function referenceExpectedCharge(
+  price: typeof modelPriceVersion.$inferSelect,
+  row: typeof requestLedger.$inferSelect,
+  meters: MeterQuantities
+): { charged: bigint | null; missing: string[] } {
+  if (price.billingScheme !== 'token') {
+    return { charged: null, missing: ['per_call'] };
+  }
   const dimensions = [
-    ['uncached_input', buckets.uncachedInput, row.newapiRefInputMicroUsdPerM],
-    ['cached_read', buckets.cachedRead, row.newapiRefCachedInputMicroUsdPerM],
-    [
-      'cache_write_5m',
-      buckets.cacheWrite5m,
-      row.newapiRefCacheWrite5mMicroUsdPerM,
-    ],
-    [
-      'cache_write_1h',
-      buckets.cacheWrite1h,
-      row.newapiRefCacheWrite1hMicroUsdPerM,
-    ],
-    ['output', buckets.output, row.newapiRefOutputMicroUsdPerM],
+    ['input', price.newapiRefInputMicroUsdPerM],
+    ['cached_input', price.newapiRefCachedInputMicroUsdPerM],
+    ['cache_write_5m', price.newapiRefCacheWrite5mMicroUsdPerM],
+    ['cache_write_1h', price.newapiRefCacheWrite1hMicroUsdPerM],
+    ['output', price.newapiRefOutputMicroUsdPerM],
   ] as const;
-  const missing = dimensions
-    .filter(([, tokens, price]) => tokens > 0 && price === null)
-    .map(([name]) => name);
-  if (missing.length > 0) return { price: null, missing };
+  const comparable = new Set<MeterKey>(dimensions.map(([key]) => key));
+  const missing = (Object.entries(meters) as [MeterKey, number][])
+    .filter(([key, quantity]) => quantity > 0 && !comparable.has(key))
+    .map(([key]) => key);
+  if ((row.webSearchCount ?? 0) > 0) missing.push('web_search');
+  const rates: RatesMap = {};
+  for (const [key, rate] of dimensions) {
+    if ((meters[key] ?? 0) > 0 && rate === null) missing.push(key);
+    if (rate !== null) rates[key] = rate;
+  }
+  const uniqueMissing = [...new Set(missing)];
+  if (uniqueMissing.length > 0) {
+    return { charged: null, missing: uniqueMissing };
+  }
   return {
-    price: {
-      inputMicroUsdPerM: row.newapiRefInputMicroUsdPerM ?? 0,
-      cachedInputMicroUsdPerM: row.newapiRefCachedInputMicroUsdPerM ?? 0,
-      cacheWrite5mMicroUsdPerM: row.newapiRefCacheWrite5mMicroUsdPerM ?? 0,
-      cacheWrite1hMicroUsdPerM: row.newapiRefCacheWrite1hMicroUsdPerM ?? 0,
-      outputMicroUsdPerM: row.newapiRefOutputMicroUsdPerM ?? 0,
-    },
-    missing,
+    charged: computeTokenChargeMicroUsd(meters, rates, {
+      webSearchCount: 0,
+      webSearchPriceMicroUsd: null,
+    }).charged,
+    missing: [],
   };
+}
+
+const INPUT_METER_KEYS: MeterKey[] = [
+  'input',
+  'input_long',
+  'cached_input',
+  'cached_input_long',
+  'cache_write',
+  'cache_write_long',
+  'cache_write_5m',
+  'cache_write_1h',
+  'image_input',
+  'cached_image_input',
+];
+const OUTPUT_METER_KEYS: MeterKey[] = ['output', 'output_long', 'image_output'];
+
+function meterTotal(meters: MeterQuantities, keys: MeterKey[]) {
+  return keys.reduce((total, key) => total + (meters[key] ?? 0), 0);
 }
 
 async function reconcileSettled(
@@ -132,25 +223,26 @@ async function reconcileSettled(
     .limit(1);
   if (!price) throw new Error(`price version missing: ${row.priceVersionId}`);
 
-  const buckets = ledgerBuckets(row);
+  const meters = ledgerMeters(row);
   const notes: string[] = [];
   const tokenMismatch =
-    log.inputTokens !==
-      buckets.uncachedInput +
-        buckets.cachedRead +
-        buckets.cacheWrite5m +
-        buckets.cacheWrite1h || log.outputTokens !== buckets.output;
+    log.inputTokens !== meterTotal(meters, INPUT_METER_KEYS) ||
+    log.outputTokens !== meterTotal(meters, OUTPUT_METER_KEYS);
   const modelMismatch = log.modelId !== row.newapiModelId;
   if (modelMismatch) notes.push('model_mismatch');
 
-  const internalExpected = Number(
-    computeChargeMicroUsd(buckets, retailPrice(price))
-  );
-  const internalMismatch = internalExpected !== row.chargedMicroUsd;
+  let internalMismatch = false;
+  try {
+    const internalExpected = Number(retailExpectedCharge(price, row, meters));
+    internalMismatch = internalExpected !== row.chargedMicroUsd;
+  } catch (error) {
+    internalMismatch = true;
+    notes.push(`internal_recompute_failed:${String(error)}`);
+  }
   if (internalMismatch) notes.push('internal_amount_mismatch');
 
   const quota = quotaFromLog(log);
-  const ref = referencePrice(price, buckets);
+  const ref = referenceExpectedCharge(price, row, meters);
   let externalMismatch = false;
   if (ref.missing.length > 0) {
     notes.push(...ref.missing.map((name) => `ref_missing:${name}`));
@@ -158,7 +250,7 @@ async function reconcileSettled(
     notes.push('quota_missing');
   } else {
     const actualMicroUsd = quota * 2;
-    const expectedMicroUsd = Number(computeChargeMicroUsd(buckets, ref.price!));
+    const expectedMicroUsd = Number(ref.charged!);
     const tolerance = Math.max(10, Math.ceil(Math.abs(actualMicroUsd) * 0.01));
     externalMismatch = Math.abs(actualMicroUsd - expectedMicroUsd) > tolerance;
     if (externalMismatch) notes.push('external_amount_mismatch');
@@ -233,6 +325,9 @@ async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
     }
     return;
   }
+  if (row.billingFlagsJson && row.billingFlagsJson !== '[]') {
+    counters.flaggedLedgerIds.add(row.id);
+  }
 
   const telemetry = {
     newapiQuota: quotaFromLog(log),
@@ -305,6 +400,7 @@ export async function runReconcileSyncOnce(
   scanned: number;
   settledByLog: number;
   orphans: number;
+  flaggedRequests: number;
   truncated: boolean;
 }> {
   const { createNewApiClient } = await import(
@@ -323,6 +419,7 @@ export async function runReconcileSyncOnce(
     settledByLog: 0,
     orphans: 0,
     waivedOrOrphans: 0,
+    flaggedLedgerIds: new Set<string>(),
   };
   let scanned = 0;
 
@@ -407,6 +504,7 @@ export async function runReconcileSyncOnce(
         scanned,
         settledByLog: counters.settledByLog,
         orphans: counters.orphans,
+        flaggedRequests: counters.flaggedLedgerIds.size,
         truncated: true,
       };
     }
@@ -432,6 +530,7 @@ export async function runReconcileSyncOnce(
     scanned,
     settledByLog: counters.settledByLog,
     orphans: counters.orphans,
+    flaggedRequests: counters.flaggedLedgerIds.size,
     truncated: queue.length > 0,
   };
 }

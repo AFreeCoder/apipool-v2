@@ -273,7 +273,9 @@ test('smoke 工装、镜像产物与 live-smoke 两种专项模式完整接线',
   ]);
   assert.match(gateway, /from 'openai'/);
   assert.match(gateway, /from '@anthropic-ai\/sdk'/);
-  assert.match(gateway, /computeChargeMicroUsd/);
+  assert.match(gateway, /computeTokenChargeMicroUsd/);
+  assert.match(gateway, /computePerCallChargeMicroUsd/);
+  assert.doesNotMatch(gateway, /computeChargeMicroUsd/);
   assert.match(gateway, /newapiRequestId/);
   assert.match(recharge, /handleCheckoutSuccess/);
   assert.match(recharge, /manual_adjustment/);

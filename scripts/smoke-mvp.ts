@@ -6,10 +6,10 @@ import {
   getCallableModelIdsByGroupUncached,
 } from '@/features/api-catalog/server/queries';
 import {
-  computeChargeMicroUsd,
-  type PriceVector,
-  type UsageBuckets,
+  computeTokenChargeMicroUsd,
+  type RatesMap,
 } from '@/features/gateway/lib/billing';
+import type { MeterQuantities } from '@/features/gateway/lib/meters';
 import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 import {
   createPortalApiKey,
@@ -210,12 +210,17 @@ export function buildSmokePriceReconciliationReport({
 }: {
   model: string;
   groupSlug: string;
-  usage: UsageBuckets;
-  price: PriceVector;
+  usage: MeterQuantities;
+  price: RatesMap;
   actualChargedMicroUsd: number | null;
   toleranceMicroUsd: number;
 }): SmokePriceReconciliationReport {
-  const expectedMicroUsd = Number(computeChargeMicroUsd(usage, price));
+  const expectedMicroUsd = Number(
+    computeTokenChargeMicroUsd(usage, price, {
+      webSearchCount: 0,
+      webSearchPriceMicroUsd: price.web_search ?? null,
+    }).charged
+  );
   const deltaMicroUsd =
     actualChargedMicroUsd === null
       ? undefined
@@ -230,11 +235,7 @@ export function buildSmokePriceReconciliationReport({
   const detail = [
     `model=${model}`,
     `groupSlug=${groupSlug}`,
-    `uncachedInputTokens=${usage.uncachedInput}`,
-    `cachedReadTokens=${usage.cachedRead}`,
-    `cacheWrite5mTokens=${usage.cacheWrite5m}`,
-    `cacheWrite1hTokens=${usage.cacheWrite1h}`,
-    `outputTokens=${usage.output}`,
+    `meters=${JSON.stringify(usage)}`,
     `expectedMicroUsd=${expectedMicroUsd}`,
     `actualMicroUsd=${actualChargedMicroUsd ?? 'unavailable'}`,
     `deltaMicroUsd=${deltaMicroUsd ?? 'unavailable'}`,
@@ -609,14 +610,21 @@ export async function main() {
         model,
         groupSlug: smokeGroupSlug,
         usage: {
-          uncachedInput: usage.uncachedInputTokens ?? 0,
-          cachedRead: usage.cachedReadTokens ?? 0,
-          cacheWrite5m: usage.cacheWrite5mTokens ?? 0,
-          cacheWrite1h: usage.cacheWrite1hTokens ?? 0,
-          output: usage.outputTokens ?? 0,
-          reasoning: usage.reasoningTokens ?? 0,
+          [usage.longContextApplied ? 'input_long' : 'input']:
+            usage.uncachedInputTokens ?? 0,
+          [usage.longContextApplied ? 'cached_input_long' : 'cached_input']:
+            usage.cachedReadTokens ?? 0,
+          [usage.longContextApplied ? 'cache_write_long' : 'cache_write']:
+            usage.cacheWriteTokens ?? 0,
+          cache_write_5m: usage.cacheWrite5mTokens ?? 0,
+          cache_write_1h: usage.cacheWrite1hTokens ?? 0,
+          [usage.longContextApplied ? 'output_long' : 'output']:
+            usage.outputTokens ?? 0,
+          image_input: usage.imageInputTokens ?? 0,
+          cached_image_input: usage.cachedImageInputTokens ?? 0,
+          image_output: usage.imageOutputTokens ?? 0,
         },
-        price,
+        price: JSON.parse(price.ratesJson) as RatesMap,
         actualChargedMicroUsd: usage.chargedMicroUsd,
         toleranceMicroUsd: priceReconciliation.toleranceMicroUsd,
       });

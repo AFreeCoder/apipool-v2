@@ -1,8 +1,20 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
+import {
+  computePerCallChargeMicroUsd,
+  computeTokenChargeMicroUsd,
+  type RatesMap,
+} from '@/features/gateway/lib/billing';
+import type { MeterKey, MeterQuantities } from '@/features/gateway/lib/meters';
+import { hashPortalKey } from '@/features/gateway/server/auth';
+import {
+  createPortalApiKey,
+  disablePortalApiKey,
+} from '@/features/newapi-bridge/server/portal';
+import { applyManualAdjustment } from '@/features/wallet/server/ledger';
 import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
 import { eq, inArray } from 'drizzle-orm';
+import OpenAI from 'openai';
 
 import { db } from '@/core/db';
 import {
@@ -15,16 +27,6 @@ import {
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
-import {
-  computeChargeMicroUsd,
-  type PriceVector,
-} from '@/features/gateway/lib/billing';
-import { hashPortalKey } from '@/features/gateway/server/auth';
-import { applyManualAdjustment } from '@/features/wallet/server/ledger';
-import {
-  createPortalApiKey,
-  disablePortalApiKey,
-} from '@/features/newapi-bridge/server/portal';
 import { findUserById } from '@/shared/models/user';
 
 import { assertSmokeIdentity, SMOKE_PORTAL_EMAIL } from './smoke-identities';
@@ -39,6 +41,80 @@ function invariant(ok: unknown, message: string): asserts ok {
   if (!ok) throw new Error(`gateway smoke invariant failed: ${message}`);
 }
 
+function parsePriceMap(raw: string, label: string): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} 无法解析`, { cause: error });
+  }
+  invariant(
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed),
+    `${label} must be an object`
+  );
+  const result: Record<string, number> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    invariant(
+      Number.isSafeInteger(value) && Number(value) >= 0,
+      `${label}.${key} must be a non-negative safe integer`
+    );
+    result[key] = Number(value);
+  }
+  return result;
+}
+
+function addMeter(
+  meters: MeterQuantities,
+  key: MeterKey,
+  value: number | null
+) {
+  if (value && value > 0) meters[key] = value;
+}
+
+function metersFromLedger(row: typeof requestLedger.$inferSelect) {
+  const meters: MeterQuantities = {};
+  const long = row.longContextApplied === true;
+  addMeter(meters, long ? 'input_long' : 'input', row.uncachedInputTokens);
+  addMeter(
+    meters,
+    long ? 'cached_input_long' : 'cached_input',
+    row.cachedReadTokens
+  );
+  addMeter(
+    meters,
+    long ? 'cache_write_long' : 'cache_write',
+    row.cacheWriteTokens
+  );
+  addMeter(meters, 'cache_write_5m', row.cacheWrite5mTokens);
+  addMeter(meters, 'cache_write_1h', row.cacheWrite1hTokens);
+  addMeter(meters, long ? 'output_long' : 'output', row.outputTokens);
+  addMeter(meters, 'image_input', row.imageInputTokens);
+  addMeter(meters, 'cached_image_input', row.cachedImageInputTokens);
+  addMeter(meters, 'image_output', row.imageOutputTokens);
+  return meters;
+}
+
+function expectedLedgerCharge(
+  row: typeof requestLedger.$inferSelect,
+  price: typeof modelPriceVersion.$inferSelect
+) {
+  if (price.billingScheme === 'token') {
+    const rates = parsePriceMap(price.ratesJson, 'rates_json') as RatesMap;
+    return computeTokenChargeMicroUsd(metersFromLedger(row), rates, {
+      webSearchCount: row.webSearchCount ?? 0,
+      webSearchPriceMicroUsd: rates.web_search ?? null,
+    }).charged;
+  }
+  invariant(price.billingScheme === 'per_call', 'unknown billing scheme');
+  const tiers = parsePriceMap(price.tiersJson, 'tiers_json');
+  const skuKey = row.skuKey ?? 'default';
+  const unitCount = row.unitCount ?? 0;
+  const tierPrice = tiers[skuKey];
+  invariant(unitCount > 0, 'per_call ledger missing unit_count');
+  invariant(tierPrice > 0, `per_call price missing SKU ${skuKey}`);
+  return computePerCallChargeMicroUsd(unitCount, tierPrice);
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -47,7 +123,8 @@ export type GatewaySmokeEndpoint =
   | 'chat'
   | 'responses'
   | 'messages'
-  | 'embeddings';
+  | 'embeddings'
+  | 'images_generations';
 
 export function resolveGatewaySmokeEndpoints(
   sourceSupportedEndpointTypes: string[]
@@ -68,17 +145,31 @@ export function resolveGatewaySmokeEndpoints(
     endpoints.push('responses');
   }
   if (
-    supports(
-      'embedding',
-      'embeddings',
-      'openai-embedding',
-      'openai-embeddings'
-    )
+    supports('embedding', 'embeddings', 'openai-embedding', 'openai-embeddings')
   ) {
     endpoints.push('embeddings');
   }
+  if (
+    supports(
+      'image',
+      'images',
+      'image-generation',
+      'images-generation',
+      'images_generations'
+    )
+  ) {
+    endpoints.push('images_generations');
+  }
 
   return [...new Set(endpoints)];
+}
+
+export function buildLongContextSmokeInput(tokenTarget = 280_000) {
+  invariant(
+    Number.isSafeInteger(tokenTarget) && tokenTarget > 272_000,
+    'long-context smoke target must exceed 272K tokens'
+  );
+  return 'hello '.repeat(tokenTarget);
 }
 
 async function loadGatewaySmokeEndpoints(model: string) {
@@ -213,8 +304,7 @@ export async function main() {
   const groupSlug = process.env.APIPOOL_SMOKE_GROUP_SLUG || 'official';
   const model = requiredEnv('APIPOOL_SMOKE_MODEL');
   const baseUrl = (
-    process.env.APIPOOL_SMOKE_GATEWAY_BASE_URL ||
-    'http://127.0.0.1:3000/v1'
+    process.env.APIPOOL_SMOKE_GATEWAY_BASE_URL || 'http://127.0.0.1:3000/v1'
   ).replace(/\/$/, '');
   const user = await findUserById(userId);
   invariant(user, `smoke user not found: ${userId}`);
@@ -225,6 +315,23 @@ export async function main() {
     role: 'portal',
   });
   const smokeEndpoints = await loadGatewaySmokeEndpoints(model);
+  const configuredImageModel = process.env.APIPOOL_SMOKE_IMAGE_MODEL?.trim();
+  const imageModel =
+    configuredImageModel ||
+    (smokeEndpoints.includes('images_generations') ? model : undefined);
+  const longContextModel =
+    process.env.APIPOOL_SMOKE_LONG_CONTEXT_MODEL?.trim() || undefined;
+  if (imageModel && imageModel !== model) {
+    invariant(
+      (await loadGatewaySmokeEndpoints(imageModel)).includes(
+        'images_generations'
+      ),
+      `${imageModel} does not declare images generation support`
+    );
+  }
+  const longContextEndpoints = longContextModel
+    ? await loadGatewaySmokeEndpoints(longContextModel)
+    : [];
 
   const runId = `${Date.now()}`;
   const beforeTokenCount = await remoteTokenCount();
@@ -239,7 +346,10 @@ export async function main() {
     .select({ keyHash: portalApiKey.keyHash })
     .from(portalApiKey)
     .where(eq(portalApiKey.id, keyId));
-  invariant(hashRow?.keyHash === hashPortalKey(apiKey), 'DB must store key hash');
+  invariant(
+    hashRow?.keyHash === hashPortalKey(apiKey),
+    'DB must store key hash'
+  );
   invariant(
     (await remoteTokenCount()) === beforeTokenCount,
     'local key creation must make zero remote token calls'
@@ -255,6 +365,8 @@ export async function main() {
   );
 
   const requestIds: string[] = [];
+  const imageRequestIds = new Set<string>();
+  const longContextRequestIds = new Set<string>();
   const capture = async <T>(
     label: string,
     promise: { withResponse(): Promise<{ data: T; response: Response }> },
@@ -266,6 +378,7 @@ export async function main() {
     const id = response.headers.get('x-apipool-request-id');
     invariant(id, `${label} response missing x-apipool-request-id`);
     requestIds.push(id);
+    return id;
   };
 
   const openai = new OpenAI({ apiKey, baseURL: baseUrl });
@@ -339,6 +452,50 @@ export async function main() {
         }
       );
     }
+    if (imageModel) {
+      const imageRequestId = await capture(
+        'images generation low',
+        openai.images.generate({
+          model: imageModel,
+          prompt: 'A small blue circle on a white background.',
+          quality: 'low',
+          size: '1024x1024',
+          n: 1,
+        })
+      );
+      imageRequestIds.add(imageRequestId);
+    }
+    if (longContextModel) {
+      const target = Number(
+        process.env.APIPOOL_SMOKE_LONG_CONTEXT_TOKENS || '280000'
+      );
+      const input = buildLongContextSmokeInput(target);
+      let longRequestId: string;
+      if (longContextEndpoints.includes('responses')) {
+        longRequestId = await capture(
+          'responses long-context >272K',
+          openai.responses.create({
+            model: longContextModel,
+            input,
+            max_output_tokens: 8,
+          })
+        );
+      } else if (longContextEndpoints.includes('chat')) {
+        longRequestId = await capture(
+          'chat long-context >272K',
+          openai.chat.completions.create({
+            model: longContextModel,
+            messages: [{ role: 'user', content: input }],
+            max_tokens: 8,
+          })
+        );
+      } else {
+        throw new Error(
+          `gateway smoke invariant failed: no OpenAI long-context endpoint for ${longContextModel}`
+        );
+      }
+      longContextRequestIds.add(longRequestId);
+    }
 
     const rows = await waitForSettled(requestIds);
     for (const row of rows) {
@@ -357,17 +514,7 @@ export async function main() {
         .from(modelPriceVersion)
         .where(eq(modelPriceVersion.id, row.priceVersionId));
       invariant(price, `${row.id} price snapshot missing`);
-      const expected = computeChargeMicroUsd(
-        {
-          uncachedInput: row.uncachedInputTokens ?? 0,
-          cachedRead: row.cachedReadTokens ?? 0,
-          cacheWrite5m: row.cacheWrite5mTokens ?? 0,
-          cacheWrite1h: row.cacheWrite1hTokens ?? 0,
-          output: row.outputTokens ?? 0,
-          reasoning: row.reasoningTokens ?? 0,
-        },
-        price satisfies PriceVector
-      );
+      const expected = expectedLedgerCharge(row, price);
       invariant(
         row.chargedMicroUsd === Number(expected),
         `${row.id} charged=${row.chargedMicroUsd}, expected=${expected}`
@@ -381,6 +528,26 @@ export async function main() {
         charges[0].signedAmountMicroUsd === -Number(expected),
         `${row.id} wallet charge sign/amount mismatch`
       );
+      if (imageRequestIds.has(row.id)) {
+        invariant(
+          row.billingScheme === 'per_call',
+          'image smoke must per_call'
+        );
+        invariant(
+          row.skuKey === 'quality=low;size=1024x1024',
+          `image smoke unexpected sku_key ${row.skuKey}`
+        );
+        invariant(
+          row.unitCount === 1,
+          'image smoke must settle one actual image'
+        );
+      }
+      if (longContextRequestIds.has(row.id)) {
+        invariant(
+          row.longContextApplied === true,
+          'long-context smoke did not apply long meter rates'
+        );
+      }
     }
     const allWalletRows = await db()
       .select({ signed: walletLedger.signedAmountMicroUsd })
@@ -412,7 +579,7 @@ export async function main() {
     await disablePortalApiKey(userId, keyId);
     await expectGatewayStatus(baseUrl, apiKey, model, 401);
     console.log(
-      `Gateway smoke passed: endpoints=${smokeEndpoints.join(',')}, requests=${requestIds.length}, settled=${rows.length}, runtime=rk_, balance=closed, key=disabled, zero=429`
+      `Gateway smoke passed: endpoints=${smokeEndpoints.join(',')}, requests=${requestIds.length}, settled=${rows.length}, images=${imageRequestIds.size || 'skipped'}, longContext=${longContextRequestIds.size || 'skipped'}, runtime=rk_, balance=closed, key=disabled, zero=429`
     );
   } finally {
     await disablePortalApiKey(userId, keyId).catch(() => undefined);

@@ -2,18 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ceilDiv,
-  computeChargeMicroUsd,
   computePerCallChargeMicroUsd,
   computeTokenChargeMicroUsd,
   normalizeUsageMeters,
 } from '@/features/gateway/lib/billing';
 
 const PRICE = {
-  inputMicroUsdPerM: 2_500_000,
-  cachedInputMicroUsdPerM: 1_250_000,
-  cacheWrite5mMicroUsdPerM: 3_125_000,
-  cacheWrite1hMicroUsdPerM: 5_000_000,
-  outputMicroUsdPerM: 10_000_000,
+  input: 2_500_000,
+  cached_input: 1_250_000,
+  cache_write_5m: 3_125_000,
+  cache_write_1h: 5_000_000,
+  output: 10_000_000,
 };
 
 test('Chat：prompt_tokens 子集语义拆桶并输出 meter 向量', () => {
@@ -200,59 +199,32 @@ test('金额：BigInt 全程、合计一次 ceil、不足 1 计 1', () => {
   assert.equal(ceilDiv(BigInt(0), BigInt(1_000_000)), BigInt(0));
   assert.equal(ceilDiv(BigInt(1_000_001), BigInt(1_000_000)), BigInt(2));
   assert.equal(
-    computeChargeMicroUsd(
-      {
-        uncachedInput: 1,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      },
-      PRICE
-    ),
+    computeTokenChargeMicroUsd({ input: 1 }, PRICE, {
+      webSearchCount: 0,
+      webSearchPriceMicroUsd: null,
+    }).charged,
     BigInt(3)
   );
   assert.equal(
-    computeChargeMicroUsd(
-      {
-        uncachedInput: 0,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      },
-      PRICE
-    ),
+    computeTokenChargeMicroUsd({}, PRICE, {
+      webSearchCount: 0,
+      webSearchPriceMicroUsd: null,
+    }).charged,
     BigInt(1)
   );
-  const big = computeChargeMicroUsd(
-    {
-      uncachedInput: 10_000_000,
-      cachedRead: 0,
-      cacheWrite5m: 0,
-      cacheWrite1h: 0,
-      output: 0,
-      reasoning: 0,
-    },
-    { ...PRICE, inputMicroUsdPerM: 1_000_000_000 }
-  );
+  const big = computeTokenChargeMicroUsd(
+    { input: 10_000_000 },
+    { ...PRICE, input: 1_000_000_000 },
+    { webSearchCount: 0, webSearchPriceMicroUsd: null }
+  ).charged;
   assert.equal(big, BigInt(10_000_000_000));
 });
 
 test('连续小额逐笔和 = 逐笔 ceil 之和（不跨请求携余数）', () => {
-  const one = computeChargeMicroUsd(
-    {
-      uncachedInput: 1,
-      cachedRead: 0,
-      cacheWrite5m: 0,
-      cacheWrite1h: 0,
-      output: 0,
-      reasoning: 0,
-    },
-    PRICE
-  );
+  const one = computeTokenChargeMicroUsd({ input: 1 }, PRICE, {
+    webSearchCount: 0,
+    webSearchPriceMicroUsd: null,
+  }).charged;
   let sum = BigInt(0);
   for (let index = 0; index < 10; index += 1) sum += one;
   assert.equal(sum, BigInt(30));

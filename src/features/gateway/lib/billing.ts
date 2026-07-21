@@ -1,53 +1,6 @@
 import type { GatewayEndpointKey } from './endpoints';
 import { toLongMeterKey, type MeterKey, type MeterQuantities } from './meters';
 
-export interface UsageBuckets {
-  uncachedInput: number;
-  cachedRead: number;
-  cacheWrite5m: number;
-  cacheWrite1h: number;
-  output: number;
-  reasoning: number;
-}
-
-/** @deprecated 由 T12 收尾统一删除。 */
-export interface PriceVector {
-  inputMicroUsdPerM: number;
-  cachedInputMicroUsdPerM: number;
-  cacheWrite5mMicroUsdPerM: number;
-  cacheWrite1hMicroUsdPerM: number;
-  outputMicroUsdPerM: number;
-}
-
-/** @deprecated 仅供 T6/T7/T12 切换完成前读取旧五桶消费者。 */
-export function priceVectorFromRatesJson(ratesJson: string): PriceVector {
-  let rates: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(ratesJson);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('价格 rates_json 必须是对象');
-    }
-    rates = parsed as Record<string, unknown>;
-  } catch (error) {
-    throw new Error('价格 rates_json 无法解析', { cause: error });
-  }
-
-  const readRate = (key: string) => {
-    const value = rates[key];
-    if (!Number.isSafeInteger(value) || Number(value) < 0) {
-      throw new Error(`价格 rates_json 缺少有效 ${key}`);
-    }
-    return Number(value);
-  };
-  return {
-    inputMicroUsdPerM: readRate('input'),
-    cachedInputMicroUsdPerM: readRate('cached_input'),
-    cacheWrite5mMicroUsdPerM: readRate('cache_write_5m'),
-    cacheWrite1hMicroUsdPerM: readRate('cache_write_1h'),
-    outputMicroUsdPerM: readRate('output'),
-  };
-}
-
 export function ceilDiv(a: bigint, b: bigint): bigint {
   return (a + b - BigInt(1)) / b;
 }
@@ -245,97 +198,6 @@ export function normalizeUsageMeters(
   return { meters, webSearchCount, flags };
 }
 
-export function normalizeUsage(
-  endpoint: GatewayEndpointKey,
-  usage: Record<string, unknown>
-): { buckets: UsageBuckets; unmappedNonZero: string[] } {
-  let buckets: UsageBuckets;
-  switch (endpoint) {
-    case 'chat_completions': {
-      const details = obj(usage.prompt_tokens_details);
-      const completionDetails = obj(usage.completion_tokens_details);
-      const cachedRead = num(details.cached_tokens);
-      const cacheWrite = Math.max(
-        num(details.cache_write_tokens),
-        num(details.cache_creation_tokens ?? usage.cache_creation_input_tokens)
-      );
-      buckets = {
-        uncachedInput: Math.max(
-          0,
-          num(usage.prompt_tokens) - cachedRead - cacheWrite
-        ),
-        cachedRead,
-        cacheWrite5m: cacheWrite,
-        cacheWrite1h: 0,
-        output: num(usage.completion_tokens),
-        reasoning: num(completionDetails.reasoning_tokens),
-      };
-      break;
-    }
-    case 'responses': {
-      const inputDetails = obj(usage.input_tokens_details);
-      const outputDetails = obj(usage.output_tokens_details);
-      const cachedRead = num(inputDetails.cached_tokens);
-      const cacheWrite = num(inputDetails.cache_write_tokens);
-      buckets = {
-        uncachedInput: Math.max(
-          0,
-          num(usage.input_tokens) - cachedRead - cacheWrite
-        ),
-        cachedRead,
-        cacheWrite5m: cacheWrite,
-        cacheWrite1h: 0,
-        output: num(usage.output_tokens),
-        reasoning: num(outputDetails.reasoning_tokens),
-      };
-      break;
-    }
-    case 'messages': {
-      const creation = obj(usage.cache_creation);
-      const has5m = creation.ephemeral_5m_input_tokens !== undefined;
-      const has1h = creation.ephemeral_1h_input_tokens !== undefined;
-      buckets = {
-        uncachedInput: num(usage.input_tokens),
-        cachedRead: num(usage.cache_read_input_tokens),
-        cacheWrite5m: has5m
-          ? num(creation.ephemeral_5m_input_tokens)
-          : num(usage.cache_creation_input_tokens),
-        cacheWrite1h: has1h ? num(creation.ephemeral_1h_input_tokens) : 0,
-        output: num(usage.output_tokens),
-        reasoning: 0,
-      };
-      break;
-    }
-    case 'embeddings':
-      buckets = {
-        uncachedInput: num(usage.prompt_tokens),
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      };
-      break;
-    default:
-      buckets = {
-        uncachedInput: 0,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      };
-  }
-  const mapped = MAPPED_KEYS[endpoint] ?? new Set<string>();
-  const unmappedNonZero = Object.entries(usage)
-    .filter(
-      ([key, value]) =>
-        !mapped.has(key) && typeof value === 'number' && value !== 0
-    )
-    .map(([key]) => key);
-  return { buckets, unmappedNonZero };
-}
-
 const MICRO_PER_M = BigInt(1_000_000);
 
 export type RatesMap = Partial<Record<MeterKey, number>>;
@@ -377,20 +239,5 @@ export function computePerCallChargeMicroUsd(
   tierPriceMicroUsd: number
 ): bigint {
   const charged = BigInt(unitCount) * BigInt(tierPriceMicroUsd);
-  return charged > BigInt(0) ? charged : BigInt(1);
-}
-
-/** @deprecated 由 T12 收尾统一删除。 */
-export function computeChargeMicroUsd(
-  buckets: UsageBuckets,
-  price: PriceVector
-): bigint {
-  const total =
-    BigInt(buckets.uncachedInput) * BigInt(price.inputMicroUsdPerM) +
-    BigInt(buckets.cachedRead) * BigInt(price.cachedInputMicroUsdPerM) +
-    BigInt(buckets.cacheWrite5m) * BigInt(price.cacheWrite5mMicroUsdPerM) +
-    BigInt(buckets.cacheWrite1h) * BigInt(price.cacheWrite1hMicroUsdPerM) +
-    BigInt(buckets.output) * BigInt(price.outputMicroUsdPerM);
-  const charged = ceilDiv(total, MICRO_PER_M);
   return charged > BigInt(0) ? charged : BigInt(1);
 }

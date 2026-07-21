@@ -90,7 +90,7 @@ async function seedUser(suffix: string, balance = 1_000_000) {
 
 async function seedPrice(
   suffix: string,
-  overrides: Record<string, number | null> = {}
+  overrides: Record<string, unknown> = {}
 ) {
   const id = `reconcile-price-${suffix}`;
   await modules
@@ -133,8 +133,16 @@ async function seedLedger(
       output: number;
       reasoning: number;
     }>;
-    priceOverrides?: Record<string, number | null>;
+    priceOverrides?: Record<string, unknown>;
     modelId?: string;
+    settlementUsage?: {
+      meters?: Record<string, number>;
+      flags?: string[];
+      webSearchCount?: number;
+      rawUsage?: Record<string, unknown>;
+      skuKey?: string;
+      unitCount?: number;
+    };
   } = {}
 ) {
   const userId = options.userId ?? (await seedUser(suffix));
@@ -172,20 +180,22 @@ async function seedLedger(
   };
   if (options.status === 'settled') {
     await modules.settlement.settleByLedgerId(id, {
-      meters: {
+      meters: options.settlementUsage?.meters ?? {
         input: buckets.uncachedInput,
         cached_input: buckets.cachedRead,
         cache_write_5m: buckets.cacheWrite5m,
         cache_write_1h: buckets.cacheWrite1h,
         output: buckets.output,
       },
-      flags: [],
-      webSearchCount: 0,
-      rawUsage: {
+      flags: options.settlementUsage?.flags ?? [],
+      webSearchCount: options.settlementUsage?.webSearchCount ?? 0,
+      rawUsage: options.settlementUsage?.rawUsage ?? {
         prompt_tokens: buckets.uncachedInput + buckets.cachedRead,
         completion_tokens: buckets.output,
       },
       usageSource: 'response',
+      skuKey: options.settlementUsage?.skuKey,
+      unitCount: options.settlementUsage?.unitCount,
     });
   } else if (options.status === 'failed_unbilled') {
     await modules
@@ -268,6 +278,7 @@ test('settled 命中：对账字段回填并 matched', async () => {
     scanned: 1,
     settledByLog: 0,
     orphans: 0,
+    flaggedRequests: 0,
     truncated: false,
   });
   const row = await ledgerRow(ledger.id);
@@ -303,6 +314,55 @@ test('原始 quota 优先于 spendUsd 反算，避免浮点精度损失', async 
   const row = await ledgerRow(ledger.id);
   assert.equal(row.newapiQuota, 9);
   assert.equal(row.reconcileStatus, 'matched');
+});
+
+test('meter 对账重算覆盖长档与 web_search，并统计非空 billing flags', async () => {
+  const ledger = await seedLedger('meter-long-tool', {
+    status: 'settled',
+    priceOverrides: {
+      ratesJson: JSON.stringify({
+        input_long: 3_000_000,
+        output_long: 4_000_000,
+        web_search: 7,
+      }),
+    },
+    settlementUsage: {
+      meters: { input_long: 10, output_long: 4 },
+      flags: ['long_context_applied'],
+      webSearchCount: 2,
+    },
+  });
+  const result = await run([logFor(ledger)]);
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.chargedMicroUsd, 60);
+  assert.equal(row.reconcileStatus, 'matched');
+  assert.match(row.reconcileNote, /ref_missing:input_long/);
+  assert.match(row.reconcileNote, /ref_missing:web_search/);
+  assert.equal(result.flaggedRequests, 1);
+});
+
+test('per_call 对账按 unit_count × tier 重算，NewAPI 日志仅作对照', async () => {
+  const ledger = await seedLedger('per-call', {
+    status: 'settled',
+    priceOverrides: {
+      billingScheme: 'per_call',
+      ratesJson: '{}',
+      tiersJson: JSON.stringify({
+        default: 300_000,
+        'quality=low;size=1024x1024': 250_000,
+      }),
+    },
+    settlementUsage: {
+      meters: { image_input: 10, image_output: 4 },
+      skuKey: 'quality=low;size=1024x1024',
+      unitCount: 2,
+    },
+  });
+  await run([logFor(ledger)]);
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.chargedMicroUsd, 500_000);
+  assert.equal(row.reconcileStatus, 'matched');
+  assert.match(row.reconcileNote, /ref_missing:per_call/);
 });
 
 test('open 命中日志只做对照，门户请求仍按缺 usage 免单', async () => {
@@ -595,7 +655,7 @@ test('ref 缺维且对应桶非零：只做内部核对，不产生假 amount_mi
   await run([logFor(ledger, { inputTokens: 12, spendUsd: 19 / 1_000_000 })]);
   const row = await ledgerRow(ledger.id);
   assert.equal(row.reconcileStatus, 'matched');
-  assert.match(row.reconcileNote, /ref_missing:cached_read/);
+  assert.match(row.reconcileNote, /ref_missing:cached_input/);
 });
 
 test('日志模型与账本模型不一致 → token_mismatch + model_mismatch note', async () => {
