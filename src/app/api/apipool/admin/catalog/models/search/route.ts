@@ -42,9 +42,13 @@ export async function GET(req: Request) {
       vendorName: vendor?.name ?? model.vendorName,
       source: model.source,
       inputMicroUsd: model.inputMicroUsd,
+      cachedInputMicroUsd: model.cachedInputMicroUsd,
+      cacheWriteMicroUsd: model.cacheWriteMicroUsd,
+      cacheWrite1hMicroUsd: model.cacheWrite1hMicroUsd,
       outputMicroUsd: model.outputMicroUsd,
       imageInputMicroUsd: model.imageInputMicroUsd,
       imageOutputMicroUsd: model.imageOutputMicroUsd,
+      fixedPriceMicroUsd: model.fixedPriceMicroUsd,
       supportedEndpointTypes: model.supportedEndpointTypes,
     }));
 

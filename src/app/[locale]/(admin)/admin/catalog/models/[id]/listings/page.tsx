@@ -1,7 +1,13 @@
-import { formatDecimal } from '@/features/api-catalog/lib/pricing';
+import {
+  deriveBasePriceFromNewApiPricing,
+  formatDecimal,
+  microUsdToDollars,
+  scaleMicroUsdByBps,
+} from '@/features/api-catalog/lib/pricing';
 import {
   getGroups,
   getListingsByModel,
+  getModelAdminConfig,
   getModelById,
   getStatuses,
   Listing,
@@ -20,7 +26,18 @@ type ListingRow = Listing & {
   groupName: string;
   statusName: string;
   discountRate: string;
+  basePrice: string;
+  effectivePrice: string;
+  costReference: string;
+  longContext: string;
 };
+
+function formatPricePair(input?: number | null, output?: number | null) {
+  const values = [input, output]
+    .filter((value): value is number => value !== null && value !== undefined)
+    .map((value) => `$${microUsdToDollars(value)}`);
+  return values.join(' / ');
+}
 
 export default async function AdminCatalogModelListingsPage({
   params,
@@ -43,10 +60,11 @@ export default async function AdminCatalogModelListingsPage({
     return <Empty message={t('listings.list.notFound')} />;
   }
 
-  const [groups, statuses, listings] = await Promise.all([
+  const [groups, statuses, listings, config] = await Promise.all([
     getGroups(),
     getStatuses(),
     getListingsByModel(model.id),
+    getModelAdminConfig(model.id),
   ]);
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const statusNames = new Map(
@@ -61,13 +79,75 @@ export default async function AdminCatalogModelListingsPage({
           fold: formatDecimal(bps / 1000),
           percent: formatDecimal(bps / 100),
         });
-  const rows: ListingRow[] = listings.map((listing) => ({
-    ...listing,
-    groupSlug: groupById.get(listing.groupId)?.slug ?? listing.groupId,
-    groupName: groupById.get(listing.groupId)?.name ?? listing.groupId,
-    statusName: statusNames.get(listing.statusId) ?? listing.statusId,
-    discountRate: renderDiscount(listing.discountRateBps),
-  }));
+  const basePrice = config?.basePrice;
+  const defaultTier = config?.tiers.find((tier) => tier.skuKey === 'default');
+  const sourceNote = (() => {
+    try {
+      return JSON.parse(basePrice?.cachePriceNote || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const sourceDerived = basePrice
+    ? deriveBasePriceFromNewApiPricing({
+        quota_type: basePrice.sourceQuotaType ?? 0,
+        model_ratio: Number(basePrice.sourceModelRatio ?? 0),
+        model_price:
+          sourceNote.modelPriceMicroUsd === null ||
+          sourceNote.modelPriceMicroUsd === undefined
+            ? null
+            : Number(sourceNote.modelPriceMicroUsd) / 1_000_000,
+        completion_ratio: Number(basePrice.sourceCompletionRatio ?? 1),
+        cache_ratio: sourceNote.cacheRatio,
+        create_cache_ratio: sourceNote.createCacheRatio,
+        image_ratio:
+          basePrice.sourceImageRatio === null
+            ? null
+            : Number(basePrice.sourceImageRatio),
+        supported_endpoint_types: basePrice.sourceSupportedEndpointTypes,
+      })
+    : null;
+  const rows: ListingRow[] = listings.map((listing) => {
+    const group = groupById.get(listing.groupId);
+    const discountBps = listing.discountRateBps ?? 10_000;
+    const isPerCall = basePrice?.billingScheme === 'per_call';
+    const baseInput = isPerCall
+      ? defaultTier?.priceMicroUsd
+      : basePrice?.baseInputMicroUsd;
+    const baseOutput = isPerCall ? null : basePrice?.baseOutputMicroUsd;
+    const groupRatioBps = group?.newapiGroupRatioBps;
+    const costInput =
+      sourceDerived && groupRatioBps !== null && groupRatioBps !== undefined
+        ? scaleMicroUsdByBps(
+            sourceDerived.source === 'fixed-price'
+              ? sourceDerived.fixedPriceMicroUsd
+              : sourceDerived.inputMicroUsd,
+            groupRatioBps
+          )
+        : null;
+    const costOutput =
+      sourceDerived?.source === 'ratio' &&
+      groupRatioBps !== null &&
+      groupRatioBps !== undefined
+        ? scaleMicroUsdByBps(sourceDerived.outputMicroUsd, groupRatioBps)
+        : null;
+    return {
+      ...listing,
+      groupSlug: group?.slug ?? listing.groupId,
+      groupName: group?.name ?? listing.groupId,
+      statusName: statusNames.get(listing.statusId) ?? listing.statusId,
+      discountRate: renderDiscount(listing.discountRateBps),
+      basePrice: formatPricePair(baseInput, baseOutput),
+      effectivePrice: formatPricePair(
+        scaleMicroUsdByBps(baseInput, discountBps),
+        scaleMicroUsdByBps(baseOutput, discountBps)
+      ),
+      costReference: formatPricePair(costInput, costOutput),
+      longContext: listing.allowLongContext
+        ? t('boolean.yes')
+        : t('boolean.no'),
+    };
+  });
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
@@ -81,7 +161,11 @@ export default async function AdminCatalogModelListingsPage({
       { name: 'groupSlug', title: t('fields.groupSlug'), type: 'copy' },
       { name: 'groupName', title: t('fields.name') },
       { name: 'statusName', title: t('fields.status'), type: 'label' },
+      { name: 'basePrice', title: t('fields.basePrice') },
       { name: 'discountRate', title: t('fields.discountRate') },
+      { name: 'effectivePrice', title: t('fields.effectivePrice') },
+      { name: 'costReference', title: t('fields.costReference') },
+      { name: 'longContext', title: t('fields.allowLongContext') },
       { name: 'discountNote', title: t('fields.discountNote') },
       { name: 'description', title: t('fields.description') },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },

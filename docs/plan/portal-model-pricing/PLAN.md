@@ -474,7 +474,7 @@ export async function assessPublishReadiness(
 - Test: 对应表单 action 的单测（若现有表单无测试则仅 action 层）
 
 **契约（字段清单）：** ① 价格表单补：计费方式（token/per_call 切换）、cache_write/cached_image_input/web_search 三列、长档阈值 + 四价（配了阈值才显示）、能力声明勾选（billingCapabilitiesJson）；② tier 价目表编辑器（增删行，default 行必填校验）；③ listing 行加"长上下文"开关；④ 四数展示：基准价 / 折扣 / 折后价 / 成本参照；⑤ 门禁拒绝原因透出到表单错误；⑥ "按 newapi 参照预填"按钮。
-- [ ] commit：`git commit -m "feat: 定价管理界面适配 meter 化配置"`
+- [x] commit：`git commit -m "feat: 定价管理界面适配 meter 化配置"`
 
 ---
 

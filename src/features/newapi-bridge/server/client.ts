@@ -215,9 +215,13 @@ export type RemotePricingModel = {
   imageRatio: number | null;
   source: 'ratio' | 'fixed-price';
   inputMicroUsd: number | null;
+  cachedInputMicroUsd?: number | null;
+  cacheWriteMicroUsd?: number | null;
+  cacheWrite1hMicroUsd?: number | null;
   outputMicroUsd: number | null;
   imageInputMicroUsd: number | null;
   imageOutputMicroUsd: number | null;
+  fixedPriceMicroUsd?: number | null;
   enabledGroups: string[];
   supportedEndpointTypes: string[];
 };
@@ -555,9 +559,13 @@ function toRemotePricingModel(item: any, vendors: unknown): RemotePricingModel {
     imageRatio,
     source: derived.source,
     inputMicroUsd: derived.inputMicroUsd,
+    cachedInputMicroUsd: derived.cachedInputMicroUsd,
+    cacheWriteMicroUsd: derived.cacheWriteMicroUsd,
+    cacheWrite1hMicroUsd: derived.cacheWrite1hMicroUsd,
     outputMicroUsd: derived.outputMicroUsd,
     imageInputMicroUsd: derived.imageInputMicroUsd,
     imageOutputMicroUsd: derived.imageOutputMicroUsd,
+    fixedPriceMicroUsd: derived.fixedPriceMicroUsd ?? null,
     enabledGroups: asStringArray(item?.enable_groups),
     supportedEndpointTypes,
   };

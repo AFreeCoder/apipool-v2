@@ -11,6 +11,7 @@ import {
   getStatuses,
   NewListing,
 } from '@/features/api-catalog/server/catalog-service';
+import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
@@ -55,8 +56,7 @@ export default async function CatalogModelListingNewPage({
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const duplicateListingMessage = t('errors.duplicateListing');
-  // 新 listing 的 priceDriftStatus 默认 unknown，公开页显示「—」，需先跑价格同步。
-  const successMessage = `${t('listings.new.success')} ${t('messages.priceHiddenAfterSave')}`;
+  const successMessage = `${t('listings.new.success')} ${t('messages.costReviewAfterSave')}`;
   const [model, config] = await Promise.all([
     getModelById(id),
     getModelAdminConfig(id),
@@ -121,6 +121,12 @@ export default async function CatalogModelListingNewPage({
         title: t('fields.discountNote'),
       },
       {
+        name: 'allowLongContext',
+        type: 'switch',
+        title: t('fields.allowLongContext'),
+        tip: t('fields.allowLongContextTip'),
+      },
+      {
         name: 'description',
         type: 'textarea',
         title: t('fields.description'),
@@ -131,6 +137,7 @@ export default async function CatalogModelListingNewPage({
       statusId: statuses[0]?.id ?? '',
       discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '',
       discountNote: '',
+      allowLongContext: defaultListing?.allowLongContext ?? false,
       description: '',
     },
     submit: {
@@ -158,11 +165,17 @@ export default async function CatalogModelListingNewPage({
         let outputMicroUsd: number;
         try {
           inputMicroUsd = requiredBasePrice(
-            basePrice?.baseInputMicroUsd ?? defaultListing?.inputMicroUsd,
+            basePrice?.baseInputMicroUsd ??
+              (basePrice?.billingScheme === 'per_call'
+                ? 0
+                : defaultListing?.inputMicroUsd),
             missingBasePriceMessage
           );
           outputMicroUsd = requiredBasePrice(
-            basePrice?.baseOutputMicroUsd ?? defaultListing?.outputMicroUsd,
+            basePrice?.baseOutputMicroUsd ??
+              (basePrice?.billingScheme === 'per_call'
+                ? 0
+                : defaultListing?.outputMicroUsd),
             missingBasePriceMessage
           );
         } catch (error) {
@@ -194,6 +207,7 @@ export default async function CatalogModelListingNewPage({
             discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
               (data.get('discountNote') as string | null)?.trim() || null,
+            allowLongContext: data.get('allowLongContext') === 'true',
             description:
               (data.get('description') as string | null)?.trim() || null,
             featured: false,
@@ -228,6 +242,19 @@ export default async function CatalogModelListingNewPage({
         }
 
         revalidateCatalog();
+
+        const readiness = await assessPublishReadiness(
+          result.groupId,
+          model.modelId
+        );
+        if (!readiness.ready) {
+          return {
+            status: 'error' as const,
+            message: t('errors.pricingSavedButNotReady', {
+              reasons: readiness.reasons.join('；'),
+            }),
+          };
+        }
 
         return {
           status: 'success',

@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createClient } from '@libsql/client';
-
 import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
+import { createClient } from '@libsql/client';
 
 // 覆盖 admin-review S-6~S-11 修复的运行时断言。静态（页面文本）断言见文件末尾。
 let modules: any;
@@ -324,7 +323,10 @@ test('S-9: zero-capability saves append the silent-delisting warning', async () 
     'utf8'
   );
   const newPage = await readFile(join(modelsRoot, 'new/page.tsx'), 'utf8');
-  const editPage = await readFile(join(modelsRoot, '[id]/edit/page.tsx'), 'utf8');
+  const editPage = await readFile(
+    join(modelsRoot, '[id]/edit/page.tsx'),
+    'utf8'
+  );
   for (const source of [capabilitiesPage, newPage, editPage]) {
     assert.match(source, /capabilitiesEmptyWarning/);
     assert.match(source, /length === 0/);
@@ -380,10 +382,10 @@ test('S-11a: create/upsert pages catch UNIQUE collisions and map them to transla
   }
 });
 
-test('S-11b: new group discount success reuses the price-hidden hint', async () => {
+test('S-11b: new group discount success explains cost review without hiding price', async () => {
   const newPage = await readFile(
     join(modelsRoot, '[id]/listings/new/page.tsx'),
     'utf8'
   );
-  assert.match(newPage, /messages\.priceHiddenAfterSave/);
+  assert.match(newPage, /messages\.costReviewAfterSave/);
 });

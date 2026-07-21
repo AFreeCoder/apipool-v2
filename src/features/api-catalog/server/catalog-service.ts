@@ -11,6 +11,7 @@ import {
   catalogModelCategory,
   catalogModelListing,
   catalogModelPrice,
+  catalogModelPriceTier,
   catalogStatus,
   catalogVendor,
   newApiKeyBinding,
@@ -24,6 +25,7 @@ export type CatalogGroup = typeof catalogGroup.$inferSelect;
 export type Model = typeof catalogModel.$inferSelect;
 export type Listing = typeof catalogModelListing.$inferSelect;
 export type ModelPrice = typeof catalogModelPrice.$inferSelect;
+export type ModelPriceTier = typeof catalogModelPriceTier.$inferSelect;
 export type ModelCategory = typeof catalogModelCategory.$inferSelect;
 
 export type NewVendor = typeof catalogVendor.$inferInsert;
@@ -59,10 +61,29 @@ export type ModelAdminConfigInput = {
     categoryIds: string[];
   };
   basePrice: {
-    inputMicroUsd: number;
-    outputMicroUsd: number;
+    billingScheme?: 'token' | 'per_call';
+    inputMicroUsd?: number | null;
+    outputMicroUsd?: number | null;
+    cachedInputMicroUsd?: number | null;
+    cacheWriteMicroUsd?: number | null;
+    cacheWrite5mMicroUsd?: number | null;
+    cacheWrite1hMicroUsd?: number | null;
     imageInputMicroUsd?: number | null;
+    cachedImageInputMicroUsd?: number | null;
     imageOutputMicroUsd?: number | null;
+    webSearchMicroUsd?: number | null;
+    longContextThresholdTokens?: number | null;
+    inputLongMicroUsd?: number | null;
+    cachedInputLongMicroUsd?: number | null;
+    cacheWriteLongMicroUsd?: number | null;
+    outputLongMicroUsd?: number | null;
+    billingCapabilitiesJson?: string;
+    sourceSupportedEndpointTypes?: string | null;
+    tiers?: Array<{
+      skuKey: string;
+      priceMicroUsd: number;
+      note?: string | null;
+    }>;
   };
   listing: {
     id?: string;
@@ -88,6 +109,7 @@ export type ModelAdminConfigResult = {
   model: Model;
   listing: Listing;
   basePrice: ModelPrice;
+  tiers: ModelPriceTier[];
 };
 
 export type ModelMetadataAdminConfigResult = Omit<
@@ -113,6 +135,7 @@ export type ModelAdminConfig = {
   model: Model;
   listing?: Listing;
   basePrice?: ModelPrice;
+  tiers: ModelPriceTier[];
   categories: Category[];
   capabilities: Capability[];
 };
@@ -622,10 +645,15 @@ export async function getModelAdminConfig(
   const model = await getModelById(id);
   if (!model) return undefined;
 
-  const [listings, categories, capabilities] = await Promise.all([
+  const [listings, categories, capabilities, tiers] = await Promise.all([
     getListingsByModel(model.id),
     getModelCategories(model.id),
     getModelCapabilities(model.id),
+    db()
+      .select()
+      .from(catalogModelPriceTier)
+      .where(eq(catalogModelPriceTier.modelId, model.id))
+      .orderBy(asc(catalogModelPriceTier.skuKey)),
   ]);
   const [basePrice] = await db()
     .select()
@@ -637,6 +665,7 @@ export async function getModelAdminConfig(
     model,
     listing: listings[0],
     basePrice,
+    tiers,
     categories,
     capabilities,
   };
@@ -707,6 +736,9 @@ export async function updateModel(
 export async function deleteModel(id: string): Promise<void> {
   await db().transaction(async (tx: any) => {
     // 显式删净所有子表，事务自包含、不依赖 FK cascade 的开关状态
+    await tx
+      .delete(catalogModelPriceTier)
+      .where(eq(catalogModelPriceTier.modelId, id));
     await tx.delete(catalogModelPrice).where(eq(catalogModelPrice.modelId, id));
     await tx
       .delete(catalogModelListing)
@@ -793,6 +825,36 @@ export async function upsertModelAdminConfig(
   if (input.model.categoryIds.length === 0) {
     throw new Error('at least one category is required');
   }
+  const billingScheme = input.basePrice.billingScheme ?? 'token';
+  if (!['token', 'per_call'].includes(billingScheme)) {
+    throw new Error('计费方式无效');
+  }
+  const normalizedTiers =
+    billingScheme === 'per_call'
+      ? (input.basePrice.tiers ?? []).map((tier) => ({
+          skuKey: tier.skuKey.trim(),
+          priceMicroUsd: tier.priceMicroUsd,
+          note: tier.note?.trim() || null,
+        }))
+      : [];
+  if (
+    normalizedTiers.some(
+      (tier) =>
+        !tier.skuKey ||
+        !Number.isSafeInteger(tier.priceMicroUsd) ||
+        tier.priceMicroUsd < 0
+    ) ||
+    new Set(normalizedTiers.map((tier) => tier.skuKey)).size !==
+      normalizedTiers.length
+  ) {
+    throw new Error('按次价目表包含无效或重复档位');
+  }
+  if (
+    billingScheme === 'per_call' &&
+    !normalizedTiers.some((tier) => tier.skuKey === 'default')
+  ) {
+    throw new Error('按次计费必须配置 default 档');
+  }
 
   return await db().transaction(async (tx: any) => {
     const categories = (await tx
@@ -848,17 +910,34 @@ export async function upsertModelAdminConfig(
 
     const basePricePatch = {
       modelId: model.id,
-      pricingMode: 'manual_token',
+      billingScheme,
+      pricingMode:
+        billingScheme === 'per_call' ? 'manual_per_call' : 'manual_token',
       source: 'manual',
-      sourceModelId: input.model.modelId,
-      sourceVendorId: input.model.vendorId,
-      baseInputMicroUsd: input.basePrice.inputMicroUsd,
-      baseOutputMicroUsd: input.basePrice.outputMicroUsd,
+      sourceSupportedEndpointTypes:
+        input.basePrice.sourceSupportedEndpointTypes ?? null,
+      baseInputMicroUsd: input.basePrice.inputMicroUsd ?? null,
+      baseOutputMicroUsd: input.basePrice.outputMicroUsd ?? null,
+      baseCachedInputMicroUsd: input.basePrice.cachedInputMicroUsd ?? null,
+      baseCacheWriteMicroUsd: input.basePrice.cacheWriteMicroUsd ?? null,
+      baseCacheWrite5mMicroUsd: input.basePrice.cacheWrite5mMicroUsd ?? null,
+      baseCacheWrite1hMicroUsd: input.basePrice.cacheWrite1hMicroUsd ?? null,
       baseImageInputMicroUsd: input.basePrice.imageInputMicroUsd ?? null,
+      baseCachedImageInputMicroUsd:
+        input.basePrice.cachedImageInputMicroUsd ?? null,
       baseImageOutputMicroUsd: input.basePrice.imageOutputMicroUsd ?? null,
-      syncStatus: 'manual',
-      driftStatus: 'unknown',
-      sourceSyncedAt: null,
+      baseWebSearchMicroUsd: input.basePrice.webSearchMicroUsd ?? null,
+      longContextThresholdTokens:
+        input.basePrice.longContextThresholdTokens ?? null,
+      baseInputLongMicroUsd: input.basePrice.inputLongMicroUsd ?? null,
+      baseCachedInputLongMicroUsd:
+        input.basePrice.cachedInputLongMicroUsd ?? null,
+      baseCacheWriteLongMicroUsd:
+        input.basePrice.cacheWriteLongMicroUsd ?? null,
+      baseOutputLongMicroUsd: input.basePrice.outputLongMicroUsd ?? null,
+      billingCapabilitiesJson: input.basePrice.billingCapabilitiesJson ?? '{}',
+      syncStatus: 'reference_stale',
+      driftStatus: 'cost_changed',
       reviewedBy: input.operatorUserId ?? null,
       reviewedAt: new Date(),
       reviewNote: 'admin model form',
@@ -879,25 +958,38 @@ export async function upsertModelAdminConfig(
       throw new Error('model base price was not saved');
     }
 
-    // The base price feeds every listing of this model, so all of them —
-    // not just the one edited below — must fall back to needs_live_check
-    // until the next pricing sync re-confirms the match. Otherwise a
-    // listing in another group keeps its 'matched' status and immediately
-    // shows "new base price × its ratio" while New API still bills the
-    // old model_ratio (same hide-until-confirmed contract as updateGroup).
+    await tx
+      .delete(catalogModelPriceTier)
+      .where(eq(catalogModelPriceTier.modelId, model.id));
+    const tiers = normalizedTiers.length
+      ? ((await tx
+          .insert(catalogModelPriceTier)
+          .values(
+            normalizedTiers.map((tier) => ({
+              id: getUuid(),
+              modelId: model.id,
+              ...tier,
+            }))
+          )
+          .returning()) as ModelPriceTier[])
+      : [];
+
+    // 卖价变化只触发成本守卫复核，不再隐藏公开价格或阻断调用。
     await tx
       .update(catalogModelListing)
       .set({
-        priceDriftStatus: 'needs_live_check',
-        effectivePriceFormula: null,
-        effectivePriceSyncedAt: null,
+        priceDriftStatus: 'cost_changed',
+        effectivePriceFormula: JSON.stringify({
+          source: 'catalog_base_price_x_listing_discount',
+        }),
+        effectivePriceSyncedAt: new Date(),
       })
       .where(eq(catalogModelListing.modelId, model.id));
 
     // 模型元数据页面到此结束：它只维护模型主记录、分类、能力和基准价，
     // 不得静默创建或修改任何分组折扣。
     if (!('listing' in input)) {
-      return { model, basePrice };
+      return { model, basePrice, tiers };
     }
 
     const listingInput = input.listing;
@@ -906,15 +998,17 @@ export async function upsertModelAdminConfig(
       modelId: model.id,
       groupId: listingInput.groupId,
       statusId: listingInput.statusId,
-      inputMicroUsd: input.basePrice.inputMicroUsd,
-      outputMicroUsd: input.basePrice.outputMicroUsd,
+      inputMicroUsd: input.basePrice.inputMicroUsd ?? 0,
+      outputMicroUsd: input.basePrice.outputMicroUsd ?? 0,
       imageInputMicroUsd: input.basePrice.imageInputMicroUsd ?? null,
       imageOutputMicroUsd: input.basePrice.imageOutputMicroUsd ?? null,
       discountRateBps: listingInput.discountRateBps ?? null,
       discountNote: listingInput.discountNote ?? null,
-      priceDriftStatus: 'needs_live_check',
-      effectivePriceFormula: null,
-      effectivePriceSyncedAt: null,
+      priceDriftStatus: 'cost_changed',
+      effectivePriceFormula: JSON.stringify({
+        source: 'catalog_base_price_x_listing_discount',
+      }),
+      effectivePriceSyncedAt: new Date(),
       description: listingInput.description ?? null,
       featured: listingInput.featured ?? false,
       sortOrder: listingInput.sortOrder ?? 0,
@@ -949,7 +1043,7 @@ export async function upsertModelAdminConfig(
       throw new Error('listing was not saved');
     }
 
-    return { model, listing, basePrice };
+    return { model, listing, basePrice, tiers };
   });
 }
 

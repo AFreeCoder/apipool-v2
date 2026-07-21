@@ -10,6 +10,7 @@ import {
   updateListing,
   UpdateListing,
 } from '@/features/api-catalog/server/catalog-service';
+import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
@@ -103,6 +104,12 @@ export default async function CatalogModelListingEditPage({
         title: t('fields.discountNote'),
       },
       {
+        name: 'allowLongContext',
+        type: 'switch',
+        title: t('fields.allowLongContext'),
+        tip: t('fields.allowLongContextTip'),
+      },
+      {
         name: 'description',
         type: 'textarea',
         title: t('fields.description'),
@@ -147,6 +154,7 @@ export default async function CatalogModelListingEditPage({
             discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
               (data.get('discountNote') as string | null)?.trim() || null,
+            allowLongContext: data.get('allowLongContext') === 'true',
             description:
               (data.get('description') as string | null)?.trim() || null,
           };
@@ -156,9 +164,11 @@ export default async function CatalogModelListingEditPage({
 
         // 折扣是唯一售卖倍率；变更时清除旧的派生价缓存。
         if (patch.discountRateBps !== freshListing.discountRateBps) {
-          patch.priceDriftStatus = 'needs_live_check';
-          patch.effectivePriceFormula = null;
-          patch.effectivePriceSyncedAt = null;
+          patch.priceDriftStatus = 'cost_changed';
+          patch.effectivePriceFormula = JSON.stringify({
+            source: 'catalog_base_price_x_listing_discount',
+          });
+          patch.effectivePriceSyncedAt = new Date();
         }
 
         const result = await updateListing(freshListing.id, patch);
@@ -168,6 +178,19 @@ export default async function CatalogModelListingEditPage({
         }
 
         revalidateCatalog();
+
+        const readiness = await assessPublishReadiness(
+          result.groupId,
+          freshModel.modelId
+        );
+        if (!readiness.ready) {
+          return {
+            status: 'error' as const,
+            message: t('errors.pricingSavedButNotReady', {
+              reasons: readiness.reasons.join('；'),
+            }),
+          };
+        }
 
         return {
           status: 'success',

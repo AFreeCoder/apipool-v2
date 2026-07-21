@@ -22,10 +22,35 @@
     "categories": "分类",
     "contextWindow": "上下文窗口",
     "capabilities": "能力",
+    "billingScheme": "计费方式",
+    "tokenScheme": "按用量（token）",
+    "perCallScheme": "按次（per call）",
+    "tokenPrices": "Meter 基准价（美元 / 1M）",
+    "tierPrices": "按次 SKU 价目表（美元 / 次）",
+    "billingCapabilities": "计费能力声明",
     "inputMicroUsd": "输入价格（美元 / 1M）",
+    "cachedInputMicroUsd": "缓存读取（美元 / 1M）",
+    "cacheWriteMicroUsd": "缓存写入（美元 / 1M）",
+    "cacheWrite5mMicroUsd": "缓存写入 5m（美元 / 1M）",
+    "cacheWrite1hMicroUsd": "缓存写入 1h（美元 / 1M）",
     "outputMicroUsd": "输出价格（美元 / 1M）",
     "imageInputMicroUsd": "图片输入价格（美元 / 1M）",
+    "cachedImageInputMicroUsd": "缓存图片输入（美元 / 1M）",
     "imageOutputMicroUsd": "图片输出价格（美元 / 1M）",
+    "webSearchMicroUsd": "Web Search（美元 / 次）",
+    "longContextThresholdTokens": "长上下文阈值（tokens）",
+    "inputLongMicroUsd": "长档输入（美元 / 1M）",
+    "cachedInputLongMicroUsd": "长档缓存读（美元 / 1M）",
+    "cacheWriteLongMicroUsd": "长档缓存写（美元 / 1M）",
+    "outputLongMicroUsd": "长档输出（美元 / 1M）",
+    "skuKey": "SKU 键（default 必填）",
+    "unitPrice": "单价（美元 / 次）",
+    "note": "备注",
+    "allowLongContext": "允许长上下文",
+    "allowLongContextTip": "关闭时请求超过模型阈值会在转发前被拒绝；开启时按长档价结算。",
+    "basePrice": "基准价",
+    "effectivePrice": "折后价",
+    "costReference": "成本参照",
     "listInputMicroUsd": "划线输入价（美元 / 1M）",
     "listOutputMicroUsd": "划线输出价（美元 / 1M）",
     "discountRate": "折扣",
@@ -34,7 +59,7 @@
     "createdAt": "创建时间",
     "actions": "操作",
     "pricingStatus": "定价状态",
-    "discountFoldTip": "当前公开折扣由分组倍率决定，本字段仅作记录/预留，不影响公开价。"
+    "discountFoldTip": "上架折扣是该分组最终卖价的唯一倍率；留空按原价（10000 bps）发布。"
   },
   "discount": {
     "value": "{fold} 折 ({percent}%)"
@@ -62,7 +87,22 @@
     "invalidPrice": "价格必须是非负有限数字",
     "duplicateListing": "该模型在所选分组下已存在售卖项，请直接编辑已有的那条。",
     "duplicateSlug": "该标识已被占用，请换一个。",
-    "duplicateModelId": "该模型 ID 已存在，请直接编辑已有的模型。"
+    "duplicateModelId": "该模型 ID 已存在，请直接编辑已有的模型。",
+    "invalidBillingCapabilities": "计费能力声明格式无效",
+    "invalidLongContextThreshold": "长上下文阈值必须是正整数",
+    "invalidTiers": "按次价目表必须唯一且包含有效的 default 档",
+    "missingRequiredPrice": "计费能力声明要求补齐价格",
+    "pricingSavedButNotReady": "定价已保存，但发布门禁未通过：{reasons}"
+  },
+  "billingCapabilities": {
+    "cachedInput": "缓存读取",
+    "cacheWrite": "缓存写入",
+    "cacheTtlSplit": "缓存写入区分 5m / 1h",
+    "imageInput": "图片输入",
+    "cachedImageInput": "缓存图片输入",
+    "imageOutput": "图片输出",
+    "longContext": "长上下文",
+    "webSearch": "Web Search"
   },
   "vendors": {
     "list": {
@@ -263,11 +303,11 @@
       }
     },
     "pricingSync": {
-      "title": "价格同步",
-      "description": "从 New API 同步模型基准价格，并刷新分组折扣使用的倍率；分组配置仍在“分组折扣”中维护。",
-      "sync": "同步价格",
+      "title": "成本守卫同步",
+      "description": "只刷新 New API 成本参照与分组倍率，绝不覆盖门户卖价；倒挂和变动仅告警。",
+      "sync": "同步成本参照",
       "syncing": "同步中",
-      "drift": "查看漂移",
+      "drift": "查看成本告警",
       "loading": "处理中",
       "success": "已完成",
       "error": "操作失败"
@@ -306,6 +346,9 @@
       "searching": "搜索中",
       "noCandidates": "没有候选模型",
       "fixedPrice": "固定价格",
+      "prefillReference": "按 New API 参照预填",
+      "addTier": "新增 SKU 档位",
+      "removeTier": "删除 SKU 档位",
       "discountPreview": "折扣预览"
     },
     "capabilities": {
@@ -360,6 +403,7 @@
   },
   "messages": {
     "priceHiddenAfterSave": "已保存。公开价已隐藏，需重新运行一次价格同步才会恢复展示。",
+    "costReviewAfterSave": "卖价继续生效，成本守卫已标记为待复核。",
     "capabilitiesEmptyWarning": "该模型未选择任何能力，不会在公开目录或建 Key 候选中展示。"
   }
 }

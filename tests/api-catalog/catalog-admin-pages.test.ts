@@ -277,7 +277,7 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     assert.doesNotMatch(source, callPattern('getGroups'));
     assert.doesNotMatch(source, callPattern('getStatuses'));
     assert.match(source, callPattern('upsertModelAdminConfig'));
-    assert.match(source, callPattern('optionalDollarsToMicroUsd'));
+    assert.match(source, callPattern('parseModelPricingFormData'));
     assert.match(source, /JSON\.parse\(.*categoryIds/);
     assert.match(source, /JSON\.parse\(.*capabilityIds/);
     assert.doesNotMatch(source, fieldPattern('contextWindow'));
@@ -292,6 +292,20 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
   ]) {
     assert.doesNotMatch(modelForm, new RegExp(`name="${groupField}"`));
   }
+  for (const pricingField of [
+    'billingScheme',
+    'billingCapabilitiesJson',
+    'tiersJson',
+    'cachedInputMicroUsd',
+    'cacheWriteMicroUsd',
+    'cachedImageInputMicroUsd',
+    'webSearchMicroUsd',
+    'longContextThresholdTokens',
+  ]) {
+    assert.match(modelForm, new RegExp(`name=["']${pricingField}["']`));
+  }
+  assert.match(modelForm, /prefillReference/);
+  assert.match(modelForm, /setTiers/);
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(editPage, callPattern('getModelAdminConfig'));
@@ -392,6 +406,14 @@ test('catalog listing child pages expose per-model group discount CRUD without a
   assert.match(listPage, /name:\s*['"]groupSlug['"]/);
   assert.match(listPage, /name:\s*['"]groupName['"]/);
   assert.match(listPage, /name:\s*['"]discountRate['"]/);
+  for (const pricingColumn of [
+    'basePrice',
+    'effectivePrice',
+    'costReference',
+    'longContext',
+  ]) {
+    assert.match(listPage, new RegExp(`name:\\s*['"]${pricingColumn}['"]`));
+  }
   assert.match(listPage, /name:\s*['"]discountNote['"]/);
   assert.match(listPage, /name:\s*['"]description['"]/);
   for (const hiddenColumn of [
@@ -418,6 +440,8 @@ test('catalog listing child pages expose per-model group discount CRUD without a
     assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
     assert.match(source, typedFieldPattern('description', 'textarea'));
+    assert.match(source, switchFieldPattern('allowLongContext'));
+    assert.match(source, callPattern('assessPublishReadiness'));
     assert.doesNotMatch(source, switchFieldPattern('smokeTested'));
     assert.doesNotMatch(source, /fields\.smokeTested/);
     for (const hiddenField of [
@@ -661,13 +685,13 @@ test('creating a duplicate listing surfaces a translated message, not a raw cons
   }
 });
 
-test('editing model base price warns that existing public prices stay hidden until sync', async () => {
+test('editing model price warns that the cost guard needs review without hiding sale price', async () => {
   const { readFile } = await import('node:fs/promises');
 
   const editPage =
     'src/app/[locale]/(admin)/admin/catalog/models/[id]/edit/page.tsx';
   const source = await readFile(editPage, 'utf8');
-  assert.match(source, /messages\.priceHiddenAfterSave/, editPage);
+  assert.match(source, /messages\.costReviewAfterSave/, editPage);
 
   for (const locale of ['en', 'zh']) {
     const messages = JSON.parse(
@@ -676,7 +700,7 @@ test('editing model base price warns that existing public prices stay hidden unt
         'utf8'
       )
     );
-    assert.ok(messages.messages?.priceHiddenAfterSave, locale);
+    assert.ok(messages.messages?.costReviewAfterSave, locale);
   }
 });
 

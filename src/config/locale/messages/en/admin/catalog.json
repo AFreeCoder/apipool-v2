@@ -22,10 +22,35 @@
     "categories": "Categories",
     "contextWindow": "Context Window",
     "capabilities": "Capabilities",
+    "billingScheme": "Billing Scheme",
+    "tokenScheme": "Usage (token)",
+    "perCallScheme": "Per Call",
+    "tokenPrices": "Meter Base Prices (USD / 1M)",
+    "tierPrices": "Per-call SKU Prices (USD / unit)",
+    "billingCapabilities": "Billing Capability Declaration",
     "inputMicroUsd": "Input Price (USD / 1M)",
+    "cachedInputMicroUsd": "Cached Input (USD / 1M)",
+    "cacheWriteMicroUsd": "Cache Write (USD / 1M)",
+    "cacheWrite5mMicroUsd": "Cache Write 5m (USD / 1M)",
+    "cacheWrite1hMicroUsd": "Cache Write 1h (USD / 1M)",
     "outputMicroUsd": "Output Price (USD / 1M)",
     "imageInputMicroUsd": "Image Input Price (USD / 1M)",
+    "cachedImageInputMicroUsd": "Cached Image Input (USD / 1M)",
     "imageOutputMicroUsd": "Image Output Price (USD / 1M)",
+    "webSearchMicroUsd": "Web Search (USD / call)",
+    "longContextThresholdTokens": "Long-context Threshold (tokens)",
+    "inputLongMicroUsd": "Long Input (USD / 1M)",
+    "cachedInputLongMicroUsd": "Long Cached Input (USD / 1M)",
+    "cacheWriteLongMicroUsd": "Long Cache Write (USD / 1M)",
+    "outputLongMicroUsd": "Long Output (USD / 1M)",
+    "skuKey": "SKU Key (default required)",
+    "unitPrice": "Unit Price (USD / call)",
+    "note": "Note",
+    "allowLongContext": "Allow Long Context",
+    "allowLongContextTip": "When off, requests above the model threshold are rejected before forwarding; when on, long-context rates apply.",
+    "basePrice": "Base Price",
+    "effectivePrice": "Discounted Price",
+    "costReference": "Cost Reference",
     "listInputMicroUsd": "List Input Price (USD / 1M)",
     "listOutputMicroUsd": "List Output Price (USD / 1M)",
     "discountRate": "Discount",
@@ -34,7 +59,7 @@
     "createdAt": "Created At",
     "actions": "Actions",
     "pricingStatus": "Pricing Status",
-    "discountFoldTip": "The public discount is currently driven by the group ratio; this field is recorded for reference only and does not change the public price."
+    "discountFoldTip": "This listing discount is the sole multiplier for the group's final sale price. Leave blank to publish at 10000 bps (full price)."
   },
   "discount": {
     "value": "{percent}% of list"
@@ -62,7 +87,22 @@
     "invalidPrice": "Price must be a non-negative finite number",
     "duplicateListing": "This model already has a listing in the selected group. Edit the existing one instead.",
     "duplicateSlug": "This slug is already in use. Choose a different one.",
-    "duplicateModelId": "This model ID already exists. Edit the existing model instead."
+    "duplicateModelId": "This model ID already exists. Edit the existing model instead.",
+    "invalidBillingCapabilities": "The billing capability declaration is invalid.",
+    "invalidLongContextThreshold": "The long-context threshold must be a positive integer.",
+    "invalidTiers": "Per-call prices must be unique and include a valid default tier.",
+    "missingRequiredPrice": "The billing capability declaration requires a price.",
+    "pricingSavedButNotReady": "Pricing was saved, but the publish gate rejected it: {reasons}"
+  },
+  "billingCapabilities": {
+    "cachedInput": "Cached Input",
+    "cacheWrite": "Cache Write",
+    "cacheTtlSplit": "Split Cache Write by 5m / 1h",
+    "imageInput": "Image Input",
+    "cachedImageInput": "Cached Image Input",
+    "imageOutput": "Image Output",
+    "longContext": "Long Context",
+    "webSearch": "Web Search"
   },
   "vendors": {
     "list": {
@@ -263,11 +303,11 @@
       }
     },
     "pricingSync": {
-      "title": "Pricing Sync",
-      "description": "Sync model base prices from New API and refresh ratios used by group discounts; manage group configuration under Group Discounts.",
-      "sync": "Sync Pricing",
+      "title": "Cost Guard Sync",
+      "description": "Refresh New API cost references and group ratios without overwriting portal sale prices. Inversions and changes are alerts only.",
+      "sync": "Sync Cost References",
       "syncing": "Syncing",
-      "drift": "View Drift",
+      "drift": "View Cost Alerts",
       "loading": "Loading",
       "success": "Completed",
       "error": "Operation Failed"
@@ -306,6 +346,9 @@
       "searching": "Searching",
       "noCandidates": "No candidate models",
       "fixedPrice": "Fixed price",
+      "prefillReference": "Prefill from New API Reference",
+      "addTier": "Add SKU Tier",
+      "removeTier": "Remove SKU Tier",
       "discountPreview": "Discount preview"
     },
     "capabilities": {
@@ -360,6 +403,7 @@
   },
   "messages": {
     "priceHiddenAfterSave": "Saved. The public price is hidden until you run a price sync for this model.",
+    "costReviewAfterSave": "The sale price remains active; the cost guard is marked for review.",
     "capabilitiesEmptyWarning": "This model has no capabilities selected and will not appear on the public catalog or in key creation."
   }
 }

@@ -294,7 +294,10 @@ test('dictionary delete services allow unreferenced records', async () => {
   assert.equal(await modules.service.getVendorById(vendor.id), undefined);
   assert.equal(await modules.service.getGroupById(group.id), undefined);
   assert.equal(await modules.service.getCategoryById(category.id), undefined);
-  assert.equal(await modules.service.getCapabilityById(capability.id), undefined);
+  assert.equal(
+    await modules.service.getCapabilityById(capability.id),
+    undefined
+  );
   assert.equal(await modules.service.getStatusById(status.id), undefined);
 });
 
@@ -327,16 +330,16 @@ test('dictionary delete services block referenced vendor, group, capability, and
 test('category deletion is blocked by model category links and legacy category slug references', async () => {
   const vendor = await createVendor('category-block-vendor');
   const linkedCategory = await createCategory('category-block-linked');
-  const linkedModel = await createModel('category-block-linked-model', vendor.id);
+  const linkedModel = await createModel(
+    'category-block-linked-model',
+    vendor.id
+  );
 
-  await modules
-    .db()
-    .insert(modules.schema.catalogModelCategory)
-    .values({
-      id: 'category_block_link',
-      modelId: linkedModel.id,
-      categoryId: linkedCategory.id,
-    });
+  await modules.db().insert(modules.schema.catalogModelCategory).values({
+    id: 'category_block_link',
+    modelId: linkedModel.id,
+    categoryId: linkedCategory.id,
+  });
 
   await assert.rejects(
     () => modules.service.deleteCategory(linkedCategory.id),
@@ -370,32 +373,35 @@ test('group deletion ignores deleted key bindings but blocks active key bindings
     email: 'key-binding-guard@example.com',
   });
 
-  await modules.db().insert(modules.schema.newApiKeyBinding).values([
-    {
-      id: 'key_binding_guard_deleted',
-      portalUserId: 'key_binding_guard_user',
-      newapiUserId: 'remote_key_binding_guard_deleted',
-      newapiKeyId: 'remote_key_binding_guard_deleted_key',
-      keyMasked: 'sk-...deleted',
-      displayName: 'Deleted key binding',
-      status: 'deleted',
-      groupId: deletedGroup.id,
-      newapiGroup: deletedGroup.newapiGroup,
-      idempotencyKey: 'key_binding_guard_deleted',
-    },
-    {
-      id: 'key_binding_guard_active',
-      portalUserId: 'key_binding_guard_user',
-      newapiUserId: 'remote_key_binding_guard_active',
-      newapiKeyId: 'remote_key_binding_guard_active_key',
-      keyMasked: 'sk-...active',
-      displayName: 'Active key binding',
-      status: 'active',
-      groupId: activeGroup.id,
-      newapiGroup: activeGroup.newapiGroup,
-      idempotencyKey: 'key_binding_guard_active',
-    },
-  ]);
+  await modules
+    .db()
+    .insert(modules.schema.newApiKeyBinding)
+    .values([
+      {
+        id: 'key_binding_guard_deleted',
+        portalUserId: 'key_binding_guard_user',
+        newapiUserId: 'remote_key_binding_guard_deleted',
+        newapiKeyId: 'remote_key_binding_guard_deleted_key',
+        keyMasked: 'sk-...deleted',
+        displayName: 'Deleted key binding',
+        status: 'deleted',
+        groupId: deletedGroup.id,
+        newapiGroup: deletedGroup.newapiGroup,
+        idempotencyKey: 'key_binding_guard_deleted',
+      },
+      {
+        id: 'key_binding_guard_active',
+        portalUserId: 'key_binding_guard_user',
+        newapiUserId: 'remote_key_binding_guard_active',
+        newapiKeyId: 'remote_key_binding_guard_active_key',
+        keyMasked: 'sk-...active',
+        displayName: 'Active key binding',
+        status: 'active',
+        groupId: activeGroup.id,
+        newapiGroup: activeGroup.newapiGroup,
+        idempotencyKey: 'key_binding_guard_active',
+      },
+    ]);
 
   await modules.service.deleteGroup(deletedGroup.id);
   assert.equal(await modules.service.getGroupById(deletedGroup.id), undefined);
@@ -664,9 +670,9 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   assert.equal(updated.basePrice.baseInputMicroUsd, 4_000_000);
   assert.equal(updated.basePrice.baseImageInputMicroUsd, 8_000_000);
   assert.equal(updated.basePrice.reviewedBy, 'operator-update-admin-model');
-  assert.equal(updated.listing.priceDriftStatus, 'needs_live_check');
-  assert.equal(updated.listing.effectivePriceFormula, null);
-  assert.equal(updated.listing.effectivePriceSyncedAt, null);
+  assert.equal(updated.listing.priceDriftStatus, 'cost_changed');
+  assert.match(updated.listing.effectivePriceFormula, /catalog_base_price/);
+  assert.ok(updated.listing.effectivePriceSyncedAt);
   assert.deepEqual(
     (await modules.service.getModelCategories(created.model.id)).map(
       (category: { id: string }) => category.id
@@ -688,7 +694,100 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     .where(eq(catalogModelPrice.modelId, created.model.id))
     .limit(1);
   assert.equal(storedBasePrice.baseOutputMicroUsd, 32_000_000);
-  assert.equal(storedBasePrice.syncStatus, 'manual');
+  assert.equal(storedBasePrice.syncStatus, 'reference_stale');
+});
+
+test('模型管理保存 meter 化字段与 per_call tier，并原子替换旧档位', async () => {
+  const [vendor] = await modules.service.getVendors();
+  const [category] = await modules.service.getCategories();
+  assert.ok(vendor && category);
+
+  const created = await modules.service.upsertModelAdminConfig({
+    operatorUserId: 'operator-meter-pricing',
+    model: {
+      modelId: `meter-pricing-${Date.now()}`,
+      displayName: 'Meter Pricing',
+      vendorId: vendor.id,
+      categoryIds: [category.id],
+    },
+    basePrice: {
+      billingScheme: 'per_call',
+      inputMicroUsd: null,
+      outputMicroUsd: null,
+      cachedInputMicroUsd: 125_000,
+      cacheWriteMicroUsd: 1_250_000,
+      cachedImageInputMicroUsd: 500_000,
+      webSearchMicroUsd: 10_000,
+      longContextThresholdTokens: 272_000,
+      inputLongMicroUsd: 2_000_000,
+      cachedInputLongMicroUsd: 200_000,
+      cacheWriteLongMicroUsd: 2_500_000,
+      outputLongMicroUsd: 10_000_000,
+      billingCapabilitiesJson: JSON.stringify({ long_context: true }),
+      sourceSupportedEndpointTypes: JSON.stringify(['images']),
+      tiers: [
+        { skuKey: 'default', priceMicroUsd: 300_000 },
+        {
+          skuKey: 'quality=low;size=1024x1024',
+          priceMicroUsd: 15_000,
+        },
+      ],
+    },
+    capabilityIds: [],
+  });
+
+  assert.equal(created.basePrice.billingScheme, 'per_call');
+  assert.equal(created.basePrice.baseCachedInputMicroUsd, 125_000);
+  assert.equal(created.basePrice.baseWebSearchMicroUsd, 10_000);
+  assert.equal(created.basePrice.longContextThresholdTokens, 272_000);
+  assert.equal(created.basePrice.syncStatus, 'reference_stale');
+  assert.deepEqual(
+    created.tiers.map((tier: any) => [tier.skuKey, tier.priceMicroUsd]),
+    [
+      ['default', 300_000],
+      ['quality=low;size=1024x1024', 15_000],
+    ]
+  );
+
+  const updated = await modules.service.upsertModelAdminConfig({
+    modelId: created.model.id,
+    operatorUserId: 'operator-meter-pricing-update',
+    model: {
+      modelId: created.model.modelId,
+      displayName: created.model.displayName,
+      vendorId: vendor.id,
+      categoryIds: [category.id],
+    },
+    basePrice: {
+      billingScheme: 'per_call',
+      billingCapabilitiesJson: '{}',
+      tiers: [{ skuKey: 'default', priceMicroUsd: 250_000 }],
+    },
+    capabilityIds: [],
+  });
+  assert.deepEqual(
+    updated.tiers.map((tier: any) => [tier.skuKey, tier.priceMicroUsd]),
+    [['default', 250_000]]
+  );
+
+  await assert.rejects(
+    modules.service.upsertModelAdminConfig({
+      modelId: created.model.id,
+      model: {
+        modelId: created.model.modelId,
+        displayName: created.model.displayName,
+        vendorId: vendor.id,
+        categoryIds: [category.id],
+      },
+      basePrice: {
+        billingScheme: 'per_call',
+        billingCapabilitiesJson: '{}',
+        tiers: [{ skuKey: 'premium', priceMicroUsd: 1 }],
+      },
+      capabilityIds: [],
+    }),
+    /default/
+  );
 });
 
 test('deleteModel removes catalog model relations even without sqlite foreign key enforcement', async () => {
@@ -839,18 +938,15 @@ test('editing a group without changing its New API mapping keeps synced pricing 
 test('deleting a model also removes its base price row', async () => {
   const { model } = await createModelListing('delete-with-price');
 
-  await modules
-    .db()
-    .insert(modules.schema.catalogModelPrice)
-    .values({
-      id: 'price_delete_model',
-      modelId: model.id,
-      baseInputMicroUsd: 150000,
-      baseOutputMicroUsd: 600000,
-      source: 'manual',
-      syncStatus: 'synced',
-      driftStatus: 'matched',
-    });
+  await modules.db().insert(modules.schema.catalogModelPrice).values({
+    id: 'price_delete_model',
+    modelId: model.id,
+    baseInputMicroUsd: 150000,
+    baseOutputMicroUsd: 600000,
+    source: 'manual',
+    syncStatus: 'synced',
+    driftStatus: 'matched',
+  });
 
   await modules.service.deleteModel(model.id);
 
@@ -873,7 +969,9 @@ test('capability and category writes are transactional so a failure cannot clear
 
   // delete + insert 非事务时，insert 失败会把模型的能力清空 → 模型从公开页消失
   for (const fn of ['setModelCapabilities', 'setModelCategories']) {
-    const body = source.split(`export async function ${fn}(`)[1].split('}\n')[0];
+    const body = source
+      .split(`export async function ${fn}(`)[1]
+      .split('}\n')[0];
     assert.match(body, /transaction/, `${fn} must run in a transaction`);
   }
 });
