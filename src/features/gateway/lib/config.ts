@@ -7,6 +7,10 @@ function intEnv(name: string, fallback: number): number {
 }
 
 export function gatewayConfig() {
+  const imageFirstByteTimeoutMs = Math.max(
+    180_000,
+    intEnv('GATEWAY_IMAGES_FIRST_BYTE_TIMEOUT_MS', 180_000)
+  );
   return {
     riskSlotLimit: intEnv('GATEWAY_RISK_SLOT_LIMIT', 10),
     overdraftFreezeMicroUsd: intEnv(
@@ -17,6 +21,7 @@ export function gatewayConfig() {
     maxInflight: intEnv('GATEWAY_MAX_INFLIGHT', 16),
     parseBufferMax: intEnv('GATEWAY_PARSE_BUFFER_MAX', 33_554_432),
     firstByteTimeoutMs: intEnv('GATEWAY_FIRST_BYTE_TIMEOUT_MS', 120_000),
+    imageFirstByteTimeoutMs,
     nonstreamTotalTimeoutMs: intEnv(
       'GATEWAY_NONSTREAM_TOTAL_TIMEOUT_MS',
       300_000

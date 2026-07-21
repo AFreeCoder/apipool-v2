@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   createUsageExtractor,
@@ -207,6 +209,36 @@ test('非流式无 usage 仍可独立提取顶层 data 实际数量', () => {
     complete: false,
     unitCount: 2,
   });
+});
+
+test('Images URL fixture：提取 usage、实际张数与 URL 形态', async () => {
+  const fixture = await readFile(
+    join(process.cwd(), 'tests/fixtures/newapi/images-generations-runapi.json')
+  );
+  const extractor = createUsageExtractor('images_generations', false, 1 << 20);
+  extractor.push(fixture);
+  const result = extractor.finish();
+  assert.equal(result.complete, true);
+  assert.equal(result.unitCount, 1);
+  assert.equal(result.allDataItemsHaveUrl, true);
+  assert.equal(result.usage?.output_tokens, 1000);
+});
+
+test('Images b64_json 跨 chunk 跳过正文，响应大于解析窗仍可结算', () => {
+  const extractor = createUsageExtractor('images_edits', false, 256);
+  extractor.push(enc.encode('{"data":[{"b64_json":"'));
+  extractor.push(enc.encode('A'.repeat(10_000)));
+  extractor.push(
+    enc.encode(
+      '"}],"usage":{"input_tokens":2,"input_tokens_details":{"text_tokens":1,"image_tokens":1},"output_tokens":3}}'
+    )
+  );
+  const result = extractor.finish();
+  assert.equal(extractor.overflowed, false);
+  assert.equal(result.complete, true);
+  assert.equal(result.unitCount, 1);
+  assert.equal(result.allDataItemsHaveUrl, false);
+  assert.equal(result.usage?.output_tokens, 3);
 });
 
 test('字节级扫描内存有界：25MB body（大量短串）提取 model 正确', () => {

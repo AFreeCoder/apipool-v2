@@ -451,7 +451,7 @@ export async function assessPublishReadiness(
 4. 张数按实际；**per_call 结算独立于 usage**（T7 契约）：有张数即结算，usage 缺失只影响 token 照记列；解析不出张数 → 失败复核路径不扣费。
 5. 上线冒烟（转 T12）。
 - 验收（第 6 轮 F1 补齐四类）：fixture 驱动端到端（准入 SKU → 转发 stub → 结算 per_call 列）+ **任意字段顺序 multipart** + **无 usage 但有 data 的响应正常按次结算** + **>32MiB b64 响应仍能提取张数结算** + **慢首包（>120s <180s）不被中断**，全绿。
-- [ ] commit：`git commit -m "feat: images 端点接入与按次结算链路"`
+- [x] commit：`git commit -m "feat: images 端点接入与按次结算链路"`
 
 ---
 

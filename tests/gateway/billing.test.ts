@@ -116,6 +116,28 @@ test('Embeddings：仅 input', () => {
   assert.deepEqual(meters, { input: 512 });
 });
 
+test('Images：文本/图片输入与图片输出分 meter，缓存细分预留可照记', () => {
+  const result = normalizeUsageMeters('images_generations', {
+    input_tokens: 28,
+    input_tokens_details: {
+      text_tokens: 10,
+      image_tokens: 18,
+      cached_text_tokens: 3,
+      cached_image_tokens: 5,
+    },
+    output_tokens: 20,
+    total_tokens: 48,
+  });
+  assert.deepEqual(result.meters, {
+    input: 7,
+    image_input: 13,
+    cached_input: 3,
+    cached_image_input: 5,
+    image_output: 20,
+  });
+  assert.deepEqual(result.flags, []);
+});
+
 test('未映射非零字段被上报（宁少勿错）', () => {
   const { flags } = normalizeUsageMeters('chat_completions', {
     prompt_tokens: 10,

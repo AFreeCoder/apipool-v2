@@ -3,6 +3,7 @@ import test from 'node:test';
 
 test('gatewayConfig 默认值与 env 覆盖', async () => {
   delete process.env.GATEWAY_RISK_SLOT_LIMIT;
+  delete process.env.GATEWAY_IMAGES_FIRST_BYTE_TIMEOUT_MS;
   const { gatewayConfig, checkoutEnabled } = await import(
     '@/features/gateway/lib/config'
   );
@@ -11,6 +12,11 @@ test('gatewayConfig 默认值与 env 覆盖', async () => {
   assert.equal(gatewayConfig().maxBodyBytes, 26_214_400);
   assert.equal(gatewayConfig().parseBufferMax, 33_554_432);
   assert.equal(gatewayConfig().firstByteTimeoutMs, 120_000);
+  assert.equal(gatewayConfig().imageFirstByteTimeoutMs, 180_000);
+  process.env.GATEWAY_IMAGES_FIRST_BYTE_TIMEOUT_MS = '1000';
+  assert.equal(gatewayConfig().imageFirstByteTimeoutMs, 180_000);
+  process.env.GATEWAY_IMAGES_FIRST_BYTE_TIMEOUT_MS = '200000';
+  assert.equal(gatewayConfig().imageFirstByteTimeoutMs, 200_000);
   process.env.GATEWAY_RISK_SLOT_LIMIT = '25';
   assert.equal(gatewayConfig().riskSlotLimit, 25);
   process.env.GATEWAY_RISK_SLOT_LIMIT = 'garbage';
@@ -28,4 +34,5 @@ test('gatewayConfig 默认值与 env 覆盖', async () => {
   assert.equal(checkoutEnabled(), false);
   delete process.env.APIPOOL_CHECKOUT_ENABLED;
   delete process.env.GATEWAY_RISK_SLOT_LIMIT;
+  delete process.env.GATEWAY_IMAGES_FIRST_BYTE_TIMEOUT_MS;
 });

@@ -304,6 +304,7 @@ export interface ExtractedUsage {
   usage: Record<string, unknown> | null;
   complete: boolean;
   unitCount?: number;
+  allDataItemsHaveUrl?: boolean;
 }
 
 export interface UsageExtractor {
@@ -792,6 +793,38 @@ export function extractRequestAdmissionMetadata(
 const USAGE_KEY = [0x75, 0x73, 0x61, 0x67, 0x65];
 const RESPONSE_KEY = [0x72, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65];
 const DATA_KEY = [0x64, 0x61, 0x74, 0x61];
+const URL_KEY = [0x75, 0x72, 0x6c];
+const B64_JSON_KEY = [0x62, 0x36, 0x34, 0x5f, 0x6a, 0x73, 0x6f, 0x6e];
+
+function scanImageDataItems(
+  body: Uint8Array,
+  range: ObjectRange
+): { ok: true; count: number; allDataItemsHaveUrl: boolean } | { ok: false } {
+  let count = 0;
+  let allDataItemsHaveUrl = true;
+  let index = skipWhitespace(body, range.start + 1);
+  while (index < range.end - 1) {
+    if (body[index] !== OPEN_BRACE) return { ok: false };
+    const item = findBalancedObject(body, index);
+    if (!item || item.end > range.end) return { ok: false };
+    const url = findDirectStringProperty(body, item, URL_KEY);
+    const b64 = findDirectStringProperty(body, item, B64_JSON_KEY);
+    if (!url.ok || !b64.ok || (url.value === null && b64.value === null)) {
+      return { ok: false };
+    }
+    count += 1;
+    if (url.value === null) allDataItemsHaveUrl = false;
+
+    index = skipWhitespace(body, item.end);
+    if (body[index] === 0x2c) {
+      index = skipWhitespace(body, index + 1);
+      continue;
+    }
+    if (body[index] !== CLOSE_BRACKET) return { ok: false };
+    break;
+  }
+  return { ok: true, count, allDataItemsHaveUrl };
+}
 
 function extractBodyUsage(
   endpoint: GatewayEndpointKey,
@@ -805,10 +838,29 @@ function extractBodyUsage(
 
   const rootData = findDirectArrayProperty(body, root, DATA_KEY);
   if (!rootData.ok) return { usage: null, complete: false };
+  const isImageEndpoint =
+    endpoint === 'images_generations' || endpoint === 'images_edits';
+  const imageData =
+    isImageEndpoint && rootData.range
+      ? scanImageDataItems(body, rootData.range)
+      : null;
+  if (imageData && !imageData.ok) {
+    return { usage: null, complete: false };
+  }
   const unitCount = rootData.range
-    ? countDirectArrayItems(body, rootData.range)
+    ? imageData?.ok
+      ? imageData.count
+      : countDirectArrayItems(body, rootData.range)
     : undefined;
-  const countResult = unitCount === undefined ? {} : { unitCount };
+  const countResult =
+    unitCount === undefined
+      ? {}
+      : {
+          unitCount,
+          ...(imageData?.ok
+            ? { allDataItemsHaveUrl: imageData.allDataItemsHaveUrl }
+            : {}),
+        };
 
   const rootUsage = findDirectObjectProperty(body, root, USAGE_KEY);
   if (!rootUsage.ok) {
@@ -895,11 +947,145 @@ function createBodyExtractor(
   };
 }
 
+function createImageBodyExtractor(
+  endpoint: 'images_generations' | 'images_edits',
+  maxBufferBytes: number
+): UsageExtractor {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let overflowed = false;
+  let finished: ExtractedUsage | null = null;
+  let inString = false;
+  let skippingString = false;
+  let escaped = false;
+  let awaitingB64Value = false;
+  let lastStringWasB64Key = false;
+  let candidateMatchesB64Key = false;
+  let candidateLength = 0;
+
+  const pushSanitized = (chunk: Uint8Array) => {
+    if (chunk.byteLength === 0 || overflowed) return;
+    total += chunk.byteLength;
+    if (total > maxBufferBytes) {
+      overflowed = true;
+      chunks.length = 0;
+      return;
+    }
+    chunks.push(chunk);
+  };
+
+  return {
+    push(chunk: Uint8Array) {
+      if (overflowed || finished) return;
+      const output = new Uint8Array(chunk.byteLength);
+      let outputLength = 0;
+      const write = (byte: number) => {
+        output[outputLength] = byte;
+        outputLength += 1;
+      };
+
+      for (const byte of chunk) {
+        if (skippingString) {
+          if (escaped) {
+            escaped = false;
+          } else if (byte === BACKSLASH) {
+            escaped = true;
+          } else if (byte === QUOTE) {
+            write(byte);
+            skippingString = false;
+          }
+          continue;
+        }
+
+        if (inString) {
+          write(byte);
+          if (escaped) {
+            escaped = false;
+            candidateMatchesB64Key = false;
+          } else if (byte === BACKSLASH) {
+            escaped = true;
+            candidateMatchesB64Key = false;
+          } else if (byte === QUOTE) {
+            inString = false;
+            lastStringWasB64Key =
+              candidateMatchesB64Key && candidateLength === B64_JSON_KEY.length;
+          } else {
+            if (
+              candidateLength >= B64_JSON_KEY.length ||
+              byte !== B64_JSON_KEY[candidateLength]
+            ) {
+              candidateMatchesB64Key = false;
+            }
+            candidateLength += 1;
+          }
+          continue;
+        }
+
+        if (awaitingB64Value) {
+          if (isWhitespace(byte)) {
+            write(byte);
+            continue;
+          }
+          awaitingB64Value = false;
+          if (byte === QUOTE) {
+            write(byte);
+            skippingString = true;
+            escaped = false;
+            continue;
+          }
+        }
+
+        write(byte);
+        if (byte === QUOTE) {
+          inString = true;
+          escaped = false;
+          candidateMatchesB64Key = true;
+          candidateLength = 0;
+          continue;
+        }
+        if (lastStringWasB64Key) {
+          if (isWhitespace(byte)) continue;
+          if (byte === COLON) awaitingB64Value = true;
+          lastStringWasB64Key = false;
+        }
+      }
+      pushSanitized(output.slice(0, outputLength));
+    },
+    finish() {
+      if (finished) return finished;
+      if (overflowed || inString || skippingString) {
+        finished = { usage: null, complete: false };
+        return finished;
+      }
+      const body = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        body.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      finished = extractBodyUsage(endpoint, body);
+      return finished;
+    },
+    get overflowed() {
+      return overflowed;
+    },
+    set overflowed(value: boolean) {
+      overflowed = value;
+    },
+  };
+}
+
 export function createUsageExtractor(
   endpoint: GatewayEndpointKey,
   isStream: boolean,
   maxBufferBytes: number
 ): UsageExtractor {
+  if (
+    !isStream &&
+    (endpoint === 'images_generations' || endpoint === 'images_edits')
+  ) {
+    return createImageBodyExtractor(endpoint, maxBufferBytes);
+  }
   return isStream
     ? createStreamExtractor(endpoint, maxBufferBytes)
     : createBodyExtractor(endpoint, maxBufferBytes);

@@ -2,7 +2,10 @@ import 'server-only';
 
 import { gatewayConfig } from '@/features/gateway/lib/config';
 import type { GatewayEndpointKey } from '@/features/gateway/lib/endpoints';
-import { extractRequestAdmissionMetadata } from '@/features/gateway/lib/sse-parser';
+import {
+  extractRequestAdmissionMetadata,
+  type RequestAdmissionMetadata,
+} from '@/features/gateway/lib/sse-parser';
 import type { ResolvedRoute } from '@/features/gateway/server/routing';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
@@ -36,6 +39,15 @@ export type ForwardAdmissionDecision =
     }
   | { ok: false; status: 400 | 413; message: string };
 
+type ForwardAdmissionRoute = Pick<
+  ResolvedRoute,
+  | 'billingScheme'
+  | 'rates'
+  | 'tiers'
+  | 'admissionLongContextThreshold'
+  | 'allowLongContext'
+>;
+
 function deriveSkuKey(quality: string | null, size: string | null): string {
   if (
     quality === null ||
@@ -50,14 +62,7 @@ function deriveSkuKey(quality: string | null, size: string | null): string {
 
 export function evaluateForwardAdmission(
   body: Uint8Array,
-  route: Pick<
-    ResolvedRoute,
-    | 'billingScheme'
-    | 'rates'
-    | 'tiers'
-    | 'admissionLongContextThreshold'
-    | 'allowLongContext'
-  >
+  route: ForwardAdmissionRoute
 ): ForwardAdmissionDecision {
   const extraction = extractRequestAdmissionMetadata(body, {
     includeSku: route.billingScheme === 'per_call',
@@ -67,7 +72,13 @@ export function evaluateForwardAdmission(
     return { ok: false, status: 400, message: '请求参数格式不合法。' };
   }
 
-  const { metadata } = extraction;
+  return evaluateForwardAdmissionMetadata(extraction.metadata, route);
+}
+
+export function evaluateForwardAdmissionMetadata(
+  metadata: RequestAdmissionMetadata,
+  route: ForwardAdmissionRoute
+): ForwardAdmissionDecision {
   const estimatedInputTokens =
     Math.ceil(metadata.totalRequestChars / ESTIMATED_CHARS_PER_TOKEN) +
     ESTIMATED_MESSAGE_OVERHEAD_TOKENS * metadata.messageCount;

@@ -10,6 +10,9 @@ import { GATEWAY_ENDPOINTS } from '@/features/gateway/lib/endpoints';
 const endpoint = GATEWAY_ENDPOINTS.find(
   (item) => item.key === 'chat_completions'
 )!;
+const imageEndpoint = GATEWAY_ENDPOINTS.find(
+  (item) => item.key === 'images_generations'
+)!;
 
 async function listen(
   handler: (request: IncomingMessage, response: ServerResponse) => void
@@ -101,6 +104,24 @@ test('首包超时分类为 no_response stage=sent', async () => {
 
   assert.equal(result.kind, 'no_response');
   assert.equal(result.stage, 'sent');
+  await upstream.close();
+});
+
+test('images 端点使用至少 180 秒的独立首包预算，不受文本 120 秒预算截断', async () => {
+  const upstream = await listen((_request, response) => {
+    setTimeout(() => response.end('image'), 300);
+  });
+  process.env.NEWAPI_BASE_URL = upstream.baseUrl;
+  process.env.GATEWAY_FIRST_BYTE_TIMEOUT_MS = '100';
+  const forward = await loadForward();
+
+  const result = await forward.forwardToUpstream({
+    ...input(),
+    endpoint: imageEndpoint,
+  });
+
+  assert.equal(result.kind, 'responded');
+  assert.equal(await result.upstream.text(), 'image');
   await upstream.close();
 });
 

@@ -91,6 +91,28 @@ async function consumeAndWait(response: Response, userId: string) {
   return body;
 }
 
+async function drainAndWait(response: Response, userId: string) {
+  let bytes = 0;
+  const reader = response.body!.getReader();
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    bytes += chunk.value.byteLength;
+  }
+  await waitUntil(async () => (await latestLedger(userId)).status !== 'open');
+  return bytes;
+}
+
+function seedImageFixture(suffix: string) {
+  return seedGatewayFixture(modules, suffix, {
+    billingScheme: 'per_call',
+    tiers: {
+      default: 300_000,
+      'quality=low;size=1024x1024': 15_000,
+    },
+  });
+}
+
 test.before(async () => {
   mock = await startMockNewApi();
   const setup = await setupGatewayIntegrationDb(mock.baseUrl);
@@ -889,4 +911,169 @@ test('31 聚合入站内存有界：CL/无 CL 统一单块、正常截断、超�
     { ok: false, reason: 'over_limit' }
   );
   assert.equal(cancelled, true);
+});
+
+test('32 images generations：SKU 准入、URL fixture、token 照记与按次结算闭环', async () => {
+  const fixture = await seedImageFixture('image-generation');
+  const response = await invoke(
+    fixture,
+    'normal',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: fixture.modelId,
+      prompt: 'a white cat',
+      quality: 'low',
+      size: '1024x1024',
+      n: 2,
+    })
+  );
+  const body = JSON.parse(await consumeAndWait(response, fixture.userId));
+  assert.match(body.data[0].url, /^https:\/\/cdn\.example\.invalid\//);
+
+  const ledger = await latestLedger(fixture.userId);
+  assert.equal(ledger.endpoint, 'images_generations');
+  assert.equal(ledger.billingScheme, 'per_call');
+  assert.equal(ledger.skuKey, 'quality=low;size=1024x1024');
+  assert.equal(ledger.unitCount, 1, '按响应实际张数，不按请求 n');
+  assert.equal(ledger.uncachedInputTokens, 1000);
+  assert.equal(ledger.imageInputTokens, 1000);
+  assert.equal(ledger.imageOutputTokens, 1000);
+  assert.equal(ledger.chargedMicroUsd, 15_000);
+});
+
+test('33 images 无 usage 但 data 可数：照常按次结算并标记', async () => {
+  const fixture = await seedImageFixture('image-no-usage');
+  const response = await invoke(
+    fixture,
+    'image-no-usage',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: fixture.modelId,
+      quality: 'low',
+      size: '1024x1024',
+    })
+  );
+  await consumeAndWait(response, fixture.userId);
+  const ledger = await latestLedger(fixture.userId);
+  assert.equal(ledger.status, 'settled');
+  assert.equal(ledger.unitCount, 1);
+  assert.equal(ledger.chargedMicroUsd, 15_000);
+  assert.deepEqual(JSON.parse(ledger.billingFlagsJson), ['usage_missing']);
+});
+
+test('34 images edits：multipart 任意字段顺序按原文字节转发并结算', async () => {
+  const fixture = await seedImageFixture('image-edits');
+  const form = new FormData();
+  form.append('size', '1024x1024');
+  form.append(
+    'image',
+    new Blob([new Uint8Array([0xff, 0x00, 0x80, 0x01])]),
+    'source.bin'
+  );
+  form.append('prompt', 'remove the background');
+  form.append('model', fixture.modelId);
+  form.append('quality', 'low');
+  form.append('n', '2');
+  const request = new Request('http://portal.test/v1/images/edits', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${fixture.plainKey}`,
+      'x-test-scenario': 'images-fixture',
+    },
+    body: form,
+  });
+  const expectedBody = new Uint8Array(await request.clone().arrayBuffer());
+  const expectedContentType = request.headers.get('content-type');
+  const response = await modules.handler.handleGatewayRequest(request, [
+    'images',
+    'edits',
+  ]);
+  await consumeAndWait(response, fixture.userId);
+
+  const forwarded = mock.requests.at(-1)!;
+  assert.equal(forwarded.url, '/v1/images/edits');
+  assert.equal(forwarded.headers['content-type'], expectedContentType);
+  assert.deepEqual(forwarded.bodyBytes, expectedBody);
+  const ledger = await latestLedger(fixture.userId);
+  assert.equal(ledger.endpoint, 'images_edits');
+  assert.equal(ledger.skuKey, 'quality=low;size=1024x1024');
+  assert.equal(ledger.unitCount, 1);
+  assert.equal(ledger.chargedMicroUsd, 15_000);
+});
+
+test('35 images >32MiB b64_json：跳过媒体正文后仍提取张数结算', async () => {
+  process.env.GATEWAY_PARSE_BUFFER_MAX = '1024';
+  const fixture = await seedImageFixture('image-large-b64');
+  const response = await invoke(
+    fixture,
+    'image-large-b64',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: fixture.modelId,
+      quality: 'low',
+      size: '1024x1024',
+    })
+  );
+  const responseBytes = await drainAndWait(response, fixture.userId);
+  assert.ok(responseBytes > 32 * 1024 * 1024);
+  const ledger = await latestLedger(fixture.userId);
+  assert.equal(ledger.status, 'settled');
+  assert.equal(ledger.unitCount, 1);
+  assert.equal(ledger.chargedMicroUsd, 15_000);
+});
+
+test('36 images 慢首包越过文本预算后仍成功', async () => {
+  process.env.GATEWAY_FIRST_BYTE_TIMEOUT_MS = '100';
+  const fixture = await seedImageFixture('image-slow-first-byte');
+  const response = await invoke(
+    fixture,
+    'image-slow-first-byte',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: fixture.modelId,
+      quality: 'low',
+      size: '1024x1024',
+    })
+  );
+  assert.equal(response.status, 200);
+  await consumeAndWait(response, fixture.userId);
+  assert.equal((await latestLedger(fixture.userId)).status, 'settled');
+});
+
+test('37 images 响应无法解析张数：进入失败复核路径且不扣费', async () => {
+  const fixture = await seedImageFixture('image-no-data');
+  const openingBalance = (
+    await modules.wallet.getWalletAccount(fixture.userId)
+  ).balanceMicroUsd;
+  const response = await invoke(
+    fixture,
+    'image-no-data',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: fixture.modelId,
+      quality: 'low',
+      size: '1024x1024',
+    })
+  );
+  await consumeAndWait(response, fixture.userId);
+
+  const ledger = await latestLedger(fixture.userId);
+  assert.equal(ledger.status, 'failed_unbilled');
+  assert.equal(ledger.unitCount, null);
+  assert.equal(ledger.chargedMicroUsd, null);
+  assert.equal(
+    (await modules.wallet.getWalletAccount(fixture.userId)).balanceMicroUsd,
+    openingBalance
+  );
+  const charges = await modules
+    .db()
+    .select()
+    .from(modules.schema.walletLedger)
+    .where(eq(modules.schema.walletLedger.requestLedgerId, ledger.id));
+  assert.equal(charges.length, 0);
 });

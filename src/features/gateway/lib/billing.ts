@@ -84,6 +84,18 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
     'service_tier',
   ]),
   embeddings: new Set(['prompt_tokens', 'total_tokens']),
+  images_generations: new Set([
+    'input_tokens',
+    'output_tokens',
+    'total_tokens',
+    'input_tokens_details',
+  ]),
+  images_edits: new Set([
+    'input_tokens',
+    'output_tokens',
+    'total_tokens',
+    'input_tokens_details',
+  ]),
 };
 
 export type NormalizedUsage = {
@@ -180,6 +192,26 @@ export function normalizeUsageMeters(
     case 'embeddings':
       addMeter(meters, 'input', num(usage.prompt_tokens));
       break;
+    case 'images_generations':
+    case 'images_edits': {
+      const details = obj(usage.input_tokens_details);
+      const cachedText = num(details.cached_text_tokens);
+      const cachedImage = num(details.cached_image_tokens);
+      addMeter(
+        meters,
+        'input',
+        Math.max(0, num(details.text_tokens) - cachedText)
+      );
+      addMeter(
+        meters,
+        'image_input',
+        Math.max(0, num(details.image_tokens) - cachedImage)
+      );
+      addMeter(meters, 'cached_input', cachedText);
+      addMeter(meters, 'cached_image_input', cachedImage);
+      addMeter(meters, 'image_output', num(usage.output_tokens));
+      break;
+    }
   }
 
   const mapped = MAPPED_KEYS[endpoint] ?? new Set<string>();

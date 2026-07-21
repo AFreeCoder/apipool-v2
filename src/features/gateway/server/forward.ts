@@ -27,10 +27,14 @@ export async function forwardToUpstream(input: {
   clientSignal: AbortSignal;
 }): Promise<ForwardOutcome> {
   const config = gatewayConfig();
+  const firstByteTimeoutMs =
+    input.endpoint.timeoutProfile === 'images'
+      ? config.imageFirstByteTimeoutMs
+      : config.firstByteTimeoutMs;
   const firstByteController = new AbortController();
   const firstByteTimer = setTimeout(
     () => firstByteController.abort(new Error('first_byte_timeout')),
-    config.firstByteTimeoutMs
+    firstByteTimeoutMs
   );
   const signal = AbortSignal.any([
     input.clientSignal,

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { resolveEndpoint } from '@/features/gateway/lib/endpoints';
 import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
 
-test('端点白名单：五端点命中、其余 null（需求 7.5.1 不透传）', () => {
+test('端点白名单：文本、images 与 models 七端点命中，其余 null', () => {
   assert.equal(
     resolveEndpoint('POST', ['chat', 'completions'])?.key,
     'chat_completions'
@@ -11,6 +11,18 @@ test('端点白名单：五端点命中、其余 null（需求 7.5.1 不透传�
   assert.equal(resolveEndpoint('POST', ['responses'])?.key, 'responses');
   assert.equal(resolveEndpoint('POST', ['messages'])?.protocol, 'anthropic');
   assert.equal(resolveEndpoint('POST', ['embeddings'])?.key, 'embeddings');
+  assert.equal(
+    resolveEndpoint('POST', ['images', 'generations'])?.requestFormat,
+    'json'
+  );
+  assert.equal(
+    resolveEndpoint('POST', ['images', 'edits'])?.requestFormat,
+    'multipart'
+  );
+  assert.equal(
+    resolveEndpoint('POST', ['images', 'edits'])?.timeoutProfile,
+    'images'
+  );
   assert.equal(resolveEndpoint('GET', ['models'])?.billable, false);
   assert.equal(resolveEndpoint('GET', ['chat', 'completions']), null);
   assert.equal(resolveEndpoint('POST', ['completions']), null);

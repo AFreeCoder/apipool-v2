@@ -11,10 +11,12 @@ import {
   type GatewayProtocol,
 } from '@/features/gateway/lib/endpoints';
 import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
+import { extractImageMultipartRequest } from '@/features/gateway/lib/multipart';
 import {
   createUsageExtractor,
   extractTopLevelModel,
   extractTopLevelStream,
+  type RequestAdmissionMetadata,
 } from '@/features/gateway/lib/sse-parser';
 
 import { getUuidV7 } from '@/shared/lib/hash';
@@ -23,6 +25,7 @@ import {
   admitRequest,
   captureRequestId,
   evaluateForwardAdmission,
+  evaluateForwardAdmissionMetadata,
   markFailedUnbilled,
   resolveRiskLimit,
 } from './admission';
@@ -291,31 +294,59 @@ export async function handleGatewayRequest(
       );
     }
 
-    const extraction = extractTopLevelModel(bodyResult.body);
-    if (!extraction.ok) {
-      const malformed = extraction.reason !== 'missing';
-      return early(
-        gatewayError(
-          protocol,
-          malformed ? 'invalid_request' : 'model_not_found',
-          malformed ? 400 : 404,
-          portalRequestId
-        )
+    let requestedModel: string;
+    let requestIsStream = false;
+    let multipartAdmissionMetadata: RequestAdmissionMetadata | null = null;
+    if (endpoint.requestFormat === 'multipart') {
+      const multipart = extractImageMultipartRequest(
+        bodyResult.body,
+        req.headers.get('content-type')
       );
+      if (!multipart.ok) {
+        const missing = multipart.reason === 'missing_model';
+        return early(
+          gatewayError(
+            protocol,
+            missing ? 'model_not_found' : 'invalid_request',
+            missing ? 404 : 400,
+            portalRequestId
+          )
+        );
+      }
+      requestedModel = multipart.fields.model;
+      multipartAdmissionMetadata = multipart.admissionMetadata;
+    } else {
+      const extraction = extractTopLevelModel(bodyResult.body);
+      if (!extraction.ok) {
+        const malformed = extraction.reason !== 'missing';
+        return early(
+          gatewayError(
+            protocol,
+            malformed ? 'invalid_request' : 'model_not_found',
+            malformed ? 400 : 404,
+            portalRequestId
+          )
+        );
+      }
+      requestedModel = extraction.model;
+      if (endpoint.responseMode === 'json_or_sse') {
+        const streamExtraction = extractTopLevelStream(bodyResult.body);
+        requestIsStream = streamExtraction.ok
+          ? streamExtraction.isStream
+          : false;
+      }
     }
-    const streamExtraction = extractTopLevelStream(bodyResult.body);
-    const requestIsStream = streamExtraction.ok
-      ? streamExtraction.isStream
-      : false;
 
-    const route = await deps.resolveRoute(auth.key.groupId, extraction.model);
+    const route = await deps.resolveRoute(auth.key.groupId, requestedModel);
     if (!route) {
       return early(
         gatewayError(protocol, 'model_not_found', 404, portalRequestId)
       );
     }
 
-    const forwardAdmission = evaluateForwardAdmission(bodyResult.body, route);
+    const forwardAdmission = multipartAdmissionMetadata
+      ? evaluateForwardAdmissionMetadata(multipartAdmissionMetadata, route)
+      : evaluateForwardAdmission(bodyResult.body, route);
     if (!forwardAdmission.ok) {
       return early(
         gatewayError(
@@ -351,7 +382,7 @@ export async function handleGatewayRequest(
         userId: auth.key.userId,
         portalKeyId: auth.key.id,
         portalGroupId: auth.key.groupId,
-        portalModelId: extraction.model,
+        portalModelId: requestedModel,
         newapiGroup: route.newapiGroup,
         newapiModelId: route.newapiModelId,
         credentialId: credential.credentialId,

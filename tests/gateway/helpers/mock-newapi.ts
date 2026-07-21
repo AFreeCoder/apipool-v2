@@ -8,25 +8,32 @@ export interface RecordedNewApiRequest {
   url: string;
   headers: IncomingHttpHeaders;
   body: string;
+  bodyBytes: Uint8Array;
 }
 
 export async function startMockNewApi() {
+  const imageFixture = await readFile(
+    join(process.cwd(), 'tests/fixtures/newapi/images-generations-runapi.json'),
+    'utf8'
+  );
   const requests: RecordedNewApiRequest[] = [];
   let requestSequence = 0;
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const requestBuffer = Buffer.concat(chunks);
     requests.push({
       method: req.method ?? '',
       url: req.url ?? '',
       headers: req.headers,
-      body: Buffer.concat(chunks).toString('utf8'),
+      body: requestBuffer.toString('utf8'),
+      bodyBytes: Uint8Array.from(requestBuffer),
     });
 
     requestSequence += 1;
     const requestId = `mock-newapi-${requestSequence}`;
     let scenario = String(req.headers['x-test-scenario'] ?? 'normal');
-    const requestBody = Buffer.concat(chunks).toString('utf8');
+    const requestBody = requestBuffer.toString('utf8');
     if (scenario === 'normal') {
       const streaming = /"stream"\s*:\s*true/.test(requestBody);
       if (req.url?.endsWith('/v1/messages')) {
@@ -37,6 +44,8 @@ export async function startMockNewApi() {
         scenario = 'responses-json';
       } else if (req.url?.endsWith('/v1/embeddings')) {
         scenario = 'embeddings-json';
+      } else if (req.url?.startsWith('/v1/images/')) {
+        scenario = 'images-fixture';
       }
     }
     res.setHeader('x-oneapi-request-id', requestId);
@@ -48,6 +57,10 @@ export async function startMockNewApi() {
     }
     if (scenario === 'slow-first-byte') {
       await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    if (scenario === 'image-slow-first-byte') {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      scenario = 'images-fixture';
     }
     if (scenario === '401') {
       res.writeHead(401, { 'content-type': 'application/json' });
@@ -74,6 +87,35 @@ export async function startMockNewApi() {
       const padding = 'x'.repeat(1024 * 1024);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(`{"id":"large","padding":"${padding}"}`);
+      return;
+    }
+    if (scenario === 'images-fixture') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(imageFixture);
+      return;
+    }
+    if (scenario === 'image-no-usage') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        '{"created":1784000000,"data":[{"url":"https://cdn.example.invalid/generated/no-usage.png"}]}'
+      );
+      return;
+    }
+    if (scenario === 'image-no-data') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        '{"created":1784000000,"usage":{"input_tokens":2000,"output_tokens":1000,"total_tokens":3000}}'
+      );
+      return;
+    }
+    if (scenario === 'image-large-b64') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('{"data":[{"b64_json":"');
+      const block = 'A'.repeat(1024 * 1024);
+      for (let index = 0; index < 33; index += 1) res.write(block);
+      res.end(
+        '"}],"usage":{"input_tokens":2000,"input_tokens_details":{"text_tokens":1000,"image_tokens":1000},"output_tokens":1000,"total_tokens":3000}}'
+      );
       return;
     }
     if (scenario === 'messages' || scenario.startsWith('message-')) {
@@ -251,6 +293,8 @@ export async function seedGatewayFixture(
     newapiGroup?: string;
     modelId?: string;
     email?: string;
+    billingScheme?: 'token' | 'per_call';
+    tiers?: Record<string, number>;
     price?: Partial<{
       input: number;
       cached: number;
@@ -267,6 +311,8 @@ export async function seedGatewayFixture(
   const plainKey = `sk-ap-integration-${suffix}`;
   const newapiGroup = options.newapiGroup ?? 'official';
   const runtimeKey = options.runtimeKey ?? `sk-upstream-${suffix}`;
+  const billingScheme = options.billingScheme ?? 'token';
+  const tiers = options.tiers ?? {};
 
   await modules
     .db()
@@ -348,21 +394,41 @@ export async function seedGatewayFixture(
     .values({
       id: `integration-model-price-${suffix}`,
       modelId: modelPk,
+      billingScheme,
       baseInputMicroUsd: options.price?.input ?? 1_000_000,
       baseCachedInputMicroUsd: options.price?.cached ?? 500_000,
       baseCacheWrite5mMicroUsd: options.price?.write5m ?? 1_250_000,
       baseCacheWrite1hMicroUsd: options.price?.write1h ?? 2_000_000,
       baseOutputMicroUsd: options.price?.output ?? 2_000_000,
-      sourceSupportedEndpointTypes: JSON.stringify(['messages']),
-      billingCapabilitiesJson: JSON.stringify({
-        cached_input: true,
-        cache_write: true,
-        cache_ttl_split: true,
-      }),
+      sourceSupportedEndpointTypes: JSON.stringify(
+        billingScheme === 'per_call' ? ['images'] : ['messages']
+      ),
+      billingCapabilitiesJson: JSON.stringify(
+        billingScheme === 'per_call'
+          ? {}
+          : {
+              cached_input: true,
+              cache_write: true,
+              cache_ttl_split: true,
+            }
+      ),
       syncStatus: 'manual',
       reviewedAt: new Date('2026-07-20T00:00:00Z'),
       driftStatus: 'matched',
     });
+  if (billingScheme === 'per_call') {
+    for (const [skuKey, priceMicroUsd] of Object.entries(tiers)) {
+      await modules
+        .db()
+        .insert(modules.schema.catalogModelPriceTier)
+        .values({
+          id: `integration-tier-${suffix}-${skuKey}`,
+          modelId: modelPk,
+          skuKey,
+          priceMicroUsd,
+        });
+    }
+  }
   await modules
     .db()
     .insert(modules.schema.modelRoute)
@@ -383,13 +449,18 @@ export async function seedGatewayFixture(
       portalGroupId: groupId,
       portalModelId: modelId,
       version: 1,
-      ratesJson: JSON.stringify({
-        input: options.price?.input ?? 1_000_000,
-        cached_input: options.price?.cached ?? 500_000,
-        cache_write_5m: options.price?.write5m ?? 1_250_000,
-        cache_write_1h: options.price?.write1h ?? 2_000_000,
-        output: options.price?.output ?? 2_000_000,
-      }),
+      billingScheme,
+      ratesJson:
+        billingScheme === 'per_call'
+          ? '{}'
+          : JSON.stringify({
+              input: options.price?.input ?? 1_000_000,
+              cached_input: options.price?.cached ?? 500_000,
+              cache_write_5m: options.price?.write5m ?? 1_250_000,
+              cache_write_1h: options.price?.write1h ?? 2_000_000,
+              output: options.price?.output ?? 2_000_000,
+            }),
+      tiersJson: JSON.stringify(tiers),
       refNewapiGroup: newapiGroup,
       publishedBy: 'integration-test',
     });

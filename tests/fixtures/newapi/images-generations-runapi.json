@@ -1,0 +1,17 @@
+{
+  "created": 1784000000,
+  "data": [
+    {
+      "url": "https://cdn.example.invalid/generated/deidentified-image.png"
+    }
+  ],
+  "usage": {
+    "input_tokens": 2000,
+    "input_tokens_details": {
+      "text_tokens": 1000,
+      "image_tokens": 1000
+    },
+    "output_tokens": 1000,
+    "total_tokens": 3000
+  }
+}
