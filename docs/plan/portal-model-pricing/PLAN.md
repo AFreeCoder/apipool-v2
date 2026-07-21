@@ -43,7 +43,7 @@
 **Interfaces:**
 - Produces: `MeterKey`（union 类型）、`TOKEN_METER_KEYS`、`LONG_METER_MAP: Record<string, MeterKey>`、`toLongMeterKey(key: MeterKey): MeterKey`、`MeterQuantities = Partial<Record<MeterKey, number>>`、`BillingScheme = 'token' | 'per_call'`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 import assert from 'node:assert/strict';
@@ -83,8 +83,8 @@ test('词表：长档映射只覆盖文本四通道且键名带 _long 后缀', (
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**：`npm test -- tests/gateway/meters.test.ts`，预期 "Cannot find module .../meters"。
-- [ ] **Step 3: 最小实现**
+- [x] **Step 2: 运行确认失败**：`npm test -- tests/gateway/meters.test.ts`，预期 "Cannot find module .../meters"。
+- [x] **Step 3: 最小实现**
 
 ```ts
 // src/features/gateway/lib/meters.ts
@@ -128,8 +128,8 @@ export type MeterQuantities = Partial<Record<MeterKey, number>>;
 export type BillingScheme = 'token' | 'per_call';
 ```
 
-- [ ] **Step 4: 测试通过**：`npm test -- tests/gateway/meters.test.ts` 全绿。
-- [ ] **Step 5: Commit**：`git add src/features/gateway/lib/meters.ts tests/gateway/meters.test.ts && git commit -m "feat: 新增计费 meter 词表模块"`
+- [x] **Step 4: 测试通过**：`npm test -- tests/gateway/meters.test.ts` 全绿。
+- [x] **Step 5: Commit**：`git add src/features/gateway/lib/meters.ts tests/gateway/meters.test.ts && git commit -m "feat: 新增计费 meter 词表模块"`
 
 ---
 
