@@ -262,7 +262,7 @@ export function computeTokenChargeMicroUsd(
 export function computePerCallChargeMicroUsd(unitCount: number, tierPriceMicroUsd: number): bigint;
 ```
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```ts
 test('token 计费：按 rates map 求和、未定价键零计并回报', () => {
@@ -292,7 +292,7 @@ test('per_call：单价×实际张数，最低 1 micro-USD', () => {
 });
 ```
 
-- [ ] **Step 2: 实现**（骨架，保持 `ceilDiv` 唯一舍入点与 min 1）
+- [x] **Step 2: 实现**（骨架，保持 `ceilDiv` 唯一舍入点与 min 1）
 
 ```ts
 export function computeTokenChargeMicroUsd(
@@ -321,8 +321,8 @@ export function computeTokenChargeMicroUsd(
 
 注意：工具未配价（null）而 `webSearchCount > 0` 的场景由 T8 准入拦截兜前门；此处不加价也不报错，`unpricedMeters` 不含 web_search（它不是 token meter）——由调用方按 `webSearchCount > 0 && price == null` 单独打 flag（旁路防御，DESIGN §7.1）。
 
-- [ ] **Step 3: 新旧并存（第 6 轮 F3）**：`PriceVector` 与旧 `computeChargeMicroUsd` **本任务不删除**——现场 `catalog-route-snapshot.ts`、`routing.ts`、结算与 `reconcile.ts` 仍依赖它们，且要到 T6/T7/T12 才逐个切换。给旧导出加 `@deprecated 由 T12 收尾统一删除` 注释；`normalizeBackfillUsage` 不新增变体（其结算职责将由 E3 在 T7 退役）。统一删除在 T12 收尾步骤执行。
-- [ ] **Step 4: Commit**：`git commit -m "feat: 计费公式 map 化并支持 per_call 与工具附加费"`
+- [x] **Step 3: 新旧并存（第 6 轮 F3）**：`PriceVector` 与旧 `computeChargeMicroUsd` **本任务不删除**——现场 `catalog-route-snapshot.ts`、`routing.ts`、结算与 `reconcile.ts` 仍依赖它们，且要到 T6/T7/T12 才逐个切换。给旧导出加 `@deprecated 由 T12 收尾统一删除` 注释；`normalizeBackfillUsage` 不新增变体（其结算职责将由 E3 在 T7 退役）。统一删除在 T12 收尾步骤执行。
+- [x] **Step 4: Commit**：`git commit -m "feat: 计费公式 map 化并支持 per_call 与工具附加费"`
 
 ---
 

@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   ceilDiv,
   computeChargeMicroUsd,
+  computePerCallChargeMicroUsd,
+  computeTokenChargeMicroUsd,
   normalizeBackfillUsage,
   normalizeUsageMeters,
 } from '@/features/gateway/lib/billing';
@@ -233,6 +235,30 @@ test('连续小额逐笔和 = 逐笔 ceil 之和（不跨请求携余数）', ()
   let sum = BigInt(0);
   for (let index = 0; index < 10; index += 1) sum += one;
   assert.equal(sum, BigInt(30));
+});
+
+test('token 计费：按 rates map 求和、未定价键零计并回报', () => {
+  const { charged, unpricedMeters } = computeTokenChargeMicroUsd(
+    { input: 1000, output: 50, image_output: 999 },
+    { input: 2_500_000, output: 10_000_000 },
+    { webSearchCount: 0, webSearchPriceMicroUsd: null }
+  );
+  assert.equal(charged, BigInt(3000));
+  assert.deepEqual(unpricedMeters, ['image_output']);
+});
+
+test('token 计费：web_search 附加费与 token 费同分母一次取整', () => {
+  const { charged } = computeTokenChargeMicroUsd(
+    { input: 1 },
+    { input: 2_500_000 },
+    { webSearchCount: 3, webSearchPriceMicroUsd: 10_000 }
+  );
+  assert.equal(charged, BigInt(30_003));
+});
+
+test('per_call：单价×实际张数，最低 1 micro-USD', () => {
+  assert.equal(computePerCallChargeMicroUsd(2, 300_000), BigInt(600_000));
+  assert.equal(computePerCallChargeMicroUsd(0, 300_000), BigInt(1));
 });
 
 test('日志回填口径：OpenAI 输入总量扣除 cache read/write 子集', () => {

@@ -14,6 +14,7 @@ export interface UsageBuckets {
   reasoning: number;
 }
 
+/** @deprecated 由 T12 收尾统一删除。 */
 export interface PriceVector {
   inputMicroUsdPerM: number;
   cachedInputMicroUsdPerM: number;
@@ -312,6 +313,49 @@ export function normalizeBackfillUsage(log: {
 
 const MICRO_PER_M = BigInt(1_000_000);
 
+export type RatesMap = Partial<Record<MeterKey, number>>;
+
+export function computeTokenChargeMicroUsd(
+  meters: MeterQuantities,
+  rates: RatesMap,
+  tool: { webSearchCount: number; webSearchPriceMicroUsd: number | null }
+): { charged: bigint; unpricedMeters: MeterKey[] } {
+  let total = BigInt(0);
+  const unpricedMeters: MeterKey[] = [];
+  for (const [key, quantity] of Object.entries(meters) as [
+    MeterKey,
+    number,
+  ][]) {
+    if (!quantity) continue;
+    const rate = rates[key];
+    if (rate === undefined || rate === null) {
+      unpricedMeters.push(key);
+      continue;
+    }
+    total += BigInt(quantity) * BigInt(rate);
+  }
+  if (tool.webSearchCount > 0 && tool.webSearchPriceMicroUsd !== null) {
+    total +=
+      BigInt(tool.webSearchCount) *
+      BigInt(tool.webSearchPriceMicroUsd) *
+      MICRO_PER_M;
+  }
+  const charged = ceilDiv(total, MICRO_PER_M);
+  return {
+    charged: charged > BigInt(0) ? charged : BigInt(1),
+    unpricedMeters,
+  };
+}
+
+export function computePerCallChargeMicroUsd(
+  unitCount: number,
+  tierPriceMicroUsd: number
+): bigint {
+  const charged = BigInt(unitCount) * BigInt(tierPriceMicroUsd);
+  return charged > BigInt(0) ? charged : BigInt(1);
+}
+
+/** @deprecated 由 T12 收尾统一删除。 */
 export function computeChargeMicroUsd(
   buckets: UsageBuckets,
   price: PriceVector
