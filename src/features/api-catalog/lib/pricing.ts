@@ -370,7 +370,7 @@ export function scaleMicroUsdByBps(
 ) {
   if (value === null || value === undefined) return null;
   const numerator = BigInt(value) * BigInt(bps);
-  return Number((numerator + BigInt(9_999)) / BigInt(10_000));
+  return Number((numerator + BigInt(5_000)) / BigInt(10_000));
 }
 
 function computeEffectiveDiscountBps(

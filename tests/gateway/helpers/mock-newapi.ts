@@ -353,7 +353,14 @@ export async function seedGatewayFixture(
       baseCacheWrite5mMicroUsd: options.price?.write5m ?? 1_250_000,
       baseCacheWrite1hMicroUsd: options.price?.write1h ?? 2_000_000,
       baseOutputMicroUsd: options.price?.output ?? 2_000_000,
-      syncStatus: 'synced',
+      sourceSupportedEndpointTypes: JSON.stringify(['messages']),
+      billingCapabilitiesJson: JSON.stringify({
+        cached_input: true,
+        cache_write: true,
+        cache_ttl_split: true,
+      }),
+      syncStatus: 'manual',
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
       driftStatus: 'matched',
     });
   await modules

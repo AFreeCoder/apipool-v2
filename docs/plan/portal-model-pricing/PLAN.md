@@ -391,12 +391,12 @@ export async function assessPublishReadiness(
 
 核心改造点（每点先写门禁矩阵测试）：
 
-- [ ] **Step 1: `assessPublishReadiness` 实现**——一次查询 join listing/group/model/price/**tier 表**/能力声明，判定集：`isCallable`（售卖状态）+ `newapiGroup` 非空 + `basePriceSyncStatus === 'manual' && reviewedAt 非空` + 完备集门禁（Step 2）。**不含** `pricePolicy`、`priceDriftStatus`、`groupPricingSyncStatus`、`groupRatioBps` 四项（DESIGN §9 删三硬门；pricePolicy 随 T5 删列消失）。
-- [ ] **Step 2: 完备集门禁**：按 `billingCapabilitiesJson` 声明逐项校验对应价格列非空（声明 `cache_write:true` 则 `baseCacheWriteMicroUsd` 必填；`long_context:true` 则阈值 + 长档四价必填；`web_search:true` 则 `baseWebSearchMicroUsd` 必填；非法/不可解析的能力声明 = not ready）；基础必需集：token 类 `input`（+按 endpoint 的 `output`/`image_*`）、per_call 类 **tier 表存在 `default` 行**（这正是旧行谓词覆盖不了的判定）。缺失项全部写入 `reasons`。
-- [ ] **Step 3: 三处消费者切换**——`isListingCallable` 改为 `(await assessPublishReadiness(...)).ready`；公开目录 DTO 的 callable 字段同源（列表页逐行调用，内测流量下可接受，性能优化记 issues）；`isCatalogRouteReady` 行谓词删除。**API Catalog 与 Gateway 跑同一门禁矩阵测试**：缺 default tier / 缺官方 meter / 非法能力声明三案例在两侧断言一致结论。
-- [ ] **Step 4: 折算与编译**：`scaledPrice(base, listing.discountRateBps ?? 10000)`（**弃用 groupRatioBps**，O2）逐列折算 → `rates_json`（长档键仅当 `allowLongContext=1` 时写入并置 `longContextThresholdTokens`；关 = 不写，计费零分支）；`admissionLongContextThreshold`/`allowLongContext` 始终按目录现值输出（E1 检测通道）；per_call 折算 tier 表 → `tiers_json`；`priceMatches` 改为比对 `billingScheme + ratesJson + tiersJson + longContextThresholdTokens` 字符串相等。
-- [ ] **Step 5: 门禁矩阵测试全绿**（覆盖：满配可发布 / 声明有而未配拒绝 / 长档开关两态的 rates_json 与检测字段差异 / per_call 无 default 拒绝 / 折扣折算 round-half-up / 三处消费者同结论）。
-- [ ] **Step 6: Commit**：`git commit -m "feat: 统一发布就绪判定与快照桥完备集门禁"`
+- [x] **Step 1: `assessPublishReadiness` 实现**——一次查询 join listing/group/model/price/**tier 表**/能力声明，判定集：`isCallable`（售卖状态）+ `newapiGroup` 非空 + `basePriceSyncStatus === 'manual' && reviewedAt 非空` + 完备集门禁（Step 2）。**不含** `pricePolicy`、`priceDriftStatus`、`groupPricingSyncStatus`、`groupRatioBps` 四项（DESIGN §9 删三硬门；pricePolicy 随 T5 删列消失）。
+- [x] **Step 2: 完备集门禁**：按 `billingCapabilitiesJson` 声明逐项校验对应价格列非空（声明 `cache_write:true` 则 `baseCacheWriteMicroUsd` 必填；`long_context:true` 则阈值 + 长档四价必填；`web_search:true` 则 `baseWebSearchMicroUsd` 必填；非法/不可解析的能力声明 = not ready）；基础必需集：token 类 `input`（+按 endpoint 的 `output`/`image_*`）、per_call 类 **tier 表存在 `default` 行**（这正是旧行谓词覆盖不了的判定）。缺失项全部写入 `reasons`。
+- [x] **Step 3: 三处消费者切换**——`isListingCallable` 改为 `(await assessPublishReadiness(...)).ready`；公开目录 DTO 的 callable 字段同源（列表页逐行调用，内测流量下可接受，性能优化记 issues）；`isCatalogRouteReady` 行谓词删除。**API Catalog 与 Gateway 跑同一门禁矩阵测试**：缺 default tier / 缺官方 meter / 非法能力声明三案例在两侧断言一致结论。
+- [x] **Step 4: 折算与编译**：`scaledPrice(base, listing.discountRateBps ?? 10000)`（**弃用 groupRatioBps**，O2）逐列折算 → `rates_json`（长档键仅当 `allowLongContext=1` 时写入并置 `longContextThresholdTokens`；关 = 不写，计费零分支）；`admissionLongContextThreshold`/`allowLongContext` 始终按目录现值输出（E1 检测通道）；per_call 折算 tier 表 → `tiers_json`；`priceMatches` 改为比对 `billingScheme + ratesJson + tiersJson + longContextThresholdTokens` 字符串相等。
+- [x] **Step 5: 门禁矩阵测试全绿**（覆盖：满配可发布 / 声明有而未配拒绝 / 长档开关两态的 rates_json 与检测字段差异 / per_call 无 default 拒绝 / 折扣折算 round-half-up / 三处消费者同结论）。
+- [x] **Step 6: Commit**：`git commit -m "feat: 统一发布就绪判定与快照桥完备集门禁"`
 
 ---
 

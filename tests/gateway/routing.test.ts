@@ -108,17 +108,27 @@ async function setupDb() {
     discountRateBps: 8_000,
     priceDriftStatus: 'matched',
   });
-  await modules.db().insert(schema.catalogModelPrice).values({
-    id: 'routing-base-price',
-    modelId: IDs.model,
-    baseInputMicroUsd: 1_000_000,
-    baseCachedInputMicroUsd: 100_000,
-    baseCacheWrite5mMicroUsd: 1_250_000,
-    baseCacheWrite1hMicroUsd: 2_000_000,
-    baseOutputMicroUsd: 5_000_000,
-    syncStatus: 'synced',
-    driftStatus: 'matched',
-  });
+  await modules
+    .db()
+    .insert(schema.catalogModelPrice)
+    .values({
+      id: 'routing-base-price',
+      modelId: IDs.model,
+      baseInputMicroUsd: 1_000_000,
+      baseCachedInputMicroUsd: 100_000,
+      baseCacheWrite5mMicroUsd: 1_250_000,
+      baseCacheWrite1hMicroUsd: 2_000_000,
+      baseOutputMicroUsd: 5_000_000,
+      sourceSupportedEndpointTypes: JSON.stringify(['messages']),
+      billingCapabilitiesJson: JSON.stringify({
+        cached_input: true,
+        cache_write: true,
+        cache_ttl_split: true,
+      }),
+      syncStatus: 'manual',
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
+      driftStatus: 'matched',
+    });
 }
 
 test.before(setupDb);

@@ -1,149 +1,28 @@
 import 'server-only';
 
-import { scaleMicroUsdByBps } from '@/features/api-catalog/lib/pricing';
-import { isListingCallable } from '@/features/api-catalog/server/queries';
-import type { PriceVector } from '@/features/gateway/lib/billing';
+import {
+  assessPublishReadiness,
+  type PublishReadiness,
+} from '@/features/api-catalog/server/publish-readiness';
 import { and, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
-import {
-  catalogGroup,
-  catalogModel,
-  catalogModelListing,
-  catalogModelPrice,
-  modelPriceVersion,
-  modelRoute,
-} from '@/config/db/schema';
+import { modelPriceVersion, modelRoute } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 
 const SYSTEM_PUBLISHER = 'system:catalog';
 
-type CatalogRouteConfig = {
-  newapiGroup: string;
-  newapiModelId: string;
-  price: PriceVector;
-};
-
-function positiveInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && Number(value) > 0;
-}
-
-function scaledPrice(base: number, ratioBps: number) {
-  return scaleMicroUsdByBps(base, ratioBps)!;
-}
-
-function legacyRatesJson(price: PriceVector): string {
-  return JSON.stringify({
-    input: price.inputMicroUsdPerM,
-    cached_input: price.cachedInputMicroUsdPerM,
-    cache_write_5m: price.cacheWrite5mMicroUsdPerM,
-    cache_write_1h: price.cacheWrite1hMicroUsdPerM,
-    output: price.outputMicroUsdPerM,
-  });
-}
-
-function parseEndpointTypes(value: string | null): string[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : [];
-  } catch {
-    return [];
-  }
-}
+type CatalogRouteConfig = Extract<
+  PublishReadiness,
+  { ready: true }
+>['snapshot'];
 
 async function loadCatalogRouteConfig(
   portalGroupId: string,
   portalModelId: string
 ): Promise<CatalogRouteConfig | null> {
-  if (!(await isListingCallable(portalGroupId, portalModelId))) return null;
-
-  const [row] = await db()
-    .select({
-      newapiGroup: catalogGroup.newapiGroup,
-      modelId: catalogModel.modelId,
-      discountRateBps: catalogModelListing.discountRateBps,
-      priceDriftStatus: catalogModelListing.priceDriftStatus,
-      baseInput: catalogModelPrice.baseInputMicroUsd,
-      baseCachedInput: catalogModelPrice.baseCachedInputMicroUsd,
-      baseCacheWrite5m: catalogModelPrice.baseCacheWrite5mMicroUsd,
-      baseCacheWrite1h: catalogModelPrice.baseCacheWrite1hMicroUsd,
-      baseOutput: catalogModelPrice.baseOutputMicroUsd,
-      baseSyncStatus: catalogModelPrice.syncStatus,
-      baseReviewedAt: catalogModelPrice.reviewedAt,
-      endpointTypes: catalogModelPrice.sourceSupportedEndpointTypes,
-    })
-    .from(catalogModelListing)
-    .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
-    .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
-    .innerJoin(
-      catalogModelPrice,
-      eq(catalogModelPrice.modelId, catalogModel.id)
-    )
-    .where(
-      and(
-        eq(catalogGroup.id, portalGroupId),
-        eq(catalogModel.modelId, portalModelId)
-      )
-    )
-    .limit(1);
-
-  if (!row) return null;
-  if (row.priceDriftStatus !== 'matched') return null;
-  if (
-    row.baseSyncStatus !== 'synced' &&
-    !(row.baseSyncStatus === 'manual' && row.baseReviewedAt)
-  ) {
-    return null;
-  }
-  if (
-    !positiveInteger(row.baseInput) ||
-    !positiveInteger(row.baseCachedInput) ||
-    !positiveInteger(row.baseOutput)
-  ) {
-    return null;
-  }
-
-  const endpointTypes = parseEndpointTypes(row.endpointTypes).map((value) =>
-    value.toLowerCase()
-  );
-  const requiresSplitCacheWrite = endpointTypes.some(
-    (value) => value.includes('messages') || value.includes('anthropic')
-  );
-  if (
-    requiresSplitCacheWrite &&
-    (!positiveInteger(row.baseCacheWrite5m) ||
-      !positiveInteger(row.baseCacheWrite1h))
-  ) {
-    return null;
-  }
-
-  return {
-    newapiGroup: row.newapiGroup,
-    newapiModelId: row.modelId,
-    price: {
-      inputMicroUsdPerM: scaledPrice(
-        row.baseInput,
-        row.discountRateBps ?? 10_000
-      ),
-      cachedInputMicroUsdPerM: scaledPrice(
-        row.baseCachedInput,
-        row.discountRateBps ?? 10_000
-      ),
-      cacheWrite5mMicroUsdPerM: row.baseCacheWrite5m
-        ? scaledPrice(row.baseCacheWrite5m, row.discountRateBps ?? 10_000)
-        : 0,
-      cacheWrite1hMicroUsdPerM: row.baseCacheWrite1h
-        ? scaledPrice(row.baseCacheWrite1h, row.discountRateBps ?? 10_000)
-        : 0,
-      outputMicroUsdPerM: scaledPrice(
-        row.baseOutput,
-        row.discountRateBps ?? 10_000
-      ),
-    },
-  };
+  const readiness = await assessPublishReadiness(portalGroupId, portalModelId);
+  return readiness.ready ? readiness.snapshot : null;
 }
 
 function routeMatches(
@@ -161,11 +40,10 @@ function priceMatches(
   config: CatalogRouteConfig
 ) {
   return (
-    price?.refNewapiGroup === config.newapiGroup &&
-    price.billingScheme === 'token' &&
-    price.ratesJson === legacyRatesJson(config.price) &&
-    price.tiersJson === '{}' &&
-    price.longContextThresholdTokens === null
+    price?.billingScheme === config.billingScheme &&
+    price.ratesJson === config.ratesJson &&
+    price.tiersJson === config.tiersJson &&
+    price.longContextThresholdTokens === config.longContextThresholdTokens
   );
 }
 
@@ -335,20 +213,12 @@ export async function ensureCatalogRouteSnapshot(
           portalModelId,
           version: priceVersion,
           status: 'active',
-          billingScheme: 'token',
-          ratesJson: legacyRatesJson(config.price),
-          tiersJson: '{}',
-          longContextThresholdTokens: null,
-          newapiRefInputMicroUsdPerM: config.price.inputMicroUsdPerM,
-          newapiRefCachedInputMicroUsdPerM:
-            config.price.cachedInputMicroUsdPerM,
-          newapiRefCacheWrite5mMicroUsdPerM:
-            config.price.cacheWrite5mMicroUsdPerM || null,
-          newapiRefCacheWrite1hMicroUsdPerM:
-            config.price.cacheWrite1hMicroUsdPerM || null,
-          newapiRefOutputMicroUsdPerM: config.price.outputMicroUsdPerM,
+          billingScheme: config.billingScheme,
+          ratesJson: config.ratesJson,
+          tiersJson: config.tiersJson,
+          longContextThresholdTokens: config.longContextThresholdTokens,
           refNewapiGroup: config.newapiGroup,
-          sourceNote: '由模型基准价与分组折扣自动生成',
+          sourceNote: '由目录基础价与上架折扣自动生成',
           publishedBy: SYSTEM_PUBLISHER,
         };
         const [insertedRoute] = await tx

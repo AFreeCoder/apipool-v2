@@ -706,7 +706,10 @@ test('public listings derive sale price from listing discount and ignore New API
     .set({
       baseInputMicroUsd: 150000,
       baseOutputMicroUsd: 600000,
-      syncStatus: 'synced',
+      sourceSupportedEndpointTypes: JSON.stringify(['responses']),
+      billingCapabilitiesJson: '{}',
+      syncStatus: 'manual',
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
       driftStatus: 'matched',
     })
     .where(eq(catalogModelPrice.modelId, model.id));

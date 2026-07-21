@@ -2,6 +2,7 @@ import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
 import { resolveEffectiveCatalogPrice } from '@/features/api-catalog/lib/pricing';
+import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -48,22 +49,16 @@ type ListingBaseRow = {
   discountRateBps: number | null;
   discountNote: string | null;
   description: string | null;
-  groupRatioBps: number | null;
-  groupNewapiGroup: string;
-  groupPricingSyncStatus: string;
   priceDriftStatus: string;
   baseInputMicroUsd: number | null;
   baseOutputMicroUsd: number | null;
   baseCachedInputMicroUsd: number | null;
   baseCacheWrite5mMicroUsd: number | null;
   baseCacheWrite1hMicroUsd: number | null;
-  basePriceSyncStatus: string | null;
-  basePriceReviewedAt: Date | null;
   baseImageInputMicroUsd: number | null;
   baseImageOutputMicroUsd: number | null;
   statusSlug: string;
   statusName: string;
-  isCallable: boolean;
 };
 
 type ListingQueryOptions = {
@@ -182,22 +177,16 @@ async function queryListingRows({
       discountRateBps: catalogModelListing.discountRateBps,
       discountNote: catalogModelListing.discountNote,
       description: catalogModelListing.description,
-      groupRatioBps: catalogGroup.newapiGroupRatioBps,
-      groupNewapiGroup: catalogGroup.newapiGroup,
-      groupPricingSyncStatus: catalogGroup.pricingSyncStatus,
       priceDriftStatus: catalogModelListing.priceDriftStatus,
       baseInputMicroUsd: catalogModelPrice.baseInputMicroUsd,
       baseOutputMicroUsd: catalogModelPrice.baseOutputMicroUsd,
       baseCachedInputMicroUsd: catalogModelPrice.baseCachedInputMicroUsd,
       baseCacheWrite5mMicroUsd: catalogModelPrice.baseCacheWrite5mMicroUsd,
       baseCacheWrite1hMicroUsd: catalogModelPrice.baseCacheWrite1hMicroUsd,
-      basePriceSyncStatus: catalogModelPrice.syncStatus,
-      basePriceReviewedAt: catalogModelPrice.reviewedAt,
       baseImageInputMicroUsd: catalogModelPrice.baseImageInputMicroUsd,
       baseImageOutputMicroUsd: catalogModelPrice.baseImageOutputMicroUsd,
       statusSlug: catalogStatus.slug,
       statusName: catalogStatus.name,
-      isCallable: catalogStatus.isCallable,
     })
     .from(catalogModelListing)
     .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
@@ -213,34 +202,13 @@ async function queryListingRows({
     .orderBy(asc(catalogModelListing.sortOrder));
 }
 
-function isCatalogRouteReady(row: ListingBaseRow) {
-  return (
-    row.isCallable &&
-    row.priceDriftStatus === 'matched' &&
-    row.groupNewapiGroup.trim().length > 0 &&
-    row.groupPricingSyncStatus === 'synced' &&
-    (row.basePriceSyncStatus === 'synced' ||
-      (row.basePriceSyncStatus === 'manual' &&
-        row.basePriceReviewedAt !== null)) &&
-    typeof row.groupRatioBps === 'number' &&
-    row.groupRatioBps > 0 &&
-    typeof row.baseInputMicroUsd === 'number' &&
-    typeof row.baseOutputMicroUsd === 'number'
-  );
-}
-
 // 路由可用性只取决于模型目录中的分组映射、基准价和售卖状态。
 // model_route/model_price_version 是请求审计快照，不再是第二套人工配置。
 export async function isListingCallable(
   portalGroupId: string,
   portalModelId: string
 ): Promise<boolean> {
-  const rows = await queryListingRows({
-    callableOnly: true,
-    exactGroupId: portalGroupId,
-    exactPortalModelId: portalModelId,
-  });
-  return rows.some(isCatalogRouteReady);
+  return (await assessPublishReadiness(portalGroupId, portalModelId)).ready;
 }
 
 async function getCapabilitiesByModelPk(modelPks: string[]) {
@@ -278,74 +246,80 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
   const modelPks = [...new Set(rows.map((row) => row.modelPk))];
   const capabilitiesByModelPk = await getCapabilitiesByModelPk(modelPks);
 
-  return rows
-    .map((row) => {
-      const effective = resolveEffectiveCatalogPrice({
-        baseInputMicroUsd: row.baseInputMicroUsd,
-        baseOutputMicroUsd: row.baseOutputMicroUsd,
-        baseImageInputMicroUsd: row.baseImageInputMicroUsd,
-        baseImageOutputMicroUsd: row.baseImageOutputMicroUsd,
-        discountRateBps: row.discountRateBps ?? 10_000,
-        priceDriftStatus: row.priceDriftStatus,
-        listInputMicroUsd: row.listInputMicroUsd,
-        listOutputMicroUsd: row.listOutputMicroUsd,
-        discountNote: row.discountNote,
-      });
+  return (
+    await Promise.all(
+      rows.map(async (row) => {
+        const readiness = await assessPublishReadiness(
+          row.groupId,
+          row.modelId
+        );
+        const effective = resolveEffectiveCatalogPrice({
+          baseInputMicroUsd: row.baseInputMicroUsd,
+          baseOutputMicroUsd: row.baseOutputMicroUsd,
+          baseImageInputMicroUsd: row.baseImageInputMicroUsd,
+          baseImageOutputMicroUsd: row.baseImageOutputMicroUsd,
+          discountRateBps: row.discountRateBps ?? 10_000,
+          priceDriftStatus: row.priceDriftStatus,
+          listInputMicroUsd: row.listInputMicroUsd,
+          listOutputMicroUsd: row.listOutputMicroUsd,
+          discountNote: row.discountNote,
+        });
 
-      return {
-        modelId: row.modelId,
-        displayName: row.displayName,
-        vendorName: row.vendorName,
-        groupName: row.groupName,
-        groupSlug: row.groupSlug,
-        category: row.category,
-        capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
-        contextWindow: row.contextWindow,
-        inputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveInputMicroUsd ?? undefined)
-          : undefined,
-        outputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveOutputMicroUsd ?? undefined)
-          : undefined,
-        imageInputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveImageInputMicroUsd ?? undefined)
-          : undefined,
-        imageOutputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveImageOutputMicroUsd ?? undefined)
-          : undefined,
-        listInputMicroUsd: effective.publicConfirmed
-          ? (effective.listInputMicroUsd ?? undefined)
-          : undefined,
-        listOutputMicroUsd: effective.publicConfirmed
-          ? (effective.listOutputMicroUsd ?? undefined)
-          : undefined,
-        discountRateBps:
-          effective.publicConfirmed && row.discountRateBps !== null
-            ? row.discountRateBps
+        return {
+          modelId: row.modelId,
+          displayName: row.displayName,
+          vendorName: row.vendorName,
+          groupName: row.groupName,
+          groupSlug: row.groupSlug,
+          category: row.category,
+          capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
+          contextWindow: row.contextWindow,
+          inputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveInputMicroUsd ?? undefined)
             : undefined,
-        discountNote: effective.publicConfirmed
-          ? (row.discountNote ?? undefined)
-          : undefined,
-        description: row.description ?? undefined,
-        statusSlug: row.statusSlug,
-        statusName: row.statusName,
-        isCallable: isCatalogRouteReady(row) && effective.publicConfirmed,
-        effectiveInputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveInputMicroUsd ?? undefined)
-          : undefined,
-        effectiveOutputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveOutputMicroUsd ?? undefined)
-          : undefined,
-        effectiveImageInputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveImageInputMicroUsd ?? undefined)
-          : undefined,
-        effectiveImageOutputMicroUsd: effective.publicConfirmed
-          ? (effective.effectiveImageOutputMicroUsd ?? undefined)
-          : undefined,
-        pricePresentation: effective.pricePresentation,
-      };
-    })
-    .filter((listing) => listing.capabilities.length > 0);
+          outputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveOutputMicroUsd ?? undefined)
+            : undefined,
+          imageInputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveImageInputMicroUsd ?? undefined)
+            : undefined,
+          imageOutputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveImageOutputMicroUsd ?? undefined)
+            : undefined,
+          listInputMicroUsd: effective.publicConfirmed
+            ? (effective.listInputMicroUsd ?? undefined)
+            : undefined,
+          listOutputMicroUsd: effective.publicConfirmed
+            ? (effective.listOutputMicroUsd ?? undefined)
+            : undefined,
+          discountRateBps:
+            effective.publicConfirmed && row.discountRateBps !== null
+              ? row.discountRateBps
+              : undefined,
+          discountNote: effective.publicConfirmed
+            ? (row.discountNote ?? undefined)
+            : undefined,
+          description: row.description ?? undefined,
+          statusSlug: row.statusSlug,
+          statusName: row.statusName,
+          isCallable: readiness.ready,
+          effectiveInputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveInputMicroUsd ?? undefined)
+            : undefined,
+          effectiveOutputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveOutputMicroUsd ?? undefined)
+            : undefined,
+          effectiveImageInputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveImageInputMicroUsd ?? undefined)
+            : undefined,
+          effectiveImageOutputMicroUsd: effective.publicConfirmed
+            ? (effective.effectiveImageOutputMicroUsd ?? undefined)
+            : undefined,
+          pricePresentation: effective.pricePresentation,
+        };
+      })
+    )
+  ).filter((listing) => listing.capabilities.length > 0);
 }
 
 export async function getPublicListingsUncached(

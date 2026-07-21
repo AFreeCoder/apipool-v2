@@ -11,6 +11,7 @@ import {
   optionalDollarsToMicroUsd,
   quotaSpendFromEffectivePrice,
   resolveEffectiveCatalogPrice,
+  scaleMicroUsdByBps,
 } from '@/features/api-catalog/lib/pricing';
 
 test('catalog pricing helpers convert dollars per million tokens to micro-USD integers', () => {
@@ -69,6 +70,12 @@ test('catalog discount helpers support sub-1-fold discounts without floats in st
   assert.equal(bpsToDiscountFold(null), '');
   assert.throws(() => discountFoldToBps('0'), /between 0.01 and 10/);
   assert.throws(() => discountFoldToBps('11'), /between 0.01 and 10/);
+});
+
+test('售价折算只在快照桥使用 round-half-up 舍入', () => {
+  assert.equal(scaleMicroUsdByBps(1, 4_999), 0);
+  assert.equal(scaleMicroUsdByBps(1, 5_000), 1);
+  assert.equal(scaleMicroUsdByBps(3, 5_000), 2);
 });
 
 test('New API pricing ratios derive ordinary and image token prices per 1M tokens', () => {
