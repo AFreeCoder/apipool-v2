@@ -268,6 +268,8 @@ CHECK (billing_scheme != 'per_call' OR json_extract(tiers_json,'$.default') IS N
 
 长上下文开关（listing 级）**编译进版本内容而非另存标志**：`allow_long_context = false` 的 listing 生成的版本不写入阈值与 `*_long` 键——归一化层查不到阈值即永不判长档，漏拦请求自然按普通档结算；开着的版本写入阈值与长档键，判档自动生效。运行期零开关分支，也无结算时读 listing 现值的时序问题。
 
+> ⚠ 本节"零开关分支"已被 PLAN 勘误 **E1** 补正：计费仍零分支，但漏拦**检测**需请求上下文单独携带目录阈值与开关态，以 `docs/plan/portal-model-pricing/PLAN.md` 勘误表为准。
+
 选择"删列改 map"而非"列 + map 双写"的理由：结算事实源必须单一表达，双写必然漂移；此表无人工编辑入口，影响面=代码与测试，一次迁移即收敛。
 
 ### 6.3 账本层（审计与报表）
@@ -381,12 +383,15 @@ charged = max(BigInt(n) × tierPrice, 1n)
 
 **usage 缺失路径（第 3 轮 R23 显式化，机制沿用现状）**：响应完整但无可靠 usage 时进 `pending`，由 newapi 日志（`usage_log_snapshot`）补差结算——meter 化后补差同样走归一化。已知局限：日志粒度粗于响应 usage（只有 input/output 总量，无缓存细分），补差结算等于按全价 input 收费（用户失去缓存折扣）；按 O10"不收错"方向，补差结算的请求必须打 `billing_flags` 标记（粒度降级可追溯）。per_call 模型无此问题（张数可数，计费不依赖 usage）。
 
+> ⚠ 本段补差机制已被 PLAN 勘误 **E3 整体翻转**：token 制 usage 缺失改为直接 `waived` 零计费 + 标记 + 告警，backfill 结算职责退役、`usage_log_snapshot` 仅作 reconcile 对照，以 `docs/plan/portal-model-pricing/PLAN.md` 勘误表为准。
+
 ### 7.6 images 端点接入约束（首发含 gpt-image-2 的必要成本）
 
 网关现只开放 chat/responses/messages/embeddings/models，images 是全新端点。以下四条是设计约束，机制细节归 plan：
 
 1. **端点注册**：在网关端点注册表为 `images/generations`、`images/edits` 声明请求格式（JSON / `multipart/form-data`）、模型与 SKU 参数的提取方式、响应 usage 与张数的提取位置、非流式模式。缺注册则请求不可达或不可结算。
 2. **multipart 白名单提取**（edits）：只解析 `model`、SKU 参数（`quality`/`size`）、`n` 等白名单文本字段且内存有界；图片文件部分流式透传，不整体读入内存、不进日志。SKU 参数在 per_call 下**直接决定计费档位**（O11），提取错误即计费错误，需 fixture 覆盖。
+   > ⚠ 本条"流式透传"已被 PLAN 勘误 **E2** 按阶段减配：请求侧维持整体缓冲 + 25MiB 上限，流式记 issues 延后；响应侧不受影响。以 `docs/plan/portal-model-pricing/PLAN.md` 勘误表为准。
 3. **跳过媒体正文的响应解析**：现有非流式 usage 提取整体缓冲响应、上限 32 MiB（`GATEWAY_PARSE_BUFFER_MAX`），base64 图片响应可能超限导致"图已交付、无法结算"。解析必须跳过 `b64_json` 大块内容，只提取顶层 usage、张数（`data.length`）与必要元数据；若上游支持 URL 返回格式可配置优先，但不得作为唯一依赖。
 4. **张数以响应实际为准**：`unit_count` 取实际返回；部分成功按实际；解析不出张数走失败复核路径（§7.2）。
 5. **渠道链路实测（第 3 轮 R-门槛，第 4 轮已实测）**：2026-07-20 实测结论——
