@@ -5,7 +5,6 @@ import {
   computeChargeMicroUsd,
   computePerCallChargeMicroUsd,
   computeTokenChargeMicroUsd,
-  normalizeBackfillUsage,
   normalizeUsageMeters,
 } from '@/features/gateway/lib/billing';
 
@@ -259,56 +258,4 @@ test('token 计费：web_search 附加费与 token 费同分母一次取整', ()
 test('per_call：单价×实际张数，最低 1 micro-USD', () => {
   assert.equal(computePerCallChargeMicroUsd(2, 300_000), BigInt(600_000));
   assert.equal(computePerCallChargeMicroUsd(0, 300_000), BigInt(1));
-});
-
-test('日志回填口径：OpenAI 输入总量扣除 cache read/write 子集', () => {
-  assert.deepEqual(
-    normalizeBackfillUsage({ inputTokens: 100, outputTokens: 20 }),
-    {
-      uncachedInput: 100,
-      cachedRead: 0,
-      cacheWrite5m: 0,
-      cacheWrite1h: 0,
-      output: 20,
-      reasoning: 0,
-    }
-  );
-  assert.deepEqual(
-    normalizeBackfillUsage({
-      inputTokens: 100,
-      outputTokens: 20,
-      cacheTokens: 30,
-      cacheCreationTokens5m: 5,
-      cacheCreationTokens1h: 2,
-    }),
-    {
-      uncachedInput: 63,
-      cachedRead: 30,
-      cacheWrite5m: 5,
-      cacheWrite1h: 2,
-      output: 20,
-      reasoning: 0,
-    }
-  );
-});
-
-test('日志回填口径：Anthropic 输入为纯文本，不重复扣除 cache 子集', () => {
-  assert.deepEqual(
-    normalizeBackfillUsage({
-      inputTokens: 100,
-      outputTokens: 20,
-      cacheTokens: 30,
-      cacheCreationTokens5m: 5,
-      cacheCreationTokens1h: 2,
-      usageSemantic: 'anthropic',
-    }),
-    {
-      uncachedInput: 100,
-      cachedRead: 30,
-      cacheWrite5m: 5,
-      cacheWrite1h: 2,
-      output: 20,
-      reasoning: 0,
-    }
-  );
 });

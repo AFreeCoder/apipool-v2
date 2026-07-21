@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { normalizeUsage } from '@/features/gateway/lib/billing';
+import { normalizeUsageMeters } from '@/features/gateway/lib/billing';
 import { gatewayConfig } from '@/features/gateway/lib/config';
 import {
   buildUpstreamHeaders,
@@ -23,7 +23,6 @@ import {
   admitRequest,
   captureRequestId,
   markFailedUnbilled,
-  markPendingBackfill,
   resolveRiskLimit,
 } from './admission';
 import { authenticateGatewayRequest } from './auth';
@@ -158,7 +157,6 @@ type HandlerDeps = {
   admit: typeof admitRequest;
   capture: typeof captureRequestId;
   markFailed: typeof markFailedUnbilled;
-  markPending: typeof markPendingBackfill;
   settle: typeof settleByLedgerId;
   markInvalid: typeof markCredentialInvalid;
   forward: typeof forwardToUpstream;
@@ -174,7 +172,6 @@ const defaultDeps: HandlerDeps = {
   admit: admitRequest,
   capture: captureRequestId,
   markFailed: markFailedUnbilled,
-  markPending: markPendingBackfill,
   settle: settleByLedgerId,
   markInvalid: markCredentialInvalid,
   forward: forwardToUpstream,
@@ -441,34 +438,8 @@ export async function handleGatewayRequest(
       cleanup();
       if (terminalAlreadyWritten) return;
 
-      const { usage, complete } = extractor.finish();
-      if (usage && complete && captured) {
-        const normalized = normalizeUsage(endpoint.key, usage);
-        if (normalized.unmappedNonZero.length > 0) {
-          console.error('[gateway] unmapped_usage_dimension', {
-            portalRequestId,
-            unmappedNonZero: normalized.unmappedNonZero,
-          });
-        }
-        await terminal(
-          () =>
-            deps.settle(portalRequestId, {
-              buckets: normalized.buckets,
-              usageSource: 'response',
-            }),
-          'already_finalized',
-          'settle'
-        );
-      } else if (!aborted && clientCompleted && captured) {
-        await terminal(
-          () =>
-            deps.markPending(portalRequestId, {
-              httpStatus: upstream.status,
-            }),
-          false,
-          'pending'
-        );
-      } else if (!captured) {
+      const { usage, complete, unitCount } = extractor.finish();
+      if (!captured) {
         console.error('[gateway] request id not persisted', {
           portalRequestId,
         });
@@ -482,16 +453,126 @@ export async function handleGatewayRequest(
           false,
           'failed'
         );
-      } else {
+        return;
+      }
+      const normalized = usage
+        ? normalizeUsageMeters(endpoint.key, usage, {
+            longContextThresholdTokens: route.allowLongContext
+              ? route.longContextThresholdTokens
+              : null,
+          })
+        : { meters: {}, webSearchCount: 0, flags: [] as string[] };
+      const inputTotalTokens =
+        (normalized.meters.input ?? 0) +
+        (normalized.meters.cached_input ?? 0) +
+        (normalized.meters.cache_write ?? 0) +
+        (normalized.meters.cache_write_5m ?? 0) +
+        (normalized.meters.cache_write_1h ?? 0);
+      if (
+        !route.allowLongContext &&
+        route.admissionLongContextThreshold !== null &&
+        inputTotalTokens >= route.admissionLongContextThreshold
+      ) {
+        normalized.flags.push('long_context_block_missed');
+      }
+
+      if (route.billingScheme === 'per_call') {
+        if (aborted || !clientCompleted) {
+          await terminal(
+            () =>
+              deps.markFailed(portalRequestId, {
+                httpStatus: upstream.status,
+                errorCode: 'stream_interrupted',
+                streamAborted: true,
+                billingScheme: 'per_call',
+              }),
+            false,
+            'failed'
+          );
+          return;
+        }
+        if (!usage || !complete) normalized.flags.push('usage_missing');
+        if (typeof unitCount !== 'number' || unitCount <= 0) {
+          await terminal(
+            () =>
+              deps.markFailed(portalRequestId, {
+                httpStatus: upstream.status,
+                errorCode: 'unit_count_missing',
+                billingScheme: 'per_call',
+                billingFlags: normalized.flags,
+                rawUsage: usage,
+                usageSource: 'response',
+              }),
+            false,
+            'failed'
+          );
+          return;
+        }
+        await terminal(
+          () =>
+            deps.settle(portalRequestId, {
+              meters: normalized.meters,
+              flags: normalized.flags,
+              webSearchCount: normalized.webSearchCount,
+              rawUsage: usage,
+              usageSource: 'response',
+              skuKey: 'default',
+              unitCount,
+            }),
+          'already_finalized',
+          'settle'
+        );
+        return;
+      }
+
+      // token 流一旦收到协议定义的完整 usage，后续连接中断不推翻已取得的计费凭证。
+      if (usage && complete) {
+        if (normalized.flags.length > 0) {
+          console.error('[gateway] billing_flags', {
+            portalRequestId,
+            flags: normalized.flags,
+          });
+        }
+        await terminal(
+          () =>
+            deps.settle(portalRequestId, {
+              meters: normalized.meters,
+              flags: normalized.flags,
+              webSearchCount: normalized.webSearchCount,
+              rawUsage: usage,
+              usageSource: 'response',
+            }),
+          'already_finalized',
+          'settle'
+        );
+      } else if (aborted || !clientCompleted) {
         await terminal(
           () =>
             deps.markFailed(portalRequestId, {
               httpStatus: upstream.status,
               errorCode: 'stream_interrupted',
               streamAborted: true,
+              billingScheme: 'token',
             }),
           false,
           'failed'
+        );
+      } else {
+        console.error('[gateway] token usage missing, waived', {
+          portalRequestId,
+        });
+        await terminal(
+          () =>
+            deps.markFailed(portalRequestId, {
+              httpStatus: upstream.status,
+              errorCode: 'usage_missing_waived',
+              billingScheme: 'token',
+              billingFlags: [...normalized.flags, 'usage_missing_waived'],
+              rawUsage: usage,
+              usageSource: 'response',
+            }),
+          false,
+          'waived'
         );
       }
     };

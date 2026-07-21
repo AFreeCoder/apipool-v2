@@ -110,6 +110,10 @@ export async function markFailedUnbilled(
     httpStatus?: number;
     errorCode?: string;
     streamAborted?: boolean;
+    billingScheme?: 'token' | 'per_call';
+    billingFlags?: string[];
+    rawUsage?: unknown;
+    usageSource?: 'response' | 'log_backfill';
   }
 ): Promise<boolean> {
   const [row] = await db()
@@ -121,33 +125,22 @@ export async function markFailedUnbilled(
       httpStatus: patch.httpStatus,
       errorCode: patch.errorCode,
       streamAborted: patch.streamAborted,
+      billingScheme: patch.billingScheme,
+      billingFlagsJson:
+        patch.billingFlags && patch.billingFlags.length > 0
+          ? JSON.stringify([...new Set(patch.billingFlags)])
+          : undefined,
+      rawUsageJson:
+        patch.rawUsage === undefined
+          ? undefined
+          : JSON.stringify(patch.rawUsage),
+      usageSource: patch.usageSource,
     })
     .where(
       and(
         eq(requestLedger.id, ledgerId),
         inArray(requestLedger.status, ['open', 'pending_backfill'])
       )
-    )
-    .returning();
-  return Boolean(row);
-}
-
-export async function markPendingBackfill(
-  ledgerId: string,
-  patch: { httpStatus?: number }
-): Promise<boolean> {
-  const [row] = await db()
-    .update(requestLedger)
-    .set({
-      status: 'pending_backfill',
-      finishedAt: new Date(),
-      updatedAt: new Date(),
-      httpStatus: patch.httpStatus,
-      nextBackfillAt: new Date(Date.now() + 5_000),
-      backfillAttempts: 0,
-    })
-    .where(
-      and(eq(requestLedger.id, ledgerId), eq(requestLedger.status, 'open'))
     )
     .returning();
   return Boolean(row);

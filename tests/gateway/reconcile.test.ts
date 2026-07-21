@@ -172,7 +172,19 @@ async function seedLedger(
   };
   if (options.status === 'settled') {
     await modules.settlement.settleByLedgerId(id, {
-      buckets,
+      meters: {
+        input: buckets.uncachedInput,
+        cached_input: buckets.cachedRead,
+        cache_write_5m: buckets.cacheWrite5m,
+        cache_write_1h: buckets.cacheWrite1h,
+        output: buckets.output,
+      },
+      flags: [],
+      webSearchCount: 0,
+      rawUsage: {
+        prompt_tokens: buckets.uncachedInput + buckets.cachedRead,
+        completion_tokens: buckets.output,
+      },
       usageSource: 'response',
     });
   } else if (options.status === 'failed_unbilled') {
@@ -293,13 +305,20 @@ test('原始 quota 优先于 spendUsd 反算，避免浮点精度损失', async 
   assert.equal(row.reconcileStatus, 'matched');
 });
 
-test('open 命中 → log_backfill 结算', async () => {
+test('open 命中日志只做对照，门户请求仍按缺 usage 免单', async () => {
   const ledger = await seedLedger('open-settle');
   const result = await run([logFor(ledger)]);
-  assert.equal(result.settledByLog, 1);
+  assert.equal(result.settledByLog, 0);
   const row = await ledgerRow(ledger.id);
-  assert.equal(row.status, 'settled');
-  assert.equal(row.usageSource, 'log_backfill');
+  assert.equal(row.status, 'failed_unbilled');
+  assert.equal(row.errorCode, 'usage_missing_waived');
+  assert.equal(row.reconcileStatus, 'waived_by_missing_usage');
+  const charges = await modules
+    .db()
+    .select()
+    .from(modules.schema.walletLedger)
+    .where(eq(modules.schema.walletLedger.requestLedgerId, ledger.id));
+  assert.equal(charges.length, 0);
 });
 
 test('failed_unbilled 命中 → waived_by_failure 且不扣费', async () => {

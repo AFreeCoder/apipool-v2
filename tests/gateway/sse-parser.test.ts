@@ -195,6 +195,20 @@ test('非流式仅深处 usage（无根级）→ complete=false 转回填', () =
   assert.deepEqual(extractor.finish(), { usage: null, complete: false });
 });
 
+test('非流式无 usage 仍可独立提取顶层 data 实际数量', () => {
+  const extractor = createUsageExtractor('responses', false, 1 << 20);
+  extractor.push(
+    enc.encode(
+      '{"data":[{"url":"https://example.test/a"},{"url":"https://example.test/b"}]}'
+    )
+  );
+  assert.deepEqual(extractor.finish(), {
+    usage: null,
+    complete: false,
+    unitCount: 2,
+  });
+});
+
 test('字节级扫描内存有界：25MB body（大量短串）提取 model 正确', () => {
   const big = `{"model":"gpt-5.4","messages":[${'{"role":"user","content":"x"},'.repeat(400_000)}{"role":"user","content":"end"}]}`;
   assert.deepEqual(extractTopLevelModel(enc.encode(big)), {

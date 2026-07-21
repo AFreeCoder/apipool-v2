@@ -2,20 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import type { UsageBuckets } from '@/features/gateway/lib/billing';
+import type { MeterQuantities } from '@/features/gateway/lib/meters';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 
 let modules: any;
 
-const NORMAL_USAGE: UsageBuckets = {
-  uncachedInput: 1000,
-  cachedRead: 0,
-  cacheWrite5m: 0,
-  cacheWrite1h: 0,
-  output: 0,
-  reasoning: 0,
-};
+const NORMAL_USAGE: MeterQuantities = { input: 1000 };
 
 async function setupDb() {
   const dbPath = join(process.cwd(), '.tmp', 'gateway-settlement.db');
@@ -54,21 +47,41 @@ async function setupDb() {
 }
 
 async function seedPrice(id: string, inputMicroUsdPerM = 2_500_000) {
-  await modules.db().insert(modules.schema.modelPriceVersion).values({
-    id,
-    portalGroupId: 'settlement-group',
-    portalModelId: id,
-    version: 1,
-    status: 'active',
-    ratesJson: JSON.stringify({
-      input: inputMicroUsdPerM,
-      cached_input: 0,
-      cache_write_5m: 0,
-      cache_write_1h: 0,
-      output: 0,
-    }),
-    publishedBy: 'operator',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id,
+      portalGroupId: 'settlement-group',
+      portalModelId: id,
+      version: 1,
+      status: 'active',
+      ratesJson: JSON.stringify({
+        input: inputMicroUsdPerM,
+        cached_input: 0,
+        cache_write_5m: 0,
+        cache_write_1h: 0,
+        output: 0,
+      }),
+      publishedBy: 'operator',
+    });
+}
+
+async function seedPerCallPrice(id: string) {
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id,
+      portalGroupId: 'settlement-group',
+      portalModelId: id,
+      version: 1,
+      status: 'active',
+      billingScheme: 'per_call',
+      ratesJson: '{}',
+      tiersJson: JSON.stringify({ default: 300_000 }),
+      publishedBy: 'operator',
+    });
 }
 
 async function seedUser(userId: string, openingBalance = 0) {
@@ -121,10 +134,18 @@ async function seedRequest(input: {
     });
 }
 
-async function settle(ledgerId: string, buckets = NORMAL_USAGE) {
+async function settle(
+  ledgerId: string,
+  meters: MeterQuantities = NORMAL_USAGE,
+  extra: Record<string, unknown> = {}
+) {
   return modules.settlement.settleByLedgerId(ledgerId, {
-    buckets,
+    meters,
+    flags: [],
+    webSearchCount: 0,
+    rawUsage: { prompt_tokens: meters.input ?? 0 },
     usageSource: 'response',
+    ...extra,
   });
 }
 
@@ -146,8 +167,10 @@ test('正常结算：终态、桶、金额、扣费流水与物化余额原子�
     .from(modules.schema.requestLedger)
     .where(eq(modules.schema.requestLedger.id, 'preq-settle-normal'));
   assert.equal(request.status, 'settled');
+  assert.equal(request.billingScheme, 'token');
   assert.equal(request.uncachedInputTokens, 1000);
   assert.equal(request.chargedMicroUsd, 2500);
+  assert.deepEqual(JSON.parse(request.rawUsageJson), { prompt_tokens: 1000 });
   assert.ok(request.settledAt instanceof Date);
   const charges = await modules
     .db()
@@ -181,7 +204,10 @@ test('结算幂等：同 ledger 二次 settle 不重复写流水', async () => {
 test('双路径幂等：ledger id 后按远端 request id 仍 already_finalized', async () => {
   assert.equal(
     await modules.settlement.settleByNewapiRequestId('rid-settle-normal', {
-      buckets: NORMAL_USAGE,
+      meters: NORMAL_USAGE,
+      flags: [],
+      webSearchCount: 0,
+      rawUsage: { prompt_tokens: 1000 },
       usageSource: 'log_backfill',
     }),
     'already_finalized'
@@ -223,7 +249,7 @@ test('越阈自动冻结：扣费后低于 -$10', async () => {
     priceVersionId: 'price-freeze',
     requestId: 'rid-freeze',
   });
-  const millionTokens = { ...NORMAL_USAGE, uncachedInput: 1_000_000 };
+  const millionTokens = { ...NORMAL_USAGE, input: 1_000_000 };
   assert.equal(await settle('preq-freeze', millionTokens), 'settled');
   const account = await modules.wallet.getWalletAccount('settle-freeze');
   assert.equal(account.balanceMicroUsd, -10_000_001);
@@ -243,6 +269,136 @@ test('failed_unbilled 终态不可结算', async () => {
     status: 'failed_unbilled',
   });
   assert.equal(await settle('preq-failed'), 'already_finalized');
+});
+
+test('meter 列映射、工具附加费、未知价格标记与原始凭证同事务落库', async () => {
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id: 'price-meter-map',
+      portalGroupId: 'settlement-group',
+      portalModelId: 'price-meter-map',
+      version: 1,
+      ratesJson: JSON.stringify({
+        input: 1_000_000,
+        cache_write: 2_000_000,
+        image_input: 3_000_000,
+        web_search: 10,
+      }),
+      publishedBy: 'operator',
+    });
+  await seedUser('settle-meter-map', 50_000);
+  await seedRequest({
+    id: 'preq-meter-map',
+    userId: 'settle-meter-map',
+    priceVersionId: 'price-meter-map',
+    requestId: 'rid-meter-map',
+  });
+  assert.equal(
+    await settle(
+      'preq-meter-map',
+      { input: 1000, cache_write: 20, image_input: 10, image_output: 99 },
+      {
+        flags: ['cache_write_sum_mismatch'],
+        webSearchCount: 2,
+        rawUsage: { prompt_tokens: 1030, vendor_extra: 99 },
+      }
+    ),
+    'settled'
+  );
+  const [ledger] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, 'preq-meter-map'));
+  assert.equal(ledger.uncachedInputTokens, 1000);
+  assert.equal(ledger.cacheWriteTokens, 20);
+  assert.equal(ledger.imageInputTokens, 10);
+  assert.equal(ledger.imageOutputTokens, 99);
+  assert.equal(ledger.webSearchCount, 2);
+  assert.equal(ledger.chargedMicroUsd, 1_090);
+  assert.deepEqual(JSON.parse(ledger.billingFlagsJson), [
+    'cache_write_sum_mismatch',
+    'unpriced:image_output',
+  ]);
+  assert.deepEqual(JSON.parse(ledger.rawUsageJson), {
+    prompt_tokens: 1030,
+    vendor_extra: 99,
+  });
+});
+
+test('长档 meter 写回普通数量列并标记 longContextApplied', async () => {
+  await modules
+    .db()
+    .insert(modules.schema.modelPriceVersion)
+    .values({
+      id: 'price-long',
+      portalGroupId: 'settlement-group',
+      portalModelId: 'price-long',
+      version: 1,
+      ratesJson: JSON.stringify({
+        input_long: 10_000_000,
+        cached_input_long: 1_000_000,
+        cache_write_long: 12_500_000,
+        output_long: 40_000_000,
+      }),
+      longContextThresholdTokens: 272_000,
+      publishedBy: 'operator',
+    });
+  await seedUser('settle-long', 10_000_000);
+  await seedRequest({
+    id: 'preq-long',
+    userId: 'settle-long',
+    priceVersionId: 'price-long',
+    requestId: 'rid-long',
+  });
+  await settle('preq-long', {
+    input_long: 10,
+    cached_input_long: 20,
+    cache_write_long: 30,
+    output_long: 40,
+  });
+  const [ledger] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, 'preq-long'));
+  assert.equal(ledger.uncachedInputTokens, 10);
+  assert.equal(ledger.cachedReadTokens, 20);
+  assert.equal(ledger.cacheWriteTokens, 30);
+  assert.equal(ledger.outputTokens, 40);
+  assert.equal(ledger.longContextApplied, true);
+});
+
+test('per_call 按实际数量与 SKU 结算，token meter 只入账不参与金额', async () => {
+  await seedPerCallPrice('price-per-call');
+  await seedUser('settle-per-call', 1_000_000);
+  await seedRequest({
+    id: 'preq-per-call',
+    userId: 'settle-per-call',
+    priceVersionId: 'price-per-call',
+    requestId: 'rid-per-call',
+  });
+  assert.equal(
+    await settle(
+      'preq-per-call',
+      { input: 10_000, image_output: 20_000 },
+      { skuKey: 'default', unitCount: 2 }
+    ),
+    'settled'
+  );
+  const [ledger] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, 'preq-per-call'));
+  assert.equal(ledger.billingScheme, 'per_call');
+  assert.equal(ledger.skuKey, 'default');
+  assert.equal(ledger.unitCount, 2);
+  assert.equal(ledger.uncachedInputTokens, 10_000);
+  assert.equal(ledger.imageOutputTokens, 20_000);
+  assert.equal(ledger.chargedMicroUsd, 600_000);
 });
 
 test('余额闭合：每个 wallet_account.balance == 对应流水 signed_amount 之和', async () => {

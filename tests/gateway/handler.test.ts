@@ -32,7 +32,6 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
     admit: async () => true,
     capture: async () => true,
     markFailed: async () => true,
-    markPending: async () => true,
     settle: async () => 'settled',
     markInvalid: async () => {},
     forward: async () => ({ kind: 'no_response', stage: 'connect' }),
@@ -42,18 +41,28 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function readyRoute(overrides: Record<string, unknown> = {}) {
+  return {
+    routeId: 'route-1',
+    routeVersion: 1,
+    newapiGroup: 'official',
+    newapiModelId: 'remote-model',
+    priceVersionId: 'price-1',
+    billingScheme: 'token',
+    rates: { input: 1_000_000, output: 2_000_000 },
+    tiers: {},
+    longContextThresholdTokens: null,
+    admissionLongContextThreshold: null,
+    allowLongContext: false,
+    portalGroupId: 'group-1',
+    portalModelId: 'portal-model',
+    ...overrides,
+  };
+}
+
 function readyDeps(overrides: Record<string, unknown> = {}) {
   return baseDeps({
-    resolveRoute: async () => ({
-      routeId: 'route-1',
-      routeVersion: 1,
-      newapiGroup: 'official',
-      newapiModelId: 'remote-model',
-      priceVersionId: 'price-1',
-      price: {},
-      portalGroupId: 'group-1',
-      portalModelId: 'portal-model',
-    }),
+    resolveRoute: async () => readyRoute(),
     ensureCredential: async () => ({
       status: 'ok',
       credentialId: 'credential-1',
@@ -218,7 +227,12 @@ test('路由存在但运行 Key pending → 503 + Retry-After', async () => {
         newapiGroup: 'official',
         newapiModelId: 'remote-model',
         priceVersionId: 'price-1',
-        price: {},
+        billingScheme: 'token',
+        rates: { input: 1_000_000, output: 2_000_000 },
+        tiers: {},
+        longContextThresholdTokens: null,
+        admissionLongContextThreshold: null,
+        allowLongContext: false,
         portalGroupId: 'group-1',
         portalModelId: 'portal-model',
       }),
@@ -529,9 +543,6 @@ test('capture 首次 busy 后成功会结算；穷尽失败则 failed_unbilled',
         settle: async () => {
           throw new Error('不得结算');
         },
-        markPending: async () => {
-          throw new Error('不得进入回填');
-        },
         markFailed: async () => {
           failed += 1;
           return true;
@@ -542,6 +553,122 @@ test('capture 首次 busy 后成功会结算；穷尽失败则 failed_unbilled',
     await waitUntil(() => failed === 1);
   } finally {
     console.error = originalError;
+  }
+});
+
+test('token 缺 usage 直接免单，不进入结算或回填', async () => {
+  const handler = await loadHandler();
+  let settled = 0;
+  let failedPatch: Record<string, unknown> | undefined;
+  const response = await handler.handleGatewayRequest(
+    request('/v1/chat/completions', '{"model":"portal-model"}'),
+    ['chat', 'completions'],
+    readyDeps({
+      forward: async () => ({
+        kind: 'responded',
+        upstream: new Response('{"choices":[]}'),
+        newapiRequestId: 'newapi-request-token-waived',
+      }),
+      settle: async () => {
+        settled += 1;
+        return 'settled';
+      },
+      markFailed: async (_id: string, patch: Record<string, unknown>) => {
+        failedPatch = patch;
+        return true;
+      },
+    }) as any
+  );
+  await response.text();
+  await waitUntil(() => failedPatch !== undefined);
+  assert.equal(settled, 0);
+  assert.equal(failedPatch?.errorCode, 'usage_missing_waived');
+  assert.deepEqual(failedPatch?.billingFlags, ['usage_missing_waived']);
+});
+
+test('per_call 无 usage 但 data 可数时仍按实际数量结算', async () => {
+  const handler = await loadHandler();
+  let settlement: Record<string, unknown> | undefined;
+  const response = await handler.handleGatewayRequest(
+    request('/v1/chat/completions', '{"model":"portal-model"}'),
+    ['chat', 'completions'],
+    readyDeps({
+      resolveRoute: async () =>
+        readyRoute({ billingScheme: 'per_call', tiers: { default: 300_000 } }),
+      forward: async () => ({
+        kind: 'responded',
+        upstream: new Response('{"data":[{"url":"a"},{"url":"b"}]}'),
+        newapiRequestId: 'newapi-request-per-call',
+      }),
+      settle: async (_id: string, input: Record<string, unknown>) => {
+        settlement = input;
+        return 'settled';
+      },
+    }) as any
+  );
+  await response.text();
+  await waitUntil(() => settlement !== undefined);
+  assert.equal(settlement?.unitCount, 2);
+  assert.equal(settlement?.skuKey, 'default');
+  assert.deepEqual(settlement?.flags, ['usage_missing']);
+});
+
+test('长上下文三态：开态切长档、关态漏拦打标、无能力不检测', async () => {
+  const handler = await loadHandler();
+  const results: Array<Record<string, any>> = [];
+  const cases = [
+    {
+      route: {
+        allowLongContext: true,
+        longContextThresholdTokens: 5,
+        admissionLongContextThreshold: 5,
+      },
+      meter: 'input_long',
+      flags: [],
+    },
+    {
+      route: {
+        allowLongContext: false,
+        longContextThresholdTokens: null,
+        admissionLongContextThreshold: 5,
+      },
+      meter: 'input',
+      flags: ['long_context_block_missed'],
+    },
+    {
+      route: {
+        allowLongContext: false,
+        longContextThresholdTokens: null,
+        admissionLongContextThreshold: null,
+      },
+      meter: 'input',
+      flags: [],
+    },
+  ];
+
+  for (const [index, current] of cases.entries()) {
+    const response = await handler.handleGatewayRequest(
+      request('/v1/chat/completions', '{"model":"portal-model"}'),
+      ['chat', 'completions'],
+      readyDeps({
+        resolveRoute: async () => readyRoute(current.route),
+        forward: async () => ({
+          kind: 'responded',
+          upstream: new Response(
+            '{"usage":{"prompt_tokens":10,"completion_tokens":2}}'
+          ),
+          newapiRequestId: `newapi-request-long-${index}`,
+        }),
+        settle: async (_id: string, input: Record<string, any>) => {
+          results[index] = input;
+          return 'settled';
+        },
+      }) as any
+    );
+    await response.text();
+    await waitUntil(() => results[index] !== undefined);
+    assert.equal(results[index].meters[current.meter], 10);
+    assert.deepEqual(results[index].flags, current.flags);
   }
 });
 

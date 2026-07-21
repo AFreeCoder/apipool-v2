@@ -142,89 +142,25 @@ async function row(id: string) {
 test.before(setupDb);
 test.after(() => client.close());
 
-test('定点回填命中：日志字段落库、log_backfill 结算并扣费', async () => {
-  const user = await seedUser('hit');
-  const id = await seedRequest('hit', {
-    ...user,
-    requestId: 'rid-hit',
-  });
-  const result = await modules.backfill.runUsageWorkerOnce({
-    client: {
-      getUsageLogByRequestId: async () => ({
-        requestId: 'rid-hit',
-        keyMasked: 'rk_hit',
-        modelId: 'model-hit',
-        inputTokens: 10,
-        outputTokens: 4,
-        cacheTokens: 2,
-        cacheCreationTokens5m: 3,
-        spendUsd: 2,
-        quota: 1_000_001,
-      }),
-    },
-  });
-  assert.deepEqual(result, { backfilled: 1, swept: 0, exhausted: 0 });
+test('历史 pending_backfill 直接免单收束，不再查日志或扣费', async () => {
+  const user = await seedUser('legacy-pending');
+  const id = await seedRequest('legacy-pending', user);
+  const result = await modules.backfill.runUsageWorkerOnce();
+  assert.deepEqual(result, { backfilled: 0, swept: 1, exhausted: 0 });
+
   const ledger = await row(id);
-  assert.equal(ledger.status, 'settled');
-  assert.equal(ledger.usageSource, 'log_backfill');
-  assert.equal(ledger.newapiQuota, 1_000_001);
-  assert.equal(ledger.newapiPromptTokens, 10);
-  assert.equal(ledger.newapiCompletionTokens, 4);
-  assert.equal(ledger.newapiTokenName, 'rk_hit');
+  assert.equal(ledger.status, 'failed_unbilled');
+  assert.equal(ledger.errorCode, 'legacy_pending_retired');
+  assert.deepEqual(JSON.parse(ledger.billingFlagsJson), [
+    'usage_missing_waived',
+  ]);
+  assert.equal(ledger.backfillAttempts, 0);
   const charges = await modules
     .db()
     .select()
     .from(modules.schema.walletLedger)
     .where(eq(modules.schema.walletLedger.requestLedgerId, id));
-  assert.equal(charges.length, 1);
-});
-
-test('日志显式 quota=0 → failed_unbilled 且不扣费', async () => {
-  const user = await seedUser('zero');
-  const id = await seedRequest('zero', { ...user, requestId: 'rid-zero' });
-  const result = await modules.backfill.runUsageWorkerOnce({
-    client: {
-      getUsageLogByRequestId: async () => ({
-        requestId: 'rid-zero',
-        keyMasked: 'rk_zero',
-        inputTokens: 0,
-        outputTokens: 0,
-        spendUsd: 2,
-        quota: 0,
-      }),
-    },
-  });
-  assert.equal(result.backfilled, 0);
-  const ledger = await row(id);
-  assert.equal(ledger.status, 'failed_unbilled');
-  assert.equal(ledger.errorCode, 'backfill_zero_quota');
-  assert.equal(ledger.newapiQuota, 0);
-});
-
-test('未命中按退避推进，第 6 次后 next=null 且仍占风险槽', async () => {
-  const user = await seedUser('miss');
-  const id = await seedRequest('miss', { ...user, requestId: 'rid-miss' });
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
-    const before = Date.now();
-    const result = await modules.backfill.runUsageWorkerOnce({
-      client: { getUsageLogByRequestId: async () => null },
-    });
-    const ledger = await row(id);
-    assert.equal(ledger.backfillAttempts, attempt);
-    if (attempt < 6) {
-      assert.ok(ledger.nextBackfillAt instanceof Date);
-      assert.ok(ledger.nextBackfillAt.getTime() >= before);
-      await modules
-        .db()
-        .update(modules.schema.requestLedger)
-        .set({ nextBackfillAt: new Date(Date.now() - 1) })
-        .where(eq(modules.schema.requestLedger.id, id));
-    } else {
-      assert.equal(ledger.nextBackfillAt, null);
-      assert.equal(result.exhausted, 1);
-    }
-    assert.equal(ledger.status, 'pending_backfill');
-  }
+  assert.equal(charges.length, 0);
 });
 
 test('重复回填幂等：已 settled 行再跑 worker 零变化', async () => {
@@ -234,21 +170,12 @@ test('重复回填幂等：已 settled 行再跑 worker 零变化', async () => 
     status: 'settled',
     nextAt: new Date(Date.now() - 1000),
   });
-  let calls = 0;
-  const result = await modules.backfill.runUsageWorkerOnce({
-    client: {
-      getUsageLogByRequestId: async () => {
-        calls += 1;
-        return null;
-      },
-    },
-  });
+  const result = await modules.backfill.runUsageWorkerOnce();
   assert.deepEqual(result, { backfilled: 0, swept: 0, exhausted: 0 });
-  assert.equal(calls, 0);
   assert.equal((await row(id)).status, 'settled');
 });
 
-test('sweeper：无 id 超时 open 免单，有 id 超时 open 转 pending_backfill', async () => {
+test('sweeper：超时 open 无论有无 request id 都直接免单', async () => {
   const user = await seedUser('sweeper');
   const stale = new Date(Date.now() - 11 * 60_000);
   const noId = await seedRequest('sweep-no-id', {
@@ -265,14 +192,12 @@ test('sweeper：无 id 超时 open 免单，有 id 超时 open 转 pending_backf
     nextAt: null,
     createdAt: stale,
   });
-  const result = await modules.backfill.runUsageWorkerOnce({
-    client: { getUsageLogByRequestId: async () => null },
-  });
+  const result = await modules.backfill.runUsageWorkerOnce();
   assert.equal(result.swept, 2);
   assert.equal((await row(noId)).status, 'failed_unbilled');
-  const pending = await row(withId);
-  assert.equal(pending.status, 'pending_backfill');
-  assert.ok(pending.nextBackfillAt instanceof Date);
+  assert.equal((await row(noId)).errorCode, 'open_timeout');
+  assert.equal((await row(withId)).status, 'failed_unbilled');
+  assert.equal((await row(withId)).errorCode, 'open_timeout');
 });
 
 test('keepAlive 丢锁时立即停止本轮，不处理后续条目', async () => {
@@ -280,20 +205,12 @@ test('keepAlive 丢锁时立即停止本轮，不处理后续条目', async () =
   const first = await seedRequest('lost-lock-a', user);
   const second = await seedRequest('lost-lock-b', user);
   let keepAliveCalls = 0;
-  let logCalls = 0;
   await modules.backfill.runUsageWorkerOnce({
-    client: {
-      getUsageLogByRequestId: async () => {
-        logCalls += 1;
-        return null;
-      },
-    },
     keepAlive: async () => {
       keepAliveCalls += 1;
       return keepAliveCalls === 1;
     },
   });
-  assert.equal(logCalls, 1);
-  assert.equal((await row(first)).backfillAttempts, 1);
-  assert.equal((await row(second)).backfillAttempts, 0);
+  assert.equal((await row(first)).status, 'failed_unbilled');
+  assert.equal((await row(second)).status, 'pending_backfill');
 });

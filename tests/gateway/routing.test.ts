@@ -142,12 +142,13 @@ test('模型目录自动生成路由与不可变价格快照', async () => {
   assert.equal(route.newapiGroup, 'official');
   assert.equal(route.newapiModelId, IDs.modelId);
   assert.equal(route.routeVersion, 1);
-  assert.deepEqual(route.price, {
-    inputMicroUsdPerM: 800_000,
-    cachedInputMicroUsdPerM: 80_000,
-    cacheWrite5mMicroUsdPerM: 1_000_000,
-    cacheWrite1hMicroUsdPerM: 1_600_000,
-    outputMicroUsdPerM: 4_000_000,
+  assert.equal(route.billingScheme, 'token');
+  assert.deepEqual(route.rates, {
+    input: 800_000,
+    cached_input: 80_000,
+    cache_write_5m: 1_000_000,
+    cache_write_1h: 1_600_000,
+    output: 4_000_000,
   });
   const [snapshot] = await modules
     .db()
@@ -173,7 +174,7 @@ test('上架折扣或映射变化会自动滚动快照版本', async () => {
   );
   assert.equal(route.routeVersion, 2);
   assert.equal(route.newapiGroup, 'vip');
-  assert.equal(route.price.inputMicroUsdPerM, 900_000);
+  assert.equal(route.rates.input, 900_000);
   const activeRoutes = await modules
     .db()
     .select()

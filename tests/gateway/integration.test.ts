@@ -226,15 +226,11 @@ test('4 目录价格变化自动生成 v2，新请求锁 v2，旧账本仍按 v1
   assert.equal(JSON.parse(currentPrice.ratesJson).input, 9_000_000);
   assert.equal(
     await modules.settlement.settleByLedgerId('preq-inflight-v1', {
-      buckets: {
-        uncachedInput: 1,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      },
-      usageSource: 'log_backfill',
+      meters: { input: 1 },
+      flags: [],
+      webSearchCount: 0,
+      rawUsage: { prompt_tokens: 1 },
+      usageSource: 'response',
     }),
     'settled'
   );
@@ -404,7 +400,7 @@ test('9 余额 1 micro 可放行，结算转负后下一请求拒绝', async () 
   assert.equal((await second.json()).error.code, 'insufficient_quota');
 });
 
-test('10 pending_backfill 占满风险槽，结算一条后恢复', async () => {
+test('10 缺 usage 请求直接免单释放风险槽，后续请求可继续准入', async () => {
   const fixture = await seedGatewayFixture(modules, 'pending-slots', {
     riskLimit: 2,
   });
@@ -412,29 +408,27 @@ test('10 pending_backfill 占满风险槽，结算一条后恢复', async () => 
     const response = await invoke(fixture, 'no-usage');
     await consumeAndWait(response, fixture.userId);
   }
-  assert.equal((await invoke(fixture)).status, 429);
-  const rows = await ledgers(fixture.userId);
-  assert.equal(
-    rows.filter((row: any) => row.status === 'pending_backfill').length,
-    2
-  );
-  assert.equal(
-    await modules.settlement.settleByLedgerId(rows[0].id, {
-      buckets: {
-        uncachedInput: 1,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      },
-      usageSource: 'log_backfill',
-    }),
-    'settled'
-  );
   const recovered = await invoke(fixture);
   assert.equal(recovered.status, 200);
-  await consumeAndWait(recovered, fixture.userId);
+  await recovered.text();
+  await waitUntil(async () => {
+    const current = await ledgers(fixture.userId);
+    return (
+      current.length === 3 && current.every((row: any) => row.status !== 'open')
+    );
+  });
+  const rows = await ledgers(fixture.userId);
+  assert.equal(
+    rows.filter((row: any) => row.status === 'failed_unbilled').length,
+    2
+  );
+  assert.equal(rows.filter((row: any) => row.status === 'settled').length, 1);
+  assert.equal(
+    rows
+      .filter((row: any) => row.status === 'failed_unbilled')
+      .every((row: any) => row.errorCode === 'usage_missing_waived'),
+    true
+  );
 });
 
 test('11 透支越阈冻结；补款并 unfreeze 后恢复', async () => {
@@ -546,15 +540,11 @@ test('17 响应结算后按 New API request id 再结算保持幂等', async () 
   const ledger = await latestLedger(fixture.userId);
   assert.equal(
     await modules.settlement.settleByNewapiRequestId(ledger.newapiRequestId, {
-      buckets: {
-        uncachedInput: 999,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 0,
-        reasoning: 0,
-      },
-      usageSource: 'log_backfill',
+      meters: { input: 999 },
+      flags: [],
+      webSearchCount: 0,
+      rawUsage: { prompt_tokens: 999 },
+      usageSource: 'response',
     }),
     'already_finalized'
   );
@@ -681,13 +671,18 @@ test('23 慢请求体占满并发后超时自愈', async () => {
   await consumeAndWait(recovered, fixture.userId);
 });
 
-test('24 非流式大响应保持流式透传，扫描超窗转 pending_backfill', async () => {
+test('24 非流式大响应保持流式透传，扫描超窗按缺 usage 免单', async () => {
   process.env.GATEWAY_PARSE_BUFFER_MAX = '65536';
   const fixture = await seedGatewayFixture(modules, 'large-response');
   const response = await invoke(fixture, 'large-json');
   const body = await consumeAndWait(response, fixture.userId);
   assert.ok(body.length > 1024 * 1024);
-  assert.equal((await latestLedger(fixture.userId)).status, 'pending_backfill');
+  const ledger = await latestLedger(fixture.userId);
+  assert.equal(ledger.status, 'failed_unbilled');
+  assert.equal(ledger.errorCode, 'usage_missing_waived');
+  assert.deepEqual(JSON.parse(ledger.billingFlagsJson), [
+    'usage_missing_waived',
+  ]);
 });
 
 test('25 finalize DB busy 有界重试，穷尽后进程存活且可收敛', async () => {
@@ -739,15 +734,11 @@ test('25 finalize DB busy 有界重试，穷尽后进程存活且可收敛', asy
   assert.equal(open.status, 'open');
   assert.equal(
     await modules.settlement.settleByLedgerId(open.id, {
-      buckets: {
-        uncachedInput: 2,
-        cachedRead: 0,
-        cacheWrite5m: 0,
-        cacheWrite1h: 0,
-        output: 3,
-        reasoning: 0,
-      },
-      usageSource: 'log_backfill',
+      meters: { input: 2, output: 3 },
+      flags: [],
+      webSearchCount: 0,
+      rawUsage: { prompt_tokens: 2, completion_tokens: 3 },
+      usageSource: 'response',
     }),
     'settled'
   );

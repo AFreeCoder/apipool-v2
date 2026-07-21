@@ -415,7 +415,7 @@ export async function assessPublishReadiness(
 - **漏拦检测**（E1）：请求上下文携带 `admissionLongContextThreshold`/`allowLongContext`（来自 T6 判定结果）；`allowLongContext=false` 且实际 `inputTotalTokens ≥ admissionLongContextThreshold` 时按普通档结算 + flag `long_context_block_missed` + 告警。
 - 本任务完成后 routing/settlement/backfill 均已脱离旧接口；`PriceVector` 统一删除在 T12 收尾步骤执行（第 6 轮 F3）。
 - 验收：`npm test -- tests/gateway/` 全绿；既有幂等/透支冻结用例不回归；usage 缺失两 scheme 分支用例（token→waived、per_call→settle）；漏拦三态用例（命中长档 / 关态漏拦打标 / 无长档能力不检测）。
-- [ ] 完成后 commit：`git commit -m "feat: 结算写入 meter 列与凭证/标记"`
+- [x] 完成后 commit：`git commit -m "feat: 结算写入 meter 列与凭证/标记"`
 
 ---
 

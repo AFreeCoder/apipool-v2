@@ -141,6 +141,7 @@ export async function ensureCatalogRouteSnapshot(
 ): Promise<{
   route: typeof modelRoute.$inferSelect;
   price: typeof modelPriceVersion.$inferSelect;
+  publish: CatalogRouteConfig;
 } | null> {
   const config = await loadCatalogRouteConfig(portalGroupId, portalModelId);
   if (!config) {
@@ -155,7 +156,7 @@ export async function ensureCatalogRouteSnapshot(
     routeMatches(current.route, config) &&
     priceMatches(current.price, config)
   ) {
-    return { route: current.route!, price: current.price! };
+    return { route: current.route!, price: current.price!, publish: config };
   }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -166,7 +167,11 @@ export async function ensureCatalogRouteSnapshot(
           routeMatches(active.route, config) &&
           priceMatches(active.price, config)
         ) {
-          return { route: active.route!, price: active.price! };
+          return {
+            route: active.route!,
+            price: active.price!,
+            publish: config,
+          };
         }
 
         const now = new Date();
@@ -229,7 +234,7 @@ export async function ensureCatalogRouteSnapshot(
           .insert(modelPriceVersion)
           .values(price)
           .returning();
-        return { route: insertedRoute, price: insertedPrice };
+        return { route: insertedRoute, price: insertedPrice, publish: config };
       });
     } catch (error) {
       if (!isConcurrentWrite(error) || attempt === 2) throw error;

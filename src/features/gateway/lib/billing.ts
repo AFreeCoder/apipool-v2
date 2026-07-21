@@ -1,9 +1,5 @@
 import type { GatewayEndpointKey } from './endpoints';
-import {
-  type MeterKey,
-  type MeterQuantities,
-  toLongMeterKey,
-} from './meters';
+import { toLongMeterKey, type MeterKey, type MeterQuantities } from './meters';
 
 export interface UsageBuckets {
   uncachedInput: number;
@@ -164,9 +160,7 @@ export function normalizeUsageMeters(
       const cacheWrite5m = has5m
         ? num(creation.ephemeral_5m_input_tokens)
         : aggregateCacheWrite;
-      const cacheWrite1h = has1h
-        ? num(creation.ephemeral_1h_input_tokens)
-        : 0;
+      const cacheWrite1h = has1h ? num(creation.ephemeral_1h_input_tokens) : 0;
 
       addMeter(meters, 'input', num(usage.input_tokens));
       addMeter(meters, 'cached_input', num(usage.cache_read_input_tokens));
@@ -308,36 +302,6 @@ export function normalizeUsage(
     )
     .map(([key]) => key);
   return { buckets, unmappedNonZero };
-}
-
-export function normalizeBackfillUsage(log: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheTokens?: number;
-  cacheCreationTokens?: number;
-  cacheCreationTokens5m?: number;
-  cacheCreationTokens1h?: number;
-  usageSemantic?: string;
-}): UsageBuckets {
-  const cachedRead = num(log.cacheTokens);
-  const cacheWrite5m = num(
-    log.cacheCreationTokens5m ?? log.cacheCreationTokens
-  );
-  const cacheWrite1h = num(log.cacheCreationTokens1h);
-  const anthropicSemantic = log.usageSemantic?.toLowerCase() === 'anthropic';
-  return {
-    uncachedInput: anthropicSemantic
-      ? num(log.inputTokens)
-      : Math.max(
-          0,
-          num(log.inputTokens) - cachedRead - cacheWrite5m - cacheWrite1h
-        ),
-    cachedRead,
-    cacheWrite5m,
-    cacheWrite1h,
-    output: num(log.outputTokens),
-    reasoning: 0,
-  };
 }
 
 const MICRO_PER_M = BigInt(1_000_000);

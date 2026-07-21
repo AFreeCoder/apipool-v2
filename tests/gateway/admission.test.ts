@@ -103,31 +103,6 @@ test('占用 9/上限 10：并发 2 → 恰好 1 open 1 拒绝', async () => {
   assert.equal(Number(rows.rows[0].count), 10);
 });
 
-test('pending_backfill 仍占槽：转 pending 后新请求仍被拒', async () => {
-  const userId = 'admission-pending';
-  await createUser(userId);
-  assert.equal(
-    await modules.admission.admitRequest(
-      baseInput(userId, { id: 'preq_pending' }),
-      1
-    ),
-    true
-  );
-  assert.equal(
-    await modules.admission.markPendingBackfill('preq_pending', {
-      httpStatus: 200,
-    }),
-    true
-  );
-  assert.equal(
-    await modules.admission.admitRequest(
-      baseInput(userId, { id: 'preq_pending_rejected' }),
-      1
-    ),
-    false
-  );
-});
-
 test('释放=终态迁移本身：markFailedUnbilled 幂等，释放后可再准入', async () => {
   const userId = 'admission-release';
   await createUser(userId);

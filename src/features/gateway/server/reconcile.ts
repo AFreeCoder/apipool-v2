@@ -2,7 +2,6 @@ import 'server-only';
 
 import {
   computeChargeMicroUsd,
-  normalizeBackfillUsage,
   priceVectorFromRatesJson,
   type PriceVector,
   type UsageBuckets,
@@ -22,7 +21,7 @@ import {
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 
-import { settleByNewapiRequestId } from './settlement';
+import { markFailedUnbilled } from './admission';
 
 const LOCK_ID = 'singleton';
 const DEFAULT_SLICE_MS = 10 * 60_000;
@@ -246,15 +245,21 @@ async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
     return;
   }
   if (row.status === 'open' || row.status === 'pending_backfill') {
+    const waived = await markFailedUnbilled(row.id, {
+      errorCode: 'usage_missing_waived',
+      billingScheme: row.billingScheme === 'per_call' ? 'per_call' : 'token',
+      billingFlags: ['usage_missing_waived'],
+    });
     await db()
       .update(requestLedger)
-      .set({ ...telemetry, updatedAt: new Date() })
+      .set({
+        ...telemetry,
+        reconcileStatus: 'waived_by_missing_usage',
+        reconciledAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(eq(requestLedger.id, row.id));
-    const result = await settleByNewapiRequestId(log.requestId, {
-      buckets: normalizeBackfillUsage(log),
-      usageSource: 'log_backfill',
-    });
-    if (result === 'settled') counters.settledByLog += 1;
+    if (waived) counters.waivedOrOrphans += 1;
     return;
   }
   if (row.status === 'failed_unbilled') {

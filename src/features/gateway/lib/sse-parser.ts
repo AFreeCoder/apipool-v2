@@ -302,6 +302,7 @@ export function extractTopLevelStream(body: Uint8Array): StreamExtraction {
 export interface ExtractedUsage {
   usage: Record<string, unknown> | null;
   complete: boolean;
+  unitCount?: number;
 }
 
 export interface UsageExtractor {
@@ -488,8 +489,107 @@ function findDirectObjectProperty(
   return { ok: true, range: found };
 }
 
+function findDirectArrayProperty(
+  body: Uint8Array,
+  objectRange: ObjectRange,
+  keyBytes: readonly number[]
+): PropertyScan {
+  let depth = 0;
+  let index = objectRange.start;
+  let found: ObjectRange | null = null;
+
+  while (index < objectRange.end) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const key = matchJsonString(body, index, keyBytes);
+      if (!key) return { ok: false };
+      if (depth === 1 && key.matches) {
+        const colonIndex = skipWhitespace(body, key.end);
+        if (body[colonIndex] === COLON) {
+          if (found) return { ok: false };
+          const valueIndex = skipWhitespace(body, colonIndex + 1);
+          if (body[valueIndex] !== OPEN_BRACKET) return { ok: false };
+          const valueRange = findBalancedContainer(body, valueIndex);
+          if (!valueRange) return { ok: false };
+          found = valueRange;
+          index = valueRange.end;
+          continue;
+        }
+      }
+      index = key.end;
+      continue;
+    }
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth < 0) return { ok: false };
+    }
+    index += 1;
+  }
+  if (depth !== 0) return { ok: false };
+  return { ok: true, range: found };
+}
+
+function findBalancedContainer(
+  body: Uint8Array,
+  openIndex: number
+): ObjectRange | null {
+  if (body[openIndex] !== OPEN_BRACE && body[openIndex] !== OPEN_BRACKET) {
+    return null;
+  }
+  let depth = 0;
+  let index = openIndex;
+  while (index < body.length) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const end = skipJsonString(body, index);
+      if (end === null) return null;
+      index = end;
+      continue;
+    }
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth === 0) return { start: openIndex, end: index + 1 };
+      if (depth < 0) return null;
+    }
+    index += 1;
+  }
+  return null;
+}
+
+function countDirectArrayItems(body: Uint8Array, range: ObjectRange): number {
+  let depth = 0;
+  let commas = 0;
+  let hasValue = false;
+  let index = range.start;
+  while (index < range.end) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      hasValue = true;
+      const end = skipJsonString(body, index);
+      if (end === null) return 0;
+      index = end;
+      continue;
+    }
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) {
+      depth += 1;
+      if (depth > 1) hasValue = true;
+    } else if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+    } else if (byte === 0x2c && depth === 1) {
+      commas += 1;
+    } else if (depth === 1 && !isWhitespace(byte)) {
+      hasValue = true;
+    }
+    index += 1;
+  }
+  return hasValue ? commas + 1 : 0;
+}
+
 const USAGE_KEY = [0x75, 0x73, 0x61, 0x67, 0x65];
 const RESPONSE_KEY = [0x72, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65];
+const DATA_KEY = [0x64, 0x61, 0x74, 0x61];
 
 function extractBodyUsage(
   endpoint: GatewayEndpointKey,
@@ -501,35 +601,52 @@ function extractBodyUsage(
     return { usage: null, complete: false };
   }
 
+  const rootData = findDirectArrayProperty(body, root, DATA_KEY);
+  if (!rootData.ok) return { usage: null, complete: false };
+  const unitCount = rootData.range
+    ? countDirectArrayItems(body, rootData.range)
+    : undefined;
+  const countResult = unitCount === undefined ? {} : { unitCount };
+
   const rootUsage = findDirectObjectProperty(body, root, USAGE_KEY);
-  if (!rootUsage.ok) return { usage: null, complete: false };
+  if (!rootUsage.ok) {
+    return { usage: null, complete: false, ...countResult };
+  }
   const candidates: ObjectRange[] = [];
   if (rootUsage.range) candidates.push(rootUsage.range);
 
   if (endpoint === 'responses') {
     const response = findDirectObjectProperty(body, root, RESPONSE_KEY);
-    if (!response.ok) return { usage: null, complete: false };
+    if (!response.ok) {
+      return { usage: null, complete: false, ...countResult };
+    }
     if (response.range) {
       const nestedUsage = findDirectObjectProperty(
         body,
         response.range,
         USAGE_KEY
       );
-      if (!nestedUsage.ok) return { usage: null, complete: false };
+      if (!nestedUsage.ok) {
+        return { usage: null, complete: false, ...countResult };
+      }
       if (nestedUsage.range) candidates.push(nestedUsage.range);
     }
   }
 
-  if (candidates.length !== 1) return { usage: null, complete: false };
+  if (candidates.length !== 1) {
+    return { usage: null, complete: false, ...countResult };
+  }
   const candidate = candidates[0];
   try {
     const parsed = JSON.parse(
       new TextDecoder().decode(body.subarray(candidate.start, candidate.end))
     );
     const usage = asRecord(parsed);
-    return usage ? { usage, complete: true } : { usage: null, complete: false };
+    return usage
+      ? { usage, complete: true, ...countResult }
+      : { usage: null, complete: false, ...countResult };
   } catch {
-    return { usage: null, complete: false };
+    return { usage: null, complete: false, ...countResult };
   }
 }
 
