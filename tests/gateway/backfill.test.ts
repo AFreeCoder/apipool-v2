@@ -77,11 +77,13 @@ async function seedUser(suffix: string, balance = 1_000_000) {
       portalGroupId: 'backfill-group',
       portalModelId: `model-${suffix}`,
       version: 1,
-      inputMicroUsdPerM: 1_000_000,
-      cachedInputMicroUsdPerM: 500_000,
-      cacheWrite5mMicroUsdPerM: 1_250_000,
-      cacheWrite1hMicroUsdPerM: 2_000_000,
-      outputMicroUsdPerM: 2_000_000,
+      ratesJson: JSON.stringify({
+        input: 1_000_000,
+        cached_input: 500_000,
+        cache_write_5m: 1_250_000,
+        cache_write_1h: 2_000_000,
+        output: 2_000_000,
+      }),
       publishedBy: 'backfill-test',
     });
   return { priceVersionId, userId };

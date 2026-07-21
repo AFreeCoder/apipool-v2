@@ -337,10 +337,10 @@ export function computeTokenChargeMicroUsd(
 - `modelPriceVersion` 新列：`billingScheme text NOT NULL default 'token'`、`ratesJson text NOT NULL default '{}'`、`tiersJson text NOT NULL default '{}'`、`longContextThresholdTokens integer`；**删除** `inputMicroUsdPerM` 等五个单价列；`newapiRef*` 五列与版本链、`uniq_model_price_version_active` 索引保留。
 - `requestLedger` 增列（全部可空）：`billingScheme`、`cacheWriteTokens`、`imageInputTokens`、`cachedImageInputTokens`、`imageOutputTokens`、`skuKey`、`unitCount`、`longContextApplied`（integer 0/1）、`billingFlagsJson`、`rawUsageJson`、`webSearchCount`；现有 `uncachedInputTokens/cachedReadTokens/cacheWrite5mTokens/cacheWrite1hTokens/outputTokens/reasoningTokens` 保留语义不变。
 
-- [ ] **Step 1: 更新 schema-guard 期望**（先改测试，跑出列差异失败清单）。
-- [ ] **Step 2: 改 schema.sqlite.ts + 迁移 SQL**。`model_price_version` 用 SQLite 十二步重建法（建新表→迁移旧行：五列值折算为 `rates_json`（键名 input/cached_input/cache_write_5m/cache_write_1h/output）→改名替换）；**迁移脚本不含清空分支**——若旧行存在则等价迁移，清空是独立的人工脚本（Global Constraints）。
-- [ ] **Step 3: `npm test -- tests/db/` 全绿；`npm run build` 通过。**
-- [ ] **Step 4: Commit**：`git commit -m "feat: 网关价格版本 map 化重建与账本增列"`
+- [x] **Step 1: 更新 schema-guard 期望**（先改测试，跑出列差异失败清单）。
+- [x] **Step 2: 改 schema.sqlite.ts + 迁移 SQL**。`model_price_version` 用 SQLite 十二步重建法（建新表→迁移旧行：五列值折算为 `rates_json`（键名 input/cached_input/cache_write_5m/cache_write_1h/output）→改名替换）；**迁移脚本不含清空分支**——若旧行存在则等价迁移，清空是独立的人工脚本（Global Constraints）。
+- [x] **Step 3: `npm test -- tests/db/` 全绿；`npm run build` 通过。**
+- [x] **Step 4: Commit**：`git commit -m "feat: 网关价格版本 map 化重建与账本增列"`
 
 ---
 

@@ -32,6 +32,16 @@ function scaledPrice(base: number, ratioBps: number) {
   return scaleMicroUsdByBps(base, ratioBps)!;
 }
 
+function legacyRatesJson(price: PriceVector): string {
+  return JSON.stringify({
+    input: price.inputMicroUsdPerM,
+    cached_input: price.cachedInputMicroUsdPerM,
+    cache_write_5m: price.cacheWrite5mMicroUsdPerM,
+    cache_write_1h: price.cacheWrite1hMicroUsdPerM,
+    output: price.outputMicroUsdPerM,
+  });
+}
+
 function parseEndpointTypes(value: string | null): string[] {
   if (!value) return [];
   try {
@@ -148,11 +158,10 @@ function priceMatches(
 ) {
   return (
     price?.refNewapiGroup === config.newapiGroup &&
-    price.inputMicroUsdPerM === config.price.inputMicroUsdPerM &&
-    price.cachedInputMicroUsdPerM === config.price.cachedInputMicroUsdPerM &&
-    price.cacheWrite5mMicroUsdPerM === config.price.cacheWrite5mMicroUsdPerM &&
-    price.cacheWrite1hMicroUsdPerM === config.price.cacheWrite1hMicroUsdPerM &&
-    price.outputMicroUsdPerM === config.price.outputMicroUsdPerM
+    price.billingScheme === 'token' &&
+    price.ratesJson === legacyRatesJson(config.price) &&
+    price.tiersJson === '{}' &&
+    price.longContextThresholdTokens === null
   );
 }
 
@@ -322,7 +331,10 @@ export async function ensureCatalogRouteSnapshot(
           portalModelId,
           version: priceVersion,
           status: 'active',
-          ...config.price,
+          billingScheme: 'token',
+          ratesJson: legacyRatesJson(config.price),
+          tiersJson: '{}',
+          longContextThresholdTokens: null,
           newapiRefInputMicroUsdPerM: config.price.inputMicroUsdPerM,
           newapiRefCachedInputMicroUsdPerM:
             config.price.cachedInputMicroUsdPerM,

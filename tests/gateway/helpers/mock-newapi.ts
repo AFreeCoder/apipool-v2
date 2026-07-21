@@ -376,11 +376,13 @@ export async function seedGatewayFixture(
       portalGroupId: groupId,
       portalModelId: modelId,
       version: 1,
-      inputMicroUsdPerM: options.price?.input ?? 1_000_000,
-      cachedInputMicroUsdPerM: options.price?.cached ?? 500_000,
-      cacheWrite5mMicroUsdPerM: options.price?.write5m ?? 1_250_000,
-      cacheWrite1hMicroUsdPerM: options.price?.write1h ?? 2_000_000,
-      outputMicroUsdPerM: options.price?.output ?? 2_000_000,
+      ratesJson: JSON.stringify({
+        input: options.price?.input ?? 1_000_000,
+        cached_input: options.price?.cached ?? 500_000,
+        cache_write_5m: options.price?.write5m ?? 1_250_000,
+        cache_write_1h: options.price?.write1h ?? 2_000_000,
+        output: options.price?.output ?? 2_000_000,
+      }),
       refNewapiGroup: newapiGroup,
       publishedBy: 'integration-test',
     });

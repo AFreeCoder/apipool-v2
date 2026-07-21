@@ -3,6 +3,7 @@ import 'server-only';
 import {
   computeChargeMicroUsd,
   normalizeBackfillUsage,
+  priceVectorFromRatesJson,
   type PriceVector,
   type UsageBuckets,
 } from '@/features/gateway/lib/billing';
@@ -82,13 +83,7 @@ function ledgerBuckets(row: typeof requestLedger.$inferSelect): UsageBuckets {
 }
 
 function retailPrice(row: typeof modelPriceVersion.$inferSelect): PriceVector {
-  return {
-    inputMicroUsdPerM: row.inputMicroUsdPerM,
-    cachedInputMicroUsdPerM: row.cachedInputMicroUsdPerM,
-    cacheWrite5mMicroUsdPerM: row.cacheWrite5mMicroUsdPerM,
-    cacheWrite1hMicroUsdPerM: row.cacheWrite1hMicroUsdPerM,
-    outputMicroUsdPerM: row.outputMicroUsdPerM,
-  };
+  return priceVectorFromRatesJson(row.ratesJson);
 }
 
 function referencePrice(

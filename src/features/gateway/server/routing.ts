@@ -1,6 +1,9 @@
 import 'server-only';
 
-import type { PriceVector } from '@/features/gateway/lib/billing';
+import {
+  priceVectorFromRatesJson,
+  type PriceVector,
+} from '@/features/gateway/lib/billing';
 import { ensureCatalogRouteSnapshot } from '@/features/gateway/server/catalog-route-snapshot';
 import { and, eq } from 'drizzle-orm';
 
@@ -39,13 +42,7 @@ export async function resolveActiveRoute(
     newapiGroup: route.newapiGroup,
     newapiModelId: route.newapiModelId,
     priceVersionId: price.id,
-    price: {
-      inputMicroUsdPerM: price.inputMicroUsdPerM,
-      cachedInputMicroUsdPerM: price.cachedInputMicroUsdPerM,
-      cacheWrite5mMicroUsdPerM: price.cacheWrite5mMicroUsdPerM,
-      cacheWrite1hMicroUsdPerM: price.cacheWrite1hMicroUsdPerM,
-      outputMicroUsdPerM: price.outputMicroUsdPerM,
-    },
+    price: priceVectorFromRatesJson(price.ratesJson),
     portalGroupId,
     portalModelId,
   };

@@ -223,7 +223,7 @@ test('4 目录价格变化自动生成 v2，新请求锁 v2，旧账本仍按 v1
     .select()
     .from(modules.schema.modelPriceVersion)
     .where(eq(modules.schema.modelPriceVersion.id, rows[0].priceVersionId));
-  assert.equal(currentPrice.inputMicroUsdPerM, 9_000_000);
+  assert.equal(JSON.parse(currentPrice.ratesJson).input, 9_000_000);
   assert.equal(
     await modules.settlement.settleByLedgerId('preq-inflight-v1', {
       buckets: {

@@ -2,7 +2,7 @@ import 'server-only';
 
 import {
   computeChargeMicroUsd,
-  type PriceVector,
+  priceVectorFromRatesJson,
   type UsageBuckets,
 } from '@/features/gateway/lib/billing';
 import { gatewayConfig } from '@/features/gateway/lib/config';
@@ -54,16 +54,6 @@ export async function settleByNewapiRequestId(
   return settleRow(ledger, usage);
 }
 
-function toPriceVector(price: any): PriceVector {
-  return {
-    inputMicroUsdPerM: price.inputMicroUsdPerM,
-    cachedInputMicroUsdPerM: price.cachedInputMicroUsdPerM,
-    cacheWrite5mMicroUsdPerM: price.cacheWrite5mMicroUsdPerM,
-    cacheWrite1hMicroUsdPerM: price.cacheWrite1hMicroUsdPerM,
-    outputMicroUsdPerM: price.outputMicroUsdPerM,
-  };
-}
-
 async function settleRow(
   ledger: any,
   usage: SettlementUsage
@@ -83,7 +73,10 @@ async function settleRow(
     .limit(1);
   if (!price) throw new Error(`price version ${ledger.priceVersionId} missing`);
 
-  const charged = computeChargeMicroUsd(usage.buckets, toPriceVector(price));
+  const charged = computeChargeMicroUsd(
+    usage.buckets,
+    priceVectorFromRatesJson(price.ratesJson)
+  );
   if (charged > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error('charge exceeds safe integer');
   }

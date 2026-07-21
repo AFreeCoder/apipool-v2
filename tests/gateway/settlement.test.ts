@@ -60,11 +60,13 @@ async function seedPrice(id: string, inputMicroUsdPerM = 2_500_000) {
     portalModelId: id,
     version: 1,
     status: 'active',
-    inputMicroUsdPerM,
-    cachedInputMicroUsdPerM: 0,
-    cacheWrite5mMicroUsdPerM: 0,
-    cacheWrite1hMicroUsdPerM: 0,
-    outputMicroUsdPerM: 0,
+    ratesJson: JSON.stringify({
+      input: inputMicroUsdPerM,
+      cached_input: 0,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      output: 0,
+    }),
     publishedBy: 'operator',
   });
 }

@@ -104,11 +104,13 @@ async function seedActiveRoutePrice(groupId: string, modelId: string) {
       portalModelId: modelId,
       version: 1,
       status: 'active',
-      inputMicroUsdPerM: 100_000,
-      cachedInputMicroUsdPerM: 50_000,
-      cacheWrite5mMicroUsdPerM: 125_000,
-      cacheWrite1hMicroUsdPerM: 200_000,
-      outputMicroUsdPerM: 200_000,
+      ratesJson: JSON.stringify({
+        input: 100_000,
+        cached_input: 50_000,
+        cache_write_5m: 125_000,
+        cache_write_1h: 200_000,
+        output: 200_000,
+      }),
       publishedBy: 'queries-test',
     });
   await modules

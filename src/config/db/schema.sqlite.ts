@@ -1232,15 +1232,10 @@ export const modelPriceVersion = table(
     portalModelId: text('portal_model_id').notNull(),
     version: integer('version').notNull(),
     status: text('status').notNull().default('active'),
-    inputMicroUsdPerM: integer('input_micro_usd_per_m').notNull(),
-    cachedInputMicroUsdPerM: integer('cached_input_micro_usd_per_m').notNull(),
-    cacheWrite5mMicroUsdPerM: integer(
-      'cache_write_5m_micro_usd_per_m'
-    ).notNull(),
-    cacheWrite1hMicroUsdPerM: integer(
-      'cache_write_1h_micro_usd_per_m'
-    ).notNull(),
-    outputMicroUsdPerM: integer('output_micro_usd_per_m').notNull(),
+    billingScheme: text('billing_scheme').notNull().default('token'),
+    ratesJson: text('rates_json').notNull().default('{}'),
+    tiersJson: text('tiers_json').notNull().default('{}'),
+    longContextThresholdTokens: integer('long_context_threshold_tokens'),
     newapiRefInputMicroUsdPerM: integer('newapi_ref_input_micro_usd_per_m'),
     newapiRefOutputMicroUsdPerM: integer('newapi_ref_output_micro_usd_per_m'),
     newapiRefCachedInputMicroUsdPerM: integer(
@@ -1272,6 +1267,10 @@ export const modelPriceVersion = table(
       table.portalGroupId,
       table.portalModelId,
       table.version
+    ),
+    check(
+      'ck_model_price_version_billing_scheme',
+      sql`${table.billingScheme} IN ('token','per_call')`
     ),
   ]
 );
@@ -1395,6 +1394,17 @@ export const requestLedger = table(
     cacheWrite1hTokens: integer('cache_write_1h_tokens'),
     outputTokens: integer('output_tokens'),
     reasoningTokens: integer('reasoning_tokens'),
+    billingScheme: text('billing_scheme'),
+    cacheWriteTokens: integer('cache_write_tokens'),
+    imageInputTokens: integer('image_input_tokens'),
+    cachedImageInputTokens: integer('cached_image_input_tokens'),
+    imageOutputTokens: integer('image_output_tokens'),
+    skuKey: text('sku_key'),
+    unitCount: integer('unit_count'),
+    longContextApplied: integer('long_context_applied', { mode: 'boolean' }),
+    billingFlagsJson: text('billing_flags_json'),
+    rawUsageJson: text('raw_usage_json'),
+    webSearchCount: integer('web_search_count'),
     usageSource: text('usage_source'),
     chargedMicroUsd: integer('charged_micro_usd'),
     backfillAttempts: integer('backfill_attempts').notNull().default(0),

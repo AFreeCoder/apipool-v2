@@ -23,6 +23,35 @@ export interface PriceVector {
   outputMicroUsdPerM: number;
 }
 
+/** @deprecated 仅供 T6/T7/T12 切换完成前读取旧五桶消费者。 */
+export function priceVectorFromRatesJson(ratesJson: string): PriceVector {
+  let rates: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(ratesJson);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('价格 rates_json 必须是对象');
+    }
+    rates = parsed as Record<string, unknown>;
+  } catch (error) {
+    throw new Error('价格 rates_json 无法解析', { cause: error });
+  }
+
+  const readRate = (key: string) => {
+    const value = rates[key];
+    if (!Number.isSafeInteger(value) || Number(value) < 0) {
+      throw new Error(`价格 rates_json 缺少有效 ${key}`);
+    }
+    return Number(value);
+  };
+  return {
+    inputMicroUsdPerM: readRate('input'),
+    cachedInputMicroUsdPerM: readRate('cached_input'),
+    cacheWrite5mMicroUsdPerM: readRate('cache_write_5m'),
+    cacheWrite1hMicroUsdPerM: readRate('cache_write_1h'),
+    outputMicroUsdPerM: readRate('output'),
+  };
+}
+
 export function ceilDiv(a: bigint, b: bigint): bigint {
   return (a + b - BigInt(1)) / b;
 }

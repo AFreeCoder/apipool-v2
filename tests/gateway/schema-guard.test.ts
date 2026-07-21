@@ -39,7 +39,7 @@ test('迁移 0012 建齐新表并保留存量补建语义', async () => {
     .filter((file) => file.endsWith('.sql'))
     .sort();
 
-  for (const file of files.filter((file) => !file.startsWith('0012'))) {
+  for (const file of files.filter((file) => file < '0012_')) {
     await client.executeMultiple(await readFile(join(dir, file), 'utf8'));
   }
   await client.execute({
@@ -119,5 +119,104 @@ test('迁移 0012 建齐新表并保留存量补建语义', async () => {
     /FOREIGN KEY|constraint/i,
     '删用户被 wallet_ledger 外键拒绝，历史流水完整保留'
   );
+  client.close();
+});
+
+test('迁移 0013 将价格版本 map 化、等价迁移旧价并补齐账本 meter 列', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'pricing-v2-schema-guard.db');
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
+  await rm(dbPath, { force: true });
+  const client = createClient({ url: `file:${dbPath}` });
+  const dir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  const files = (await readdir(dir))
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+
+  for (const file of files.filter((file) => file < '0013_')) {
+    await client.executeMultiple(await readFile(join(dir, file), 'utf8'));
+  }
+
+  const group = await client.execute(
+    `SELECT id FROM catalog_group ORDER BY id LIMIT 1`
+  );
+  assert.equal(group.rows.length, 1, '旧价格版本测试需要一条目录分组');
+  await client.execute({
+    sql: `
+      INSERT INTO model_price_version (
+        id, portal_group_id, portal_model_id, version, status,
+        input_micro_usd_per_m, cached_input_micro_usd_per_m,
+        cache_write_5m_micro_usd_per_m, cache_write_1h_micro_usd_per_m,
+        output_micro_usd_per_m, newapi_ref_input_micro_usd_per_m,
+        ref_newapi_group, source_note, published_by, created_at, updated_at
+      ) VALUES (?, ?, 'legacy-model', 1, 'active', ?, ?, ?, ?, ?, ?, 'legacy-group', '保留备注', 'tester', 1, 2)
+    `,
+    args: [
+      'pv-legacy',
+      group.rows[0].id,
+      2_500_000,
+      1_250_000,
+      3_125_000,
+      5_000_000,
+      10_000_000,
+      2_000_000,
+    ],
+  });
+
+  const migration = files.find((file) => file.startsWith('0013_'));
+  assert.ok(migration, '0013 迁移文件存在');
+  await client.executeMultiple(await readFile(join(dir, migration), 'utf8'));
+
+  const columns = async (table: string) =>
+    (await client.execute(`PRAGMA table_info(${table})`)).rows.map(
+      (row: any) => String(row.name)
+    );
+  const priceColumns = await columns('model_price_version');
+  assert.ok(priceColumns.includes('billing_scheme'));
+  assert.ok(priceColumns.includes('rates_json'));
+  assert.ok(priceColumns.includes('tiers_json'));
+  assert.ok(priceColumns.includes('long_context_threshold_tokens'));
+  assert.equal(priceColumns.includes('input_micro_usd_per_m'), false);
+  assert.equal(priceColumns.includes('cached_input_micro_usd_per_m'), false);
+
+  const migrated = await client.execute(
+    `SELECT billing_scheme, rates_json, tiers_json, long_context_threshold_tokens,
+            newapi_ref_input_micro_usd_per_m, ref_newapi_group, source_note
+     FROM model_price_version WHERE id = 'pv-legacy'`
+  );
+  assert.equal(migrated.rows[0].billing_scheme, 'token');
+  assert.deepEqual(JSON.parse(String(migrated.rows[0].rates_json)), {
+    input: 2_500_000,
+    cached_input: 1_250_000,
+    cache_write_5m: 3_125_000,
+    cache_write_1h: 5_000_000,
+    output: 10_000_000,
+  });
+  assert.equal(migrated.rows[0].tiers_json, '{}');
+  assert.equal(migrated.rows[0].long_context_threshold_tokens, null);
+  assert.equal(Number(migrated.rows[0].newapi_ref_input_micro_usd_per_m), 2_000_000);
+  assert.equal(migrated.rows[0].ref_newapi_group, 'legacy-group');
+  assert.equal(migrated.rows[0].source_note, '保留备注');
+
+  const ledgerColumns = await columns('request_ledger');
+  for (const column of [
+    'billing_scheme',
+    'cache_write_tokens',
+    'image_input_tokens',
+    'cached_image_input_tokens',
+    'image_output_tokens',
+    'sku_key',
+    'unit_count',
+    'long_context_applied',
+    'billing_flags_json',
+    'raw_usage_json',
+    'web_search_count',
+  ]) {
+    assert.ok(ledgerColumns.includes(column), `request_ledger 含 ${column}`);
+  }
+
+  const integrity = await client.execute(`PRAGMA integrity_check`);
+  assert.equal(integrity.rows[0].integrity_check, 'ok');
+  const foreignKeys = await client.execute(`PRAGMA foreign_key_check`);
+  assert.equal(foreignKeys.rows.length, 0);
   client.close();
 });
