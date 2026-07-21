@@ -4,7 +4,7 @@ import {
   ceilDiv,
   computeChargeMicroUsd,
   normalizeBackfillUsage,
-  normalizeUsage,
+  normalizeUsageMeters,
 } from '@/features/gateway/lib/billing';
 
 const PRICE = {
@@ -15,8 +15,8 @@ const PRICE = {
   outputMicroUsdPerM: 10_000_000,
 };
 
-test('Chat：prompt_tokens 含 cached/cache write 子集必须扣除', () => {
-  const { buckets, unmappedNonZero } = normalizeUsage('chat_completions', {
+test('Chat：prompt_tokens 子集语义拆桶并输出 meter 向量', () => {
+  const result = normalizeUsageMeters('chat_completions', {
     prompt_tokens: 1000,
     completion_tokens: 50,
     prompt_tokens_details: {
@@ -24,19 +24,18 @@ test('Chat：prompt_tokens 含 cached/cache write 子集必须扣除', () => {
       cache_creation_tokens: 100,
     },
   });
-  assert.deepEqual(buckets, {
-    uncachedInput: 300,
-    cachedRead: 600,
-    cacheWrite5m: 100,
-    cacheWrite1h: 0,
+  assert.deepEqual(result.meters, {
+    input: 300,
+    cached_input: 600,
+    cache_write: 100,
     output: 50,
-    reasoning: 0,
   });
-  assert.deepEqual(unmappedNonZero, []);
+  assert.equal(result.webSearchCount, 0);
+  assert.deepEqual(result.flags, []);
 });
 
 test('Chat：识别 OpenAI 原生 cache_write_tokens，且不与兼容字段重复计数', () => {
-  const { buckets } = normalizeUsage('chat_completions', {
+  const { meters } = normalizeUsageMeters('chat_completions', {
     prompt_tokens: 1000,
     completion_tokens: 50,
     prompt_tokens_details: {
@@ -45,44 +44,40 @@ test('Chat：识别 OpenAI 原生 cache_write_tokens，且不与兼容字段重�
       cache_creation_tokens: 100,
     },
   });
-  assert.deepEqual(buckets, {
-    uncachedInput: 50,
-    cachedRead: 600,
-    cacheWrite5m: 350,
-    cacheWrite1h: 0,
+  assert.deepEqual(meters, {
+    input: 50,
+    cached_input: 600,
+    cache_write: 350,
     output: 50,
-    reasoning: 0,
   });
 });
 
 test('Chat：cached 超过 prompt 时 uncached 钳到 0', () => {
-  const { buckets } = normalizeUsage('chat_completions', {
+  const { meters } = normalizeUsageMeters('chat_completions', {
     prompt_tokens: 100,
     completion_tokens: 1,
     prompt_tokens_details: { cached_tokens: 150 },
   });
-  assert.equal(buckets.uncachedInput, 0);
+  assert.equal(meters.input ?? 0, 0);
 });
 
 test('Responses：input_tokens_details 直映（16.2 实测字段）', () => {
-  const { buckets } = normalizeUsage('responses', {
+  const { meters } = normalizeUsageMeters('responses', {
     input_tokens: 800,
     output_tokens: 120,
     input_tokens_details: { cached_tokens: 300, cache_write_tokens: 50 },
     output_tokens_details: { reasoning_tokens: 40 },
   });
-  assert.deepEqual(buckets, {
-    uncachedInput: 450,
-    cachedRead: 300,
-    cacheWrite5m: 50,
-    cacheWrite1h: 0,
+  assert.deepEqual(meters, {
+    input: 450,
+    cached_input: 300,
+    cache_write: 50,
     output: 120,
-    reasoning: 40,
   });
 });
 
 test('Messages：Anthropic 互斥直映、input_tokens 不扣、5m/1h 分桶', () => {
-  const { buckets } = normalizeUsage('messages', {
+  const { meters, flags } = normalizeUsageMeters('messages', {
     input_tokens: 200,
     output_tokens: 90,
     cache_read_input_tokens: 500,
@@ -92,48 +87,89 @@ test('Messages：Anthropic 互斥直映、input_tokens 不扣、5m/1h 分桶', (
     },
     cache_creation_input_tokens: 90,
   });
-  assert.deepEqual(buckets, {
-    uncachedInput: 200,
-    cachedRead: 500,
-    cacheWrite5m: 60,
-    cacheWrite1h: 30,
+  assert.deepEqual(meters, {
+    input: 200,
+    cached_input: 500,
+    cache_write_5m: 60,
+    cache_write_1h: 30,
     output: 90,
-    reasoning: 0,
   });
+  assert.deepEqual(flags, []);
 });
 
 test('Messages：无 cache_creation 明细时回退 cache_creation_input_tokens → 5m', () => {
-  const { buckets } = normalizeUsage('messages', {
+  const { meters } = normalizeUsageMeters('messages', {
     input_tokens: 10,
     output_tokens: 5,
     cache_creation_input_tokens: 40,
   });
-  assert.equal(buckets.cacheWrite5m, 40);
-  assert.equal(buckets.cacheWrite1h, 0);
+  assert.equal(meters.cache_write_5m, 40);
+  assert.equal(meters.cache_write_1h ?? 0, 0);
 });
 
-test('Embeddings：仅 uncached_input', () => {
-  const { buckets } = normalizeUsage('embeddings', {
+test('Embeddings：仅 input', () => {
+  const { meters } = normalizeUsageMeters('embeddings', {
     prompt_tokens: 512,
     total_tokens: 512,
   });
-  assert.deepEqual(buckets, {
-    uncachedInput: 512,
-    cachedRead: 0,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
-    output: 0,
-    reasoning: 0,
-  });
+  assert.deepEqual(meters, { input: 512 });
 });
 
 test('未映射非零字段被上报（宁少勿错）', () => {
-  const { unmappedNonZero } = normalizeUsage('chat_completions', {
+  const { flags } = normalizeUsageMeters('chat_completions', {
     prompt_tokens: 10,
     completion_tokens: 1,
     web_search_requests: 3,
   });
-  assert.deepEqual(unmappedNonZero, ['web_search_requests']);
+  assert.deepEqual(flags, ['unmapped:web_search_requests']);
+});
+
+test('Messages：聚合与细分不一致时按细分结算并打标记', () => {
+  const result = normalizeUsageMeters('messages', {
+    input_tokens: 100,
+    output_tokens: 10,
+    cache_creation_input_tokens: 10_000,
+    cache_creation: { ephemeral_5m_input_tokens: 3000 },
+  });
+  assert.equal(result.meters.cache_write_5m, 3000);
+  assert.equal(result.meters.cache_write_1h ?? 0, 0);
+  assert.ok(result.flags.includes('cache_write_sum_mismatch'));
+});
+
+test('Messages：iterations 数组与 server_tool_use 不再静默逃逸', () => {
+  const result = normalizeUsageMeters('messages', {
+    input_tokens: 100,
+    output_tokens: 10,
+    iterations: [{ input_tokens: 50 }],
+    server_tool_use: { web_search_requests: 3 },
+  });
+  assert.equal(result.webSearchCount, 3);
+  assert.ok(result.flags.includes('unmapped_struct:iterations'));
+});
+
+test('长档：inputTotalTokens（含缓存）达阈值时全部键改写为 _long', () => {
+  const result = normalizeUsageMeters(
+    'responses',
+    {
+      input_tokens: 280_000,
+      output_tokens: 10,
+      input_tokens_details: { cached_tokens: 100_000, cache_write_tokens: 0 },
+    },
+    { longContextThresholdTokens: 272_000 }
+  );
+  assert.deepEqual(result.meters, {
+    input_long: 180_000,
+    cached_input_long: 100_000,
+    output_long: 10,
+  });
+});
+
+test('长档：无阈值参数时永不判长档', () => {
+  const result = normalizeUsageMeters('responses', {
+    input_tokens: 500_000,
+    output_tokens: 1,
+  });
+  assert.deepEqual(result.meters, { input: 500_000, output: 1 });
 });
 
 test('金额：BigInt 全程、合计一次 ceil、不足 1 计 1', () => {

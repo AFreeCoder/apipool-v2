@@ -157,7 +157,7 @@ export function normalizeUsageMeters(
 
 要点（每个要点 = 一轮"测试先行 → 实现 → 绿"循环，全部在本任务内完成后一次 commit）：
 
-- [ ] **Step 1: 向量映射测试**（把现有五桶用例翻译成 meter 键；沿用现有取数规则，含 chat/responses/messages/embeddings）
+- [x] **Step 1: 向量映射测试**（把现有五桶用例翻译成 meter 键；沿用现有取数规则，含 chat/responses/messages/embeddings）
 
 ```ts
 test('Chat：prompt_tokens 子集语义拆桶并输出 meter 向量', () => {
@@ -178,7 +178,7 @@ test('Chat：prompt_tokens 子集语义拆桶并输出 meter 向量', () => {
 
 注意：OpenAI 侧缓存写映射到 `cache_write`（无 TTL 键，DESIGN §5.1 规则 3），**不再**如现状放入 `cacheWrite5m`；Anthropic 细分映射到 `cache_write_5m`/`cache_write_1h`。
 
-- [ ] **Step 2: R9 等式校验测试**
+- [x] **Step 2: R9 等式校验测试**
 
 ```ts
 test('Messages：聚合与细分不一致时按细分结算并打标记', () => {
@@ -193,7 +193,7 @@ test('Messages：聚合与细分不一致时按细分结算并打标记', () => 
 });
 ```
 
-- [ ] **Step 3: R10 结构化未知项测试**
+- [x] **Step 3: R10 结构化未知项测试**
 
 ```ts
 test('Messages：iterations 数组与 server_tool_use 不再静默逃逸', () => {
@@ -210,7 +210,7 @@ test('Messages：iterations 数组与 server_tool_use 不再静默逃逸', () =>
 
 实现要点：未知检测从"仅顶层数值"扩展为——顶层数值（现状逻辑保留）+ 未知**对象/数组**键 → `unmapped_struct:<key>`；`server_tool_use` 特判读取 `web_search_requests` 计次（不入 flags）。
 
-- [ ] **Step 4: O9 长档判定测试**
+- [x] **Step 4: O9 长档判定测试**
 
 ```ts
 test('长档：inputTotalTokens（含缓存）达阈值时全部键改写为 _long', () => {
@@ -238,8 +238,8 @@ test('长档：无阈值参数时永不判长档', () => {
 
 判档口径：`inputTotalTokens = input + cached_input + cache_write + cache_write_5m + cache_write_1h`（改写前求和），≥ 阈值则对每个非零键做 `toLongMeterKey` 改写。
 
-- [ ] **Step 5: 全量跑 `npm test -- tests/gateway/billing.test.ts`，旧五桶断言全部改写完毕、全绿。**
-- [ ] **Step 6: Commit**：`git commit -m "feat: usage 归一化输出 meter 向量（等式校验/结构检测/长档判定）"`
+- [x] **Step 5: 全量跑 `npm test -- tests/gateway/billing.test.ts`，旧五桶断言全部改写完毕、全绿。**
+- [x] **Step 6: Commit**：`git commit -m "feat: usage 归一化输出 meter 向量（等式校验/结构检测/长档判定）"`
 
 ---
 

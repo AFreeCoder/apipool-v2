@@ -1,4 +1,9 @@
 import type { GatewayEndpointKey } from './endpoints';
+import {
+  type MeterKey,
+  type MeterQuantities,
+  toLongMeterKey,
+} from './meters';
 
 export interface UsageBuckets {
   uncachedInput: number;
@@ -54,6 +59,135 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
   ]),
   embeddings: new Set(['prompt_tokens', 'total_tokens']),
 };
+
+export type NormalizedUsage = {
+  meters: MeterQuantities;
+  webSearchCount: number;
+  flags: string[];
+};
+
+function addMeter(
+  meters: MeterQuantities,
+  key: MeterKey,
+  quantity: number
+): void {
+  if (quantity > 0) meters[key] = quantity;
+}
+
+function applyLongContextMeters(meters: MeterQuantities): MeterQuantities {
+  const longMeters: MeterQuantities = {};
+  for (const [key, quantity] of Object.entries(meters) as [
+    MeterKey,
+    number,
+  ][]) {
+    const longKey = toLongMeterKey(key);
+    longMeters[longKey] = (longMeters[longKey] ?? 0) + quantity;
+  }
+  return longMeters;
+}
+
+export function normalizeUsageMeters(
+  endpoint: GatewayEndpointKey,
+  usage: Record<string, unknown>,
+  opts?: { longContextThresholdTokens?: number | null }
+): NormalizedUsage {
+  let meters: MeterQuantities = {};
+  const flags: string[] = [];
+
+  switch (endpoint) {
+    case 'chat_completions': {
+      const details = obj(usage.prompt_tokens_details);
+      const cachedInput = num(details.cached_tokens);
+      const cacheWrite = Math.max(
+        num(details.cache_write_tokens),
+        num(details.cache_creation_tokens ?? usage.cache_creation_input_tokens)
+      );
+      addMeter(
+        meters,
+        'input',
+        Math.max(0, num(usage.prompt_tokens) - cachedInput - cacheWrite)
+      );
+      addMeter(meters, 'cached_input', cachedInput);
+      addMeter(meters, 'cache_write', cacheWrite);
+      addMeter(meters, 'output', num(usage.completion_tokens));
+      break;
+    }
+    case 'responses': {
+      const inputDetails = obj(usage.input_tokens_details);
+      const cachedInput = num(inputDetails.cached_tokens);
+      const cacheWrite = num(inputDetails.cache_write_tokens);
+      addMeter(
+        meters,
+        'input',
+        Math.max(0, num(usage.input_tokens) - cachedInput - cacheWrite)
+      );
+      addMeter(meters, 'cached_input', cachedInput);
+      addMeter(meters, 'cache_write', cacheWrite);
+      addMeter(meters, 'output', num(usage.output_tokens));
+      break;
+    }
+    case 'messages': {
+      const creation = obj(usage.cache_creation);
+      const has5m = creation.ephemeral_5m_input_tokens !== undefined;
+      const has1h = creation.ephemeral_1h_input_tokens !== undefined;
+      const aggregateCacheWrite = num(usage.cache_creation_input_tokens);
+      const cacheWrite5m = has5m
+        ? num(creation.ephemeral_5m_input_tokens)
+        : aggregateCacheWrite;
+      const cacheWrite1h = has1h
+        ? num(creation.ephemeral_1h_input_tokens)
+        : 0;
+
+      addMeter(meters, 'input', num(usage.input_tokens));
+      addMeter(meters, 'cached_input', num(usage.cache_read_input_tokens));
+      addMeter(meters, 'cache_write_5m', cacheWrite5m);
+      addMeter(meters, 'cache_write_1h', cacheWrite1h);
+      addMeter(meters, 'output', num(usage.output_tokens));
+
+      if (
+        (has5m || has1h) &&
+        usage.cache_creation_input_tokens !== undefined &&
+        aggregateCacheWrite !== cacheWrite5m + cacheWrite1h
+      ) {
+        flags.push('cache_write_sum_mismatch');
+      }
+      break;
+    }
+    case 'embeddings':
+      addMeter(meters, 'input', num(usage.prompt_tokens));
+      break;
+  }
+
+  const mapped = MAPPED_KEYS[endpoint] ?? new Set<string>();
+  for (const [key, value] of Object.entries(usage)) {
+    if (mapped.has(key)) continue;
+    if (typeof value === 'number' && value !== 0) {
+      flags.push(`unmapped:${key}`);
+    } else if (value !== null && typeof value === 'object') {
+      flags.push(`unmapped_struct:${key}`);
+    }
+  }
+
+  const serverToolUse = obj(usage.server_tool_use);
+  const webSearchCount = num(serverToolUse.web_search_requests);
+  const threshold = opts?.longContextThresholdTokens;
+  const inputTotalTokens =
+    (meters.input ?? 0) +
+    (meters.cached_input ?? 0) +
+    (meters.cache_write ?? 0) +
+    (meters.cache_write_5m ?? 0) +
+    (meters.cache_write_1h ?? 0);
+  if (
+    typeof threshold === 'number' &&
+    Number.isFinite(threshold) &&
+    threshold >= 0 &&
+    inputTotalTokens >= threshold
+  ) {
+    meters = applyLongContextMeters(meters);
+  }
+
+  return { meters, webSearchCount, flags };
+}
 
 export function normalizeUsage(
   endpoint: GatewayEndpointKey,
