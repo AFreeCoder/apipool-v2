@@ -4,7 +4,14 @@
 
 - 日期：2026-07-20
 - 依据：[../../design/portal-model-pricing/DESIGN.md](../../design/portal-model-pricing/DESIGN.md)（终审 GO，O1–O13 全部并入）
-- 状态：计划初版（待对抗评审）
+- 状态：对抗评审闭环（第 6 轮 codex adversarial-review 5 findings 全采纳并入，过程见 [../../design/portal-model-pricing/review-log.md](../../design/portal-model-pricing/review-log.md)）
+
+## 设计基线调整记录（PLAN 阶段勘误，DESIGN 正文已冻结不回改）
+
+| # | 对应设计条目 | 调整 | 来源 |
+|---|---|---|---|
+| E1 | §6.2"开关编译进版本、运行期零开关分支" | 该方案使关闭态漏拦请求在响应侧不可检测（版本无阈值 → 无法判断实际用量越阈、无法打标校准估算），与 §5.4"漏拦按普通档结算 + 标记 + 校准系数"自相矛盾。调整：**计费**仍零分支（版本内容不变）；**检测**走请求上下文——准入时快照目录现值 `admissionLongContextThreshold` + `allowLongContext`（不参与计费），关闭态响应后按实际 inputTotalTokens 检测漏拦并写 `billing_flags: long_context_block_missed` | 第 6 轮 F4 |
+| E2 | §7.6.2"multipart 文件部分流式透传，不整体读入内存" | 内测阶段按暴露度减配：请求侧维持现状整体缓冲 + 请求体上限（`maxBodyBytes` 25MiB）即可，内存压力可控；流式透传记 issues 延后至流量上规模。响应侧跳过 b64 的约束不变 | 第 6 轮 F1（减配裁量） |
 
 **Goal:** 把门户模型定价从五桶宽表改造为 meter map 计费体系：唯一公式 官方基准价 × 折扣、长上下文阶梯、gpt-image-2 按次售卖、web_search 工具计费、完备集发布硬门、callable 与 newapi 同步解耦。
 
@@ -313,7 +320,7 @@ export function computeTokenChargeMicroUsd(
 
 注意：工具未配价（null）而 `webSearchCount > 0` 的场景由 T8 准入拦截兜前门；此处不加价也不报错，`unpricedMeters` 不含 web_search（它不是 token meter）——由调用方按 `webSearchCount > 0 && price == null` 单独打 flag（旁路防御，DESIGN §7.1）。
 
-- [ ] **Step 3: 全绿后删除 `PriceVector` 旧类型与旧 `computeChargeMicroUsd`**（`normalizeBackfillUsage` 同步改为输出 `MeterQuantities`，Anthropic/OpenAI 语义分支保留）。全仓 `grep -rn "PriceVector\|computeChargeMicroUsd(" src tests` 清零旧引用。
+- [ ] **Step 3: 新旧并存（第 6 轮 F3）**：`PriceVector` 与旧 `computeChargeMicroUsd` **本任务不删除**——现场 `catalog-route-snapshot.ts`、`routing.ts`、结算与 `reconcile.ts` 仍依赖它们，且要到 T6/T7/T12 才逐个切换。给旧导出加 `@deprecated 由 T7 收尾统一删除` 注释；`normalizeBackfillUsage` 新增 meter 输出变体、旧签名保留。统一删除在 T7 Step D 执行。
 - [ ] **Step 4: Commit**：`git commit -m "feat: 计费公式 map 化并支持 per_call 与工具附加费"`
 
 ---
@@ -347,7 +354,8 @@ export function computeTokenChargeMicroUsd(
 - `catalogModelPrice` 增列：`billingScheme text NOT NULL default 'token'`、`baseCacheWriteMicroUsd`、`baseCachedImageInputMicroUsd`、`baseWebSearchMicroUsd`、`longContextThresholdTokens`、`baseInputLongMicroUsd`、`baseCachedInputLongMicroUsd`、`baseCacheWriteLongMicroUsd`、`baseOutputLongMicroUsd`、`billingCapabilitiesJson text`（能力声明 = 官方计费说明，如 `{"cache_write":true,"cache_ttl_split":false,"long_context":true,"web_search":false}`，O13 完备集门禁判定源）。
 - 新表 `catalogModelPriceTier`：`id`/`modelId`（FK cascade）/`skuKey`/`priceMicroUsd`（CHECK > 0）/`note`，`UNIQUE(modelId, skuKey)`。
 - `catalogModelListing`：**删除** `pricePolicy`、`overrideInputMicroUsd`、`overrideOutputMicroUsd`、`overrideImageInputMicroUsd`、`overrideImageOutputMicroUsd`、`overrideReason`、`overrideStatus`（O2；seed 同步更新）；新增 `allowLongContext integer NOT NULL default 0`；`discountRateBps` 保留。
-- 数据迁移：`fixedPriceMicroUsd` 非空的行 → `catalogModelPriceTier(modelId, 'default', fixedPriceMicroUsd)`，原两列标记废弃（暂保留列、停止读写）。
+- 数据迁移（第 6 轮 F5 修订）：`fixedPriceMicroUsd` 非空的行 → `catalogModelPriceTier(modelId, 'default', fixedPriceMicroUsd)` **并同步 `SET billing_scheme='per_call'`**（判定条件：`pricing_mode='fixed_price'` 或 `fixedPriceMicroUsd` 非空）；`fixed_price_unit` 存在无法映射为"每次"的值时**迁移中止、人工处理**（与"清空须人工批准"同精神，不做静默猜测）。原两列标记废弃（暂保留列、停止读写）。
+- 端到端迁移测试：造一行旧 fixed_price 数据 → 跑迁移 → 断言 `billing_scheme='per_call'` + default tier 存在 + 发布门禁通过 + 按次计费结果正确。
 
 - [ ] Step 1–4 同 T4 节奏（测试先行 → schema+迁移 → 绿 → commit `git commit -m "feat: 目录价格增列与按次价表"`）。
 
@@ -356,35 +364,57 @@ export function computeTokenChargeMicroUsd(
 ### Task 6: 快照桥完备集门禁 + callable 解耦
 
 **Files:**
-- Modify: `src/features/gateway/server/catalog-route-snapshot.ts`（全文改造）
-- Modify: `src/features/api-catalog/server/queries.ts`（`isCatalogRouteReady` L230–245）
-- Test: `tests/gateway/catalog-route-snapshot.test.ts`（现有文件重写门禁矩阵）
+- Create: `src/features/api-catalog/server/publish-readiness.ts`（第 6 轮 F2：**唯一**发布就绪判定实现）
+- Modify: `src/features/gateway/server/catalog-route-snapshot.ts`（全文改造，消费 publish-readiness）
+- Modify: `src/features/api-catalog/server/queries.ts`（`isCatalogRouteReady` L230–245 退役，`isListingCallable` 与公开目录 DTO 的 callable 字段改由 publish-readiness 承担）
+- Test: `tests/api-catalog/publish-readiness.test.ts`（新建，门禁矩阵）+ `tests/gateway/catalog-route-snapshot.test.ts`（重写）
 
 **Interfaces:**
 - Consumes: T4/T5 的新列
-- Produces: `loadCatalogRouteConfig` 产出 `{ newapiGroup, newapiModelId, billingScheme, ratesJson, tiersJson, longContextThresholdTokens }`；`ensureCatalogRouteSnapshot` 签名不变（T7 依赖）。
+- Produces（三处共用的单一判定，杜绝"目录显示可调用、请求时 404"的分裂）：
+```ts
+export type PublishReadiness =
+  | { ready: true; snapshot: {
+      newapiGroup: string; newapiModelId: string;
+      billingScheme: BillingScheme; ratesJson: string; tiersJson: string;
+      longContextThresholdTokens: number | null;      // 计费用：开关关 = null（E1 计费零分支不变）
+      admissionLongContextThreshold: number | null;   // 检测用：目录阈值现值，与开关无关（E1）
+      allowLongContext: boolean;                      // 检测用（E1）
+    } }
+  | { ready: false; reasons: string[] };              // reasons 供 UI 门禁错误透出（T11）
+export async function assessPublishReadiness(
+  portalGroupId: string, portalModelId: string
+): Promise<PublishReadiness>;
+```
+- `ensureCatalogRouteSnapshot` 签名不变（T7 依赖），内部 `loadCatalogRouteConfig` 改为调用 `assessPublishReadiness`。
 
 核心改造点（每点先写门禁矩阵测试）：
 
-- [ ] **Step 1: `isCatalogRouteReady` 删三硬门**——新条件集：`isCallable` + `newapiGroup` 非空 + `basePriceSyncStatus === 'manual' && reviewedAt 非空` + 发布门禁通过（由 `loadCatalogRouteConfig` 返回非 null 承担）；**删除** `pricePolicy === 'inherit_group'`、`priceDriftStatus === 'matched'`、`groupPricingSyncStatus === 'synced'`、`groupRatioBps > 0` 四项（DESIGN §9）。
-- [ ] **Step 2: 完备集门禁**（替换 L84–113 的固定检查）：按 `billingCapabilitiesJson` 声明逐项校验对应价格列非空（声明 `cache_write:true` 则 `baseCacheWriteMicroUsd` 必填；`long_context:true` 则阈值 + 长档四价必填；`web_search:true` 则 `baseWebSearchMicroUsd` 必填）；基础必需集：token 类 `input`（+按 endpoint 的 `output`/`image_*`）、per_call 类 tier 表存在 `default` 行。任何缺失 → 返回 null（不可调用），错误原因写入日志。
-- [ ] **Step 3: 折算与编译**：`scaledPrice(base, listing.discountRateBps ?? 10000)`（**弃用 groupRatioBps**，O2）逐列折算 → `rates_json`（长档键仅当 `allowLongContext=1` 时写入，含阈值；关 = 不写，DESIGN §6.2 开关编译）；per_call 折算 tier 表 → `tiers_json`；`priceMatches` 改为比对 `billingScheme + ratesJson + tiersJson + longContextThresholdTokens` 字符串相等。
-- [ ] **Step 4: 门禁矩阵测试全绿**（覆盖：满配可发布 / 声明有而未配拒绝 / 长档开关开关两态的 rates_json 差异 / per_call 无 default 拒绝 / 折扣折算 round-half-up）。
-- [ ] **Step 5: Commit**：`git commit -m "feat: 快照桥完备集门禁与 callable 三硬门解耦"`
+- [ ] **Step 1: `assessPublishReadiness` 实现**——一次查询 join listing/group/model/price/**tier 表**/能力声明，判定集：`isCallable`（售卖状态）+ `newapiGroup` 非空 + `basePriceSyncStatus === 'manual' && reviewedAt 非空` + 完备集门禁（Step 2）。**不含** `pricePolicy`、`priceDriftStatus`、`groupPricingSyncStatus`、`groupRatioBps` 四项（DESIGN §9 删三硬门；pricePolicy 随 T5 删列消失）。
+- [ ] **Step 2: 完备集门禁**：按 `billingCapabilitiesJson` 声明逐项校验对应价格列非空（声明 `cache_write:true` 则 `baseCacheWriteMicroUsd` 必填；`long_context:true` 则阈值 + 长档四价必填；`web_search:true` 则 `baseWebSearchMicroUsd` 必填；非法/不可解析的能力声明 = not ready）；基础必需集：token 类 `input`（+按 endpoint 的 `output`/`image_*`）、per_call 类 **tier 表存在 `default` 行**（这正是旧行谓词覆盖不了的判定）。缺失项全部写入 `reasons`。
+- [ ] **Step 3: 三处消费者切换**——`isListingCallable` 改为 `(await assessPublishReadiness(...)).ready`；公开目录 DTO 的 callable 字段同源（列表页逐行调用，内测流量下可接受，性能优化记 issues）；`isCatalogRouteReady` 行谓词删除。**API Catalog 与 Gateway 跑同一门禁矩阵测试**：缺 default tier / 缺官方 meter / 非法能力声明三案例在两侧断言一致结论。
+- [ ] **Step 4: 折算与编译**：`scaledPrice(base, listing.discountRateBps ?? 10000)`（**弃用 groupRatioBps**，O2）逐列折算 → `rates_json`（长档键仅当 `allowLongContext=1` 时写入并置 `longContextThresholdTokens`；关 = 不写，计费零分支）；`admissionLongContextThreshold`/`allowLongContext` 始终按目录现值输出（E1 检测通道）；per_call 折算 tier 表 → `tiers_json`；`priceMatches` 改为比对 `billingScheme + ratesJson + tiersJson + longContextThresholdTokens` 字符串相等。
+- [ ] **Step 5: 门禁矩阵测试全绿**（覆盖：满配可发布 / 声明有而未配拒绝 / 长档开关两态的 rates_json 与检测字段差异 / per_call 无 default 拒绝 / 折扣折算 round-half-up / 三处消费者同结论）。
+- [ ] **Step 6: Commit**：`git commit -m "feat: 统一发布就绪判定与快照桥完备集门禁"`
 
 ---
 
 ### Task 7: 结算路径写入新列（骨架级）
 
 **Files:**
-- Modify: `src/features/gateway/server/handler.ts`（finalize L438–480：`normalizeUsage` → `normalizeUsageMeters`，携带价格版本的 threshold）
+- Modify: `src/features/gateway/server/handler.ts`（finalize L438–480：`normalizeUsage` → `normalizeUsageMeters`，携带价格版本 threshold 与 E1 检测字段）
+- Modify: `src/features/gateway/server/routing.ts`（第 6 轮 F3：旧 PriceVector 消费点切换，`grep -n "PriceVector" src/features/gateway/server/routing.ts` 定位）
 - Modify: 结算模块（`deps.settle` 实现处，`grep -rn "function settle\|settle(" src/features/gateway/server` 定位）
+- Modify: `src/features/gateway/server/backfill.ts`（meter 化补差）
 - Test: `tests/gateway/settlement.test.ts` / `tests/gateway/backfill.test.ts` 扩展
 
 **契约：**
 - `settle` 入参从 `{buckets, usageSource}` 扩为 `{meters, flags, webSearchCount, rawUsage, usageSource}`；结算事务内完成：meter 数量 → 对应账本列（`input→uncachedInputTokens`、`cache_write→cacheWriteTokens`、`*_long→同名普通列 + longContextApplied=1`……映射表写为常量并测试）、`computeTokenChargeMicroUsd`/`computePerCallChargeMicroUsd` 计费、`unpricedMeters`/flags → `billingFlagsJson`、`rawUsage` → `rawUsageJson`、`chargedMicroUsd` 与钱包扣款事务结构不变。
-- pending 补差路径（`normalizeBackfillUsage`）：结算时追加 flag `backfill_degraded`（DESIGN §7.5）。
-- 验收：`npm test -- tests/gateway/` 全绿；既有幂等/透支冻结用例不回归。
+- **per_call 结算不依赖 usage**（第 6 轮 F1）：`billingScheme='per_call'` 时结算条件 = 能取到实际张数（`unitCount`），usage 缺失不进 pending、照常结算（token 列缺省为空，flags 记 `usage_missing`）；token 制模型 usage 缺失仍走 pending 补差。
+- **漏拦检测**（E1）：请求上下文携带 `admissionLongContextThreshold`/`allowLongContext`（来自 T6 判定结果）；`allowLongContext=false` 且实际 `inputTotalTokens ≥ admissionLongContextThreshold` 时按普通档结算 + flag `long_context_block_missed` + 告警。
+- pending 补差路径（`normalizeBackfillUsage` meter 变体）：结算时追加 flag `backfill_degraded`（DESIGN §7.5）。
+- **Step D（收尾，第 6 轮 F3）**：本任务完成、routing/settlement/backfill 全部切换后，删除 `PriceVector` 与旧 `computeChargeMicroUsd`，全仓 `grep -rn "PriceVector\|computeChargeMicroUsd(" src tests` 清零（reconcile 若仍引用旧公式则该删除顺延至 T12 完成后执行，删除前先确认 `grep` 仅剩 reconcile）。
+- 验收：`npm test -- tests/gateway/` 全绿；既有幂等/透支冻结用例不回归；漏拦三态用例（命中长档 / 关态漏拦打标 / 无长档能力不检测）。
 - [ ] 完成后 commit：`git commit -m "feat: 结算写入 meter 列与凭证/标记"`
 
 ---
@@ -396,7 +426,7 @@ export function computeTokenChargeMicroUsd(
 - Test: `tests/gateway/admission.test.ts` 扩展
 
 **契约：**
-1. **272K 拦截**（配 threshold 且 listing 关开关，即快照 `rates_json` 无长档键但目录配了阈值——注意：开关状态需在 config 加载时一并返回）：保守估算 `estimatedInputTokens = ceil(totalRequestChars / 2.5) + 128 × messageCount`（系数常量可调，宁高勿低），≥ 阈值 → 413/400 明示"该分组未开放长上下文"。
+1. **272K 拦截**（读 T6 判定结果的 `admissionLongContextThreshold` + `allowLongContext`，E1 检测通道；不从 rates_json 反推）：`allowLongContext=false` 且模型配有阈值时，保守估算 `estimatedInputTokens = ceil(totalRequestChars / 2.5) + 128 × messageCount`（系数常量可调，宁高勿低），≥ 阈值 → 413/400 明示"该分组未开放长上下文"。
 2. **server tools 未配价拒绝**：请求体 `tools[]` 含 server-side 类型（首版名单常量：`web_search` 系 type 前缀）且快照 `rates_json.web_search` 缺失 → 400 明示未开放；配价（含 0）→ 放行。client function calling（`type:"function"`/`custom`）不受影响。
 3. **per_call SKU 准入**：`billingScheme='per_call'` 时从请求体取 `quality`/`size` 拼 skuKey（字典序 `k=v;` 规范，缺省/`auto` → `default`），查 `tiers_json` 不存在 → 400 明示"该质量/尺寸组合未开放"；命中价随请求上下文传给 T7 结算。
 - 验收：admission 测试覆盖三项 × 放行/拒绝两态。
@@ -406,19 +436,21 @@ export function computeTokenChargeMicroUsd(
 
 ### Task 9: images 端点接入（骨架级）
 
-**Files:**
-- Modify: 网关端点注册（`grep -rn "GatewayEndpointKey\|chat_completions" src/features/gateway/lib/config.ts src/features/gateway/lib` 定位注册表）：新增 `images_generations`（JSON）、`images_edits`（multipart）
+**Files（第 6 轮 F1 扩围：请求/转发/超时链路全部纳入本任务）：**
+- Modify: `src/features/gateway/lib/config.ts`（端点注册表：新增 `images_generations`（JSON）、`images_edits`（multipart）；**新增 endpoint 级上游首包超时覆盖**——images ≥180s，现状全局 120s 不满足 DESIGN §7.6）
+- Modify: `src/features/gateway/server/handler.ts`（multipart 请求体解析分支：从整体缓冲的 body 中按白名单提取文本字段——E2 减配后请求侧维持 `readBodyBounded` 整体缓冲 + 25MiB 上限，不做流式落盘）
+- Modify: `src/features/gateway/server/forward.ts`（multipart 原文转发：`Uint8Array` 请求体与 `content-type: multipart/form-data; boundary=...` 头原样透传，确认现签名兼容或扩展）
 - Modify: `src/features/gateway/lib/sse-parser.ts`（非流式响应提取：跳过 `b64_json` 大块，仅取顶层 `usage` + `data.length` + 每项 `url` 有无）
 - Create: `tests/fixtures/newapi/images-generations-runapi.json`（用第 4 轮实测真实响应脱敏落 fixture：URL 格式、双风格合成 usage）
 - Test: `tests/gateway/handler` 集成用例 + `billing.test.ts` images 归一化用例
 
-**契约（DESIGN §7.6 五条）：**
-1. 端点注册声明请求格式 / model 提取 / usage 与张数位置 / 非流式。
-2. multipart 白名单提取：仅 `model`/`prompt` 长度上限/`quality`/`size`/`n` 文本字段，文件部分流式透传不进内存缓冲（有界读）。
+**契约（DESIGN §7.6 五条 + E2 减配）：**
+1. 端点注册声明请求格式 / model 提取 / usage 与张数位置 / 非流式 / **首包超时 ≥180s**（endpoint 级覆盖全局值）。
+2. multipart 白名单提取（E2 减配版）：请求体整体缓冲（25MiB 上限内，内测可接受），从中仅解析 `model`/`prompt`（长度上限）/`quality`/`size`/`n` 文本字段用于准入与 SKU 判定；**boundary/字段顺序不做任何假设**；图片文件字段不解码、不入日志；转发按原文字节透传。流式落盘方案记 issues。
 3. 响应解析不整体缓冲 b64：SAX 式跳过或按 `parseBufferMax` 前置判断 + URL 响应快路径；`data.length` 为 `unitCount` 事实源。
-4. 张数按实际；解析不出张数 → 失败复核路径不扣费。
+4. 张数按实际；**per_call 结算独立于 usage**（T7 契约）：有张数即结算，usage 缺失只影响 token 照记列；解析不出张数 → 失败复核路径不扣费。
 5. 上线冒烟（转 T12）。
-- 验收：fixture 驱动的端到端测试（准入 SKU → 转发 stub → 结算 per_call 列）全绿。
+- 验收（第 6 轮 F1 补齐四类）：fixture 驱动端到端（准入 SKU → 转发 stub → 结算 per_call 列）+ **任意字段顺序 multipart** + **无 usage 但有 data 的响应正常按次结算** + **>32MiB b64 响应仍能提取张数结算** + **慢首包（>120s <180s）不被中断**，全绿。
 - [ ] commit：`git commit -m "feat: images 端点接入与按次结算链路"`
 
 ---
@@ -449,7 +481,7 @@ export function computeTokenChargeMicroUsd(
 ### Task 12: 对账、冒烟与收尾验收
 
 **Files:**
-- Modify: reconcile 模块（`grep -rn "reconcileStatus" src/features/gateway/server` 定位）：`billingFlagsJson` 非空请求计数入对账报表
+- Modify: `src/features/gateway/server/reconcile.ts`（第 6 轮 F3：旧公式消费点显式归属本任务——对账重算切换到 meter 公式，覆盖 token / per_call（`unit_count × tier`）/ 工具附加费三种口径；`billingFlagsJson` 非空请求计数入对账报表；本文件切换完成后执行 T7 Step D 中顺延的旧接口删除并 `grep` 清零）
 - Modify: `scripts/smoke-gateway.ts`：增 images 一跑（low 档）+ 272K 切档一跑（开着开关的测试分组，输入 >272K 校验账本 `longContextApplied=1` 且按长档价结算）
 
 **最终验收清单（全部通过才算完成）：**

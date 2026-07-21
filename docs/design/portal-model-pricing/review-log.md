@@ -54,6 +54,18 @@ codex 反评审中被驳回的部分：per_call 运行面 fail-closed 的"featur
 
 - **N1 原始 usage 凭证不留存**（2026-07-20 用户已裁决）：现状账本只存归一化后的五桶数量（+usageSource），原始响应 usage JSON 不落盘，争议时无法复核"上游当时返回了什么"。用户裁决：门户必须自留凭证，**不引 newapi 日志作证据**（newapi 只是对照参照，引作凭证就失去对照意义）；实现方式账本加列与独立留存均可接受。落地：取账本加列（`raw_usage_json`，凭证与账行同生命周期、SQLite 单库下独立留存无运维优势），§6.3 已写入。同时澄清：归一化后各类型 token 的分桶数量列一直存在且继续保留（O3 列式），N1 是在其之外补"归一化之前的上游原文"。
 
+## 第 6 轮（2026-07-20，PLAN 对抗评审：/codex:adversarial-review，含用户阶段校准指令）
+
+评审对象：`docs/plan/portal-model-pricing/PLAN.md`（基线 DESIGN + 现场代码三线交叉）。verdict = needs-attention，5 findings（3 high + 2 medium），甄别后**全部技术成立、全部采纳**，无过度完美类；一处按阶段减配。已按闭环清单修订 PLAN：
+
+| # | finding | 甄别与落地 |
+|---|---|---|
+| F1 [high] | images 任务范围不足（handler 整体缓冲/forward 签名/结算依赖 usage/超时 120s<180s） | 成立。T9 扩围（handler/forward/config 纳入 Files、endpoint 级 ≥180s 超时、per_call 结算独立于 usage、四类补测）；**减配裁量：multipart 流式落盘不做**，维持整体缓冲 + 25MiB 上限（内测暴露度低），记勘误 E2 |
+| F2 [high] | callable 与发布门禁循环委托、tier 表行谓词不可见 → 目录可调用但请求 404 | 成立（计划级契约缺陷）。T6 重写：新建 `publish-readiness.ts` 唯一判定，公开 DTO/isListingCallable/快照桥三处共用，行谓词退役，两侧同矩阵测试 |
+| F3 [high] | PriceVector 退役顺序破坏任务级可构建性；routing/reconcile 无任务归属 | 成立。T3 改新旧并存 + deprecated；统一删除挪 T7 Step D（reconcile 未切换则顺延 T12）；routing.ts 入 T7、reconcile.ts 入 T12 并补对账三口径契约 |
+| F4 [medium] | 开关编译进版本使关态漏拦不可检测——**抓到设计基线（§6.2 vs §5.4）自相矛盾** | 成立。按文档规范 DESIGN 冻结不回改，PLAN 立"设计基线调整记录"勘误 E1：计费零分支不变，检测走请求上下文（admissionLongContextThreshold + allowLongContext），漏拦打 `long_context_block_missed`；三态测试 |
+| F5 [medium] | fixed_price 迁移未同步 billing_scheme='per_call'，留矛盾态 | 成立。T5 迁移补 scheme 切换 + 无法映射单位中止人工处理 + 端到端迁移测试 |
+
 ## 终审（2026-07-20，用户）
 
 用户确认无其他问题，**终审 GO**。五轮评审 O1–O13 全部并入正文；§11 的任务拆分与执行顺序移出至 `docs/plan/portal-model-pricing/PLAN.md`（12 任务，T1–T6 完整 TDD 代码、T7–T12 契约骨架），设计正文只保留迁移策略约束。后续流程：计划对抗评审 → 实施。
