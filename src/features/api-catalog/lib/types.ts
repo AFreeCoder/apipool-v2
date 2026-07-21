@@ -52,13 +52,6 @@ export type AdminPricingSummaryDto = {
     syncStatus: string;
     syncedAt?: Date | null;
   };
-  listingPolicy?: {
-    pricePolicy: string;
-    overrideStatus: string;
-    priceDriftStatus: string;
-    discountRateBps?: number | null;
-    effectiveFormula?: string | null;
-  };
 };
 
 export type FilterDimensions = {

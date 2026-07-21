@@ -99,6 +99,16 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
     ALTER TABLE catalog_model_price ADD base_cache_write_5m_micro_usd integer;
     ALTER TABLE catalog_model_price ADD base_cache_write_1h_micro_usd integer;
     ALTER TABLE catalog_model_price ADD cache_price_note text;
+    ALTER TABLE catalog_model_price ADD billing_scheme text NOT NULL DEFAULT 'token';
+    ALTER TABLE catalog_model_price ADD base_cache_write_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_cached_image_input_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_web_search_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD long_context_threshold_tokens integer;
+    ALTER TABLE catalog_model_price ADD base_input_long_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_cached_input_long_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_cache_write_long_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD base_output_long_micro_usd integer;
+    ALTER TABLE catalog_model_price ADD billing_capabilities_json text;
   `);
 
   const { getPublicListingsUncached } = await import(
@@ -149,14 +159,13 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
 
   const partnerListing = await client.execute({
     sql: `
-      select price_policy, price_drift_status
+      select price_drift_status
       from catalog_model_listing
       where group_id = ?
     `,
     args: [partnerGroupId],
   });
   assert.deepEqual(partnerListing.rows[0], {
-    price_policy: 'legacy_override',
     price_drift_status: 'needs_live_check',
   });
 
@@ -175,4 +184,94 @@ test('0008 migration plus backfill CLI apply preserves listing cache and reports
       outputMicroUsd: listing.outputMicroUsd,
     }))
   );
+});
+
+test('0014 migration maps legacy fixed price to per_call default tier', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'catalog-pricing-v2-migration.db');
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
+  await rm(dbPath, { force: true });
+  const client = createClient({ url: `file:${dbPath}` });
+  await applyMigrationFiles(client, (file) => file < '0014_');
+
+  const vendor = await client.execute(
+    `SELECT id FROM catalog_vendor ORDER BY id LIMIT 1`
+  );
+  assert.equal(vendor.rows.length, 1);
+  await client.execute({
+    sql: `INSERT INTO catalog_model (id, model_id, display_name, vendor_id, category)
+          VALUES ('fixed-model-pk', 'fixed-model', 'Fixed Model', ?, 'image')`,
+    args: [vendor.rows[0].id],
+  });
+  await client.execute(`
+    INSERT INTO catalog_model_price (
+      id, model_id, pricing_mode, fixed_price_micro_usd, fixed_price_unit
+    ) VALUES (
+      'fixed-price-pk', 'fixed-model-pk', 'fixed_price', 40000, 'per_call'
+    )
+  `);
+
+  const dir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  const migration = (await readdir(dir)).find((file) => file.startsWith('0014_'));
+  assert.ok(migration, '0014 迁移文件存在');
+  await client.executeMultiple(await readFile(join(dir, migration), 'utf8'));
+
+  const price = await client.execute(
+    `SELECT billing_scheme FROM catalog_model_price WHERE id='fixed-price-pk'`
+  );
+  assert.equal(price.rows[0].billing_scheme, 'per_call');
+  const tier = await client.execute(
+    `SELECT sku_key, price_micro_usd FROM catalog_model_price_tier WHERE model_id='fixed-model-pk'`
+  );
+  assert.deepEqual(tier.rows[0], {
+    sku_key: 'default',
+    price_micro_usd: 40000,
+  });
+
+  const listingColumns = (
+    await client.execute(`PRAGMA table_info(catalog_model_listing)`)
+  ).rows.map((row: any) => String(row.name));
+  assert.ok(listingColumns.includes('allow_long_context'));
+  assert.equal(listingColumns.includes('price_policy'), false);
+  assert.equal(listingColumns.includes('override_status'), false);
+
+  const { computePerCallChargeMicroUsd } = await import(
+    '@/features/gateway/lib/billing'
+  );
+  assert.equal(
+    computePerCallChargeMicroUsd(2, Number(tier.rows[0].price_micro_usd)),
+    BigInt(80_000)
+  );
+  client.close();
+});
+
+test('0014 migration rejects an unmappable fixed_price_unit', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'catalog-pricing-v2-invalid.db');
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
+  await rm(dbPath, { force: true });
+  const client = createClient({ url: `file:${dbPath}` });
+  await applyMigrationFiles(client, (file) => file < '0014_');
+
+  const vendor = await client.execute(
+    `SELECT id FROM catalog_vendor ORDER BY id LIMIT 1`
+  );
+  await client.execute({
+    sql: `INSERT INTO catalog_model (id, model_id, display_name, vendor_id, category)
+          VALUES ('invalid-fixed-model-pk', 'invalid-fixed-model', 'Invalid Fixed Model', ?, 'image')`,
+    args: [vendor.rows[0].id],
+  });
+  await client.execute(`
+    INSERT INTO catalog_model_price (
+      id, model_id, pricing_mode, fixed_price_micro_usd, fixed_price_unit
+    ) VALUES (
+      'invalid-fixed-price-pk', 'invalid-fixed-model-pk', 'fixed_price', 40000, 'unknown'
+    )
+  `);
+  const dir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  const migration = (await readdir(dir)).find((file) => file.startsWith('0014_'));
+  assert.ok(migration, '0014 迁移文件存在');
+  await assert.rejects(
+    client.executeMultiple(await readFile(join(dir, migration), 'utf8')),
+    /CHECK|constraint/i
+  );
+  client.close();
 });

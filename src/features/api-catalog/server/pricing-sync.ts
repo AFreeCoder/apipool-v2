@@ -40,8 +40,6 @@ type SyncListingRow = {
   groupId: string;
   inputMicroUsd: number;
   outputMicroUsd: number;
-  pricePolicy: string;
-  overrideStatus: string;
   groupNewapiGroup: string;
 };
 
@@ -159,15 +157,6 @@ async function getListingsForModels(modelIds: string[]) {
       listOutputMicroUsd: catalogModelListing.listOutputMicroUsd,
       discountRateBps: catalogModelListing.discountRateBps,
       discountNote: catalogModelListing.discountNote,
-      pricePolicy: catalogModelListing.pricePolicy,
-      overrideInputMicroUsd: catalogModelListing.overrideInputMicroUsd,
-      overrideOutputMicroUsd: catalogModelListing.overrideOutputMicroUsd,
-      overrideImageInputMicroUsd:
-        catalogModelListing.overrideImageInputMicroUsd,
-      overrideImageOutputMicroUsd:
-        catalogModelListing.overrideImageOutputMicroUsd,
-      overrideReason: catalogModelListing.overrideReason,
-      overrideStatus: catalogModelListing.overrideStatus,
       effectivePriceSyncedAt: catalogModelListing.effectivePriceSyncedAt,
       effectivePriceFormula: catalogModelListing.effectivePriceFormula,
       priceDriftStatus: catalogModelListing.priceDriftStatus,
@@ -348,7 +337,6 @@ export async function backfillCatalogModelPrices({
           await tx
             .update(catalogModelListing)
             .set({
-              pricePolicy: 'legacy_override',
               priceDriftStatus: 'needs_live_check',
             })
             .where(
@@ -511,8 +499,6 @@ export async function syncCatalogPricingFromSnapshot({
         groupId: catalogModelListing.groupId,
         inputMicroUsd: catalogModelListing.inputMicroUsd,
         outputMicroUsd: catalogModelListing.outputMicroUsd,
-        pricePolicy: catalogModelListing.pricePolicy,
-        overrideStatus: catalogModelListing.overrideStatus,
         groupNewapiGroup: catalogGroup.newapiGroup,
       })
       .from(catalogModelListing)
@@ -548,42 +534,19 @@ export async function syncCatalogPricingFromSnapshot({
       let reportType: string | null = null;
       let publicMatched = false;
 
-      if (listing.pricePolicy === 'inherit_group') {
-        priceDriftStatus = canConfirmGroupPrice
-          ? 'matched'
-          : remotePriceValues?.pricingMode === 'fixed_price'
-            ? 'needs_live_check'
-            : 'missing_group';
-        publicMatched = canConfirmGroupPrice;
-        if (!canConfirmGroupPrice) {
-          reportType =
-            remotePriceValues?.pricingMode === 'fixed_price'
-              ? 'fixed_price_needs_review'
-              : enabled
-                ? 'missing_group_ratio'
-                : 'missing_group';
-        }
-      } else if (listing.pricePolicy === 'listing_multiplier') {
-        priceDriftStatus = 'needs_live_check';
-        reportType = 'listing_multiplier_needs_live_check';
-      } else if (listing.pricePolicy === 'price_override') {
-        priceDriftStatus =
-          listing.overrideStatus === 'verified'
-            ? 'needs_live_check'
-            : 'drifted';
+      priceDriftStatus = canConfirmGroupPrice
+        ? 'matched'
+        : remotePriceValues?.pricingMode === 'fixed_price'
+          ? 'needs_live_check'
+          : 'missing_group';
+      publicMatched = canConfirmGroupPrice;
+      if (!canConfirmGroupPrice) {
         reportType =
-          listing.overrideStatus === 'verified'
-            ? 'price_override_needs_live_check'
-            : 'price_override_unverified';
-      } else if (
-        listing.pricePolicy === 'legacy_override' ||
-        listing.pricePolicy === 'fixed_price_review'
-      ) {
-        priceDriftStatus = 'needs_live_check';
-        reportType = `${listing.pricePolicy}_needs_live_check`;
-      } else {
-        priceDriftStatus = 'drifted';
-        reportType = 'unknown_price_policy';
+          remotePriceValues?.pricingMode === 'fixed_price'
+            ? 'fixed_price_needs_review'
+            : enabled
+              ? 'missing_group_ratio'
+              : 'missing_group';
       }
 
       if (reportType) {
@@ -592,8 +555,6 @@ export async function syncCatalogPricingFromSnapshot({
           modelId: model?.modelId,
           listingId: listing.id,
           newapiGroup: listing.groupNewapiGroup,
-          pricePolicy: listing.pricePolicy,
-          overrideStatus: listing.overrideStatus,
         });
       }
       await tx

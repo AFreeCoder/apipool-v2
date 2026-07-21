@@ -72,14 +72,7 @@ export type EffectiveCatalogPriceInput = {
   baseOutputMicroUsd?: number | null;
   baseImageInputMicroUsd?: number | null;
   baseImageOutputMicroUsd?: number | null;
-  groupRatioBps?: number | null;
-  pricePolicy?: string | null;
   discountRateBps?: number | null;
-  overrideInputMicroUsd?: number | null;
-  overrideOutputMicroUsd?: number | null;
-  overrideImageInputMicroUsd?: number | null;
-  overrideImageOutputMicroUsd?: number | null;
-  overrideStatus?: string | null;
   priceDriftStatus?: string | null;
   listInputMicroUsd?: number | null;
   listOutputMicroUsd?: number | null;
@@ -262,7 +255,6 @@ export function deriveBasePriceFromNewApiPricing(
 export function resolveEffectiveCatalogPrice(
   input: EffectiveCatalogPriceInput
 ): EffectiveCatalogPrice {
-  const policy = input.pricePolicy || 'inherit_group';
   const driftStatus = input.priceDriftStatus || 'unknown';
   const isMatched = driftStatus === 'matched';
 
@@ -287,51 +279,23 @@ export function resolveEffectiveCatalogPrice(
   let effectiveImageInput: number | null = null;
   let effectiveImageOutput: number | null = null;
 
-  if (policy === 'inherit_group') {
-    if (!input.groupRatioBps) return hidden();
-    effectiveInput = scaleMicroUsdByBps(
-      input.baseInputMicroUsd,
-      input.groupRatioBps
-    );
-    effectiveOutput = scaleMicroUsdByBps(
-      input.baseOutputMicroUsd,
-      input.groupRatioBps
-    );
-    effectiveImageInput = scaleMicroUsdByBps(
-      input.baseImageInputMicroUsd,
-      input.groupRatioBps
-    );
-    effectiveImageOutput = scaleMicroUsdByBps(
-      input.baseImageOutputMicroUsd,
-      input.groupRatioBps
-    );
-  } else if (policy === 'listing_multiplier') {
-    if (!input.discountRateBps) return hidden();
-    effectiveInput = scaleMicroUsdByBps(
-      input.baseInputMicroUsd,
-      input.discountRateBps
-    );
-    effectiveOutput = scaleMicroUsdByBps(
-      input.baseOutputMicroUsd,
-      input.discountRateBps
-    );
-    effectiveImageInput = scaleMicroUsdByBps(
-      input.baseImageInputMicroUsd,
-      input.discountRateBps
-    );
-    effectiveImageOutput = scaleMicroUsdByBps(
-      input.baseImageOutputMicroUsd,
-      input.discountRateBps
-    );
-  } else if (policy === 'price_override') {
-    if (input.overrideStatus !== 'verified') return hidden();
-    effectiveInput = input.overrideInputMicroUsd ?? null;
-    effectiveOutput = input.overrideOutputMicroUsd ?? null;
-    effectiveImageInput = input.overrideImageInputMicroUsd ?? null;
-    effectiveImageOutput = input.overrideImageOutputMicroUsd ?? null;
-  } else {
-    return hidden();
-  }
+  if (!input.discountRateBps) return hidden();
+  effectiveInput = scaleMicroUsdByBps(
+    input.baseInputMicroUsd,
+    input.discountRateBps
+  );
+  effectiveOutput = scaleMicroUsdByBps(
+    input.baseOutputMicroUsd,
+    input.discountRateBps
+  );
+  effectiveImageInput = scaleMicroUsdByBps(
+    input.baseImageInputMicroUsd,
+    input.discountRateBps
+  );
+  effectiveImageOutput = scaleMicroUsdByBps(
+    input.baseImageOutputMicroUsd,
+    input.discountRateBps
+  );
 
   if (effectiveInput === null || effectiveOutput === null) {
     return hidden();

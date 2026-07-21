@@ -548,6 +548,7 @@ export const catalogModelPrice = table(
     modelId: text('model_id')
       .notNull()
       .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    billingScheme: text('billing_scheme').default('token').notNull(),
     pricingMode: text('pricing_mode').default('unknown').notNull(),
     source: text('source').default('migration').notNull(),
     sourceModelId: text('source_model_id'),
@@ -561,11 +562,22 @@ export const catalogModelPrice = table(
     baseOutputMicroUsd: integer('base_output_micro_usd'),
     // cache 维度基准价（micro-USD / 1M tokens；管理员锁定+复核的成本快照）
     baseCachedInputMicroUsd: integer('base_cached_input_micro_usd'),
+    baseCacheWriteMicroUsd: integer('base_cache_write_micro_usd'),
     baseCacheWrite5mMicroUsd: integer('base_cache_write_5m_micro_usd'),
     baseCacheWrite1hMicroUsd: integer('base_cache_write_1h_micro_usd'),
     cachePriceNote: text('cache_price_note'),
     baseImageInputMicroUsd: integer('base_image_input_micro_usd'),
+    baseCachedImageInputMicroUsd: integer(
+      'base_cached_image_input_micro_usd'
+    ),
     baseImageOutputMicroUsd: integer('base_image_output_micro_usd'),
+    baseWebSearchMicroUsd: integer('base_web_search_micro_usd'),
+    longContextThresholdTokens: integer('long_context_threshold_tokens'),
+    baseInputLongMicroUsd: integer('base_input_long_micro_usd'),
+    baseCachedInputLongMicroUsd: integer('base_cached_input_long_micro_usd'),
+    baseCacheWriteLongMicroUsd: integer('base_cache_write_long_micro_usd'),
+    baseOutputLongMicroUsd: integer('base_output_long_micro_usd'),
+    billingCapabilitiesJson: text('billing_capabilities_json'),
     fixedPriceMicroUsd: integer('fixed_price_micro_usd'),
     fixedPriceUnit: text('fixed_price_unit'),
     syncStatus: text('sync_status').default('never_synced').notNull(),
@@ -588,6 +600,34 @@ export const catalogModelPrice = table(
     index('idx_catalog_model_price_sync_status').on(table.syncStatus),
     index('idx_catalog_model_price_drift_status').on(table.driftStatus),
     index('idx_catalog_model_price_source_model').on(table.sourceModelId),
+    check(
+      'ck_catalog_model_price_billing_scheme',
+      sql`${table.billingScheme} IN ('token','per_call')`
+    ),
+  ]
+);
+
+export const catalogModelPriceTier = table(
+  'catalog_model_price_tier',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id')
+      .notNull()
+      .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    skuKey: text('sku_key').notNull(),
+    priceMicroUsd: integer('price_micro_usd').notNull(),
+    note: text('note'),
+  },
+  (table) => [
+    uniqueIndex('uniq_catalog_model_price_tier_model_sku').on(
+      table.modelId,
+      table.skuKey
+    ),
+    index('idx_catalog_model_price_tier_model').on(table.modelId),
+    check(
+      'ck_catalog_model_price_tier_positive',
+      sql`${table.priceMicroUsd} > 0`
+    ),
   ]
 );
 
@@ -652,13 +692,9 @@ export const catalogModelListing = table(
     listOutputMicroUsd: integer('list_output_micro_usd'),
     discountRateBps: integer('discount_rate_bps'),
     discountNote: text('discount_note'),
-    pricePolicy: text('price_policy').default('inherit_group').notNull(),
-    overrideInputMicroUsd: integer('override_input_micro_usd'),
-    overrideOutputMicroUsd: integer('override_output_micro_usd'),
-    overrideImageInputMicroUsd: integer('override_image_input_micro_usd'),
-    overrideImageOutputMicroUsd: integer('override_image_output_micro_usd'),
-    overrideReason: text('override_reason'),
-    overrideStatus: text('override_status').default('none').notNull(),
+    allowLongContext: integer('allow_long_context', { mode: 'boolean' })
+      .default(false)
+      .notNull(),
     effectivePriceSyncedAt: integer('effective_price_synced_at', {
       mode: 'timestamp_ms',
     }),

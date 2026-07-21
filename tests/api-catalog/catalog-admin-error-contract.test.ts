@@ -55,8 +55,8 @@ test('catalog admin server actions must not trust client-supplied record snapsho
     assert.ok(
       !source.includes('passby'),
       `${page} 使用了 "passby": Form 是客户端组件，passby 会作为 server action 的` +
-        `实参往返，可被伪造（例如把 pricePolicy 改成 listing_multiplier 让公开价` +
-        `按 discountRateBps 缩放，而 New API 仍按分组倍率计费），也可能是过期页面` +
+        `实参往返，可被伪造（例如把 discountRateBps 改成非预期售卖折扣），` +
+        `也可能是过期页面` +
         `的陈旧快照。请改为在 action 内按路由参数重查记录并校验归属。`
     );
   }

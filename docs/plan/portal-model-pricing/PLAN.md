@@ -358,7 +358,7 @@ export function computeTokenChargeMicroUsd(
 - 数据迁移（第 6 轮 F5 修订）：`fixedPriceMicroUsd` 非空的行 → `catalogModelPriceTier(modelId, 'default', fixedPriceMicroUsd)` **并同步 `SET billing_scheme='per_call'`**（判定条件：`pricing_mode='fixed_price'` 或 `fixedPriceMicroUsd` 非空）；`fixed_price_unit` 存在无法映射为"每次"的值时**迁移中止、人工处理**（与"清空须人工批准"同精神，不做静默猜测）。原两列标记废弃（暂保留列、停止读写）。
 - 端到端迁移测试：造一行旧 fixed_price 数据 → 跑迁移 → 断言 `billing_scheme='per_call'` + default tier 存在 + 发布门禁通过 + 按次计费结果正确。
 
-- [ ] Step 1–4 同 T4 节奏（测试先行 → schema+迁移 → 绿 → commit `git commit -m "feat: 目录价格增列与按次价表"`）。
+- [x] Step 1–4 同 T4 节奏（测试先行 → schema+迁移 → 绿 → commit `git commit -m "feat: 目录价格增列与按次价表"`）。
 
 ---
 

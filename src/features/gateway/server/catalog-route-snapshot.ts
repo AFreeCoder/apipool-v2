@@ -63,9 +63,8 @@ async function loadCatalogRouteConfig(
   const [row] = await db()
     .select({
       newapiGroup: catalogGroup.newapiGroup,
-      groupRatioBps: catalogGroup.newapiGroupRatioBps,
       modelId: catalogModel.modelId,
-      pricePolicy: catalogModelListing.pricePolicy,
+      discountRateBps: catalogModelListing.discountRateBps,
       priceDriftStatus: catalogModelListing.priceDriftStatus,
       baseInput: catalogModelPrice.baseInputMicroUsd,
       baseCachedInput: catalogModelPrice.baseCachedInputMicroUsd,
@@ -91,7 +90,7 @@ async function loadCatalogRouteConfig(
     )
     .limit(1);
 
-  if (!row || row.pricePolicy !== 'inherit_group') return null;
+  if (!row) return null;
   if (row.priceDriftStatus !== 'matched') return null;
   if (
     row.baseSyncStatus !== 'synced' &&
@@ -99,7 +98,6 @@ async function loadCatalogRouteConfig(
   ) {
     return null;
   }
-  if (!positiveInteger(row.groupRatioBps)) return null;
   if (
     !positiveInteger(row.baseInput) ||
     !positiveInteger(row.baseCachedInput) ||
@@ -126,18 +124,24 @@ async function loadCatalogRouteConfig(
     newapiGroup: row.newapiGroup,
     newapiModelId: row.modelId,
     price: {
-      inputMicroUsdPerM: scaledPrice(row.baseInput, row.groupRatioBps),
+      inputMicroUsdPerM: scaledPrice(
+        row.baseInput,
+        row.discountRateBps ?? 10_000
+      ),
       cachedInputMicroUsdPerM: scaledPrice(
         row.baseCachedInput,
-        row.groupRatioBps
+        row.discountRateBps ?? 10_000
       ),
       cacheWrite5mMicroUsdPerM: row.baseCacheWrite5m
-        ? scaledPrice(row.baseCacheWrite5m, row.groupRatioBps)
+        ? scaledPrice(row.baseCacheWrite5m, row.discountRateBps ?? 10_000)
         : 0,
       cacheWrite1hMicroUsdPerM: row.baseCacheWrite1h
-        ? scaledPrice(row.baseCacheWrite1h, row.groupRatioBps)
+        ? scaledPrice(row.baseCacheWrite1h, row.discountRateBps ?? 10_000)
         : 0,
-      outputMicroUsdPerM: scaledPrice(row.baseOutput, row.groupRatioBps),
+      outputMicroUsdPerM: scaledPrice(
+        row.baseOutput,
+        row.discountRateBps ?? 10_000
+      ),
     },
   };
 }

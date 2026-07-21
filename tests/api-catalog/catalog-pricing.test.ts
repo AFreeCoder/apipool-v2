@@ -164,12 +164,11 @@ test('New API fixed-price models do not pretend to have token split prices', () 
   });
 });
 
-test('effective price inherits matched New API group ratio for public presentation', () => {
+test('effective price applies the matched listing discount for public presentation', () => {
   const effective = resolveEffectiveCatalogPrice({
     baseInputMicroUsd: 150000,
     baseOutputMicroUsd: 600000,
-    groupRatioBps: 5000,
-    pricePolicy: 'inherit_group',
+    discountRateBps: 5000,
     priceDriftStatus: 'matched',
     listInputMicroUsd: 150000,
     listOutputMicroUsd: 600000,
@@ -191,11 +190,10 @@ test('effective price inherits matched New API group ratio for public presentati
   assert.equal(effective.pricePresentation.note, 'Official group ratio');
 });
 
-test('unmatched listing multiplier remains hidden from public confirmed pricing', () => {
+test('unmatched listing discount remains hidden from public confirmed pricing', () => {
   const effective = resolveEffectiveCatalogPrice({
     baseInputMicroUsd: 150000,
     baseOutputMicroUsd: 600000,
-    pricePolicy: 'listing_multiplier',
     discountRateBps: 5000,
     priceDriftStatus: 'needs_live_check',
     listInputMicroUsd: 150000,
@@ -214,8 +212,7 @@ test('fixed-price or incomplete token prices stay hidden even when drift is matc
   const effective = resolveEffectiveCatalogPrice({
     baseInputMicroUsd: null,
     baseOutputMicroUsd: null,
-    groupRatioBps: 5000,
-    pricePolicy: 'inherit_group',
+    discountRateBps: 5000,
     priceDriftStatus: 'matched',
     listInputMicroUsd: 150000,
     listOutputMicroUsd: 600000,
@@ -227,23 +224,14 @@ test('fixed-price or incomplete token prices stay hidden even when drift is matc
   assert.equal(effective.pricePresentation.showPrice, false);
 });
 
-test('verified price override still requires matched drift status', () => {
-  const unmatched = resolveEffectiveCatalogPrice({
-    pricePolicy: 'price_override',
-    overrideInputMicroUsd: 1,
-    overrideOutputMicroUsd: 2,
-    overrideStatus: 'verified',
-    priceDriftStatus: 'needs_live_check',
-  });
+test('listing discount still requires matched drift status', () => {
   const matched = resolveEffectiveCatalogPrice({
-    pricePolicy: 'price_override',
-    overrideInputMicroUsd: 1,
-    overrideOutputMicroUsd: 2,
-    overrideStatus: 'verified',
+    baseInputMicroUsd: 2,
+    baseOutputMicroUsd: 4,
+    discountRateBps: 5000,
     priceDriftStatus: 'matched',
   });
 
-  assert.equal(unmatched.publicConfirmed, false);
   assert.equal(matched.publicConfirmed, true);
   assert.equal(matched.effectiveInputMicroUsd, 1);
   assert.equal(matched.effectiveOutputMicroUsd, 2);

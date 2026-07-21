@@ -276,7 +276,6 @@ test('syncCatalogPricingFromSnapshot does not confirm prices when snapshot omits
     .db()
     .update(catalogModelListing)
     .set({
-      pricePolicy: 'inherit_group',
       priceDriftStatus: 'matched',
       effectivePriceFormula: '{"source":"stale"}',
     })
@@ -353,7 +352,6 @@ test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matc
     .db()
     .update(catalogModelListing)
     .set({
-      pricePolicy: 'inherit_group',
       priceDriftStatus: 'matched',
       effectivePriceFormula: '{"source":"stale"}',
     })
@@ -432,7 +430,7 @@ test('syncCatalogPricingFromSnapshot keeps fixed-price models out of public matc
   assert.equal(publicListing.pricePresentation.showPrice, false);
 });
 
-test('syncCatalogPricingFromSnapshot keeps non-inherit policies out of matched without live evidence', async () => {
+test('syncCatalogPricingFromSnapshot preserves the listing discount as the sole sale-price factor', async () => {
   const { catalogModel, catalogModelListing } = modules.schema;
   const [model] = await modules
     .db()
@@ -440,104 +438,57 @@ test('syncCatalogPricingFromSnapshot keeps non-inherit policies out of matched w
     .from(catalogModel)
     .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
     .limit(1);
-  const cases = [
-    {
-      policy: 'listing_multiplier',
-      overrideStatus: 'none',
-      expectedStatus: 'needs_live_check',
-      expectedType: 'listing_multiplier_needs_live_check',
-    },
-    {
-      policy: 'price_override',
-      overrideStatus: 'pending',
-      expectedStatus: 'drifted',
-      expectedType: 'price_override_unverified',
-    },
-    {
-      policy: 'price_override',
-      overrideStatus: 'verified',
-      expectedStatus: 'needs_live_check',
-      expectedType: 'price_override_needs_live_check',
-    },
-    {
-      policy: 'legacy_override',
-      overrideStatus: 'none',
-      expectedStatus: 'needs_live_check',
-      expectedType: 'legacy_override_needs_live_check',
-    },
-    {
-      policy: 'fixed_price_review',
-      overrideStatus: 'none',
-      expectedStatus: 'needs_live_check',
-      expectedType: 'fixed_price_review_needs_live_check',
-    },
-  ];
+  await modules
+    .db()
+    .update(catalogModelListing)
+    .set({ discountRateBps: 6500 })
+    .where(eq(catalogModelListing.modelId, model.id));
 
-  for (const item of cases) {
-    await modules
-      .db()
-      .update(catalogModelListing)
-      .set({
-        pricePolicy: item.policy,
-        overrideStatus: item.overrideStatus,
-        effectivePriceFormula: '{"source":"stale"}',
-      })
-      .where(eq(catalogModelListing.modelId, model.id));
-
-    const report = await modules.pricingSync.syncCatalogPricingFromSnapshot({
-      operatorUserId: `operator-${item.policy}`,
-      snapshot: {
-        models: [
-          {
-            modelId: 'gpt-4o-mini',
-            displayName: 'GPT-4o mini',
-            vendorId: 'openai',
-            vendorName: 'OpenAI',
-            quotaType: 0,
-            modelRatio: 0.075,
-            modelPrice: null,
-            completionRatio: 4,
-            imageRatio: null,
-            source: 'ratio',
-            inputMicroUsd: 150000,
-            outputMicroUsd: 600000,
-            imageInputMicroUsd: null,
-            imageOutputMicroUsd: null,
-            enabledGroups: ['official'],
-            supportedEndpointTypes: ['responses'],
-          },
-        ],
-        vendors: { openai: 'OpenAI' },
-        groupRatios: {
-          official: {
-            raw: '0.5',
-            decimal: '0.5',
-            bps: 5000,
-            sourceKey: 'group_ratio',
-          },
+  await modules.pricingSync.syncCatalogPricingFromSnapshot({
+    operatorUserId: 'operator-listing-discount',
+    snapshot: {
+      models: [
+        {
+          modelId: 'gpt-4o-mini',
+          displayName: 'GPT-4o mini',
+          vendorId: 'openai',
+          vendorName: 'OpenAI',
+          quotaType: 0,
+          modelRatio: 0.075,
+          modelPrice: null,
+          completionRatio: 4,
+          imageRatio: null,
+          source: 'ratio',
+          inputMicroUsd: 150000,
+          outputMicroUsd: 600000,
+          imageInputMicroUsd: null,
+          imageOutputMicroUsd: null,
+          enabledGroups: ['official'],
+          supportedEndpointTypes: ['responses'],
         },
-        usableGroups: ['official'],
-        sourceFingerprint: `fingerprint-${item.policy}`,
+      ],
+      vendors: { openai: 'OpenAI' },
+      groupRatios: {
+        official: {
+          raw: '0.5',
+          decimal: '0.5',
+          bps: 5000,
+          sourceKey: 'group_ratio',
+        },
       },
-    });
+      usableGroups: ['official'],
+      sourceFingerprint: 'fingerprint-listing-discount',
+    },
+  });
 
-    const [listing] = await modules
-      .db()
-      .select()
-      .from(catalogModelListing)
-      .where(eq(catalogModelListing.modelId, model.id))
-      .limit(1);
-    assert.equal(listing.priceDriftStatus, item.expectedStatus);
-    assert.equal(listing.effectivePriceFormula, null);
-    assert.equal(
-      report.conflicts.some(
-        (conflict: Record<string, unknown>) =>
-          conflict.type === item.expectedType &&
-          conflict.pricePolicy === item.policy
-      ),
-      true
-    );
-  }
+  const [listing] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.modelId, model.id))
+    .limit(1);
+  assert.equal(listing.discountRateBps, 6500);
+  assert.equal(listing.priceDriftStatus, 'matched');
 });
 
 test('backfillCatalogModelPrices prefers official list price, official effective, consistent listing price, then callable fallback', async () => {
@@ -677,9 +628,7 @@ test('backfillCatalogModelPrices prefers official list price, official effective
     .where(eq(catalogModelListing.modelId, officialListModel.id));
   assert.equal(
     conflictedListings.every(
-      (listing: any) =>
-        listing.pricePolicy === 'legacy_override' &&
-        listing.priceDriftStatus === 'needs_live_check'
+      (listing: any) => listing.priceDriftStatus === 'needs_live_check'
     ),
     true
   );

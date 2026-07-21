@@ -676,7 +676,7 @@ test('public listings do not expose confirmed discounts before New API group mat
   assert.equal(partner.pricePresentation.showPrice, false);
 });
 
-test('public listings expose effective price only after matched New API group ratio', async () => {
+test('public listings derive sale price from listing discount and ignore New API group ratio', async () => {
   const { catalogGroup, catalogModel, catalogModelListing, catalogModelPrice } =
     modules.schema;
   const official = await findBySlug(
@@ -695,8 +695,8 @@ test('public listings expose effective price only after matched New API group ra
     .db()
     .update(catalogGroup)
     .set({
-      newapiGroupRatioDecimal: '0.5',
-      newapiGroupRatioBps: 5000,
+      newapiGroupRatioDecimal: '0.25',
+      newapiGroupRatioBps: 2500,
       pricingSyncStatus: 'synced',
     })
     .where(eq(catalogGroup.id, official.id));
@@ -717,7 +717,7 @@ test('public listings expose effective price only after matched New API group ra
       listInputMicroUsd: 150000,
       listOutputMicroUsd: 600000,
       discountNote: 'Official ratio',
-      pricePolicy: 'inherit_group',
+      discountRateBps: 5000,
       priceDriftStatus: 'matched',
     })
     .where(eq(catalogModelListing.modelId, model.id));

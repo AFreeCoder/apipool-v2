@@ -51,12 +51,6 @@ type ListingBaseRow = {
   groupRatioBps: number | null;
   groupNewapiGroup: string;
   groupPricingSyncStatus: string;
-  pricePolicy: string;
-  overrideInputMicroUsd: number | null;
-  overrideOutputMicroUsd: number | null;
-  overrideImageInputMicroUsd: number | null;
-  overrideImageOutputMicroUsd: number | null;
-  overrideStatus: string;
   priceDriftStatus: string;
   baseInputMicroUsd: number | null;
   baseOutputMicroUsd: number | null;
@@ -191,14 +185,6 @@ async function queryListingRows({
       groupRatioBps: catalogGroup.newapiGroupRatioBps,
       groupNewapiGroup: catalogGroup.newapiGroup,
       groupPricingSyncStatus: catalogGroup.pricingSyncStatus,
-      pricePolicy: catalogModelListing.pricePolicy,
-      overrideInputMicroUsd: catalogModelListing.overrideInputMicroUsd,
-      overrideOutputMicroUsd: catalogModelListing.overrideOutputMicroUsd,
-      overrideImageInputMicroUsd:
-        catalogModelListing.overrideImageInputMicroUsd,
-      overrideImageOutputMicroUsd:
-        catalogModelListing.overrideImageOutputMicroUsd,
-      overrideStatus: catalogModelListing.overrideStatus,
       priceDriftStatus: catalogModelListing.priceDriftStatus,
       baseInputMicroUsd: catalogModelPrice.baseInputMicroUsd,
       baseOutputMicroUsd: catalogModelPrice.baseOutputMicroUsd,
@@ -230,7 +216,6 @@ async function queryListingRows({
 function isCatalogRouteReady(row: ListingBaseRow) {
   return (
     row.isCallable &&
-    row.pricePolicy === 'inherit_group' &&
     row.priceDriftStatus === 'matched' &&
     row.groupNewapiGroup.trim().length > 0 &&
     row.groupPricingSyncStatus === 'synced' &&
@@ -300,14 +285,7 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
         baseOutputMicroUsd: row.baseOutputMicroUsd,
         baseImageInputMicroUsd: row.baseImageInputMicroUsd,
         baseImageOutputMicroUsd: row.baseImageOutputMicroUsd,
-        groupRatioBps: row.groupRatioBps,
-        pricePolicy: row.pricePolicy,
-        discountRateBps: row.discountRateBps,
-        overrideInputMicroUsd: row.overrideInputMicroUsd,
-        overrideOutputMicroUsd: row.overrideOutputMicroUsd,
-        overrideImageInputMicroUsd: row.overrideImageInputMicroUsd,
-        overrideImageOutputMicroUsd: row.overrideImageOutputMicroUsd,
-        overrideStatus: row.overrideStatus,
+        discountRateBps: row.discountRateBps ?? 10_000,
         priceDriftStatus: row.priceDriftStatus,
         listInputMicroUsd: row.listInputMicroUsd,
         listOutputMicroUsd: row.listOutputMicroUsd,

@@ -19,6 +19,7 @@ const CATALOG_EXPORTS = [
   'catalogModelCategory',
   'catalogModelCapability',
   'catalogModelPrice',
+  'catalogModelPriceTier',
   'catalogModelListing',
   'catalogPriceSyncRun',
 ] as const;
@@ -55,10 +56,11 @@ test('catalog model listing exposes image pricing and discount columns', () => {
   assert.ok(listing.discountRateBps, 'discountRateBps should exist');
 });
 
-test('catalog pricing policy tables and columns are exported from sqlite schema', () => {
+test('catalog meter pricing tables and columns are exported from sqlite schema', () => {
   const group = schemaExports.catalogGroup as Record<string, unknown>;
   const listing = schemaExports.catalogModelListing as Record<string, unknown>;
   const price = schemaExports.catalogModelPrice as Record<string, unknown>;
+  const tier = schemaExports.catalogModelPriceTier as Record<string, unknown>;
   const syncRun = schemaExports.catalogPriceSyncRun as Record<string, unknown>;
   const usageLog = schemaExports.usageLogSnapshot as Record<string, unknown>;
 
@@ -68,12 +70,26 @@ test('catalog pricing policy tables and columns are exported from sqlite schema'
   assert.ok(group.pricingSyncStatus);
   assert.ok(group.pricingSyncedAt);
   assert.ok(price.pricingMode);
+  assert.ok(price.billingScheme);
+  assert.ok(price.baseCacheWriteMicroUsd);
+  assert.ok(price.baseCachedImageInputMicroUsd);
+  assert.ok(price.baseWebSearchMicroUsd);
+  assert.ok(price.longContextThresholdTokens);
+  assert.ok(price.baseInputLongMicroUsd);
+  assert.ok(price.baseCachedInputLongMicroUsd);
+  assert.ok(price.baseCacheWriteLongMicroUsd);
+  assert.ok(price.baseOutputLongMicroUsd);
+  assert.ok(price.billingCapabilitiesJson);
   assert.ok(price.syncStatus);
   assert.ok(price.driftStatus);
   assert.ok(price.baseInputMicroUsd);
   assert.ok(price.fixedPriceMicroUsd);
-  assert.ok(listing.pricePolicy);
-  assert.ok(listing.overrideStatus);
+  assert.ok(tier.modelId);
+  assert.ok(tier.skuKey);
+  assert.ok(tier.priceMicroUsd);
+  assert.ok(listing.allowLongContext);
+  assert.equal(Boolean(listing.pricePolicy), false);
+  assert.equal(Boolean(listing.overrideStatus), false);
   assert.ok(listing.priceDriftStatus);
   assert.ok(syncRun.reportJson);
   assert.ok(syncRun.sourceFingerprint);

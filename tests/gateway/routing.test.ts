@@ -105,6 +105,7 @@ async function setupDb() {
     statusId: IDs.status,
     inputMicroUsd: 1_000_000,
     outputMicroUsd: 5_000_000,
+    discountRateBps: 8_000,
     priceDriftStatus: 'matched',
   });
   await modules.db().insert(schema.catalogModelPrice).values({
@@ -145,12 +146,17 @@ test('模型目录自动生成路由与不可变价格快照', async () => {
     .where(eq(modules.schema.modelRoute.id, route.routeId));
   assert.equal(snapshot.publishedBy, 'system:catalog');
 });
-test('分组折扣或映射变化会自动滚动快照版本', async () => {
+test('上架折扣或映射变化会自动滚动快照版本', async () => {
   await modules
     .db()
     .update(modules.schema.catalogGroup)
-    .set({ newapiGroup: 'vip', newapiGroupRatioBps: 9_000 })
+    .set({ newapiGroup: 'vip' })
     .where(eq(modules.schema.catalogGroup.id, IDs.group));
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ discountRateBps: 9_000 })
+    .where(eq(modules.schema.catalogModelListing.id, IDs.listing));
   const route = await modules.routing.resolveActiveRoute(
     IDs.group,
     IDs.modelId
