@@ -430,7 +430,7 @@ export async function assessPublishReadiness(
 2. **server tools 未配价拒绝**：请求体 `tools[]` 含 server-side 类型（首版名单常量：`web_search` 系 type 前缀）且快照 `rates_json.web_search` 缺失 → 400 明示未开放；配价（含 0）→ 放行。client function calling（`type:"function"`/`custom`）不受影响。
 3. **per_call SKU 准入**：`billingScheme='per_call'` 时从请求体取 `quality`/`size` 拼 skuKey（字典序 `k=v;` 规范，缺省/`auto` → `default`），查 `tiers_json` 不存在 → 400 明示"该质量/尺寸组合未开放"；命中价随请求上下文传给 T7 结算。
 - 验收：admission 测试覆盖三项 × 放行/拒绝两态；272K 拦截另覆盖三态（开着开关放行命中长档 / 关着开关拦截 / 关着开关低估漏拦由 T7 响应侧打标——与 T7 用例衔接）。
-- [ ] commit：`git commit -m "feat: 转发层准入——长上下文/工具/SKU 三项拦截"`
+- [x] commit：`git commit -m "feat: 转发层准入——长上下文/工具/SKU 三项拦截"`
 
 ---
 

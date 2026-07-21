@@ -2,6 +2,8 @@ import 'server-only';
 
 import { gatewayConfig } from '@/features/gateway/lib/config';
 import type { GatewayEndpointKey } from '@/features/gateway/lib/endpoints';
+import { extractRequestAdmissionMetadata } from '@/features/gateway/lib/sse-parser';
+import type { ResolvedRoute } from '@/features/gateway/server/routing';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { db } from '@/core/db';
@@ -20,6 +22,88 @@ export interface AdmissionInput {
   priceVersionId: string;
   endpoint: GatewayEndpointKey;
   isStream: boolean;
+}
+
+const ESTIMATED_CHARS_PER_TOKEN = 2.5;
+const ESTIMATED_MESSAGE_OVERHEAD_TOKENS = 128;
+const SERVER_TOOL_PREFIXES = ['web_search'] as const;
+
+export type ForwardAdmissionDecision =
+  | {
+      ok: true;
+      skuKey: string | null;
+      estimatedInputTokens: number;
+    }
+  | { ok: false; status: 400 | 413; message: string };
+
+function deriveSkuKey(quality: string | null, size: string | null): string {
+  if (
+    quality === null ||
+    size === null ||
+    quality.toLowerCase() === 'auto' ||
+    size.toLowerCase() === 'auto'
+  ) {
+    return 'default';
+  }
+  return `quality=${quality};size=${size}`;
+}
+
+export function evaluateForwardAdmission(
+  body: Uint8Array,
+  route: Pick<
+    ResolvedRoute,
+    | 'billingScheme'
+    | 'rates'
+    | 'tiers'
+    | 'admissionLongContextThreshold'
+    | 'allowLongContext'
+  >
+): ForwardAdmissionDecision {
+  const extraction = extractRequestAdmissionMetadata(body, {
+    includeSku: route.billingScheme === 'per_call',
+    serverToolPrefixes: SERVER_TOOL_PREFIXES,
+  });
+  if (!extraction.ok) {
+    return { ok: false, status: 400, message: '请求参数格式不合法。' };
+  }
+
+  const { metadata } = extraction;
+  const estimatedInputTokens =
+    Math.ceil(metadata.totalRequestChars / ESTIMATED_CHARS_PER_TOKEN) +
+    ESTIMATED_MESSAGE_OVERHEAD_TOKENS * metadata.messageCount;
+  if (
+    !route.allowLongContext &&
+    route.admissionLongContextThreshold !== null &&
+    estimatedInputTokens >= route.admissionLongContextThreshold
+  ) {
+    return {
+      ok: false,
+      status: 413,
+      message: '该分组未开放长上下文，请缩短输入或更换分组。',
+    };
+  }
+
+  if (metadata.hasServerTool && route.rates.web_search === undefined) {
+    return {
+      ok: false,
+      status: 400,
+      message: '该模型未开放网页搜索工具。',
+    };
+  }
+
+  if (route.billingScheme !== 'per_call') {
+    return { ok: true, skuKey: null, estimatedInputTokens };
+  }
+
+  const skuKey = deriveSkuKey(metadata.quality, metadata.size);
+  if (!Object.hasOwn(route.tiers, skuKey)) {
+    return {
+      ok: false,
+      status: 400,
+      message: '该质量/尺寸组合未开放。',
+    };
+  }
+  return { ok: true, skuKey, estimatedInputTokens };
 }
 
 export async function admitRequest(

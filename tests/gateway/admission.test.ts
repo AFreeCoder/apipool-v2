@@ -213,3 +213,139 @@ test('resolveRiskLimit：override 优先，否则 env 默认', async () => {
   );
   delete process.env.GATEWAY_RISK_SLOT_LIMIT;
 });
+
+const jsonBody = (value: unknown) =>
+  new TextEncoder().encode(JSON.stringify(value));
+
+function forwardRoute(overrides: Record<string, unknown> = {}) {
+  return {
+    billingScheme: 'token',
+    rates: { input: 1_000_000, output: 2_000_000 },
+    tiers: {},
+    admissionLongContextThreshold: null,
+    allowLongContext: false,
+    ...overrides,
+  };
+}
+
+test('长上下文准入：开关开时放行，关时按保守估算拦截，低估请求放行', () => {
+  const body = jsonBody({
+    model: 'gpt-long',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  const open = modules.admission.evaluateForwardAdmission(
+    body,
+    forwardRoute({
+      allowLongContext: true,
+      admissionLongContextThreshold: 1,
+    })
+  );
+  assert.equal(open.ok, true);
+
+  const blocked = modules.admission.evaluateForwardAdmission(
+    body,
+    forwardRoute({ admissionLongContextThreshold: 1 })
+  );
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.status, 413);
+  assert.match(blocked.message, /未开放长上下文/);
+
+  const belowThreshold = modules.admission.evaluateForwardAdmission(
+    body,
+    forwardRoute({ admissionLongContextThreshold: 10_000 })
+  );
+  assert.equal(belowThreshold.ok, true);
+  assert.equal(
+    belowThreshold.estimatedInputTokens,
+    Math.ceil(body.length / 2.5) + 128
+  );
+  assert.equal(
+    modules.admission.evaluateForwardAdmission(body, forwardRoute()).ok,
+    true
+  );
+});
+
+test('server tools 准入：web_search 未配价拒绝，配 0 放行，客户端工具不受影响', () => {
+  const webSearch = jsonBody({
+    model: 'tool-model',
+    tools: [{ type: 'web_search_20250701', name: 'search' }],
+  });
+  const blocked = modules.admission.evaluateForwardAdmission(
+    webSearch,
+    forwardRoute({ rates: { input: 1_000_000 } })
+  );
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /未开放网页搜索工具/);
+
+  assert.equal(
+    modules.admission.evaluateForwardAdmission(
+      webSearch,
+      forwardRoute({ rates: { input: 1_000_000, web_search: 0 } })
+    ).ok,
+    true
+  );
+  assert.equal(
+    modules.admission.evaluateForwardAdmission(
+      jsonBody({
+        model: 'tool-model',
+        tools: null,
+      }),
+      forwardRoute({ rates: { input: 1_000_000 } })
+    ).ok,
+    true
+  );
+  assert.equal(
+    modules.admission.evaluateForwardAdmission(
+      jsonBody({
+        model: 'tool-model',
+        tools: [
+          { type: 'function', function: { name: 'local' } },
+          { type: 'custom', name: 'client_tool' },
+        ],
+      }),
+      forwardRoute({ rates: { input: 1_000_000 } })
+    ).ok,
+    true
+  );
+});
+
+test('per_call SKU 准入：显式组合精确命中，缺省或 auto 走 default，未知组合拒绝', () => {
+  const tiers = {
+    default: 300_000,
+    'quality=high;size=1024x1024': 250_000,
+  };
+  const explicit = modules.admission.evaluateForwardAdmission(
+    jsonBody({
+      model: 'image-model',
+      size: '1024x1024',
+      quality: 'high',
+    }),
+    forwardRoute({ billingScheme: 'per_call', tiers })
+  );
+  assert.equal(explicit.ok, true);
+  assert.equal(explicit.skuKey, 'quality=high;size=1024x1024');
+
+  for (const body of [
+    { model: 'image-model' },
+    { model: 'image-model', quality: null, size: null },
+    { model: 'image-model', quality: 'auto', size: '1024x1024' },
+  ]) {
+    const decision = modules.admission.evaluateForwardAdmission(
+      jsonBody(body),
+      forwardRoute({ billingScheme: 'per_call', tiers })
+    );
+    assert.equal(decision.ok, true);
+    assert.equal(decision.skuKey, 'default');
+  }
+
+  const rejected = modules.admission.evaluateForwardAdmission(
+    jsonBody({
+      model: 'image-model',
+      quality: 'ultra',
+      size: '1024x1024',
+    }),
+    forwardRoute({ billingScheme: 'per_call', tiers })
+  );
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /质量\/尺寸组合未开放/);
+});

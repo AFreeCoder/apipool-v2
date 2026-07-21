@@ -22,6 +22,7 @@ import { getUuidV7 } from '@/shared/lib/hash';
 import {
   admitRequest,
   captureRequestId,
+  evaluateForwardAdmission,
   markFailedUnbilled,
   resolveRiskLimit,
 } from './admission';
@@ -184,12 +185,14 @@ function gatewayError(
   code: Parameters<typeof gatewayErrorResponse>[1],
   status: number,
   portalRequestId: string,
-  retryAfterSeconds?: number
+  retryAfterSeconds?: number,
+  message?: string
 ) {
   return gatewayErrorResponse(protocol, code, {
     status,
     portalRequestId,
     retryAfterSeconds,
+    message,
   });
 }
 
@@ -309,6 +312,20 @@ export async function handleGatewayRequest(
     if (!route) {
       return early(
         gatewayError(protocol, 'model_not_found', 404, portalRequestId)
+      );
+    }
+
+    const forwardAdmission = evaluateForwardAdmission(bodyResult.body, route);
+    if (!forwardAdmission.ok) {
+      return early(
+        gatewayError(
+          protocol,
+          'invalid_request',
+          forwardAdmission.status,
+          portalRequestId,
+          undefined,
+          forwardAdmission.message
+        )
       );
     }
 
@@ -516,7 +533,7 @@ export async function handleGatewayRequest(
               webSearchCount: normalized.webSearchCount,
               rawUsage: usage,
               usageSource: 'response',
-              skuKey: 'default',
+              skuKey: forwardAdmission.skuKey ?? 'default',
               unitCount,
             }),
           'already_finalized',

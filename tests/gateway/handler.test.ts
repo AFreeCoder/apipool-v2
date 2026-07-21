@@ -242,6 +242,37 @@ test('路由存在但运行 Key pending → 503 + Retry-After', async () => {
   assert.equal(response.headers.get('retry-after'), '1');
 });
 
+test('转发准入拒绝发生在凭证、账本与上游调用之前', async () => {
+  const handler = await loadHandler();
+  let sideEffects = 0;
+  const response = await handler.handleGatewayRequest(
+    request(
+      '/v1/chat/completions',
+      '{"model":"portal-model","messages":[{"role":"user","content":"hello"}]}'
+    ),
+    ['chat', 'completions'],
+    baseDeps({
+      resolveRoute: async () =>
+        readyRoute({ admissionLongContextThreshold: 1 }),
+      ensureCredential: async () => {
+        sideEffects += 1;
+        return { status: 'pending' };
+      },
+      admit: async () => {
+        sideEffects += 1;
+        return true;
+      },
+      forward: async () => {
+        sideEffects += 1;
+        return { kind: 'no_response', stage: 'connect' };
+      },
+    }) as any
+  );
+  assert.equal(response.status, 413);
+  assert.match(JSON.stringify(await response.json()), /未开放长上下文/);
+  assert.equal(sideEffects, 0);
+});
+
 test('请求 stream 布尔值写入准入账本并传给上游转发', async () => {
   const handler = await loadHandler();
   let admitted: any;
@@ -590,11 +621,20 @@ test('per_call 无 usage 但 data 可数时仍按实际数量结算', async () =
   const handler = await loadHandler();
   let settlement: Record<string, unknown> | undefined;
   const response = await handler.handleGatewayRequest(
-    request('/v1/chat/completions', '{"model":"portal-model"}'),
+    request(
+      '/v1/chat/completions',
+      '{"model":"portal-model","size":"1024x1024","quality":"high"}'
+    ),
     ['chat', 'completions'],
     readyDeps({
       resolveRoute: async () =>
-        readyRoute({ billingScheme: 'per_call', tiers: { default: 300_000 } }),
+        readyRoute({
+          billingScheme: 'per_call',
+          tiers: {
+            default: 300_000,
+            'quality=high;size=1024x1024': 250_000,
+          },
+        }),
       forward: async () => ({
         kind: 'responded',
         upstream: new Response('{"data":[{"url":"a"},{"url":"b"}]}'),
@@ -609,7 +649,7 @@ test('per_call 无 usage 但 data 可数时仍按实际数量结算', async () =
   await response.text();
   await waitUntil(() => settlement !== undefined);
   assert.equal(settlement?.unitCount, 2);
-  assert.equal(settlement?.skuKey, 'default');
+  assert.equal(settlement?.skuKey, 'quality=high;size=1024x1024');
   assert.deepEqual(settlement?.flags, ['usage_missing']);
 });
 
@@ -624,15 +664,17 @@ test('长上下文三态：开态切长档、关态漏拦打标、无能力不�
         admissionLongContextThreshold: 5,
       },
       meter: 'input_long',
+      quantity: 10,
       flags: [],
     },
     {
       route: {
         allowLongContext: false,
         longContextThresholdTokens: null,
-        admissionLongContextThreshold: 5,
+        admissionLongContextThreshold: 1_000,
       },
       meter: 'input',
+      quantity: 2_000,
       flags: ['long_context_block_missed'],
     },
     {
@@ -642,6 +684,7 @@ test('长上下文三态：开态切长档、关态漏拦打标、无能力不�
         admissionLongContextThreshold: null,
       },
       meter: 'input',
+      quantity: 10,
       flags: [],
     },
   ];
@@ -655,7 +698,12 @@ test('长上下文三态：开态切长档、关态漏拦打标、无能力不�
         forward: async () => ({
           kind: 'responded',
           upstream: new Response(
-            '{"usage":{"prompt_tokens":10,"completion_tokens":2}}'
+            JSON.stringify({
+              usage: {
+                prompt_tokens: current.quantity,
+                completion_tokens: 2,
+              },
+            })
           ),
           newapiRequestId: `newapi-request-long-${index}`,
         }),
@@ -667,7 +715,7 @@ test('长上下文三态：开态切长档、关态漏拦打标、无能力不�
     );
     await response.text();
     await waitUntil(() => results[index] !== undefined);
-    assert.equal(results[index].meters[current.meter], 10);
+    assert.equal(results[index].meters[current.meter], current.quantity);
     assert.deepEqual(results[index].flags, current.flags);
   }
 });

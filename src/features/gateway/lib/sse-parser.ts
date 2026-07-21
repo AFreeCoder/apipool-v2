@@ -20,6 +20,7 @@ const MODEL_KEY = [0x6d, 0x6f, 0x64, 0x65, 0x6c];
 const STREAM_KEY = [0x73, 0x74, 0x72, 0x65, 0x61, 0x6d];
 const TRUE_VALUE = [0x74, 0x72, 0x75, 0x65];
 const FALSE_VALUE = [0x66, 0x61, 0x6c, 0x73, 0x65];
+const NULL_VALUE = [0x6e, 0x75, 0x6c, 0x6c];
 
 const isWhitespace = (byte: number) =>
   byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d;
@@ -585,6 +586,207 @@ function countDirectArrayItems(body: Uint8Array, range: ObjectRange): number {
     index += 1;
   }
   return hasValue ? commas + 1 : 0;
+}
+
+type StringPropertyScan = { ok: true; value: string | null } | { ok: false };
+
+function findDirectStringProperty(
+  body: Uint8Array,
+  objectRange: ObjectRange,
+  keyBytes: readonly number[],
+  maxBytes = 128
+): StringPropertyScan {
+  let depth = 0;
+  let index = objectRange.start;
+  let value: string | null = null;
+  let seen = false;
+
+  while (index < objectRange.end) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const key = matchJsonString(body, index, keyBytes);
+      if (!key) return { ok: false };
+      if (depth === 1 && key.matches) {
+        const colonIndex = skipWhitespace(body, key.end);
+        if (body[colonIndex] === COLON) {
+          if (seen) return { ok: false };
+          seen = true;
+          const valueIndex = skipWhitespace(body, colonIndex + 1);
+          if (matchesLiteral(body, valueIndex, NULL_VALUE)) {
+            value = null;
+            index = valueIndex + NULL_VALUE.length;
+            continue;
+          }
+          if (body[valueIndex] !== QUOTE) return { ok: false };
+          const decoded = decodeBoundedString(body, valueIndex, maxBytes);
+          if (!decoded) return { ok: false };
+          value = decoded.value;
+          index = decoded.end;
+          continue;
+        }
+      }
+      index = key.end;
+      continue;
+    }
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth < 0) return { ok: false };
+    }
+    index += 1;
+  }
+  if (depth !== 0) return { ok: false };
+  return { ok: true, value };
+}
+
+function findDirectNullableArrayProperty(
+  body: Uint8Array,
+  objectRange: ObjectRange,
+  keyBytes: readonly number[]
+): PropertyScan {
+  let depth = 0;
+  let index = objectRange.start;
+  let range: ObjectRange | null = null;
+  let seen = false;
+
+  while (index < objectRange.end) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const key = matchJsonString(body, index, keyBytes);
+      if (!key) return { ok: false };
+      if (depth === 1 && key.matches) {
+        const colonIndex = skipWhitespace(body, key.end);
+        if (body[colonIndex] === COLON) {
+          if (seen) return { ok: false };
+          seen = true;
+          const valueIndex = skipWhitespace(body, colonIndex + 1);
+          if (matchesLiteral(body, valueIndex, NULL_VALUE)) {
+            index = valueIndex + NULL_VALUE.length;
+            continue;
+          }
+          if (body[valueIndex] !== OPEN_BRACKET) return { ok: false };
+          range = findBalancedContainer(body, valueIndex);
+          if (!range) return { ok: false };
+          index = range.end;
+          continue;
+        }
+      }
+      index = key.end;
+      continue;
+    }
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth < 0) return { ok: false };
+    }
+    index += 1;
+  }
+  if (depth !== 0) return { ok: false };
+  return { ok: true, range };
+}
+
+function arrayContainsObjectStringPrefix(
+  body: Uint8Array,
+  range: ObjectRange,
+  keyBytes: readonly number[],
+  prefixes: readonly string[]
+): { ok: true; found: boolean } | { ok: false } {
+  let index = skipWhitespace(body, range.start + 1);
+  while (index < range.end - 1) {
+    if (body[index] !== OPEN_BRACE) return { ok: false };
+    const objectRange = findBalancedObject(body, index);
+    if (!objectRange || objectRange.end > range.end) return { ok: false };
+    const property = findDirectStringProperty(body, objectRange, keyBytes);
+    if (!property.ok) return { ok: false };
+    const propertyValue = property.value;
+    if (
+      propertyValue !== null &&
+      prefixes.some((prefix) => propertyValue.startsWith(prefix))
+    ) {
+      return { ok: true, found: true };
+    }
+    index = skipWhitespace(body, objectRange.end);
+    if (body[index] === 0x2c) {
+      index = skipWhitespace(body, index + 1);
+      continue;
+    }
+    if (body[index] !== CLOSE_BRACKET) return { ok: false };
+    break;
+  }
+  return { ok: true, found: false };
+}
+
+export type RequestAdmissionMetadata = {
+  totalRequestChars: number;
+  messageCount: number;
+  hasServerTool: boolean;
+  quality: string | null;
+  size: string | null;
+};
+
+export type RequestAdmissionMetadataExtraction =
+  | { ok: true; metadata: RequestAdmissionMetadata }
+  | { ok: false };
+
+const MESSAGES_KEY = [0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x73];
+const TOOLS_KEY = [0x74, 0x6f, 0x6f, 0x6c, 0x73];
+const TYPE_KEY = [0x74, 0x79, 0x70, 0x65];
+const QUALITY_KEY = [0x71, 0x75, 0x61, 0x6c, 0x69, 0x74, 0x79];
+const SIZE_KEY = [0x73, 0x69, 0x7a, 0x65];
+
+/** 只扫描准入所需元数据，不物化请求内的大文本或文件内容。 */
+export function extractRequestAdmissionMetadata(
+  body: Uint8Array,
+  options: {
+    includeSku?: boolean;
+    serverToolPrefixes?: readonly string[];
+  } = {}
+): RequestAdmissionMetadataExtraction {
+  const rootStart = skipWhitespace(body, 0);
+  const root = findBalancedObject(body, rootStart);
+  if (!root || skipWhitespace(body, root.end) !== body.length) {
+    return { ok: false };
+  }
+
+  const messages = findDirectNullableArrayProperty(body, root, MESSAGES_KEY);
+  const tools = findDirectNullableArrayProperty(body, root, TOOLS_KEY);
+  if (!messages.ok || !tools.ok) return { ok: false };
+
+  let hasServerTool = false;
+  if (tools.range) {
+    const toolScan = arrayContainsObjectStringPrefix(
+      body,
+      tools.range,
+      TYPE_KEY,
+      options.serverToolPrefixes ?? []
+    );
+    if (!toolScan.ok) return { ok: false };
+    hasServerTool = toolScan.found;
+  }
+
+  let quality: string | null = null;
+  let size: string | null = null;
+  if (options.includeSku) {
+    const qualityScan = findDirectStringProperty(body, root, QUALITY_KEY);
+    const sizeScan = findDirectStringProperty(body, root, SIZE_KEY);
+    if (!qualityScan.ok || !sizeScan.ok) return { ok: false };
+    quality = qualityScan.value;
+    size = sizeScan.value;
+  }
+
+  return {
+    ok: true,
+    metadata: {
+      // UTF-8 字节数不小于字符数，作为估算输入是保守上界。
+      totalRequestChars: body.length,
+      messageCount: messages.range
+        ? countDirectArrayItems(body, messages.range)
+        : 0,
+      hasServerTool,
+      quality,
+      size,
+    },
+  };
 }
 
 const USAGE_KEY = [0x75, 0x73, 0x61, 0x67, 0x65];
