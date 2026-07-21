@@ -66,6 +66,11 @@ codex 反评审中被驳回的部分：per_call 运行面 fail-closed 的"featur
 | F4 [medium] | 开关编译进版本使关态漏拦不可检测——**抓到设计基线（§6.2 vs §5.4）自相矛盾** | 成立。按文档规范 DESIGN 冻结不回改，PLAN 立"设计基线调整记录"勘误 E1：计费零分支不变，检测走请求上下文（admissionLongContextThreshold + allowLongContext），漏拦打 `long_context_block_missed`；三态测试 |
 | F5 [medium] | fixed_price 迁移未同步 billing_scheme='per_call'，留矛盾态 | 成立。T5 迁移补 scheme 切换 + 无法映射单位中止人工处理 + 端到端迁移测试 |
 
+第 6 轮追问与翻转（side chat 深入讨论，结论并入 PLAN）：
+
+- 三项追问澄清：① 流式**请求** vs 流式**响应**之辨——E2 减配只针对请求侧（multipart 上传整体缓冲可接受），响应侧本就是流、跳过 b64 的约束不变；② 补差机制溯源——追问 pending→newapi 日志补差与 O1/N1 的一致性，引出 E3；③ b64 依赖第 2 问——确认张数提取在 URL 与 b64 两种响应形态下的依赖差异，落 T9 验收">32MiB b64 仍能数张数结算"。
+- **E3 裁决翻转（用户）**：token 制 usage 缺失从"pending → newapi 日志补差 + 粒度降级标记"（第 3 轮 R23 落地）翻转为"直接 waived 零计费 + 标记 + 告警"。理由：与 O1（newapi 只读参照）/N1（不引 newapi 日志作证据）/O10（宁少收不收错）自洽——补差机制让 newapi 日志重新成为结算依据，破坏门户用量事实链闭环；waived 的损失方向是平台自担、量级为异常场景零星笔。配套：backfill 结算职责退役，`usage_log_snapshot` 仅喂 reconcile 对照（异常与系统性丢 usage 告警）。对应 DESIGN §7.5 记 PLAN 勘误 E3，正文不回改。
+
 ## 终审（2026-07-20，用户）
 
 用户确认无其他问题，**终审 GO**。五轮评审 O1–O13 全部并入正文；§11 的任务拆分与执行顺序移出至 `docs/plan/portal-model-pricing/PLAN.md`（12 任务，T1–T6 完整 TDD 代码、T7–T12 契约骨架），设计正文只保留迁移策略约束。后续流程：计划对抗评审 → 实施。
