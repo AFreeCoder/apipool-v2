@@ -1,6 +1,6 @@
 # 模型价格配置与调用计费 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **执行说明：** 按任务顺序逐项执行，步骤用 checkbox（`- [ ]`）跟踪勾选；每任务测试先行、独立验收、至少一次 commit。执行者（人、主会话或子代理均可）在动手前先读该任务 Files 的现场代码。
 
 - 日期：2026-07-20
 - 依据：[../../design/portal-model-pricing/DESIGN.md](../../design/portal-model-pricing/DESIGN.md)（终审 GO，O1–O13 全部并入）
