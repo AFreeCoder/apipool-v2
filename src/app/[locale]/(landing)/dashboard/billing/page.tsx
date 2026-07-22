@@ -2,7 +2,10 @@ import {
   TopUpPackages,
   type TopUpPackage,
 } from '@/features/api-console/components/top-up-packages';
-import { buildBillingUsageCharges } from '@/features/api-console/lib/billing';
+import {
+  buildBalanceAdjustments,
+  buildBillingUsageCharges,
+} from '@/features/api-console/lib/billing';
 import {
   formatConsoleDateTime,
   formatConsoleNumber,
@@ -90,6 +93,7 @@ export default async function BillingPage({
   const user = await getUserInfo();
   let balanceUsd: number | undefined;
   let ledger: BillingLedgerRow[] = [];
+  let balanceAdjustments: ReturnType<typeof buildBalanceAdjustments> = [];
   let charges: ReturnType<typeof buildBillingUsageCharges> = [];
   if (user) {
     const [wallet, usage] = await Promise.all([
@@ -106,6 +110,7 @@ export default async function BillingPage({
         orderStatus: 'paid',
         createdAt: new Date(entry.createdAt).getTime(),
       }));
+    balanceAdjustments = buildBalanceAdjustments(wallet.ledger);
     charges = buildBillingUsageCharges({
       logs: usage.logs.map((log) => ({
         id: log.id,
@@ -245,6 +250,56 @@ export default async function BillingPage({
                       >
                         {mapApplyStatus(locale, entry.ledgerStatus)}
                       </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card overflow-hidden rounded-xl border">
+        <div className="border-b px-5 py-4 font-medium">
+          {pageT('balanceAdjustments.title')}
+        </div>
+        {balanceAdjustments.length === 0 ? (
+          <div className="text-muted-foreground p-8 text-center text-sm">
+            {pageT('balanceAdjustments.empty')}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {pageT('balanceAdjustments.columns.time')}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {pageT('balanceAdjustments.columns.source')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {pageT('balanceAdjustments.columns.amount')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {pageT('balanceAdjustments.columns.balanceAfter')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {balanceAdjustments.map((entry) => (
+                  <tr key={entry.id} className="border-b last:border-b-0">
+                    <td className="text-muted-foreground px-4 py-2.5">
+                      {formatConsoleDateTime(entry.createdAt, locale)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {pageT('balanceAdjustments.sources.manualAdjustment')}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {formatLedgerUsdAmount(entry.amountUsd)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      {formatLedgerUsdAmount(entry.balanceAfterUsd)}
                     </td>
                   </tr>
                 ))}

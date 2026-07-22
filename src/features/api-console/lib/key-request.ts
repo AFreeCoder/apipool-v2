@@ -26,11 +26,12 @@ export function buildCreateKeyRequest(
 }
 
 export function buildGroupSelectOptions(
-  groups: ApiKeyGroup[]
+  groups: ApiKeyGroup[],
+  localizedNames: Record<string, string> = {}
 ): GroupSelectOption[] {
   return groups.map((group) => ({
     value: group.slug,
-    label: group.name,
+    label: localizedNames[group.slug] ?? group.name,
     ...(group.userDescription ? { description: group.userDescription } : {}),
   }));
 }

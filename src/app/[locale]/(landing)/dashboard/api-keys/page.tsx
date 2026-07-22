@@ -14,6 +14,7 @@ export default async function ApiKeysPage({
   const { locale } = await params;
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: 'dashboard.apiKeys' });
+  const localizedGroupNames = t.raw('groups') as Record<string, string>;
   const user = await getUserInfo();
   const [keys, groups] = await Promise.all([
     user ? listPortalApiKeys(user.id) : Promise.resolve([]),
@@ -28,6 +29,7 @@ export default async function ApiKeysPage({
       <ApiKeyManager
         initialKeys={JSON.parse(JSON.stringify(keys))}
         groups={groups}
+        localizedGroupNames={localizedGroupNames}
         creationEnabled={APIPOOL_CONFIG.isPortalKeyCreationEnabled}
       />
     </div>

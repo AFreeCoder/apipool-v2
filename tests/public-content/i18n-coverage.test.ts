@@ -301,7 +301,7 @@ test('models page localizes public catalog dimensions instead of echoing admin d
   assert.equal(zh.dimensions.statuses.available, '可用');
 });
 
-test('api key page uses catalog group names instead of fixed public translations', async () => {
+test('api key page localizes known catalog groups and keeps catalog fallbacks', async () => {
   const [source, managerSource, enMessages, zhMessages] = await Promise.all([
     readFile('src/app/[locale]/(landing)/dashboard/api-keys/page.tsx', 'utf8'),
     readFile('src/features/api-console/components/api-key-manager.tsx', 'utf8'),
@@ -311,14 +311,16 @@ test('api key page uses catalog group names instead of fixed public translations
   const en = JSON.parse(enMessages);
   const zh = JSON.parse(zhMessages);
 
-  assert.doesNotMatch(source, /localizeApiKeyGroupName/);
-  assert.doesNotMatch(source, /t\.raw\(['"]groups['"]\)/);
+  assert.match(source, /t\.raw\(['"]groups['"]\)/);
   assert.match(source, /groups=\{groups\}/);
-  assert.doesNotMatch(managerSource, /localizeApiKeyRowGroupName/);
+  assert.match(source, /localizedGroupNames=\{localizedGroupNames\}/);
+  assert.match(managerSource, /localizedGroupNames\[key\.groupSlug\]/);
   assert.match(managerSource, /key\.groupName/);
 
-  assert.equal(Object.hasOwn(en, 'groups'), false);
-  assert.equal(Object.hasOwn(zh, 'groups'), false);
+  assert.equal(en.groups.official, 'Official');
+  assert.equal(zh.groups.official, '官方');
+  assert.equal(en.groups.sub2api, 'Proxy');
+  assert.equal(zh.groups.sub2api, '反代');
   assert.equal(en.defaultName, 'Your API key');
   assert.equal(zh.defaultName, '你的 API 密钥');
   assert.equal(en.form.namePlaceholder, 'Your API key');

@@ -19,6 +19,21 @@ export type BillingUsageCharge = {
   createdAt: Date;
 };
 
+export type WalletLedgerEntry = {
+  id: string;
+  entryType: string;
+  signedAmountUsd: number;
+  balanceAfterUsd: number;
+  createdAt: string;
+};
+
+export type BalanceAdjustment = {
+  id: string;
+  amountUsd: number;
+  balanceAfterUsd: number;
+  createdAt: string;
+};
+
 export function buildBillingUsageCharges(usage: {
   logs: BillingUsageLog[];
 }): BillingUsageCharge[] {
@@ -32,5 +47,18 @@ export function buildBillingUsageCharges(usage: {
       tokenCount: log.inputTokens + log.outputTokens,
       spendUsd: log.spendUsd as number,
       createdAt: log.createdAt,
+    }));
+}
+
+export function buildBalanceAdjustments(
+  ledger: WalletLedgerEntry[]
+): BalanceAdjustment[] {
+  return ledger
+    .filter((entry) => entry.entryType === 'manual_adjustment')
+    .map((entry) => ({
+      id: entry.id,
+      amountUsd: entry.signedAmountUsd,
+      balanceAfterUsd: entry.balanceAfterUsd,
+      createdAt: entry.createdAt,
     }));
 }

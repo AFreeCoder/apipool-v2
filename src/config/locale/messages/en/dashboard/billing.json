@@ -37,6 +37,19 @@
       "creditStatus": "Credit status"
     }
   },
+  "balanceAdjustments": {
+    "title": "Balance adjustments",
+    "empty": "No balance adjustments yet.",
+    "sources": {
+      "manualAdjustment": "Administrator adjustment"
+    },
+    "columns": {
+      "time": "Adjustment time",
+      "source": "Source",
+      "amount": "Amount",
+      "balanceAfter": "Balance after"
+    }
+  },
   "usageCharges": {
     "title": "Usage charges",
     "empty": "No usage charges with synced spend yet.",

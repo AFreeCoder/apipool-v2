@@ -571,5 +571,7 @@ export const getGroupsForKeyCreation = unstable_cache(
 );
 
 export function revalidateCatalog(): void {
-  revalidateTag(CATALOG_CACHE_TAG, 'max');
+  // 后台写入后下一次读取必须立即看到新目录；`max` 会保留旧值并在后台刷新，
+  // 导致同一会话通过客户端路由返回模型页时仍显示保存前的价格。
+  revalidateTag(CATALOG_CACHE_TAG, { expire: 0 });
 }

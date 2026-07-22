@@ -141,10 +141,12 @@ function ApiKeyNotice({ notice }: { notice: NoticeState }) {
 export function ApiKeyManager({
   initialKeys,
   groups,
+  localizedGroupNames = {},
   creationEnabled = true,
 }: {
   initialKeys: ApiKeyRow[];
   groups: ApiKeyGroup[];
+  localizedGroupNames?: Record<string, string>;
   creationEnabled?: boolean;
 }) {
   const t = useTranslations('dashboard.apiKeys');
@@ -159,7 +161,7 @@ export function ApiKeyManager({
   const [mounted, setMounted] = useState(false);
   // 删除会吊销远端 token 且完整 key 无法找回：必须显式确认，不能单击图标即删
   const [pendingDelete, setPendingDelete] = useState<ApiKeyRow | null>(null);
-  const groupOptions = buildGroupSelectOptions(groups);
+  const groupOptions = buildGroupSelectOptions(groups, localizedGroupNames);
   const selectedGroupLabel =
     groupOptions.find((group) => group.value === selectedGroupSlug)?.label ??
     t('form.groupPlaceholder');
@@ -401,7 +403,13 @@ export function ApiKeyManager({
                         label={t(`status.${key.status}`)}
                       />
                     </TableCell>
-                    <TableCell>{key.groupName ?? '—'}</TableCell>
+                    <TableCell>
+                      {(key.groupSlug
+                        ? localizedGroupNames[key.groupSlug]
+                        : undefined) ??
+                        key.groupName ??
+                        '—'}
+                    </TableCell>
                     <TableCell className="space-x-2 text-right">
                       <Button
                         variant="outline"

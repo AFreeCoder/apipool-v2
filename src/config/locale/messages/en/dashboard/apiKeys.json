@@ -3,6 +3,10 @@
   "description": "Create real keys for the APIPool Base URL. Full keys are shown once.",
   "creationPaused": "API key creation is temporarily paused. Existing keys remain manageable.",
   "defaultName": "Your API key",
+  "groups": {
+    "official": "Official",
+    "sub2api": "Proxy"
+  },
   "status": {
     "active": "Active",
     "disabled": "Disabled",
@@ -28,7 +32,7 @@
     "groupPlaceholder": "Select a group",
     "creating": "Creating...",
     "create": "Create key",
-    "hint": "Add credit on the Balance tab before making paid calls. The full key is shown once after creation."
+    "hint": "Make sure your account has sufficient balance before making calls. The full key is shown once after creation."
   },
   "fullKey": {
     "title": "Full key. This is shown once.",

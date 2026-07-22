@@ -37,6 +37,19 @@
       "creditStatus": "到账状态"
     }
   },
+  "balanceAdjustments": {
+    "title": "余额调整记录",
+    "empty": "暂无余额调整记录。",
+    "sources": {
+      "manualAdjustment": "管理员调整"
+    },
+    "columns": {
+      "time": "调整时间",
+      "source": "来源",
+      "amount": "变动金额",
+      "balanceAfter": "调整后余额"
+    }
+  },
   "usageCharges": {
     "title": "用量扣费",
     "empty": "暂无已同步花费的用量扣费。",

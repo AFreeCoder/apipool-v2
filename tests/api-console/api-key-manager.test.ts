@@ -57,6 +57,21 @@ test('buildGroupSelectOptions uses slug as option value and omits internal group
   assert.equal(JSON.stringify(options).includes('ng-official'), false);
 });
 
+test('buildGroupSelectOptions localizes known group slugs and preserves unknown names', () => {
+  const options = buildGroupSelectOptions(
+    [
+      { slug: 'official', name: 'Official' },
+      { slug: 'partner', name: 'Partner route' },
+    ],
+    { official: '官方' }
+  );
+
+  assert.deepEqual(options, [
+    { value: 'official', label: '官方' },
+    { value: 'partner', label: 'Partner route' },
+  ]);
+});
+
 test('applyApiKeyMutationResult removes a key when the mutation returns deleted', () => {
   const keys = [
     {
@@ -166,4 +181,46 @@ test('API key page and manager no longer expose callable model lists', async () 
   assert.doesNotMatch(managerSource, /selectedGroupModels/);
   assert.doesNotMatch(managerSource, /form\.callableModels/);
   assert.doesNotMatch(managerSource, /form\.noCallableModels/);
+});
+
+test('API key page uses localized group labels and environment-neutral balance copy', async () => {
+  const [pageSource, managerSource, zhMessages, enMessages] = await Promise.all(
+    [
+      readFile(
+        join(
+          process.cwd(),
+          'src/app/[locale]/(landing)/dashboard/api-keys/page.tsx'
+        ),
+        'utf8'
+      ),
+      readFile(
+        join(
+          process.cwd(),
+          'src/features/api-console/components/api-key-manager.tsx'
+        ),
+        'utf8'
+      ),
+      readFile(
+        join(
+          process.cwd(),
+          'src/config/locale/messages/zh/dashboard/apiKeys.json'
+        ),
+        'utf8'
+      ).then(JSON.parse),
+      readFile(
+        join(
+          process.cwd(),
+          'src/config/locale/messages/en/dashboard/apiKeys.json'
+        ),
+        'utf8'
+      ).then(JSON.parse),
+    ]
+  );
+
+  assert.match(pageSource, /t\.raw\('groups'\)/);
+  assert.match(managerSource, /localizedGroupNames\[key\.groupSlug\]/);
+  assert.equal(zhMessages.groups.official, '官方');
+  assert.equal(enMessages.groups.official, 'Official');
+  assert.doesNotMatch(zhMessages.form.hint, /充值/);
+  assert.doesNotMatch(enMessages.form.hint, /add credit/i);
 });

@@ -914,3 +914,16 @@ test('public query outputs do not serialize New API mapping details', async () =
   assert.equal(groupsJson.includes('newapiGroup'), false);
   assert.equal(/newapi/i.test(groupsJson), false);
 });
+
+test('catalog writes expire cached public data immediately', async () => {
+  const source = await readFile(
+    join(process.cwd(), 'src/features/api-catalog/server/queries.ts'),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /revalidateTag\(CATALOG_CACHE_TAG,\s*\{\s*expire:\s*0\s*\}\)/
+  );
+  assert.doesNotMatch(source, /revalidateTag\(CATALOG_CACHE_TAG,\s*'max'\)/);
+});
