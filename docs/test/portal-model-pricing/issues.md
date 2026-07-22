@@ -1,6 +1,6 @@
 # 门户模型定价与调用计费测试遗留
 
-来源：[`report.md`](report.md) 与 [`code-review.md`](code-review.md)，首次记录于 2026-07-21；本清单已按 2026-07-21 复核结论校准。
+来源：[`report.md`](report.md)、[`code-review.md`](code-review.md) 与 [`live-uat-report.md`](live-uat-report.md)，首次记录于 2026-07-21；本清单已按第二轮真实用户走查结论校准。
 
 ## P0：发布阻断与资金风险
 
@@ -13,11 +13,13 @@
 
 代码级缺陷已闭环（上方勾选项），但以下项目只能在真实环境取证，本地自动化与合成回归不可替代（[`retest-report.md`](retest-report.md) 同口径）。第 1 项是任何真实用户接入前都必须通过的通用硬门；第 2–5 项是能力级硬门，只阻塞对应模型或能力对外开放。未完成验收的能力必须保持不可调用且不对外宣传（技术兜底已核实：长上下文关即 413、web search 未配价即 400、图片不发布即不可路由），不阻塞已经通过真实验收的基础能力先行开放。第 2、4、5 项承接 `PLAN.md` 最终验收未勾项，第 3 项为测试阶段新增的真实契约门禁；本 `issues.md` 是闭环入口，相关 PLAN 项完成后仅同步进度勾选与回链。通用证据要求：脱敏的请求关联标识、复现命令、关键日志或截图索引；不得保留或提交凭据、用户身份、订单及原始敏感日志。
 
-- [ ] **1. 通用硬门：内部运行池全链路闭环（首次验证，剩余风险最高）**：`POST /api/user/manage` 的 override 契约仅按官方 `v1.0.0-rc.20` 源码与 mock 核对，目标部署实例从未真实调用。验收前固定并记录目标 New API 镜像 tag 或 digest（不得仅以可变的 `latest` 作为验收基线），同时记录实例实际版本。在该实例用全新门户用户完成“注册 → 仅本地钱包入账 → 创建 Key → 运行池自动供应 → 首次真实调用成功”，核对 override 请求、回读水位与脱敏审计（`newapi.runtime_pool.provision`）；全程不得手工修改远端用户数据。该首次真实调用须同时核对账本 meter、`charged` 与钱包扣费一致——首轮 UAT 的真实计费验收跑在修复前代码上，这笔调用是修复后 billing/handler 链路的首个真实计费证据，也是基础能力先行开放的最后一环。前置与观察项：目标环境已配 `NEWAPI_RUNTIME_POOL_TARGET_USD` / `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD`、已应用 0013–0016 迁移；正式开放首轮后台任务会对全部存量绑定做一次性供应（真实远端写），观察该轮审计与水位告警；并先跑一次不带 `--apply` 的 `runtime-pool-maintenance` 检查确认水位读数正常。若失败，先按版本、鉴权、配置或契约差异定位；只有确认内部运行池方案无法完成钱包解耦闭环时才回归 P0。
+- [x] **1. 通用硬门：内部运行池全链路闭环**。已在 New API `v1.0.0-rc.20`、固定镜像 ID `sha256:7111419e43bd33ee65829ff51f3cc04029d32e2eac28dfcb13b654bbea15036d` 上，以全新合成用户完成“注册 → 仅本地钱包入账 → 创建 Key → 首次 503 预热 → 自动供应 → 重试 200 → 门户结算”；全程未手工修改远端用户数据。运行池水位、唯一一次脱敏供应审计、请求 meter、`charged`、钱包余额和追加式流水一致。证据见 [`live-uat-report.md`](live-uat-report.md)。
 - [ ] **2. 能力级硬门：`gpt-5.6-luna` 完整 token meter 实调（首次验证）**：按 PLAN 最终验收清单在管理台配置完整普通档、cache write、长档与能力声明并发布，完成真实网关调用；核对账本 meter 列、价格版本、凭证关联、`charged` 与手算一致。若真实提供商能返回非零 cache write，用量必须进入对应 meter；取不到时不得用合成 fixture 冒充真实证据，应保持相关能力不开放或按既定定价裁决处理。
 - [ ] **3. 能力级硬门：`server_tool_use` 真实形态核实（首次验证）**：代码已把该字段列入 chat/responses 的已映射集合并按 `web_search_requests` 计次，但真实提供商响应从未见过。用真实 chat/responses web search 调用确认字段出现的端点与结构，修正映射并沉淀 fixture。失败后果：web search 工具费计次恒 0（静默免单）或产生假 `unmapped_struct` 告警；通过前保持 web search 不可调用。
 - [ ] **4. 能力级硬门：真实图片长 URL/b64 结算回归（修复后回归）**：真实上游分别返回长签名 URL 与 `b64_json` 两种形态，至少覆盖 default/auto 与一个显式 SKU，验证 per_call 按实际张数正常结算、default SKU 对账 `matched`、`skuKey`/`unitCount`/token 照记列正确，且不再产生 `token_mismatch` 与 `unit_count_missing`。同时确认发布配置中的 default 档按当前运营约定采用最贵档。UAT 首轮仅覆盖本地短 URL，此为覆盖缺口补测；通过前保持对应 Images 能力不可调用。
+  - 2026-07-21 第二轮 UAT：RunAPI 长 URL 的 generation/edit 均已真实结算；请求 `n=1` 实返 2 张，账本按 `unit_count=2` 和显式 low SKU 正确收 `$0.02`。显式 `b64_json` 请求仍返回 URL，尚缺另一真实 b64 上游证据，因此保持未完成。详见 [`live-uat-report.md`](live-uat-report.md)。
 - [ ] **5. 能力级硬门：272K 长上下文开关双态真实回归（修复后回归）**：修复轮改动了 billing/handler，需真实执行 272K+ 请求；关闭 `allowLongContext` 时应在转发前以明确错误拦截，开启后应成功调用并按整请求长档价格结算，同时验证 `longContextApplied=1`、`long_context_block_missed` 漏拦检测不误报，并记录脱敏的请求、账本与 New API 日志关联证据。通过前保持对应模型的长上下文能力关闭。
+  - 2026-07-21 第二轮 UAT：200-token 低成本阈值夹具已完成关闭 413、开启 200、`longContextApplied=1` 与整请求长档价验证；真实 272K+ 请求仍未执行，不能据此勾选。详见 [`live-uat-report.md`](live-uat-report.md)。
 
 ## P1：主要功能与审计错误
 
@@ -30,6 +32,9 @@
 - [x] tier 编辑器行 key 包含 `skuKey`，输入时重挂载并丢焦点。改用只在新增/初始化时生成的稳定行 ID。
 - [x] 用户用量页按模型 token 固定为 0、Key 固定为 `—`，并存在表格列错位。现从请求账本聚合完整 input/output meter，并关联门户 Key 前缀；表格列已校正。
 - [x] 用户账单页把请求扣费归为充值、扣费列表为空，小额扣费显示为 `$-0.00`。充值历史只取 recharge，扣费从 settled 请求生成，usage 金额保留 6 位小数。
+- [ ] New API 成本参照同步后，Embedding 的门户卖价数据未被覆盖，但公开目录把输入价隐藏为 `—`。真实同步把 `source_supported_endpoint_types` 更新为 `["openai"]`，公开查询因此未识别为 Embedding-only，空输出价触发整价隐藏。应以门户模型分类/能力为主判定，或将 New API 通用端点类型映射为稳定的计费端点语义；补充“真实同步后仍显示 input-only 价格”的回归。证据见 [`live-uat-report.md`](live-uat-report.md)。
+- [ ] Images generation 与 edit 请求显式传入 `n=1`，RunAPI 均实际返回 2 张图；网关按 `data.length=2` 正确结算，但用户会为超出请求数量的结果支付双倍按次费用。对外开放前必须明确各路由是否支持 `n`：不支持时在转发前拒绝非真实固定值，支持时校验返回张数与请求一致；不得继续接受 `n=1` 后静默按 2 张收费。补充 generation/edit 的真实契约与结算回归。证据见 [`live-uat-report.md`](live-uat-report.md)。
+- [ ] Images 请求显式指定 `response_format=b64_json`，RunAPI 仍返回 URL 且网关按成功响应透传。当前通道既有调研已知只返回 URL，但 API 层未声明或校验该能力。应把响应格式纳入模型/路由能力：不支持时在转发前明确 4xx，支持时必须验证真实响应形态；不得静默忽略用户参数。证据见 [`live-uat-report.md`](live-uat-report.md)。
 
 ## P2：契约与体验
 
@@ -41,6 +46,11 @@
 - [x] 中文文档页不再提示切换到中文。语言检测改为优先判断当前 pathname locale；浏览器复测通过。
 - [x] Checkout 关闭时隐藏充值入口、余额提醒与误导性的空状态文案；浏览器复测通过。
 - [x] 新分组运行凭证预热期间返回明确 503 提示和 `Retry-After: 1`。
+- [ ] Checkout 关闭时，API Key 页仍提示“发起付费调用前，请先在余额页充值”；应改为环境无关的余额说明或随 Checkout 状态隐藏。
+- [ ] 同一会话在后台保存 listing 折扣后，通过客户端路由返回公开模型页仍可能显示旧价格，完整刷新才更新；需补充公共目录的路由缓存失效或刷新提示。
+- [ ] Key 页把官方分组显示为 `Official`，而公开目录显示“官方”；统一用户侧中文名称。
+- [ ] 管理员调额会正确改变余额且不冒充充值，但普通用户看不到调额来源记录；评估增加只读的余额变动历史，避免余额变化不可解释。
+- [ ] 管理端用户详情只展示 New API 绑定，未展示内部运行池的 `ready/low/depleted/error`、最近水位、检查时间和脱敏供应审计；本轮只能借助数据库核对。增加只读运行池状态与审计入口，明确其是内部运行额度而非用户钱包余额。
 
 ## 非阻塞清理
 
