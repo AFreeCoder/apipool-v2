@@ -489,9 +489,9 @@ export async function assessPublishReadiness(
 
 **最终验收清单（全部通过才算完成）：**
 - [x] `npm test` 三绿（test/lint/build）；schema-guard 与全部既有用例无回归。
-- [ ] 手工验收：管理台配置 gpt-5.6-luna 满配（含 cache_write 6.25/长档/能力声明）→ 发布 → 网关实调 → 账本行 meter 列、凭证列、charged 与手算一致。
+- [x] 手工验收：管理台配置 gpt-5.6-luna 满配（含 cache_write 6.25/长档/能力声明）→ 发布 → 网关实调 → 账本行 meter 列、凭证列、charged 与手算一致。生产证据见 [`production-capability-uat.md`](../../test/portal-model-pricing/production-capability-uat.md)。
 - [ ] gpt-image-2：配 per_call tier（default 按最贵档）→ 实调生成 → `skuKey`/`unitCount`/token 照记列正确、charged = n × tier。
-- [ ] 272K：关开关分组被拦截（明示错误）；开开关分组实调 >272K 按长档价结算。
+- [x] 272K：关开关分组被拦截（明示错误）；开开关分组实调 >272K 按长档价结算。生产证据见 [`production-capability-uat.md`](../../test/portal-model-pricing/production-capability-uat.md)。
 - [x] 迁移演练：备份 → 迁移 → SQLite `PRAGMA integrity_check` + `PRAGMA foreign_key_check` → 冒烟；存量 `model_price_version` 行等价迁移核对（若选择清空，走独立人工脚本并留审计记录）。
 - [x] commit：`git commit -m "test: 对账统计与定价冒烟收尾"`
 

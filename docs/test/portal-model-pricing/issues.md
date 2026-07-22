@@ -1,6 +1,6 @@
 # 门户模型定价与调用计费测试遗留
 
-来源：[`report.md`](report.md)、[`code-review.md`](code-review.md)、[`live-uat-report.md`](live-uat-report.md) 与 [`retest-39b9507.md`](retest-39b9507.md)，首次记录于 2026-07-21；本清单已按第二轮真实用户走查和 `39b9507` 定向复测结论校准。
+来源：[`report.md`](report.md)、[`code-review.md`](code-review.md)、[`live-uat-report.md`](live-uat-report.md)、[`retest-39b9507.md`](retest-39b9507.md) 与 [`production-capability-uat.md`](production-capability-uat.md)，首次记录于 2026-07-21；本清单已按第二轮真实用户走查、`39b9507` 定向复测和生产能力验收结论校准。
 
 ## P0：发布阻断与资金风险
 
@@ -14,11 +14,12 @@
 代码级缺陷已闭环（上方勾选项），但以下项目只能在真实环境取证，本地自动化与合成回归不可替代（[`retest-report.md`](retest-report.md) 同口径）。第 1 项是任何真实用户接入前都必须通过的通用硬门；第 2–5 项是能力级硬门，只阻塞对应模型或能力对外开放。未完成验收的能力必须保持不可调用且不对外宣传（技术兜底已核实：长上下文关即 413、web search 未配价即 400、图片不发布即不可路由），不阻塞已经通过真实验收的基础能力先行开放。第 2、4、5 项承接 `PLAN.md` 最终验收未勾项，第 3 项为测试阶段新增的真实契约门禁；本 `issues.md` 是闭环入口，相关 PLAN 项完成后仅同步进度勾选与回链。通用证据要求：脱敏的请求关联标识、复现命令、关键日志或截图索引；不得保留或提交凭据、用户身份、订单及原始敏感日志。
 
 - [x] **1. 通用硬门：内部运行池全链路闭环**。已在 New API `v1.0.0-rc.20`、固定镜像 ID `sha256:7111419e43bd33ee65829ff51f3cc04029d32e2eac28dfcb13b654bbea15036d` 上，以全新合成用户完成“注册 → 仅本地钱包入账 → 创建 Key → 首次 503 预热 → 自动供应 → 重试 200 → 门户结算”；全程未手工修改远端用户数据。运行池水位、唯一一次脱敏供应审计、请求 meter、`charged`、钱包余额和追加式流水一致。证据见 [`live-uat-report.md`](live-uat-report.md)。注：本勾选不豁免生产正式开放时的前置与观察项（生产环境变量、存量绑定首轮一次性供应的审计与水位观察、先跑一次不带 `--apply` 的维护检查——本轮 UAT 未执行该脚本检查）；生产 New API 实例镜像与本轮记录的镜像 ID 不一致时，须重新核对 override 契约。
-- [ ] **2. 能力级硬门：`gpt-5.6-luna` 完整 token meter 实调（首次验证）**：按 PLAN 最终验收清单在管理台配置完整普通档、cache write、长档与能力声明并发布，完成真实网关调用；核对账本 meter 列、价格版本、凭证关联、`charged` 与手算一致。若真实提供商能返回非零 cache write，用量必须进入对应 meter；取不到时不得用合成 fixture 冒充真实证据，应保持相关能力不开放或按既定定价裁决处理。
+- [x] **2. 能力级硬门：`gpt-5.6-luna` 完整 token meter 实调（首次验证）**：生产管理台已配置完整普通档、PLAN 要求的 cache write、272K 长档与能力声明；Chat/Responses/Messages 及流式真实调用均完成结算，价格版本、`rk_` 运行凭证、New API 日志、钱包流水和 `charged` 手算一致。当前订阅池真实返回 cache write 为 0，本轮据实记录，没有用合成用量冒充；按 DESIGN O13 既定裁决保留完整售价配置。证据见 [`production-capability-uat.md`](production-capability-uat.md)。
 - [ ] **3. 能力级硬门：`server_tool_use` 真实形态核实（首次验证）**：代码已把该字段列入 chat/responses 的已映射集合并按 `web_search_requests` 计次，但真实提供商响应从未见过。用真实 chat/responses web search 调用确认字段出现的端点与结构，修正映射并沉淀 fixture。失败后果：web search 工具费计次恒 0（静默免单）或产生假 `unmapped_struct` 告警；通过前保持 web search 不可调用。
 - [ ] **4. 能力级硬门：真实图片长 URL/b64 结算回归（修复后回归）**：真实上游分别返回长签名 URL 与 `b64_json` 两种形态，至少覆盖 default/auto 与一个显式 SKU，验证 per_call 按实际张数正常结算、default SKU 对账 `matched`、`skuKey`/`unitCount`/token 照记列正确，且不再产生 `token_mismatch` 与 `unit_count_missing`。同时确认发布配置中的 default 档按当前运营约定采用最贵档。UAT 首轮仅覆盖本地短 URL，此为覆盖缺口补测；通过前保持对应 Images 能力不可调用。Images 对外开放除本条证据外，还须同时闭环 P1 中的 `n` 张数契约与 `response_format` 能力声明两条未勾项——仅勾本条不构成开放条件。
   - 2026-07-21 第二轮 UAT：RunAPI 长 URL 的 generation/edit 均已真实结算；请求 `n=1` 实返 2 张，账本按 `unit_count=2` 和显式 low SKU 正确收 `$0.02`。显式 `b64_json` 请求仍返回 URL，尚缺另一真实 b64 上游证据，因此保持未完成。详见 [`live-uat-report.md`](live-uat-report.md)。
-- [ ] **5. 能力级硬门：272K 长上下文开关双态真实回归（修复后回归）**：修复轮改动了 billing/handler，需真实执行 272K+ 请求；关闭 `allowLongContext` 时应在转发前以明确错误拦截，开启后应成功调用并按整请求长档价格结算，同时验证 `longContextApplied=1`、`long_context_block_missed` 漏拦检测不误报，并记录脱敏的请求、账本与 New API 日志关联证据。通过前保持对应模型的长上下文能力关闭。
+  - 2026-07-22 生产 UAT：`b64_json` 直连真实命中生产渠道，上游在 323 秒后由 New API 记录 200；探针客户端 240 秒先超时，写响应出现 `broken pipe`，因此未取得 URL/b64 形态与实际 `data.length`。一次性 New API Token 已删除，Images listing 已设为 `Retired`。下轮客户端超时至少设为 420 秒，再按“直连确认形态 → 临时开放 Portal → 网关结算 → 恢复 Retired”执行。详见 [`production-capability-uat.md`](production-capability-uat.md)。
+- [x] **5. 能力级硬门：272K 长上下文开关双态真实回归（修复后回归）**：生产真实执行约 280K 请求；关闭态在转发前明确返回 413，开启态成功结算，输入 meter 合计 284,382 与 New API prompt tokens 一致，`longContextApplied=1`，无 `long_context_block_missed`，`charged=562095 micro-USD` 与长档手算一致，Portal 账本和 New API 日志联结成功。详见 [`production-capability-uat.md`](production-capability-uat.md)。
   - 2026-07-21 第二轮 UAT：200-token 低成本阈值夹具已完成关闭 413、开启 200、`longContextApplied=1` 与整请求长档价验证；真实 272K+ 请求仍未执行，不能据此勾选。详见 [`live-uat-report.md`](live-uat-report.md)。
 
 ## P1：主要功能与审计错误
@@ -36,6 +37,7 @@
   - 2026-07-22 复测边界：`39b9507` 未修改 Embedding 计费逻辑，本轮也未变更其配置，因此保持未完成。
 - [ ] Images generation 与 edit 请求显式传入 `n=1`，RunAPI 均实际返回 2 张图；网关按 `data.length=2` 正确结算，但用户会为超出请求数量的结果支付双倍按次费用。对外开放前必须明确各路由是否支持 `n`：不支持时在转发前拒绝非真实固定值，支持时校验返回张数与请求一致；不得继续接受 `n=1` 后静默按 2 张收费。补充 generation/edit 的真实契约与结算回归。证据见 [`live-uat-report.md`](live-uat-report.md)。
 - [ ] Images 请求显式指定 `response_format=b64_json`，RunAPI 仍返回 URL 且网关按成功响应透传。当前通道既有调研已知只返回 URL，但 API 层未声明或校验该能力。应把响应格式纳入模型/路由能力：不支持时在转发前明确 4xx，支持时必须验证真实响应形态；不得静默忽略用户参数。证据见 [`live-uat-report.md`](live-uat-report.md)。
+  - 2026-07-22 生产直连已证明上游可完成请求，但 323 秒响应超过探针 240 秒超时，尚未观察到响应形态；不能据此关闭 `n` 或 `response_format` 契约。后续复测超时至少 420 秒，且不得记录原始图片或完整响应。证据见 [`production-capability-uat.md`](production-capability-uat.md)。
 
 ## P2：契约与体验
 
@@ -53,6 +55,7 @@
 - [x] 余额页增加只读的“余额调整记录”，管理员调额与充值、用量扣费分区展示，并隐藏内部原因和操作人标识；浏览器复测通过。证据见 [`retest-39b9507.md`](retest-39b9507.md)。
 - [ ] 浏览器“后退”恢复公开模型目录的历史文档时，仍可能显示 listing 保存前的旧价格；再次通过站内客户端链接进入目录会显示最新价格。若产品要求历史返回也必须即时刷新，应在页面恢复可见时主动 revalidate，或禁止把目录价格页作为可长期恢复的历史快照。证据见 [`retest-39b9507.md`](retest-39b9507.md)。
 - [ ] 管理端用户详情只展示 New API 绑定，未展示内部运行池的 `ready/low/depleted/error`、最近水位、检查时间和脱敏供应审计；本轮只能借助数据库核对。增加只读运行池状态与审计入口，明确其是内部运行额度而非用户钱包余额。
+- [ ] `deploy/live-smoke.sh` 会用 `.env.deploy` 覆盖调用方传入的 smoke 模型/分组，且未透传 Images 与长上下文三个可选变量；仅看脚本成功输出可能误把默认模型当作目标模型证据。应保留显式调用方覆盖、透传 `APIPOOL_SMOKE_IMAGE_MODEL`/`APIPOOL_SMOKE_LONG_CONTEXT_MODEL`/`APIPOOL_SMOKE_LONG_CONTEXT_TOKENS`，并在不泄密的前提下打印最终模型与分组。修复前必须用账本复核实际模型。证据见 [`production-capability-uat.md`](production-capability-uat.md)。
 
 ## 非阻塞清理
 
