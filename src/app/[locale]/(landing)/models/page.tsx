@@ -4,6 +4,7 @@ import {
 } from '@/features/api-catalog/components/model-filters';
 import {
   buildModelFilterHref,
+  formatMicroUsdPerCall,
   formatMicroUsdPerMillion,
   parseModelFilters,
 } from '@/features/api-catalog/lib/catalog';
@@ -16,10 +17,10 @@ import {
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
-import { getMetadata } from '@/shared/lib/seo';
 import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
+import { getMetadata } from '@/shared/lib/seo';
 
 function formatContextWindow(tokens: number | null) {
   if (!tokens) return '—';
@@ -257,7 +258,7 @@ function ModelsTable({
                   {labels.context}
                 </th>
                 <th className="px-4 py-3 text-right font-medium">
-                  {labels.input}
+                  {labels.inputOrCall}
                 </th>
                 <th className="px-4 py-3 text-right font-medium">
                   {labels.output}
@@ -326,10 +327,29 @@ function ModelsTable({
                       {formatContextWindow(listing.contextWindow)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {inputPrice === undefined
-                        ? '—'
-                        : formatMicroUsdPerMillion(inputPrice)}
-                      {showStrikethrough &&
+                      {listing.billingScheme === 'per_call' ? (
+                        <div className="space-y-1 text-xs">
+                          {(listing.tiers ?? []).map((tier) => (
+                            <div key={tier.skuKey}>
+                              <div className="text-muted-foreground break-all">
+                                {tier.skuKey}
+                              </div>
+                              <div>
+                                {formatMicroUsdPerCall(
+                                  tier.priceMicroUsd,
+                                  labels.perCall
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : inputPrice === undefined ? (
+                        '—'
+                      ) : (
+                        formatMicroUsdPerMillion(inputPrice)
+                      )}
+                      {listing.billingScheme !== 'per_call' &&
+                        showStrikethrough &&
                         listing.listInputMicroUsd !== undefined && (
                           <div className="text-muted-foreground text-xs line-through">
                             {formatMicroUsdPerMillion(

@@ -28,6 +28,8 @@ services:
       NEWAPI_ADMIN_TOKEN: ${NEWAPI_ADMIN_TOKEN}
       NEWAPI_ADMIN_USER_ID: ${NEWAPI_ADMIN_USER_ID}
       NEWAPI_QUOTA_PER_UNIT: ${NEWAPI_QUOTA_PER_UNIT}
+      NEWAPI_RUNTIME_POOL_TARGET_USD: ${NEWAPI_RUNTIME_POOL_TARGET_USD}
+      NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD: ${NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD}
       GATEWAY_RISK_SLOT_LIMIT: ${GATEWAY_RISK_SLOT_LIMIT}
       GATEWAY_OVERDRAFT_FREEZE_MICRO_USD: ${GATEWAY_OVERDRAFT_FREEZE_MICRO_USD}
       GATEWAY_MAX_BODY_BYTES: ${GATEWAY_MAX_BODY_BYTES}
@@ -43,7 +45,7 @@ services:
       NEXT_PUBLIC_APIPOOL_API_BASE_URL: ${NEXT_PUBLIC_APIPOOL_API_BASE_URL}
       NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: ${NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL}
     ports:
-      - "127.0.0.1:3000:3000"
+      - '127.0.0.1:3000:3000'
     volumes:
       - ./data/portal:/data
     depends_on:
@@ -61,7 +63,7 @@ services:
     image: calciumion/new-api:latest
     # 本地发布到 127.0.0.1:3001：既是 /v1 网关（供 curl），也是管理后台（加渠道）
     ports:
-      - "127.0.0.1:3001:3000"
+      - '127.0.0.1:3001:3000'
     volumes:
       - ./data/new-api:/data
     environment:

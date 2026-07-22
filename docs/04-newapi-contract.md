@@ -12,14 +12,16 @@
 
 ## 2. 环境变量
 
-| 变量                               | 说明                                                                                                                                                                                                                          |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEWAPI_INTEGRATION_ENABLED`       | 桥接总开关，非 `false` 即启用                                                                                                                                                                                                 |
-| `NEWAPI_BASE_URL`                  | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器                                                                                                                                                      |
-| `NEWAPI_ADMIN_TOKEN`               | 管理员系统访问令牌（server-only）                                                                                                                                                                                             |
-| `NEWAPI_ADMIN_USER_ID`             | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要）                                                                                                                                                                    |
-| `NEWAPI_QUOTA_PER_UNIT`            | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000`                                                                                                                          |
-| `NEXT_PUBLIC_APIPOOL_API_BASE_URL` | 排空期客户 API endpoint，`https://api2.apipool.dev`；协议路径（如 OpenAI-compatible `/v1/chat/completions`）由调用方按具体 provider 协议附加。cutover 后 `https://api.apipool.dev` 回收为正牌 endpoint，`api2` 永久保留为别名 |
+| 变量                                    | 说明                                                                                                                                                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEWAPI_INTEGRATION_ENABLED`            | 桥接总开关，非 `false` 即启用                                                                                                                                                                                                 |
+| `NEWAPI_BASE_URL`                       | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器                                                                                                                                                      |
+| `NEWAPI_ADMIN_TOKEN`                    | 管理员系统访问令牌（server-only）                                                                                                                                                                                             |
+| `NEWAPI_ADMIN_USER_ID`                  | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要）                                                                                                                                                                    |
+| `NEWAPI_QUOTA_PER_UNIT`                 | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000`                                                                                                                          |
+| `NEWAPI_RUNTIME_POOL_TARGET_USD`        | 与门户钱包解耦的内部运行池补充目标，正整数美元，默认 `1000`                                                                                                                                                                   |
+| `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD` | 内部运行池低水位阈值，正整数美元，默认 `100`，必须小于目标                                                                                                                                                                    |
+| `NEXT_PUBLIC_APIPOOL_API_BASE_URL`      | 排空期客户 API endpoint，`https://api2.apipool.dev`；协议路径（如 OpenAI-compatible `/v1/chat/completions`）由调用方按具体 provider 协议附加。cutover 后 `https://api.apipool.dev` 回收为正牌 endpoint，`api2` 永久保留为别名 |
 
 ## 3. 认证模型
 
@@ -50,13 +52,15 @@ New-Api-User: <该令牌所属用户的 ID>
 5. GET  /api/user/token  + New-Api-User: <id>（cookie 会话）
    → 返回 32 字符 access token（每次调用重新生成，旧 token 失效）
 6. 门户加密保存 access token + newapiUserId 至 newApiUserBinding
+7. 在首个运行 Key 激活前读取该用户 quota；未达到低水位时，管理员通过
+   `POST /api/user/manage` 以 `mode=override` 一次性设为内部池目标值
 ```
 
 注意：步骤 5 的 token 是"重新生成"语义——门户保存后不得再次调用该接口，否则已存 token 失效。已有绑定用户再次供应运行时凭证时，门户只补齐远端用户 group，不重新生成 access token。
 
 凭据存储规则：access token 与密码使用应用级加密（AES-256-GCM，密钥来自 env）落库，永不明文存储、永不出现在日志与审计明细中。
 
-额度策略：门户用户余额由门户本地钱包管理。New API 用户与运行 Key 使用不依赖其 quota 的运行配置；New API 原生 quota 只属于其自身直连账户，不接受门户充值或 APIPool 调额同步。
+额度策略：门户用户余额由门户本地钱包管理，是用户资产的唯一事实源。New API 运行链路仍会检查其用户 quota，因此门户为每个绑定维护一个与钱包解耦的大额内部运行池；该池只在首次供应时自动初始化，之后按水位监控、由运维显式人工补充。该池不接受门户充值或 APIPool 调额同步，退款也不得写入。
 
 ## 4. 端点矩阵（门户操作 → 真实 New API 接口）
 
@@ -66,6 +70,7 @@ New-Api-User: <该令牌所属用户的 ID>
 | 创建用户              | 管理员     | `POST /api/user/`                          | ✅body `{username, password, display_name}`；**密码限长 8-20 字符**（超长报 `Password failed on the 'max' tag`）；**不返回 ID**，需 `GET /api/user/search?keyword=` 反查           |
 | 更新用户分组          | 管理员     | `PUT /api/user/`                           | 用于让 New API 用户具备对应 token group 权限；需带 `id`、`username`、`display_name`、`group`、`role`、`remark`，只传 `{id, group}` 会触发 New API 校验/唯一约束问题                |
 | 读取原生额度          | 用户       | `GET /api/user/self`                       | ✅`data.quota` 为整数；仅用于 New API 原生账户诊断，不作为门户余额                                                                                                                 |
+| 绝对覆盖内部运行池    | 管理员     | `POST /api/user/manage`                    | body `{id, action:"add_quota", mode:"override", value}`；按官方 `v1.0.0-rc.20` 路由与控制器源码核对，部署时仍须真实复测                                                            |
 | 创建运行时 token      | 用户       | `POST /api/token/`                         | ✅字段：`name`、`remain_quota`、`unlimited_quota`、`expired_time`(-1 永久)、`model_limits_enabled`+`model_limits`、`allow_ips`、`group`；**响应不含 key**；自带 `key` 字段会被忽略 |
 | 读取运行时 token 明文 | 用户       | `POST /api/token/:id/key`                  | ✅返回 48 字符明文（限流保护）；网关调用需加 `sk-` 前缀；列表/单查接口的 key 一律掩码                                                                                              |
 | 列出运行时 token      | 用户       | `GET /api/token/?p=1&size=N`               | ✅分页 `{items, total, page}`；key 掩码                                                                                                                                            |
@@ -85,7 +90,10 @@ New-Api-User: <该令牌所属用户的 ID>
 
 - New API `quota` 为整数，实例默认换算系数为 `500000/$1`；这个单位只用于上游原生诊断。
 - 门户钱包统一使用整数 micro-USD，`1 USD = 1,000,000 micro-USD`。
-- 门户充值和人工调额不再换算或写入 New API quota。
+- New API 的请求计费链路会同时检查用户 quota；运行 token 的 `unlimited_quota=true` 只取消 token 自身上限，不能绕过用户水位。
+- 门户充值、退款和人工调额不换算或写入 New API quota；内部池目标不代表用户资产，也不参与门户账单。
+- 全新或存量未初始化绑定只执行一次自动供应；之后后台每小时只记录 `ready/low/depleted/error` 水位，不自动补充。
+- 人工补充使用绝对值覆盖并回读确认，响应不确定时可用同一目标值重试，不会像增量加额一样重复叠加。
 
 ## 6. 幂等策略（重要变更）
 
@@ -95,6 +103,7 @@ New-Api-User: <该令牌所属用户的 ID>
 - 运行时凭证：`runtime_credential(portal_user_id, newapi_group)` 唯一，同一用户/上游分组复用一份凭证；远端写结果不确定时先查同名 token 再补偿。
 - 支付入账：`wallet_ledger.order_no` 唯一约束与订单状态机共同保证本地钱包只入账一次（见 06）。
 - 用户绑定：`newApiUserBinding.portalUserId` 唯一索引，重复绑定直接复用。
+- 内部运行池：`runtimePoolProvisionedAt` 是一次性供应标记；远端写使用绝对目标值，标记与审计在同一本地事务落库。低水位补充必须由显式 `--apply` 运维命令触发。
 - 重试策略：GET 可重试；写操作仅在确认远端未生效（明确的 4xx/超时前未发出）时重试，否则先查询远端状态再决定。
 
 ## 7. 错误映射与重试（沿用旧契约，微调）
@@ -114,12 +123,13 @@ New-Api-User: <该令牌所属用户的 ID>
 - 门户 Key 在 `portal_api_key` 本地生成，明文只返回一次；禁用和删除只改变本地 Key 状态，网关鉴权立即生效。
 - `runtime_credential` 是网关访问上游的内部凭证，不与某一门户 Key 一一绑定；同一用户和 New API 分组共享一份运行时凭证。
 - 运行时凭证停用失败进入 `credential_retirement` 待补偿；未核对远端前不得静默标记成功。
+- `newapi_user_binding.runtimePool*` 只保存内部池的供应标记、最近水位、检查时间和脱敏错误；不得据此展示或推导门户余额。
 - `newapi_key_binding` 及 `remote_created_binding_failed` 等状态仅服务于旧版远端 Key 的只读展示和安全删除，不再用于创建新 Key。
 - 门户调额只写本地追加式钱包流水；New API 绑定或运行时凭证状态不影响既有门户钱包余额。
 
 ## 9. 审计（沿用旧契约，不变）
 
-门户 Key、钱包与网关管理操作写入 `portal_admin_audit_log`；仍需调用 New API 的用户供应、运行时凭证和旧版 Key 清理写入 `new_api_bridge_audit_log`。两类日志均保留操作者、目标、状态与幂等信息，凭据字段一律脱敏。
+门户 Key、钱包与网关管理操作写入 `portal_admin_audit_log`；内部运行池首次供应与人工补充也写入该表，action 分别为 `newapi.runtime_pool.provision` 与 `newapi.runtime_pool.replenish`，只记录前后 quota、水位和目标，不记录凭据。仍需调用 New API 的用户供应、运行时凭证和旧版 Key 清理写入 `new_api_bridge_audit_log`。两类日志均保留操作者、目标、状态与幂等信息，凭据字段一律脱敏。
 
 ## 10. Spike 验证清单（✅2026-06-12 已对 v1.0.0-rc.10 完成；换版本部署时复测）
 
@@ -130,5 +140,6 @@ New-Api-User: <该令牌所属用户的 ID>
 - [x] `GET /api/data/self` 的时间范围参数——`start_timestamp`/`end_timestamp`/`default_time=hour|day`
 - [x] 历史验证：`POST /api/redemption/` 可生成兑换码；当前门户钱包链路已不再调用该端点
 - [x] `QUOTA_PER_UNIT` 实际值——500000
+- [ ] `POST /api/user/manage` 的 `add_quota + override` 在目标部署版本真实复测；当前实现已按官方 `v1.0.0-rc.20` 路由、控制器和计费源码核对，并有 mock 契约测试
 - [x] `success=false` 的 message——未见敏感信息（如 "Redemption failed, please try again later"），可透传审计
 - [x] 额外发现：所有 `/api/*` 调用（含 cookie 会话）都要求 `New-Api-User` header；`/v1/chat/completions` 鉴权链路验证通过（无渠道时报 `model_not_found`，属渠道配置问题而非鉴权问题）

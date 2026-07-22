@@ -351,11 +351,13 @@ test('7 pending 运行 Key：首请求 503，worker 创建后重试 200', async 
       disableKey: async () => ({}),
     },
     ensureBinding: async () => ({
+      id: `integration-binding-credential-create`,
       portalUserId: fixture.userId,
       newapiUserId: `integration-remote-user-credential-create`,
       status: 'active',
       newapiAccessTokenEnc: modules.crypto.encryptCredential('access-worker'),
     }),
+    ensureRuntimePool: async () => undefined,
   });
   assert.equal(createCalls, 1);
   const retried = await invoke(fixture);
@@ -1046,9 +1048,8 @@ test('36 images 慢首包越过文本预算后仍成功', async () => {
 
 test('37 images 响应无法解析张数：进入失败复核路径且不扣费', async () => {
   const fixture = await seedImageFixture('image-no-data');
-  const openingBalance = (
-    await modules.wallet.getWalletAccount(fixture.userId)
-  ).balanceMicroUsd;
+  const openingBalance = (await modules.wallet.getWalletAccount(fixture.userId))
+    .balanceMicroUsd;
   const response = await invoke(
     fixture,
     'image-no-data',

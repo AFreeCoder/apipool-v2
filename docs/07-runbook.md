@@ -42,6 +42,8 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - `NEWAPI_BASE_URL`（内部服务地址，不暴露给浏览器）
 - `NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID`
 - `NEWAPI_QUOTA_PER_UNIT`（与实例核对）
+- `NEWAPI_RUNTIME_POOL_TARGET_USD`（内部运行池补充目标，默认 `1000`）
+- `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD`（低水位阈值，默认 `100`，必须小于目标）
 - `APIPOOL_KEY_CREATION_ENABLED=true`
 - `NEXT_PUBLIC_APIPOOL_API_BASE_URL`（不含协议路径；门户正式上线时设为
   `https://api.apipool.dev`。临时直连 `api2` 使用 New API 原生 Key，不作为门户
@@ -126,18 +128,44 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 1. **元数据过滤器健康检查**：容器必须为 `healthy`；它不开放宿主机端口。
 2. **New API 健康检查**：内部地址 `GET /api/status` 返回 `success=true`。
 3. **bridge 冒烟**：门户服务端能以管理员上下文认证，且浏览器侧无内部标识泄漏。
-4. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
-5. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → 控制台余额一致；不得再以 New API quota 作为门户余额。
-6. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
-7. **调用冒烟**：门户 Key 通过容器内网网关调用发布模型；临时公网
+4. **内部运行池**：等待首轮后台任务后执行第 3.1 节检查，确认存量绑定已完成一次性供应，且无 `low`、`depleted` 或 `failed`。
+5. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
+6. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → 控制台余额一致；不得再以 New API quota 作为门户余额。
+7. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
+8. **调用冒烟**：门户 Key 通过容器内网网关调用发布模型；临时公网
    `https://api2.apipool.dev` 另用 New API 原生 Key 验证真实 `/v1/models`、
    图片等实际端点可调用。
-8. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
-9. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
+9. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
+10. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
 GitHub `APIPool MVP Verify` workflow 在 push/PR/手动触发时只跑无密钥本地验证。生产真实冒烟门禁必须在 VPS 上执行 `deploy/live-smoke.sh`，使用服务器本地 `.env.deploy`；不要把 `DATABASE_URL`、`NEWAPI_ADMIN_TOKEN` 或 smoke 用户 ID 配到 GitHub Actions。
 
-### 3.1 自动化 MVP smoke
+### 3.1 New API 内部运行池
+
+门户钱包是用户余额唯一事实源，充值、退款和人工调额都不得同步 New API quota。New API 本身仍会检查用户 quota，因此每个门户用户绑定维护一个与钱包解耦的大额内部运行池：
+
+- 全新绑定在运行 Key 激活前完成一次性供应；供应失败时凭证保持 `pending`，不会先创建可用 Key。
+- 迁移前已有的活跃绑定由首轮后台任务一次性补齐；绝对值覆盖可安全重试，不会叠加额度。
+- 后台每小时只检查水位并告警，已初始化绑定不会自动补充。
+- `NEWAPI_RUNTIME_POOL_TARGET_USD` 与 `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD` 只决定内部池目标和告警阈值，不代表用户资产。
+
+生产检查只读远端额度并更新本地观测状态，不执行补充：
+
+```bash
+docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml \
+  exec -T apipool-v2 node runtime-pool-maintenance.cjs
+```
+
+输出中的 `uninitialized`、`low`、`depleted`、`failed` 均应为 `0`；检查发现前三类异常时退出码为 `2`，远端读取失败时为 `1`。低水位时先核对告警与目标值，再显式执行人工补充：
+
+```bash
+docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml \
+  exec -T apipool-v2 node runtime-pool-maintenance.cjs --apply
+```
+
+`--apply` 只把低水位或耗尽绑定绝对覆盖到目标值，并写 `newapi.runtime_pool.replenish` 审计；它不读取或修改门户钱包。执行后再次运行检查命令确认收敛。源码环境也可分别使用 `pnpm runtime-pool:check` 与 `pnpm runtime-pool:replenish`。
+
+### 3.2 自动化 MVP smoke
 
 发布前先确认本地或发布环境数据库已迁移，且目录种子已写入至少一个 provider/group/model/listing：
 
@@ -175,7 +203,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 
 `deploy/live-smoke.sh` 使用当前 `release.env` 中的门户镜像启动一次性容器，不依赖服务器源码。该脚本会创建冒烟分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 
-### 3.2 New API option-map 修复
+### 3.3 New API option-map 修复
 
 New API 日志如果反复出现 `failed to update option map: unexpected end of JSON input`，先按只读方式确认 `options` 表中的分组 JSON map。`theme.frontend=default` 是合法的字符串配置，不属于 JSON map 错误。
 

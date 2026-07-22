@@ -141,9 +141,13 @@ export default async function CatalogModelEditPage({
     revalidateCatalog();
 
     if (publishReasons.length > 0) {
+      const actionT = await getTranslations({
+        locale,
+        namespace: 'admin.catalog',
+      });
       return {
         status: 'error' as const,
-        message: t('errors.pricingSavedButNotReady', {
+        message: actionT('errors.pricingSavedButNotReady', {
           reasons: publishReasons.join('；'),
         }),
       };

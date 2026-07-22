@@ -83,6 +83,12 @@ export function LocaleDetector() {
     // Get browser locale
     const detectedLocale = detectBrowserLocale();
     setBrowserLocale(detectedLocale);
+    const explicitPathLocale = window.location.pathname
+      .split('/')
+      .filter(Boolean)[0];
+    const effectiveCurrentLocale = locales.includes(explicitPathLocale)
+      ? explicitPathLocale
+      : currentLocale;
 
     // Check if user has dismissed the banner or already set a preference
     const dismissed = isDismissed();
@@ -91,7 +97,7 @@ export function LocaleDetector() {
     // If user has previously clicked to switch locale, auto-switch to that preference
     if (
       preferredLocale &&
-      preferredLocale !== currentLocale &&
+      preferredLocale !== effectiveCurrentLocale &&
       locales.includes(preferredLocale)
     ) {
       switchToLocale(preferredLocale);
@@ -105,7 +111,7 @@ export function LocaleDetector() {
     // 4. User hasn't set a preference yet (no auto-switch, only show banner)
     if (
       detectedLocale &&
-      detectedLocale !== currentLocale &&
+      detectedLocale !== effectiveCurrentLocale &&
       !dismissed &&
       !preferredLocale
     ) {

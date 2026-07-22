@@ -241,6 +241,16 @@ test('Images b64_json 跨 chunk 跳过正文，响应大于解析窗仍可结算
   assert.equal(result.usage?.output_tokens, 3);
 });
 
+test('Images 长签名 URL 不受元数据字符串长度上限影响', () => {
+  const extractor = createUsageExtractor('images_generations', false, 1 << 20);
+  const longUrl = `https://example.com/image?signature=${'a'.repeat(4096)}`;
+  extractor.push(enc.encode(JSON.stringify({ data: [{ url: longUrl }] })));
+  const result = extractor.finish();
+  assert.equal(result.complete, false);
+  assert.equal(result.unitCount, 1);
+  assert.equal(result.allDataItemsHaveUrl, true);
+});
+
 test('字节级扫描内存有界：25MB body（大量短串）提取 model 正确', () => {
   const big = `{"model":"gpt-5.4","messages":[${'{"role":"user","content":"x"},'.repeat(400_000)}{"role":"user","content":"end"}]}`;
   assert.deepEqual(extractTopLevelModel(enc.encode(big)), {

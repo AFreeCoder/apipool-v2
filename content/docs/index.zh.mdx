@@ -44,7 +44,7 @@ APIPOOL_ENDPOINT="https://api2.apipool.dev"
 curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
+  -d '{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Hello from APIPool"}]}'
 ```
 
 ## OpenAI SDK（JavaScript）
@@ -60,7 +60,7 @@ const client = new OpenAI({
 });
 
 const completion = await client.chat.completions.create({
-  model: 'gpt-4o-mini',
+  model: 'gpt-5.6-luna',
   messages: [{ role: 'user', content: 'Hello from APIPool' }],
 });
 
@@ -81,7 +81,7 @@ client = OpenAI(
 )
 
 completion = client.chat.completions.create(
-    model="gpt-4o-mini",
+    model="gpt-5.6-luna",
     messages=[{"role": "user", "content": "Hello from APIPool"}],
 )
 
@@ -100,7 +100,7 @@ const response = await fetch(`${APIPOOL_ENDPOINT}/v1/chat/completions`, {
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    model: 'gpt-4o-mini',
+    model: 'gpt-5.6-luna',
     messages: [{ role: 'user', content: 'Hello from APIPool' }],
   }),
 });
@@ -129,22 +129,45 @@ curl "$APIPOOL_ENDPOINT/v1/messages" \
 Anthropic 官方 SDK 将 `baseURL` 设为 `https://api2.apipool.dev`、`apiKey` 设为你的
 APIPool Key 即可使用。
 
+## Embeddings 与 Images
+
+Embedding 使用 `/v1/embeddings`，只按输入 token 计费；将模型替换为
+[模型列表](/models)中支持 Embedding 的可用模型：
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/embeddings" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"YOUR_EMBEDDING_MODEL","input":"Hello from APIPool"}'
+```
+
+图片生成使用 `/v1/images/generations`，图片编辑使用 multipart 的
+`/v1/images/edits`。图片模型按公开模型页列出的 quality/size SKU **按实际返回张数、按次计费**；Images 不支持 `stream:true`。
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/images/generations" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-image-2","prompt":"A product photo on a white background","quality":"low","size":"1024x1024"}'
+```
+
 ## 流式输出
 
-在请求体中设置 `"stream": true` 即可获得与 OpenAI API 一致的 SSE 流式响应，
-官方 SDK 的流式辅助方法可直接使用。
+Chat Completions、Responses 与 Messages 请求可设置 `"stream": true`，获得 SSE
+流式响应；Images 端点不支持流式响应。
 
 ## 错误码参考
 
-| 状态码                | 含义                           | 处理方式                          |
-| --------------------- | ------------------------------ | --------------------------------- |
-| `401`                 | Key 缺失、无效、被禁用或已删除 | 检查 header 与控制台中的 Key 状态 |
-| `403`                 | Key 无权访问所请求的模型       | 检查 Key 的模型限制设置           |
-| `429`                 | 触发限流                       | 退避后重试                        |
-| `402` / 额度错误      | 余额耗尽                       | 在控制台充值                      |
-| `404` model_not_found | 模型 ID 不可用                 | 从[模型列表](/models)选择可用模型 |
+| 状态码                           | 含义                           | 处理方式                          |
+| -------------------------------- | ------------------------------ | --------------------------------- |
+| `401`                            | Key 缺失、无效、被禁用或已删除 | 检查 header 与控制台中的 Key 状态 |
+| `403`                            | Key 无权访问所请求的模型       | 检查 Key 的模型限制设置           |
+| `429` insufficient_quota         | 门户余额耗尽                   | 在控制台充值                      |
+| `429` concurrency_limit_exceeded | 触发并发风险限制               | 按 `Retry-After` 退避后重试       |
+| `404` model_not_found            | 模型 ID 不可用                 | 从[模型列表](/models)选择可用模型 |
 
 ## 计费说明
 
-在[余额页](/dashboard/billing)以美元充值，按[模型页](/models)所列单价按 token
-扣减。请求数、token 数和分模型消费在[用量页](/dashboard/usage)实时可见。
+在[余额页](/dashboard/billing)以美元充值。文本与 Embedding 按[模型页](/models)
+所列 meter/token 单价扣减，图片等按次模型按 SKU 单价与实际返回数量扣减。请求数、
+token 数、分模型消费和逐请求扣费在[用量页](/dashboard/usage)与账单页可见。

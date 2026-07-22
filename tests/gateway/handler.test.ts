@@ -240,6 +240,7 @@ test('路由存在但运行 Key pending → 503 + Retry-After', async () => {
   );
   assert.equal(response.status, 503);
   assert.equal(response.headers.get('retry-after'), '1');
+  assert.match(await response.text(), /credentials are being prepared/i);
 });
 
 test('转发准入拒绝发生在凭证、账本与上游调用之前', async () => {
@@ -651,6 +652,24 @@ test('per_call 无 usage 但 data 可数时仍按实际数量结算', async () =
   assert.equal(settlement?.unitCount, 2);
   assert.equal(settlement?.skuKey, 'quality=high;size=1024x1024');
   assert.deepEqual(settlement?.flags, ['usage_missing']);
+});
+
+test('Images stream=true 在转发前明确拒绝', async () => {
+  const handler = await loadHandler();
+  let forwarded = false;
+  const response = await handler.handleGatewayRequest(
+    request('/v1/images/generations', '{"model":"portal-model","stream":true}'),
+    ['images', 'generations'],
+    readyDeps({
+      forward: async () => {
+        forwarded = true;
+        return { kind: 'no_response', stage: 'connect' };
+      },
+    }) as any
+  );
+  assert.equal(response.status, 400);
+  assert.equal(await errorCode(response), 'invalid_request');
+  assert.equal(forwarded, false);
 });
 
 test('长上下文三态：开态切长档、关态漏拦打标、无能力不检测', async () => {

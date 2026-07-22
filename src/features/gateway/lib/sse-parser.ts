@@ -590,6 +590,56 @@ function countDirectArrayItems(body: Uint8Array, range: ObjectRange): number {
 }
 
 type StringPropertyScan = { ok: true; value: string | null } | { ok: false };
+type StringPropertyPresenceScan =
+  | { ok: true; present: boolean }
+  | { ok: false };
+
+function findDirectStringPropertyPresence(
+  body: Uint8Array,
+  objectRange: ObjectRange,
+  keyBytes: readonly number[]
+): StringPropertyPresenceScan {
+  let depth = 0;
+  let index = objectRange.start;
+  let present = false;
+  let seen = false;
+
+  while (index < objectRange.end) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const key = matchJsonString(body, index, keyBytes);
+      if (!key) return { ok: false };
+      if (depth === 1 && key.matches) {
+        const colonIndex = skipWhitespace(body, key.end);
+        if (body[colonIndex] === COLON) {
+          if (seen) return { ok: false };
+          seen = true;
+          const valueIndex = skipWhitespace(body, colonIndex + 1);
+          if (matchesLiteral(body, valueIndex, NULL_VALUE)) {
+            index = valueIndex + NULL_VALUE.length;
+            continue;
+          }
+          if (body[valueIndex] !== QUOTE) return { ok: false };
+          const valueEnd = skipJsonString(body, valueIndex);
+          if (valueEnd === null) return { ok: false };
+          present = true;
+          index = valueEnd;
+          continue;
+        }
+      }
+      index = key.end;
+      continue;
+    }
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth < 0) return { ok: false };
+    }
+    index += 1;
+  }
+  if (depth !== 0) return { ok: false };
+  return { ok: true, present };
+}
 
 function findDirectStringProperty(
   body: Uint8Array,
@@ -807,13 +857,13 @@ function scanImageDataItems(
     if (body[index] !== OPEN_BRACE) return { ok: false };
     const item = findBalancedObject(body, index);
     if (!item || item.end > range.end) return { ok: false };
-    const url = findDirectStringProperty(body, item, URL_KEY);
-    const b64 = findDirectStringProperty(body, item, B64_JSON_KEY);
-    if (!url.ok || !b64.ok || (url.value === null && b64.value === null)) {
+    const url = findDirectStringPropertyPresence(body, item, URL_KEY);
+    const b64 = findDirectStringPropertyPresence(body, item, B64_JSON_KEY);
+    if (!url.ok || !b64.ok || (!url.present && !b64.present)) {
       return { ok: false };
     }
     count += 1;
-    if (url.value === null) allDataItemsHaveUrl = false;
+    if (!url.present) allDataItemsHaveUrl = false;
 
     index = skipWhitespace(body, item.end);
     if (body[index] === 0x2c) {

@@ -314,6 +314,18 @@ export async function handleGatewayRequest(
         );
       }
       requestedModel = multipart.fields.model;
+      if (multipart.fields.stream) {
+        return early(
+          gatewayError(
+            protocol,
+            'invalid_request',
+            400,
+            portalRequestId,
+            undefined,
+            'Images endpoints do not support stream=true'
+          )
+        );
+      }
       multipartAdmissionMetadata = multipart.admissionMetadata;
     } else {
       const extraction = extractTopLevelModel(bodyResult.body);
@@ -329,8 +341,27 @@ export async function handleGatewayRequest(
         );
       }
       requestedModel = extraction.model;
-      if (endpoint.responseMode === 'json_or_sse') {
+      if (
+        endpoint.responseMode === 'json_or_sse' ||
+        endpoint.key === 'images_generations'
+      ) {
         const streamExtraction = extractTopLevelStream(bodyResult.body);
+        if (
+          endpoint.key === 'images_generations' &&
+          ((streamExtraction.ok && streamExtraction.isStream) ||
+            (!streamExtraction.ok && streamExtraction.reason !== 'missing'))
+        ) {
+          return early(
+            gatewayError(
+              protocol,
+              'invalid_request',
+              400,
+              portalRequestId,
+              undefined,
+              'Images endpoints do not support stream=true'
+            )
+          );
+        }
         requestIsStream = streamExtraction.ok
           ? streamExtraction.isStream
           : false;
@@ -366,7 +397,14 @@ export async function handleGatewayRequest(
     );
     if (credential.status === 'pending') {
       return early(
-        gatewayError(protocol, 'upstream_unavailable', 503, portalRequestId, 1)
+        gatewayError(
+          protocol,
+          'upstream_unavailable',
+          503,
+          portalRequestId,
+          1,
+          'Service credentials are being prepared. Retry in one second.'
+        )
       );
     }
     if (credential.status === 'disabled') {

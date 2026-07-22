@@ -85,7 +85,9 @@ function parseTiers(raw: FormDataEntryValue | null, message: string) {
       const priceMicroUsd = optionalDollarsToMicroUsd(
         String(tier?.price ?? '')
       );
-      if (!skuKey || priceMicroUsd === null) throw new Error('invalid');
+      if (!skuKey || priceMicroUsd === null || priceMicroUsd <= 0) {
+        throw new Error('invalid');
+      }
       return {
         skuKey,
         priceMicroUsd,

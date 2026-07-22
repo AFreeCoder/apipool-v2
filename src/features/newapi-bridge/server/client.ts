@@ -1134,6 +1134,40 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     };
   }
 
+  async function overrideUserQuota(input: {
+    user: NewApiUserCredentials;
+    quota: number;
+  }): Promise<RemoteQuota> {
+    if (!Number.isSafeInteger(input.quota) || input.quota <= 0) {
+      throw new NewApiBridgeError({
+        code: 'remote_error',
+        message: 'New API quota override must be a positive safe integer',
+      });
+    }
+
+    return withQuotaAdjustmentLock(input.user.newapiUserId, async () => {
+      // /api/user/manage 的 override 是绝对值写入；响应不确定时以同一目标值
+      // 重试不会叠加额度，适合运行池初始化与人工补充。
+      await request('/api/user/manage', {
+        method: 'POST',
+        body: {
+          id: toRemoteUserId(input.user.newapiUserId),
+          action: 'add_quota',
+          mode: 'override',
+          value: input.quota,
+        },
+      });
+      const confirmed = await getQuotaForUser(input.user);
+      if (confirmed.quotaRemaining !== input.quota) {
+        throw new NewApiBridgeError({
+          code: 'remote_error',
+          message: 'New API quota override confirmation mismatch',
+        });
+      }
+      return confirmed;
+    });
+  }
+
   async function getPricingSnapshot(): Promise<RemotePricingSnapshot> {
     const payload = await requestEnvelope('/api/pricing');
     const vendors = normalizeVendors(payload.vendors ?? payload.data?.vendors);
@@ -1164,6 +1198,7 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
     findTokensByNameExact,
     getTokenKey: fetchFullKey,
     createTokenRaw,
+    overrideUserQuota,
     getUsageLogByRequestId,
     listAdminUsageLogsPage,
     listUserUsageLogsPage,

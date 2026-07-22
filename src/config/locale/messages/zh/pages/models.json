@@ -1,11 +1,11 @@
 {
   "metadata": {
     "title": "模型与价格 — APIPool",
-    "description": "一个 OpenAI 兼容端点背后的前沿模型实时价格。按供应商与分组对比每百万 tokens 的输入/输出成本。"
+    "description": "一个 OpenAI 兼容端点背后的前沿模型实时价格。按供应商与分组对比 token meter 和按次价格。"
   },
   "eyebrow": "// 模型与价格",
   "title": "模型与价格",
-  "description": "所有价格均按每 100 万 token 展示，并按实际用量计费。一个 Key 可调用下方所有模型。",
+  "description": "token 价格按每 100 万 token 展示，按次模型按 SKU 展示单次价格。一个 Key 可调用下方所有模型。",
   "filters": {
     "provider": "供应商",
     "group": "分组",
@@ -52,6 +52,8 @@
     "capabilities": "能力",
     "context": "上下文",
     "input": "输入·1M",
+    "inputOrCall": "输入·1M / 按次",
+    "perCall": "次",
     "output": "输出·1M",
     "status": "状态",
     "discount": "{fold} 折 ({percent}%)"

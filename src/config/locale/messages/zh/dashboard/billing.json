@@ -1,6 +1,6 @@
 {
   "title": "余额",
-  "description": "按 token 用量计费，余额永不过期。",
+  "description": "按 token 或计量调用计费，余额永不过期。",
   "currentBalance": "当前余额",
   "addCredit": "充值",
   "topUp": {
@@ -29,6 +29,7 @@
   "creditHistory": {
     "title": "充值记录",
     "empty": "暂无充值记录。可先在上方充值。",
+    "emptyCheckoutDisabled": "暂无充值记录。",
     "columns": {
       "orderTime": "下单时间",
       "amount": "金额",

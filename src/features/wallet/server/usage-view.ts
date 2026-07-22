@@ -2,16 +2,17 @@ import 'server-only';
 
 import { and, desc, eq, gte } from 'drizzle-orm';
 
+import { db } from '@/core/db';
 import {
+  portalApiKey,
   requestLedger,
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
-import { db } from '@/core/db';
 
-export type WalletUsageRange = '7d' | '30d' | 'month';
+export type WalletUsageRange = '7d' | '30d' | 'month' | 'all';
 
-function rangeStart(range: WalletUsageRange, now = new Date()) {
+function rangeStart(range: Exclude<WalletUsageRange, 'all'>, now = new Date()) {
   if (range === 'month') {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   }
@@ -28,9 +29,18 @@ function inputTokenCount(row: typeof requestLedger.$inferSelect) {
   const values = [
     row.uncachedInputTokens,
     row.cachedReadTokens,
+    row.cacheWriteTokens,
     row.cacheWrite5mTokens,
     row.cacheWrite1hTokens,
+    row.imageInputTokens,
+    row.cachedImageInputTokens,
   ];
+  if (values.every((value) => value === null)) return null;
+  return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+}
+
+function outputTokenCount(row: typeof requestLedger.$inferSelect) {
+  const values = [row.outputTokens, row.imageOutputTokens];
   if (values.every((value) => value === null)) return null;
   return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
@@ -56,6 +66,7 @@ export async function getWalletUsageView(
     byModel: {
       modelId: string;
       requestCount: number;
+      tokenCount: number;
       spendUsd: number;
     }[];
     status: 'ok';
@@ -63,6 +74,7 @@ export async function getWalletUsageView(
   };
   logs: {
     id: string;
+    keyMasked: string;
     modelId: string;
     status: 'settled' | 'billing' | 'failed_unbilled';
     chargedUsd: number | null;
@@ -78,36 +90,49 @@ export async function getWalletUsageView(
       .where(eq(walletAccount.userId, userId))
       .limit(1),
     db()
-      .select()
+      .select({ row: requestLedger, keyMasked: portalApiKey.keyPrefix })
       .from(requestLedger)
+      .leftJoin(portalApiKey, eq(portalApiKey.id, requestLedger.portalKeyId))
       .where(
-        and(
-          eq(requestLedger.userId, userId),
-          gte(requestLedger.createdAt, rangeStart(range))
-        )
+        range === 'all'
+          ? eq(requestLedger.userId, userId)
+          : and(
+              eq(requestLedger.userId, userId),
+              gte(requestLedger.createdAt, rangeStart(range))
+            )
       )
       .orderBy(desc(requestLedger.createdAt)),
   ]);
-  const userRows = rows;
+  const userRows = rows as {
+    row: typeof requestLedger.$inferSelect;
+    keyMasked: string | null;
+  }[];
   const byModel = new Map<
     string,
-    { modelId: string; requestCount: number; spendMicroUsd: number }
+    {
+      modelId: string;
+      requestCount: number;
+      tokenCount: number;
+      spendMicroUsd: number;
+    }
   >();
   let inputTokens = 0;
   let outputTokens = 0;
   let spendMicroUsd = 0;
-  for (const row of userRows) {
+  for (const { row } of userRows) {
     inputTokens += inputTokenCount(row) ?? 0;
-    outputTokens += row.outputTokens ?? 0;
-    const charged =
-      row.status === 'settled' ? (row.chargedMicroUsd ?? 0) : 0;
+    outputTokens += outputTokenCount(row) ?? 0;
+    const charged = row.status === 'settled' ? (row.chargedMicroUsd ?? 0) : 0;
     spendMicroUsd += charged;
     const aggregate = byModel.get(row.portalModelId) ?? {
       modelId: row.portalModelId,
       requestCount: 0,
+      tokenCount: 0,
       spendMicroUsd: 0,
     };
     aggregate.requestCount += 1;
+    aggregate.tokenCount +=
+      (inputTokenCount(row) ?? 0) + (outputTokenCount(row) ?? 0);
     aggregate.spendMicroUsd += charged;
     byModel.set(row.portalModelId, aggregate);
   }
@@ -121,16 +146,25 @@ export async function getWalletUsageView(
       spendUsd: microUsdToUsd(spendMicroUsd),
       byModel: [...byModel.values()]
         .sort((left, right) => left.modelId.localeCompare(right.modelId))
-        .map(({ modelId, requestCount, spendMicroUsd: modelSpend }) => ({
-          modelId,
-          requestCount,
-          spendUsd: microUsdToUsd(modelSpend),
-        })),
+        .map(
+          ({
+            modelId,
+            requestCount,
+            tokenCount,
+            spendMicroUsd: modelSpend,
+          }) => ({
+            modelId,
+            requestCount,
+            tokenCount,
+            spendUsd: microUsdToUsd(modelSpend),
+          })
+        ),
       status: 'ok',
       syncedAt: new Date().toISOString(),
     },
-    logs: userRows.map((row: typeof requestLedger.$inferSelect) => ({
+    logs: userRows.map(({ row, keyMasked }) => ({
       id: row.id,
+      keyMasked: keyMasked ?? '—',
       modelId: row.portalModelId,
       status: displayStatus(row.status),
       chargedUsd:
@@ -138,7 +172,7 @@ export async function getWalletUsageView(
           ? microUsdToUsd(row.chargedMicroUsd)
           : null,
       inputTokens: inputTokenCount(row),
-      outputTokens: row.outputTokens,
+      outputTokens: outputTokenCount(row),
       createdAt: row.createdAt.toISOString(),
     })),
   };

@@ -46,7 +46,7 @@ APIPOOL_ENDPOINT="https://api2.apipool.dev"
 curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello from APIPool"}]}'
+  -d '{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Hello from APIPool"}]}'
 ```
 
 ## OpenAI SDK (JavaScript)
@@ -62,7 +62,7 @@ const client = new OpenAI({
 });
 
 const completion = await client.chat.completions.create({
-  model: 'gpt-4o-mini',
+  model: 'gpt-5.6-luna',
   messages: [{ role: 'user', content: 'Hello from APIPool' }],
 });
 
@@ -83,7 +83,7 @@ client = OpenAI(
 )
 
 completion = client.chat.completions.create(
-    model="gpt-4o-mini",
+    model="gpt-5.6-luna",
     messages=[{"role": "user", "content": "Hello from APIPool"}],
 )
 
@@ -102,7 +102,7 @@ const response = await fetch(`${APIPOOL_ENDPOINT}/v1/chat/completions`, {
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    model: 'gpt-4o-mini',
+    model: 'gpt-5.6-luna',
     messages: [{ role: 'user', content: 'Hello from APIPool' }],
   }),
 });
@@ -132,24 +132,50 @@ curl "$APIPOOL_ENDPOINT/v1/messages" \
 The official Anthropic SDKs work by setting `baseURL` to
 `https://api2.apipool.dev` and `apiKey` to your APIPool key.
 
+## Embeddings and Images
+
+Use `/v1/embeddings` for embedding models. Embeddings are billed for input
+tokens only. Replace the model with an available Embedding model from the
+[model list](/models):
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/embeddings" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"YOUR_EMBEDDING_MODEL","input":"Hello from APIPool"}'
+```
+
+Use `/v1/images/generations` for image generation and multipart
+`/v1/images/edits` for editing. Image models are billed **per returned image**
+using the quality/size SKU prices on the model page. Images do not support
+`stream:true`.
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/images/generations" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-image-2","prompt":"A product photo on a white background","quality":"low","size":"1024x1024"}'
+```
+
 ## Streaming
 
-Set `"stream": true` in the request body to receive server-sent events, exactly
-like the OpenAI API. The official SDKs handle this with their built-in
-streaming helpers.
+Chat Completions, Responses, and Messages accept `"stream": true` for SSE.
+Images endpoints do not support streaming responses.
 
 ## Error reference
 
-| Status                | Meaning                                    | What to do                                     |
-| --------------------- | ------------------------------------------ | ---------------------------------------------- |
-| `401`                 | Key missing, invalid, disabled, or deleted | Check the header and key status in the console |
-| `403`                 | Key has no access to the requested model   | Review the key's model restrictions            |
-| `429`                 | Rate limited                               | Retry with backoff                             |
-| `402` / quota error   | Balance is exhausted                       | Add credit in the console                      |
-| `404` model_not_found | Model ID not available                     | Pick a model from the [model list](/models)    |
+| Status                           | Meaning                                    | What to do                                     |
+| -------------------------------- | ------------------------------------------ | ---------------------------------------------- |
+| `401`                            | Key missing, invalid, disabled, or deleted | Check the header and key status in the console |
+| `403`                            | Key has no access to the requested model   | Review the key's model restrictions            |
+| `429` insufficient_quota         | Portal balance is exhausted                | Add credit in the console                      |
+| `429` concurrency_limit_exceeded | Concurrency risk limit reached             | Retry using the `Retry-After` value            |
+| `404` model_not_found            | Model ID not available                     | Pick a model from the [model list](/models)    |
 
 ## Billing
 
-Top up in dollars on the [balance page](/dashboard/billing); usage is deducted
-per token at the prices listed on the [models page](/models). Requests, tokens,
-and per-model spend appear on the [usage page](/dashboard/usage).
+Top up in dollars on the [balance page](/dashboard/billing). Text and Embedding
+usage is charged using the listed meter/token prices; per-call models such as
+Images use the selected SKU price and actual returned unit count. Requests,
+tokens, per-model spend, and request charges appear on the usage and billing
+pages.

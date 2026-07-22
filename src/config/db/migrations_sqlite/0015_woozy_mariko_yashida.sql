@@ -1,0 +1,2 @@
+ALTER TABLE `model_price_version` ADD `newapi_ref_rates_json` text DEFAULT '{}' NOT NULL;--> statement-breakpoint
+ALTER TABLE `model_price_version` ADD `newapi_ref_tiers_json` text DEFAULT '{}' NOT NULL;

@@ -25,7 +25,7 @@ import {
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 
-import { markFailedUnbilled } from './admission';
+import { markFailedUnbilled as defaultMarkFailedUnbilled } from './admission';
 
 const LOCK_ID = 'singleton';
 const DEFAULT_SLICE_MS = 10 * 60_000;
@@ -160,25 +160,54 @@ function referenceExpectedCharge(
   row: typeof requestLedger.$inferSelect,
   meters: MeterQuantities
 ): { charged: bigint | null; missing: string[] } {
-  if (price.billingScheme !== 'token') {
-    return { charged: null, missing: ['per_call'] };
+  if (price.billingScheme === 'per_call') {
+    const tiers = parsePriceMap(
+      price.newapiRefTiersJson,
+      'New API 参照 tiers_json'
+    );
+    const skuKey = row.skuKey ?? 'default';
+    const tierPrice = tiers[skuKey];
+    if (!Number.isSafeInteger(tierPrice) || tierPrice <= 0) {
+      return { charged: null, missing: [`per_call:${skuKey}`] };
+    }
+    const unitCount = row.unitCount ?? 0;
+    if (!Number.isSafeInteger(unitCount) || unitCount <= 0) {
+      return { charged: null, missing: ['unit_count'] };
+    }
+    return {
+      charged: computePerCallChargeMicroUsd(unitCount, tierPrice),
+      missing: [],
+    };
   }
-  const dimensions = [
-    ['input', price.newapiRefInputMicroUsdPerM],
-    ['cached_input', price.newapiRefCachedInputMicroUsdPerM],
-    ['cache_write_5m', price.newapiRefCacheWrite5mMicroUsdPerM],
-    ['cache_write_1h', price.newapiRefCacheWrite1hMicroUsdPerM],
-    ['output', price.newapiRefOutputMicroUsdPerM],
-  ] as const;
-  const comparable = new Set<MeterKey>(dimensions.map(([key]) => key));
+  let rates = parsePriceMap(
+    price.newapiRefRatesJson,
+    'New API 参照 rates_json'
+  ) as RatesMap;
+  if (Object.keys(rates).length === 0) {
+    // 兼容升级前已生成的不可变快照。
+    rates = {
+      ...(price.newapiRefInputMicroUsdPerM !== null
+        ? { input: price.newapiRefInputMicroUsdPerM }
+        : {}),
+      ...(price.newapiRefCachedInputMicroUsdPerM !== null
+        ? { cached_input: price.newapiRefCachedInputMicroUsdPerM }
+        : {}),
+      ...(price.newapiRefCacheWrite5mMicroUsdPerM !== null
+        ? { cache_write_5m: price.newapiRefCacheWrite5mMicroUsdPerM }
+        : {}),
+      ...(price.newapiRefCacheWrite1hMicroUsdPerM !== null
+        ? { cache_write_1h: price.newapiRefCacheWrite1hMicroUsdPerM }
+        : {}),
+      ...(price.newapiRefOutputMicroUsdPerM !== null
+        ? { output: price.newapiRefOutputMicroUsdPerM }
+        : {}),
+    };
+  }
   const missing = (Object.entries(meters) as [MeterKey, number][])
-    .filter(([key, quantity]) => quantity > 0 && !comparable.has(key))
+    .filter(([key, quantity]) => quantity > 0 && rates[key] === undefined)
     .map(([key]) => key);
-  if ((row.webSearchCount ?? 0) > 0) missing.push('web_search');
-  const rates: RatesMap = {};
-  for (const [key, rate] of dimensions) {
-    if ((meters[key] ?? 0) > 0 && rate === null) missing.push(key);
-    if (rate !== null) rates[key] = rate;
+  if ((row.webSearchCount ?? 0) > 0 && rates.web_search === undefined) {
+    missing.push('web_search');
   }
   const uniqueMissing = [...new Set(missing)];
   if (uniqueMissing.length > 0) {
@@ -186,8 +215,8 @@ function referenceExpectedCharge(
   }
   return {
     charged: computeTokenChargeMicroUsd(meters, rates, {
-      webSearchCount: 0,
-      webSearchPriceMicroUsd: null,
+      webSearchCount: row.webSearchCount ?? 0,
+      webSearchPriceMicroUsd: rates.web_search ?? null,
     }).charged,
     missing: [],
   };
@@ -311,7 +340,11 @@ async function recordOrphan(log: UsageLog): Promise<boolean> {
   return Boolean(inserted);
 }
 
-async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
+async function processUsageLog(
+  log: UsageLog,
+  counters: ReconcileCounters,
+  markFailedUnbilled: typeof defaultMarkFailedUnbilled
+) {
   if (!log.requestId) return;
   const [row] = await db()
     .select()
@@ -337,6 +370,7 @@ async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
   };
   if (row.status === 'settled') {
     await reconcileSettled(row, log, telemetry);
+    counters.settledByLog += 1;
     return;
   }
   if (row.status === 'open' || row.status === 'pending_backfill') {
@@ -345,16 +379,33 @@ async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
       billingScheme: row.billingScheme === 'per_call' ? 'per_call' : 'token',
       billingFlags: ['usage_missing_waived'],
     });
-    await db()
-      .update(requestLedger)
-      .set({
-        ...telemetry,
-        reconcileStatus: 'waived_by_missing_usage',
-        reconciledAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(requestLedger.id, row.id));
-    if (waived) counters.waivedOrOrphans += 1;
+    if (waived) {
+      await db()
+        .update(requestLedger)
+        .set({
+          ...telemetry,
+          reconcileStatus: 'waived_by_missing_usage',
+          reconciledAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(requestLedger.id, row.id),
+            eq(requestLedger.status, 'failed_unbilled')
+          )
+        );
+      counters.waivedOrOrphans += 1;
+    } else {
+      const [current] = await db()
+        .select()
+        .from(requestLedger)
+        .where(eq(requestLedger.id, row.id))
+        .limit(1);
+      if (current?.status === 'settled') {
+        await reconcileSettled(current, log, telemetry);
+        counters.settledByLog += 1;
+      }
+    }
     return;
   }
   if (row.status === 'failed_unbilled') {
@@ -367,7 +418,12 @@ async function processUsageLog(log: UsageLog, counters: ReconcileCounters) {
         reconciledAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(requestLedger.id, row.id));
+      .where(
+        and(
+          eq(requestLedger.id, row.id),
+          eq(requestLedger.status, 'failed_unbilled')
+        )
+      );
     if (firstWaiver) counters.waivedOrOrphans += 1;
   }
 }
@@ -395,6 +451,7 @@ export async function runReconcileSyncOnce(
     sliceMs?: number;
     slicePageLimit?: number;
     maxSlicesPerRun?: number;
+    markFailedUnbilled?: typeof defaultMarkFailedUnbilled;
   } = {}
 ): Promise<{
   scanned: number;
@@ -415,6 +472,8 @@ export async function runReconcileSyncOnce(
   const sliceMs = deps.sliceMs ?? DEFAULT_SLICE_MS;
   const pageLimit = deps.slicePageLimit ?? DEFAULT_SLICE_PAGE_LIMIT;
   const maxSlices = deps.maxSlicesPerRun ?? DEFAULT_MAX_SLICES_PER_RUN;
+  const markFailedUnbilled =
+    deps.markFailedUnbilled ?? defaultMarkFailedUnbilled;
   const counters: ReconcileCounters = {
     settledByLog: 0,
     orphans: 0,
@@ -440,7 +499,7 @@ export async function runReconcileSyncOnce(
   const processLogs = async (logs: UsageLog[]) => {
     for (const log of logs) {
       if (!(await keepAlive())) return false;
-      await processUsageLog(log, counters);
+      await processUsageLog(log, counters, markFailedUnbilled);
       scanned += 1;
     }
     return true;

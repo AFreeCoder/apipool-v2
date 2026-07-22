@@ -842,7 +842,7 @@ export async function upsertModelAdminConfig(
       (tier) =>
         !tier.skuKey ||
         !Number.isSafeInteger(tier.priceMicroUsd) ||
-        tier.priceMicroUsd < 0
+        tier.priceMicroUsd <= 0
     ) ||
     new Set(normalizedTiers.map((tier) => tier.skuKey)).size !==
       normalizedTiers.length

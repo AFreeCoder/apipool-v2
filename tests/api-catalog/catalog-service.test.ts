@@ -788,6 +788,25 @@ test('模型管理保存 meter 化字段与 per_call tier，并原子替换旧�
     }),
     /default/
   );
+
+  await assert.rejects(
+    modules.service.upsertModelAdminConfig({
+      modelId: created.model.id,
+      model: {
+        modelId: created.model.modelId,
+        displayName: created.model.displayName,
+        vendorId: vendor.id,
+        categoryIds: [category.id],
+      },
+      basePrice: {
+        billingScheme: 'per_call',
+        billingCapabilitiesJson: '{}',
+        tiers: [{ skuKey: 'default', priceMicroUsd: 0 }],
+      },
+      capabilityIds: [],
+    }),
+    /无效/
+  );
 });
 
 test('deleteModel removes catalog model relations even without sqlite foreign key enforcement', async () => {

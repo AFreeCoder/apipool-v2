@@ -249,6 +249,46 @@ test('per_call 必须有 default 档，档位价格按上架折扣半入折算',
   assert.deepEqual(JSON.parse(ready.snapshot.tiersJson), { default: 2 });
 });
 
+test('per_call 的折后归零档位不能发布，原价零由数据库约束拒绝', async () => {
+  await modules
+    .db()
+    .update(modules.schema.catalogModelPrice)
+    .set({
+      billingScheme: 'per_call',
+      billingCapabilitiesJson: '{}',
+      sourceSupportedEndpointTypes: JSON.stringify(['images']),
+    })
+    .where(eq(modules.schema.catalogModelPrice.id, IDs.price));
+  await assert.rejects(
+    modules.db().insert(modules.schema.catalogModelPriceTier).values({
+      id: 'publish-zero-tier-rejected',
+      modelId: IDs.model,
+      skuKey: 'default',
+      priceMicroUsd: 0,
+    })
+  );
+  await modules.db().insert(modules.schema.catalogModelPriceTier).values({
+    id: 'publish-low-tier',
+    modelId: IDs.model,
+    skuKey: 'default',
+    priceMicroUsd: 1,
+  });
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ discountRateBps: 1 })
+    .where(eq(modules.schema.catalogModelListing.id, IDs.listing));
+
+  const roundedToZero = await modules.publishReadiness.assessPublishReadiness(
+    IDs.group,
+    IDs.modelId
+  );
+  assert.equal(roundedToZero.ready, false);
+  assert.ok(
+    roundedToZero.reasons.includes('按次档位折后价格必须大于 0：default')
+  );
+});
+
 test('同步状态只表示成本参照新鲜度，只有人工复核时间构成发布门禁', async () => {
   await modules
     .db()

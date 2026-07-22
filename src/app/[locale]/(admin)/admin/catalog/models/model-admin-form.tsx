@@ -35,6 +35,8 @@ type TierRow = {
   note: string;
 };
 
+type EditableTierRow = TierRow & { rowId: string };
+
 export type ModelAdminFormOption = {
   value: string;
   title: string;
@@ -243,7 +245,13 @@ export function ModelAdminForm({
   );
   const [sourceSupportedEndpointTypes, setSourceSupportedEndpointTypes] =
     useState(initial.sourceSupportedEndpointTypes);
-  const [tiers, setTiers] = useState(initial.tiers);
+  const nextTierRowId = useRef(initial.tiers.length);
+  const [tiers, setTiers] = useState<EditableTierRow[]>(() =>
+    initial.tiers.map((tier, index) => ({
+      ...tier,
+      rowId: `initial-${index}`,
+    }))
+  );
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [referenceCandidate, setReferenceCandidate] =
     useState<Candidate | null>(null);
@@ -317,6 +325,7 @@ export function ModelAdminForm({
       setBillingScheme('per_call');
       setTiers([
         {
+          rowId: `prefill-${nextTierRowId.current++}`,
           skuKey: 'default',
           price: microUsdToDollars(candidate.fixedPriceMicroUsd),
           note: '',
@@ -699,7 +708,7 @@ export function ModelAdminForm({
             </legend>
             {tiers.map((tier, index) => (
               <div
-                key={`${index}-${tier.skuKey}`}
+                key={tier.rowId}
                 className="grid gap-3 md:grid-cols-[1fr_1fr_1.5fr_auto]"
               >
                 <Input
@@ -771,7 +780,12 @@ export function ModelAdminForm({
               onClick={() =>
                 setTiers((current) => [
                   ...current,
-                  { skuKey: '', price: '', note: '' },
+                  {
+                    rowId: `added-${nextTierRowId.current++}`,
+                    skuKey: '',
+                    price: '',
+                    note: '',
+                  },
                 ])
               }
             >
@@ -786,7 +800,13 @@ export function ModelAdminForm({
           name="billingCapabilitiesJson"
           value={JSON.stringify(billingCapabilities)}
         />
-        <input type="hidden" name="tiersJson" value={JSON.stringify(tiers)} />
+        <input
+          type="hidden"
+          name="tiersJson"
+          value={JSON.stringify(
+            tiers.map(({ skuKey, price, note }) => ({ skuKey, price, note }))
+          )}
+        />
         <input
           type="hidden"
           name="sourceSupportedEndpointTypes"

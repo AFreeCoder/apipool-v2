@@ -26,6 +26,12 @@
     "field": "字段",
     "value": "值"
   },
+  "routing": {
+    "model": "模型"
+  },
+  "wallet": {
+    "reason": "原因"
+  },
   "reconciliation": {
     "mismatches": "Token 与金额差异",
     "waived": "失败豁免与孤儿观测",

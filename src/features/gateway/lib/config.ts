@@ -6,11 +6,34 @@ function intEnv(name: string, fallback: number): number {
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
+function requiredPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} 必须是正安全整数`);
+  }
+  return value;
+}
+
 export function gatewayConfig() {
   const imageFirstByteTimeoutMs = Math.max(
     180_000,
     intEnv('GATEWAY_IMAGES_FIRST_BYTE_TIMEOUT_MS', 180_000)
   );
+  const runtimePoolTargetUsd = requiredPositiveIntEnv(
+    'NEWAPI_RUNTIME_POOL_TARGET_USD',
+    1000
+  );
+  const runtimePoolLowWatermarkUsd = requiredPositiveIntEnv(
+    'NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD',
+    100
+  );
+  if (runtimePoolLowWatermarkUsd >= runtimePoolTargetUsd) {
+    throw new Error(
+      'NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD 必须小于 NEWAPI_RUNTIME_POOL_TARGET_USD'
+    );
+  }
   return {
     riskSlotLimit: intEnv('GATEWAY_RISK_SLOT_LIMIT', 10),
     overdraftFreezeMicroUsd: intEnv(
@@ -29,6 +52,8 @@ export function gatewayConfig() {
     streamIdleTimeoutMs: intEnv('GATEWAY_STREAM_IDLE_TIMEOUT_MS', 180_000),
     hardTimeoutMs: intEnv('GATEWAY_HARD_TIMEOUT_MS', 3_600_000),
     newapiBaseUrl: process.env.NEWAPI_BASE_URL ?? '',
+    runtimePoolTargetUsd,
+    runtimePoolLowWatermarkUsd,
     jobsEnabled: process.env.GATEWAY_JOBS_ENABLED !== 'false',
   };
 }

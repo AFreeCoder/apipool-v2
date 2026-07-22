@@ -32,7 +32,7 @@ export default async function UsagePage({
           byModel: view.summary.byModel.map((model) => ({
             modelId: model.modelId,
             requests: model.requestCount,
-            tokens: 0,
+            tokens: model.tokenCount,
             spendUsd: model.spendUsd,
           })),
           status: 'ready' as const,
@@ -40,7 +40,6 @@ export default async function UsagePage({
         },
         logs: view.logs.map((log) => ({
           ...log,
-          keyMasked: '—',
           inputTokens: log.inputTokens ?? 0,
           outputTokens: log.outputTokens ?? 0,
           spendUsd: log.chargedUsd,
@@ -113,9 +112,6 @@ export default async function UsagePage({
                   <th className="px-4 py-2.5 text-left font-medium">
                     {t('columns.model')}
                   </th>
-                  <th className="px-4 py-2.5 text-left font-medium">
-                    {t('columns.status')}
-                  </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     {t('columns.requests')}
                   </th>
@@ -171,6 +167,9 @@ export default async function UsagePage({
                   </th>
                   <th className="px-4 py-2.5 text-left font-medium">
                     {t('columns.model')}
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    {t('columns.status')}
                   </th>
                   <th className="px-4 py-2.5 text-right font-medium">
                     {t('columns.input')}

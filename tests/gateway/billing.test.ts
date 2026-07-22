@@ -137,6 +137,36 @@ test('Images：文本/图片输入与图片输出分 meter，缓存细分预留�
   assert.deepEqual(result.flags, []);
 });
 
+test('Images：兼容 New API prompt_tokens_details 实际字段', () => {
+  const result = normalizeUsageMeters('images_generations', {
+    input_tokens: 1000,
+    prompt_tokens: 1000,
+    prompt_tokens_details: {
+      cached_tokens: 0,
+      text_tokens: 0,
+      image_tokens: 1000,
+    },
+    output_tokens: 4000,
+    completion_tokens: 4000,
+    completion_tokens_details: { reasoning_tokens: 0 },
+    total_tokens: 5000,
+  });
+  assert.deepEqual(result.meters, {
+    image_input: 1000,
+    image_output: 4000,
+  });
+  assert.deepEqual(result.flags, []);
+});
+
+test('非整数 token 不进入 BigInt 计费并留下异常标记', () => {
+  const result = normalizeUsageMeters('responses', {
+    input_tokens: 1.5,
+    output_tokens: 2,
+  });
+  assert.deepEqual(result.meters, { output: 2 });
+  assert.deepEqual(result.flags, ['invalid_numeric:input_tokens']);
+});
+
 test('未映射非零字段被上报（宁少勿错）', () => {
   const { flags } = normalizeUsageMeters('chat_completions', {
     prompt_tokens: 10,

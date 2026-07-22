@@ -45,10 +45,7 @@ export async function heartbeatJobLock(holderId: string): Promise<boolean> {
     .update(gatewayJobLock)
     .set({ heartbeatAt: new Date() })
     .where(
-      and(
-        eq(gatewayJobLock.id, LOCK_ID),
-        eq(gatewayJobLock.holderId, holderId)
-      )
+      and(eq(gatewayJobLock.id, LOCK_ID), eq(gatewayJobLock.holderId, holderId))
     )
     .returning();
   return Boolean(row);
@@ -110,6 +107,7 @@ export function startGatewayJobs(): void {
   const lock = createKeepAliveController(holderId);
   let lastReconcileAt = 0;
   let lastInvariantAt = 0;
+  let lastRuntimePoolAt = 0;
 
   const runWorker = async (
     context: string,
@@ -161,6 +159,19 @@ export function startGatewayJobs(): void {
           const module = await loadGatewayWorker('reconcile');
           return module.runWalletInvariantCheckOnce;
         });
+      }
+      if (!lock.hasLock()) return;
+
+      if (now - lastRuntimePoolAt >= INVARIANT_EVERY_MS) {
+        lastRuntimePoolAt = now;
+        await runWorker(
+          'runtime_pool_monitor',
+          async () => {
+            const module = await import('./runtime-pool');
+            return module.runRuntimePoolMonitorOnce;
+          },
+          { bootstrap: true }
+        );
       }
     } catch (error) {
       console.error('[jobs] tick failed', error);

@@ -567,9 +567,7 @@ export const catalogModelPrice = table(
     baseCacheWrite1hMicroUsd: integer('base_cache_write_1h_micro_usd'),
     cachePriceNote: text('cache_price_note'),
     baseImageInputMicroUsd: integer('base_image_input_micro_usd'),
-    baseCachedImageInputMicroUsd: integer(
-      'base_cached_image_input_micro_usd'
-    ),
+    baseCachedImageInputMicroUsd: integer('base_cached_image_input_micro_usd'),
     baseImageOutputMicroUsd: integer('base_image_output_micro_usd'),
     baseWebSearchMicroUsd: integer('base_web_search_micro_usd'),
     longContextThresholdTokens: integer('long_context_threshold_tokens'),
@@ -774,6 +772,17 @@ export const newApiUserBinding = table(
     conflictNewapiUserId: text('conflict_newapi_user_id'),
     newapiPasswordEnc: text('newapi_password_enc'),
     newapiAccessTokenEnc: text('newapi_access_token_enc'),
+    runtimePoolStatus: text('runtime_pool_status')
+      .notNull()
+      .default('uninitialized'), // uninitialized, ready, low, depleted, error
+    runtimePoolProvisionedAt: integer('runtime_pool_provisioned_at', {
+      mode: 'timestamp_ms',
+    }),
+    runtimePoolLastQuota: integer('runtime_pool_last_quota'),
+    runtimePoolCheckedAt: integer('runtime_pool_checked_at', {
+      mode: 'timestamp_ms',
+    }),
+    runtimePoolLastError: text('runtime_pool_last_error'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)
       .notNull(),
@@ -791,6 +800,9 @@ export const newApiUserBinding = table(
     ),
     index('idx_newapi_user_binding_sync_error_code').on(
       table.lastSyncErrorCode
+    ),
+    index('idx_newapi_user_binding_runtime_pool_status').on(
+      table.runtimePoolStatus
     ),
   ]
 );
@@ -1283,6 +1295,8 @@ export const modelPriceVersion = table(
     newapiRefCacheWrite1hMicroUsdPerM: integer(
       'newapi_ref_cache_write_1h_micro_usd_per_m'
     ),
+    newapiRefRatesJson: text('newapi_ref_rates_json').notNull().default('{}'),
+    newapiRefTiersJson: text('newapi_ref_tiers_json').notNull().default('{}'),
     refNewapiGroup: text('ref_newapi_group'),
     sourceNote: text('source_note'),
     publishedBy: text('published_by').notNull(),

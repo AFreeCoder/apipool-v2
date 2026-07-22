@@ -1,7 +1,10 @@
 import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
-import { resolveEffectiveCatalogPrice } from '@/features/api-catalog/lib/pricing';
+import {
+  resolveEffectiveCatalogPrice,
+  scaleMicroUsdByBps,
+} from '@/features/api-catalog/lib/pricing';
 import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 
@@ -14,6 +17,7 @@ import {
   catalogModelCapability,
   catalogModelListing,
   catalogModelPrice,
+  catalogModelPriceTier,
   catalogStatus,
   catalogVendor,
 } from '@/config/db/schema';
@@ -57,6 +61,8 @@ type ListingBaseRow = {
   baseCacheWrite1hMicroUsd: number | null;
   baseImageInputMicroUsd: number | null;
   baseImageOutputMicroUsd: number | null;
+  billingScheme: string;
+  endpointTypesJson: string | null;
   statusSlug: string;
   statusName: string;
 };
@@ -185,6 +191,8 @@ async function queryListingRows({
       baseCacheWrite1hMicroUsd: catalogModelPrice.baseCacheWrite1hMicroUsd,
       baseImageInputMicroUsd: catalogModelPrice.baseImageInputMicroUsd,
       baseImageOutputMicroUsd: catalogModelPrice.baseImageOutputMicroUsd,
+      billingScheme: catalogModelPrice.billingScheme,
+      endpointTypesJson: catalogModelPrice.sourceSupportedEndpointTypes,
       statusSlug: catalogStatus.slug,
       statusName: catalogStatus.name,
     })
@@ -242,9 +250,42 @@ async function getCapabilitiesByModelPk(modelPks: string[]) {
   return capabilitiesByModelPk;
 }
 
+async function getTiersByModelPk(modelPks: string[]) {
+  if (modelPks.length === 0) {
+    return new Map<
+      string,
+      { skuKey: string; priceMicroUsd: number; note: string | null }[]
+    >();
+  }
+  const rows = await db()
+    .select({
+      modelPk: catalogModelPriceTier.modelId,
+      skuKey: catalogModelPriceTier.skuKey,
+      priceMicroUsd: catalogModelPriceTier.priceMicroUsd,
+      note: catalogModelPriceTier.note,
+    })
+    .from(catalogModelPriceTier)
+    .where(inArray(catalogModelPriceTier.modelId, modelPks))
+    .orderBy(asc(catalogModelPriceTier.skuKey));
+
+  const tiersByModelPk = new Map<
+    string,
+    { skuKey: string; priceMicroUsd: number; note: string | null }[]
+  >();
+  for (const row of rows) {
+    const tiers = tiersByModelPk.get(row.modelPk) ?? [];
+    tiers.push(row);
+    tiersByModelPk.set(row.modelPk, tiers);
+  }
+  return tiersByModelPk;
+}
+
 async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
   const modelPks = [...new Set(rows.map((row) => row.modelPk))];
-  const capabilitiesByModelPk = await getCapabilitiesByModelPk(modelPks);
+  const [capabilitiesByModelPk, tiersByModelPk] = await Promise.all([
+    getCapabilitiesByModelPk(modelPks),
+    getTiersByModelPk(modelPks),
+  ]);
 
   return (
     await Promise.all(
@@ -253,6 +294,22 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
           row.groupId,
           row.modelId
         );
+        let endpointTypes: string[] = [];
+        try {
+          const parsed = JSON.parse(row.endpointTypesJson ?? '[]');
+          if (Array.isArray(parsed)) {
+            endpointTypes = parsed.filter(
+              (value): value is string => typeof value === 'string'
+            );
+          }
+        } catch {
+          // 公开目录对旧数据保守处理：未知端点继续要求 input/output 双价。
+        }
+        const onlyEmbeddings =
+          endpointTypes.length > 0 &&
+          endpointTypes.every((value) =>
+            value.toLowerCase().includes('embedding')
+          );
         const effective = resolveEffectiveCatalogPrice({
           baseInputMicroUsd: row.baseInputMicroUsd,
           baseOutputMicroUsd: row.baseOutputMicroUsd,
@@ -263,7 +320,49 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
           listInputMicroUsd: row.listInputMicroUsd,
           listOutputMicroUsd: row.listOutputMicroUsd,
           discountNote: row.discountNote,
+          requiresOutputPrice: !onlyEmbeddings,
         });
+        const discountRateBps = row.discountRateBps ?? 10_000;
+        const perCallTiers = (tiersByModelPk.get(row.modelPk) ?? []).flatMap(
+          (tier) => {
+            const priceMicroUsd = scaleMicroUsdByBps(
+              tier.priceMicroUsd,
+              discountRateBps
+            );
+            return priceMicroUsd !== null && priceMicroUsd > 0
+              ? [
+                  {
+                    skuKey: tier.skuKey,
+                    priceMicroUsd,
+                    ...(tier.note ? { note: tier.note } : {}),
+                  },
+                ]
+              : [];
+          }
+        );
+        const perCallConfirmed =
+          row.billingScheme === 'per_call' &&
+          ['matched', 'ok', 'cost_alert', 'cost_changed'].includes(
+            row.priceDriftStatus || 'unknown'
+          ) &&
+          perCallTiers.some((tier) => tier.skuKey === 'default');
+        const publicConfirmed =
+          row.billingScheme === 'per_call'
+            ? perCallConfirmed
+            : effective.publicConfirmed;
+        const pricePresentation =
+          row.billingScheme === 'per_call'
+            ? {
+                showPrice: perCallConfirmed,
+                showStrikethrough: false,
+                ...(perCallConfirmed && discountRateBps !== 10_000
+                  ? { discountBps: discountRateBps }
+                  : {}),
+                ...(perCallConfirmed && row.discountNote
+                  ? { note: row.discountNote }
+                  : {}),
+              }
+            : effective.pricePresentation;
 
         return {
           modelId: row.modelId,
@@ -274,48 +373,53 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
           category: row.category,
           capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
           contextWindow: row.contextWindow,
-          inputMicroUsd: effective.publicConfirmed
+          billingScheme:
+            row.billingScheme === 'per_call'
+              ? ('per_call' as const)
+              : ('token' as const),
+          tiers: perCallConfirmed ? perCallTiers : undefined,
+          inputMicroUsd: publicConfirmed
             ? (effective.effectiveInputMicroUsd ?? undefined)
             : undefined,
-          outputMicroUsd: effective.publicConfirmed
+          outputMicroUsd: publicConfirmed
             ? (effective.effectiveOutputMicroUsd ?? undefined)
             : undefined,
-          imageInputMicroUsd: effective.publicConfirmed
+          imageInputMicroUsd: publicConfirmed
             ? (effective.effectiveImageInputMicroUsd ?? undefined)
             : undefined,
-          imageOutputMicroUsd: effective.publicConfirmed
+          imageOutputMicroUsd: publicConfirmed
             ? (effective.effectiveImageOutputMicroUsd ?? undefined)
             : undefined,
-          listInputMicroUsd: effective.publicConfirmed
+          listInputMicroUsd: publicConfirmed
             ? (effective.listInputMicroUsd ?? undefined)
             : undefined,
-          listOutputMicroUsd: effective.publicConfirmed
+          listOutputMicroUsd: publicConfirmed
             ? (effective.listOutputMicroUsd ?? undefined)
             : undefined,
           discountRateBps:
-            effective.publicConfirmed && row.discountRateBps !== null
+            publicConfirmed && row.discountRateBps !== null
               ? row.discountRateBps
               : undefined,
-          discountNote: effective.publicConfirmed
+          discountNote: publicConfirmed
             ? (row.discountNote ?? undefined)
             : undefined,
           description: row.description ?? undefined,
           statusSlug: row.statusSlug,
           statusName: row.statusName,
           isCallable: readiness.ready,
-          effectiveInputMicroUsd: effective.publicConfirmed
+          effectiveInputMicroUsd: publicConfirmed
             ? (effective.effectiveInputMicroUsd ?? undefined)
             : undefined,
-          effectiveOutputMicroUsd: effective.publicConfirmed
+          effectiveOutputMicroUsd: publicConfirmed
             ? (effective.effectiveOutputMicroUsd ?? undefined)
             : undefined,
-          effectiveImageInputMicroUsd: effective.publicConfirmed
+          effectiveImageInputMicroUsd: publicConfirmed
             ? (effective.effectiveImageInputMicroUsd ?? undefined)
             : undefined,
-          effectiveImageOutputMicroUsd: effective.publicConfirmed
+          effectiveImageOutputMicroUsd: publicConfirmed
             ? (effective.effectiveImageOutputMicroUsd ?? undefined)
             : undefined,
-          pricePresentation: effective.pricePresentation,
+          pricePresentation,
         };
       })
     )

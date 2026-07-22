@@ -184,9 +184,13 @@ export default async function CatalogModelListingEditPage({
           freshModel.modelId
         );
         if (!readiness.ready) {
+          const actionT = await getTranslations({
+            locale,
+            namespace: 'admin.catalog',
+          });
           return {
             status: 'error' as const,
-            message: t('errors.pricingSavedButNotReady', {
+            message: actionT('errors.pricingSavedButNotReady', {
               reasons: readiness.reasons.join('；'),
             }),
           };

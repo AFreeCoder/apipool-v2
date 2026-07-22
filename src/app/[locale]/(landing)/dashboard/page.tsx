@@ -12,6 +12,7 @@ import {
   getUsageLogRowKey,
   getUsageSyncDescription,
 } from '@/features/api-console/lib/status';
+import { checkoutEnabled } from '@/features/gateway/lib/config';
 import { listPortalApiKeys } from '@/features/newapi-bridge/server/portal';
 import { getWalletUsageView } from '@/features/wallet/server/usage-view';
 import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
@@ -47,6 +48,7 @@ export default async function DashboardPage({
     getTranslations({ locale, namespace: 'dashboard.common' }),
   ]);
   const user = await getUserInfo();
+  const canCheckout = checkoutEnabled();
   const [usage, keys] = user
     ? await Promise.all([
         getWalletUsageView(user.id, '7d').then((view) => ({
@@ -73,9 +75,11 @@ export default async function DashboardPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href="/dashboard/billing">{t('actions.addCredit')}</Link>
-          </Button>
+          {canCheckout ? (
+            <Button asChild variant="outline">
+              <Link href="/dashboard/billing">{t('actions.addCredit')}</Link>
+            </Button>
+          ) : null}
           <Button asChild>
             <Link href="/dashboard/api-keys">
               <KeyRound className="size-4" />

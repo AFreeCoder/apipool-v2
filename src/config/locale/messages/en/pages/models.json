@@ -1,11 +1,11 @@
 {
   "metadata": {
     "title": "Models & Pricing — APIPool",
-    "description": "Live pricing for frontier models behind one OpenAI-compatible endpoint. Compare input and output cost per 1M tokens across providers and groups."
+    "description": "Live pricing for frontier models behind one OpenAI-compatible endpoint. Compare token-meter and per-call prices across providers and groups."
   },
   "eyebrow": "// models & pricing",
   "title": "Models & pricing",
-  "description": "All prices are per 1M tokens, billed by actual usage. One key works for every model below.",
+  "description": "Token prices are shown per 1M tokens; per-call models show SKU prices for each call. One key works for every model below.",
   "filters": {
     "provider": "Provider",
     "group": "Group",
@@ -52,6 +52,8 @@
     "capabilities": "Capabilities",
     "context": "Context",
     "input": "Input·1M",
+    "inputOrCall": "Input·1M / Call",
+    "perCall": "call",
     "output": "Output·1M",
     "status": "Status",
     "discount": "{off}% off"

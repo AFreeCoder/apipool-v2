@@ -276,7 +276,7 @@ test('settled 命中：对账字段回填并 matched', async () => {
   const result = await run([logFor(ledger)]);
   assert.deepEqual(result, {
     scanned: 1,
-    settledByLog: 0,
+    settledByLog: 1,
     orphans: 0,
     flaggedRequests: 0,
     truncated: false,
@@ -341,6 +341,51 @@ test('meter 对账重算覆盖长档与 web_search，并统计非空 billing fla
   assert.equal(result.flaggedRequests, 1);
 });
 
+test('通用成本参照覆盖图片 meter，不再退化为 ref_missing', async () => {
+  const ledger = await seedLedger('image-meter-ref', {
+    status: 'settled',
+    priceOverrides: {
+      ratesJson: JSON.stringify({
+        image_input: 1_000_000,
+        image_output: 2_000_000,
+      }),
+      newapiRefRatesJson: JSON.stringify({
+        image_input: 1_000_000,
+        image_output: 2_000_000,
+      }),
+    },
+    settlementUsage: {
+      meters: { image_input: 10, image_output: 4 },
+    },
+  });
+  await run([logFor(ledger)]);
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.reconcileStatus, 'matched');
+  assert.equal(row.reconcileNote, null);
+});
+
+test('per_call default SKU 使用固化成本参照自动核对', async () => {
+  const ledger = await seedLedger('per-call-default-ref', {
+    status: 'settled',
+    priceOverrides: {
+      billingScheme: 'per_call',
+      ratesJson: '{}',
+      tiersJson: JSON.stringify({ default: 300_000 }),
+      newapiRefTiersJson: JSON.stringify({ default: 200_000 }),
+    },
+    settlementUsage: {
+      meters: { image_input: 10, image_output: 4 },
+      skuKey: 'default',
+      unitCount: 2,
+    },
+  });
+  await run([logFor(ledger, { quota: 200_000 })]);
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.chargedMicroUsd, 600_000);
+  assert.equal(row.reconcileStatus, 'matched');
+  assert.equal(row.reconcileNote, null);
+});
+
 test('per_call 对账按 unit_count × tier 重算，NewAPI 日志仅作对照', async () => {
   const ledger = await seedLedger('per-call', {
     status: 'settled',
@@ -379,6 +424,26 @@ test('open 命中日志只做对照，门户请求仍按缺 usage 免单', async
     .from(modules.schema.walletLedger)
     .where(eq(modules.schema.walletLedger.requestLedgerId, ledger.id));
   assert.equal(charges.length, 0);
+});
+
+test('缺 usage 免单与响应结算竞态时保留 settled，并按日志完成对账', async () => {
+  const ledger = await seedLedger('waiver-settlement-race');
+  const result = await run([logFor(ledger)], {
+    markFailedUnbilled: async (ledgerId: string) => {
+      await modules.settlement.settleByLedgerId(ledgerId, {
+        meters: { input: 10, output: 4 },
+        flags: [],
+        webSearchCount: 0,
+        rawUsage: { prompt_tokens: 10, completion_tokens: 4 },
+        usageSource: 'response',
+      });
+      return false;
+    },
+  });
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.status, 'settled');
+  assert.equal(row.reconcileStatus, 'matched');
+  assert.equal(result.settledByLog, 1);
 });
 
 test('failed_unbilled 命中 → waived_by_failure 且不扣费', async () => {

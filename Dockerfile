@@ -51,6 +51,10 @@ RUN node_modules/.bin/esbuild scripts/smoke-recharge-runner.ts \
       --bundle --platform=node --format=cjs --conditions=react-server \
       --external:@libsql/client \
       --outfile=deploy/smoke-recharge.cjs
+RUN node_modules/.bin/esbuild scripts/maintain-newapi-runtime-pool.ts \
+      --bundle --platform=node --format=cjs --conditions=react-server \
+      --external:@libsql/client \
+      --outfile=deploy/runtime-pool-maintenance.cjs
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -70,6 +74,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-mvp.cjs ./smoke-mvp.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-gateway.cjs ./smoke-gateway.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-recharge.cjs ./smoke-recharge.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/deploy/runtime-pool-maintenance.cjs ./runtime-pool-maintenance.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/src/config/db/migrations_sqlite ./migrations_sqlite
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh

@@ -25,6 +25,8 @@ import {
 import { getUuid } from '@/shared/lib/hash';
 import { recordPortalAdminAudit } from '@/shared/models/portal-admin-audit';
 
+import { ensureRuntimePoolProvisioned } from './runtime-pool';
+
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 1000;
 const INVALID_DEBOUNCE_MS = 5 * 60 * 1000;
@@ -204,7 +206,8 @@ async function loadRetirementBlacklist(credentialId: string) {
 async function processCredential(
   row: typeof runtimeCredential.$inferSelect,
   client: NewApiClient,
-  ensureBinding: typeof ensurePortalUserBinding
+  ensureBinding: typeof ensurePortalUserBinding,
+  ensureRuntimePool: typeof ensureRuntimePoolProvisioned
 ): Promise<void> {
   const historicalTokenId = row.newapiTokenId;
   if (row.status === 'invalid') {
@@ -238,6 +241,7 @@ async function processCredential(
   if (!portalUser) throw new Error('portal user not found');
 
   const binding = await ensureBinding(portalUser, client);
+  await ensureRuntimePool(binding, client);
   const credentials = bindingToUserCredentials(binding);
   const blacklist = await loadRetirementBlacklist(row.id);
   if (historicalTokenId) blacklist.add(historicalTokenId);
@@ -344,11 +348,14 @@ export async function runCredentialWorkerOnce(
   deps: {
     client?: NewApiClient;
     ensureBinding?: typeof ensurePortalUserBinding;
+    ensureRuntimePool?: typeof ensureRuntimePoolProvisioned;
     keepAlive?: () => Promise<boolean>;
   } = {}
 ): Promise<{ processed: number; failed: number }> {
   const client = deps.client ?? createNewApiClient();
   const ensureBinding = deps.ensureBinding ?? ensurePortalUserBinding;
+  const ensureRuntimePool =
+    deps.ensureRuntimePool ?? ensureRuntimePoolProvisioned;
   const keepAlive = deps.keepAlive ?? (async () => true);
   let processed = 0;
   let failed = 0;
@@ -381,7 +388,7 @@ export async function runCredentialWorkerOnce(
     if (!(await keepAlive())) return { processed, failed };
     processed += 1;
     try {
-      await processCredential(row, client, ensureBinding);
+      await processCredential(row, client, ensureBinding, ensureRuntimePool);
     } catch (error: any) {
       failed += 1;
       const [current] = await db()

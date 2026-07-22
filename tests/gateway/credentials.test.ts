@@ -97,11 +97,15 @@ async function getCredential(userId: string, group: string) {
 
 function createWorkerHarness(
   initial: Record<string, any[]> = {},
-  hooks: { afterCreate?: (token: any) => Promise<void> } = {}
+  hooks: {
+    afterCreate?: (token: any) => Promise<void>;
+    ensurePool?: (binding: any) => Promise<void>;
+  } = {}
 ) {
   const tokens = new Map<string, any[]>(Object.entries(initial));
   const createCalls: any[] = [];
   const disableCalls: any[] = [];
+  const ensurePoolCalls: any[] = [];
   let sequence = 0;
   const workerClient = {
     findTokensByNameExact: async (_credentials: any, name: string) =>
@@ -135,11 +139,17 @@ function createWorkerHarness(
     status: 'active',
     newapiAccessTokenEnc: modules.crypto.encryptCredential(`access-${user.id}`),
   });
+  const ensureRuntimePool = async (binding: any) => {
+    ensurePoolCalls.push(binding.newapiUserId);
+    await hooks.ensurePool?.(binding);
+  };
   return {
     client: workerClient,
     ensureBinding,
+    ensureRuntimePool,
     createCalls,
     disableCalls,
+    ensurePoolCalls,
     tokens,
   };
 }
@@ -213,6 +223,10 @@ test('worker 串行创建两个 pending scope，落 active 加密 token', async 
   assert.equal(result.processed, 2);
   assert.equal(result.failed, 0);
   assert.equal(harness.createCalls.length, 2);
+  assert.deepEqual(harness.ensurePoolCalls, [
+    'remote-credential-worker-a',
+    'remote-credential-worker-b',
+  ]);
   for (const [userId, group] of [
     ['credential-worker-a', 'official'],
     ['credential-worker-b', 'premium'],
@@ -224,6 +238,31 @@ test('worker 串行创建两个 pending scope，落 active 加密 token', async 
       /^sk-runtime-/
     );
   }
+});
+
+test('运行池初始化失败时保持 pending，且不创建远端 token', async () => {
+  const userId = 'credential-pool-failure';
+  await insertUser(userId);
+  await insertCredential(userId, 'official');
+  const harness = createWorkerHarness(
+    {},
+    {
+      ensurePool: async () => {
+        throw new Error('runtime pool unavailable');
+      },
+    }
+  );
+
+  const result = await modules.credentials.runCredentialWorkerOnce(harness);
+
+  assert.equal(result.failed, 1);
+  assert.equal(harness.createCalls.length, 0);
+  const pending = await getCredential(userId, 'official');
+  assert.equal(pending.status, 'pending');
+  await modules
+    .db()
+    .delete(modules.schema.runtimeCredential)
+    .where(eq(modules.schema.runtimeCredential.id, pending.id));
 });
 
 test('崩溃后收编：已有唯一启用同名 token 时零 POST', async () => {

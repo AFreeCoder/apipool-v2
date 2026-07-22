@@ -51,7 +51,7 @@ type ActiveSaleSnapshot = {
   tiersJson: string;
 };
 
-type CostReference = {
+export type CostReference = {
   billingScheme: 'token' | 'per_call';
   rates?: Record<string, number>;
   defaultTier?: number;
@@ -536,7 +536,7 @@ function aggregateCostStatus(
   return 'ok';
 }
 
-async function getLatestCostReferences() {
+export async function getLatestCostReferences() {
   const runs = await db()
     .select({ reportJson: catalogPriceSyncRun.reportJson })
     .from(catalogPriceSyncRun)

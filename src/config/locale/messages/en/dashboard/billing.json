@@ -1,6 +1,6 @@
 {
   "title": "Balance",
-  "description": "Usage is billed per token. Balance never expires.",
+  "description": "Usage is billed by token or metered call. Balance never expires.",
   "currentBalance": "Current balance",
   "addCredit": "Add credit",
   "topUp": {
@@ -29,6 +29,7 @@
   "creditHistory": {
     "title": "Credit history",
     "empty": "No credit activity yet. Add credit above to get started.",
+    "emptyCheckoutDisabled": "No credit history yet.",
     "columns": {
       "orderTime": "Order time",
       "amount": "Amount",

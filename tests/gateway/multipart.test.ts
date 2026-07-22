@@ -39,6 +39,7 @@ test('multipart 任意字段顺序：只提取白名单文本，忽略图片二�
     size: '1024x1024',
     n: 2,
     promptBytes: new TextEncoder().encode('把背景改成纯白').byteLength,
+    stream: false,
   });
   assert.equal(result.admissionMetadata.hasServerTool, false);
   assert.equal(
@@ -49,6 +50,31 @@ test('multipart 任意字段顺序：只提取白名单文本，忽略图片二�
       'gpt-image-2'.length +
       '1024x1024'.length
   );
+});
+
+test('multipart 图片编辑必须包含非空图片文件，并解析 stream 布尔值', async () => {
+  const missingImage = new FormData();
+  missingImage.append('model', 'gpt-image-2');
+  const missingEncoded = await encodedForm(missingImage);
+  assert.deepEqual(
+    extractImageMultipartRequest(
+      missingEncoded.body,
+      missingEncoded.contentType
+    ),
+    { ok: false, reason: 'missing_image' }
+  );
+
+  const streaming = new FormData();
+  streaming.append('model', 'gpt-image-2');
+  streaming.append('stream', 'true');
+  streaming.append('image', new Blob(['image']), 'source.png');
+  const streamingEncoded = await encodedForm(streaming);
+  const result = extractImageMultipartRequest(
+    streamingEncoded.body,
+    streamingEncoded.contentType
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.fields.stream, true);
 });
 
 test('multipart 缺 model、重复白名单字段与超长 prompt 均 fail-closed', async () => {

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { scaleMicroUsdByBps } from '@/features/api-catalog/lib/pricing';
+import { getLatestCostReferences } from '@/features/api-catalog/server/pricing-sync';
 import type { BillingScheme, MeterKey } from '@/features/gateway/lib/meters';
 import { and, asc, eq } from 'drizzle-orm';
 
@@ -23,6 +24,8 @@ type PublishSnapshot = {
   longContextThresholdTokens: number | null;
   admissionLongContextThreshold: number | null;
   allowLongContext: boolean;
+  newapiRefRatesJson: string;
+  newapiRefTiersJson: string;
 };
 
 export type PublishReadiness =
@@ -44,6 +47,7 @@ type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
 type BillingCapabilities = Partial<Record<CapabilityKey, boolean>>;
 
 type PublishRow = {
+  listingId: string;
   newapiGroup: string;
   newapiModelId: string;
   category: string;
@@ -264,8 +268,17 @@ function buildTiers(
 ) {
   const tiers: Record<string, number> = {};
   for (const row of rows) {
-    if (!row.tierSkuKey || !validPrice(row.tierPrice)) continue;
-    tiers[row.tierSkuKey] = scaleMicroUsdByBps(row.tierPrice, discountRateBps)!;
+    if (!row.tierSkuKey) continue;
+    if (!validPrice(row.tierPrice) || row.tierPrice <= 0) {
+      reasons.add(`按次档位价格必须大于 0：${row.tierSkuKey}`);
+      continue;
+    }
+    const scaled = scaleMicroUsdByBps(row.tierPrice, discountRateBps);
+    if (scaled === null || scaled <= 0) {
+      reasons.add(`按次档位折后价格必须大于 0：${row.tierSkuKey}`);
+      continue;
+    }
+    tiers[row.tierSkuKey] = scaled;
   }
   if (!Object.hasOwn(tiers, 'default')) {
     reasons.add('缺少按次默认档：default');
@@ -279,6 +292,7 @@ export async function assessPublishReadiness(
 ): Promise<PublishReadiness> {
   const rows = (await db()
     .select({
+      listingId: catalogModelListing.id,
       newapiGroup: catalogGroup.newapiGroup,
       newapiModelId: catalogModel.modelId,
       category: catalogModel.category,
@@ -369,6 +383,16 @@ export async function assessPublishReadiness(
   }
 
   const allowLongContext = Boolean(row.allowLongContext);
+  const costReference = (await getLatestCostReferences())[row.listingId];
+  const newapiRefRatesJson = JSON.stringify(
+    costReference?.billingScheme === 'token' ? (costReference.rates ?? {}) : {}
+  );
+  const newapiRefTiersJson = JSON.stringify(
+    costReference?.billingScheme === 'per_call' &&
+      costReference.defaultTier !== undefined
+      ? { default: costReference.defaultTier }
+      : {}
+  );
   return {
     ready: true,
     snapshot: {
@@ -382,6 +406,8 @@ export async function assessPublishReadiness(
         : null,
       admissionLongContextThreshold: row.longContextThreshold,
       allowLongContext,
+      newapiRefRatesJson,
+      newapiRefTiersJson,
     },
   };
 }

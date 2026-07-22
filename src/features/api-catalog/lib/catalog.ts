@@ -138,6 +138,16 @@ export function formatMicroUsdPerMillion(micro: number): string {
   })}`;
 }
 
+export function formatMicroUsdPerCall(micro: number, unit: string): string {
+  const dollars = micro / 1_000_000;
+  const precise = Number(dollars.toFixed(6));
+  return `$${precise.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+    useGrouping: false,
+  })}/${unit}`;
+}
+
 export const publicModels: ApiModel[] = [
   // test fixture only; runtime catalog reads DB-backed queries.ts.
   {

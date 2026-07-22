@@ -77,6 +77,7 @@ export type EffectiveCatalogPriceInput = {
   listInputMicroUsd?: number | null;
   listOutputMicroUsd?: number | null;
   discountNote?: string | null;
+  requiresOutputPrice?: boolean;
 };
 
 export type EffectiveCatalogPrice = {
@@ -300,7 +301,10 @@ export function resolveEffectiveCatalogPrice(
     input.discountRateBps
   );
 
-  if (effectiveInput === null || effectiveOutput === null) {
+  if (
+    effectiveInput === null ||
+    (input.requiresOutputPrice !== false && effectiveOutput === null)
+  ) {
     return hidden();
   }
 

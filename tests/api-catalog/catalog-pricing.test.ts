@@ -231,6 +231,21 @@ test('fixed-price or incomplete token prices stay hidden even when drift is matc
   assert.equal(effective.pricePresentation.showPrice, false);
 });
 
+test('Embedding 仅需输入价即可公开展示', () => {
+  const effective = resolveEffectiveCatalogPrice({
+    baseInputMicroUsd: 20_000,
+    baseOutputMicroUsd: null,
+    discountRateBps: 10_000,
+    priceDriftStatus: 'matched',
+    requiresOutputPrice: false,
+  });
+
+  assert.equal(effective.publicConfirmed, true);
+  assert.equal(effective.effectiveInputMicroUsd, 20_000);
+  assert.equal(effective.effectiveOutputMicroUsd, null);
+  assert.equal(effective.pricePresentation.showPrice, true);
+});
+
 test('成本守卫状态只告警，不隐藏已配置的门户售价', () => {
   for (const priceDriftStatus of ['ok', 'cost_changed', 'cost_alert']) {
     const effective = resolveEffectiveCatalogPrice({

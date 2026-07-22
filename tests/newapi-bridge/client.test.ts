@@ -919,6 +919,64 @@ test('getQuota converts integer quota into USD balance', async () => {
   assert.equal(quota.balanceUsd, 2.5);
 });
 
+test('overrideUserQuota uses admin absolute override and confirms with user auth', async () => {
+  const { client, requests } = createMockedClient({
+    'POST /api/user/manage': async (req) => {
+      assert.equal(req.headers.get('authorization'), 'Bearer admin-token');
+      assert.equal(req.headers.get('new-api-user'), '1');
+      assert.deepEqual(await req.json(), {
+        id: 2,
+        action: 'add_quota',
+        mode: 'override',
+        value: 500_000_000,
+      });
+      return ok(null);
+    },
+    'GET /api/user/self': (req) => {
+      assert.equal(req.headers.get('authorization'), 'Bearer user-token');
+      assert.equal(req.headers.get('new-api-user'), '2');
+      return ok({ id: 2, quota: 500_000_000 });
+    },
+  });
+
+  const quota = await client.overrideUserQuota({
+    user: USER,
+    quota: 500_000_000,
+  });
+
+  assert.equal(quota.quotaRemaining, 500_000_000);
+  assert.deepEqual(
+    requests.map((req) => `${req.method} ${new URL(req.url).pathname}`),
+    ['POST /api/user/manage', 'GET /api/user/self']
+  );
+});
+
+test('overrideUserQuota rejects a confirmation mismatch', async () => {
+  const { client } = createMockedClient({
+    'POST /api/user/manage': () => ok(null),
+    'GET /api/user/self': () => ok({ id: 2, quota: 499_999_999 }),
+  });
+
+  await assert.rejects(
+    () =>
+      client.overrideUserQuota({
+        user: USER,
+        quota: 500_000_000,
+      }),
+    /confirmation mismatch/
+  );
+});
+
+test('overrideUserQuota rejects invalid quota before any remote call', async () => {
+  const { client, requests } = createMockedClient({});
+
+  await assert.rejects(
+    () => client.overrideUserQuota({ user: USER, quota: 0 }),
+    /positive safe integer/
+  );
+  assert.equal(requests.length, 0);
+});
+
 test('getUsageSummary aggregates dashboard rows and splits tokens from logs', async () => {
   const { client } = createMockedClient({
     'GET /api/data/self': () =>

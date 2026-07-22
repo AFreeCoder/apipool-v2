@@ -6,7 +6,9 @@ export function ceilDiv(a: bigint, b: bigint): bigint {
 }
 
 const num = (value: unknown): number =>
-  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : 0;
 
 const obj = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
@@ -19,6 +21,7 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
     'prompt_tokens_details',
     'completion_tokens_details',
     'cache_creation_input_tokens',
+    'server_tool_use',
   ]),
   responses: new Set([
     'input_tokens',
@@ -26,6 +29,7 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
     'total_tokens',
     'input_tokens_details',
     'output_tokens_details',
+    'server_tool_use',
   ]),
   messages: new Set([
     'input_tokens',
@@ -42,12 +46,20 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
     'output_tokens',
     'total_tokens',
     'input_tokens_details',
+    'prompt_tokens',
+    'completion_tokens',
+    'prompt_tokens_details',
+    'completion_tokens_details',
   ]),
   images_edits: new Set([
     'input_tokens',
     'output_tokens',
     'total_tokens',
     'input_tokens_details',
+    'prompt_tokens',
+    'completion_tokens',
+    'prompt_tokens_details',
+    'completion_tokens_details',
   ]),
 };
 
@@ -56,6 +68,23 @@ export type NormalizedUsage = {
   webSearchCount: number;
   flags: string[];
 };
+
+function collectInvalidNumbers(
+  value: unknown,
+  path: string,
+  flags: string[]
+): void {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      flags.push(`invalid_numeric:${path}`);
+    }
+    return;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  for (const [key, nested] of Object.entries(value)) {
+    collectInvalidNumbers(nested, `${path}.${key}`, flags);
+  }
+}
 
 function addMeter(
   meters: MeterQuantities,
@@ -84,6 +113,12 @@ export function normalizeUsageMeters(
 ): NormalizedUsage {
   let meters: MeterQuantities = {};
   const flags: string[] = [];
+  const mapped = MAPPED_KEYS[endpoint] ?? new Set<string>();
+  for (const key of mapped) {
+    if (Object.hasOwn(usage, key)) {
+      collectInvalidNumbers(usage[key], key, flags);
+    }
+  }
 
   switch (endpoint) {
     case 'chat_completions': {
@@ -147,7 +182,9 @@ export function normalizeUsageMeters(
       break;
     case 'images_generations':
     case 'images_edits': {
-      const details = obj(usage.input_tokens_details);
+      const details = obj(
+        usage.input_tokens_details ?? usage.prompt_tokens_details
+      );
       const cachedText = num(details.cached_text_tokens);
       const cachedImage = num(details.cached_image_tokens);
       addMeter(
@@ -162,12 +199,15 @@ export function normalizeUsageMeters(
       );
       addMeter(meters, 'cached_input', cachedText);
       addMeter(meters, 'cached_image_input', cachedImage);
-      addMeter(meters, 'image_output', num(usage.output_tokens));
+      addMeter(
+        meters,
+        'image_output',
+        num(usage.output_tokens ?? usage.completion_tokens)
+      );
       break;
     }
   }
 
-  const mapped = MAPPED_KEYS[endpoint] ?? new Set<string>();
   for (const [key, value] of Object.entries(usage)) {
     if (mapped.has(key)) continue;
     if (typeof value === 'number' && value !== 0) {

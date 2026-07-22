@@ -9,6 +9,8 @@ export type PublicCatalogListingDto = {
   category: string;
   capabilities: string[];
   contextWindow: number | null;
+  billingScheme?: 'token' | 'per_call';
+  tiers?: { skuKey: string; priceMicroUsd: number; note?: string }[];
   inputMicroUsd?: number;
   outputMicroUsd?: number;
   imageInputMicroUsd?: number;

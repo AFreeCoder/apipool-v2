@@ -9,6 +9,7 @@ const FIELD_LIMITS: Record<string, number> = {
   quality: 128,
   size: 128,
   n: 32,
+  stream: 8,
 };
 
 export type ImageMultipartFields = {
@@ -17,6 +18,7 @@ export type ImageMultipartFields = {
   size: string | null;
   n: number | null;
   promptBytes: number;
+  stream: boolean;
 };
 
 export type ImageMultipartExtraction =
@@ -27,7 +29,11 @@ export type ImageMultipartExtraction =
     }
   | {
       ok: false;
-      reason: 'missing_model' | 'malformed' | 'field_too_large';
+      reason:
+        | 'missing_model'
+        | 'missing_image'
+        | 'malformed'
+        | 'field_too_large';
     };
 
 function parseBoundary(contentType: string | null): string | null {
@@ -119,6 +125,7 @@ export function extractImageMultipartRequest(
   }
 
   const values = new Map<string, Uint8Array>();
+  let hasImageFile = false;
   let totalTextChars = 0;
   let cursor = boundaryBytes.length;
   let closed = false;
@@ -151,6 +158,13 @@ export function extractImageMultipartRequest(
 
     const disposition = parseDisposition(headerText);
     const fieldName = disposition.name;
+    if (
+      fieldName === 'image' &&
+      disposition.hasFilename &&
+      nextBoundary > contentStart
+    ) {
+      hasImageFile = true;
+    }
     if (fieldName && Object.hasOwn(FIELD_LIMITS, fieldName)) {
       if (disposition.hasFilename || values.has(fieldName)) {
         return { ok: false, reason: 'malformed' };
@@ -173,18 +187,25 @@ export function extractImageMultipartRequest(
   const hasQuality = values.has('quality');
   const hasSize = values.has('size');
   const hasN = values.has('n');
+  const hasStream = values.has('stream');
   const quality = hasQuality ? decodeText(values.get('quality')!) : null;
   const size = hasSize ? decodeText(values.get('size')!) : null;
   const nRaw = hasN ? decodeText(values.get('n')!) : null;
+  const streamRaw = hasStream ? decodeText(values.get('stream')!) : null;
   if (
     model === null ||
     (quality === null && hasQuality) ||
     (size === null && hasSize) ||
-    (nRaw === null && hasN)
+    (nRaw === null && hasN) ||
+    (streamRaw === null && hasStream)
   ) {
     return { ok: false, reason: 'malformed' };
   }
   if (!model) return { ok: false, reason: 'missing_model' };
+  if (!hasImageFile) return { ok: false, reason: 'missing_image' };
+  if (streamRaw !== null && streamRaw !== 'true' && streamRaw !== 'false') {
+    return { ok: false, reason: 'malformed' };
+  }
 
   let n: number | null = null;
   if (nRaw !== null) {
@@ -201,6 +222,7 @@ export function extractImageMultipartRequest(
     size,
     n,
     promptBytes: values.get('prompt')?.byteLength ?? 0,
+    stream: streamRaw === 'true',
   };
   return {
     ok: true,

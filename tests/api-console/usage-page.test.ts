@@ -12,6 +12,8 @@ test('usage page renders model distribution from synced usage summary', async ()
   assert.match(source, /usage\.summary\.byModel/);
   assert.match(source, /model\.requests/);
   assert.match(source, /model\.tokens/);
+  assert.doesNotMatch(source, /tokens:\s*0/);
+  assert.doesNotMatch(source, /keyMasked:\s*['"]—['"]/);
 });
 
 test('usage page renders readable sync states and stable log keys', async () => {

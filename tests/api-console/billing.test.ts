@@ -48,3 +48,18 @@ test('billing API route only reads the wallet billing view', async () => {
   assert.match(source, /getWalletBillingView/);
   assert.doesNotMatch(source, /getPortalUsage|listBillingLedgerEntries/);
 });
+
+test('Checkout 关闭时，控制台充值入口与余额提醒统一隐藏', async () => {
+  const [dashboard, billing, warning] = await Promise.all([
+    readFile('src/app/[locale]/(landing)/dashboard/page.tsx', 'utf8'),
+    readFile('src/app/[locale]/(landing)/dashboard/billing/page.tsx', 'utf8'),
+    readFile('src/features/api-console/components/balance-warning.tsx', 'utf8'),
+  ]);
+
+  for (const source of [dashboard, billing, warning]) {
+    assert.match(source, /checkoutEnabled/);
+  }
+  assert.match(dashboard, /canCheckout\s*\?/);
+  assert.match(billing, /canCheckout\s*\?/);
+  assert.match(warning, /if \(!checkoutEnabled\(\)\) return null/);
+});

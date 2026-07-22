@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const REQUIRED = [
+  'NEWAPI_RUNTIME_POOL_TARGET_USD',
+  'NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD',
   'GATEWAY_RISK_SLOT_LIMIT',
   'GATEWAY_OVERDRAFT_FREEZE_MICRO_USD',
   'GATEWAY_MAX_BODY_BYTES',

@@ -26,6 +26,12 @@
     "field": "Field",
     "value": "Value"
   },
+  "routing": {
+    "model": "Model"
+  },
+  "wallet": {
+    "reason": "Reason"
+  },
   "reconciliation": {
     "mismatches": "Token and amount mismatches",
     "waived": "Waived and orphan observations",

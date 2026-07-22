@@ -1,3 +1,4 @@
+import { checkoutEnabled } from '@/features/gateway/lib/config';
 import { getTranslations } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
@@ -13,6 +14,8 @@ export async function BalanceWarning({
   balanceUsd: number | null | undefined;
   threshold?: number;
 }) {
+  if (!checkoutEnabled()) return null;
+
   const t = await getTranslations('dashboard.common');
 
   return (

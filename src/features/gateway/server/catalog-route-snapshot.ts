@@ -43,7 +43,9 @@ function priceMatches(
     price?.billingScheme === config.billingScheme &&
     price.ratesJson === config.ratesJson &&
     price.tiersJson === config.tiersJson &&
-    price.longContextThresholdTokens === config.longContextThresholdTokens
+    price.longContextThresholdTokens === config.longContextThresholdTokens &&
+    price.newapiRefRatesJson === config.newapiRefRatesJson &&
+    price.newapiRefTiersJson === config.newapiRefTiersJson
   );
 }
 
@@ -222,6 +224,8 @@ export async function ensureCatalogRouteSnapshot(
           ratesJson: config.ratesJson,
           tiersJson: config.tiersJson,
           longContextThresholdTokens: config.longContextThresholdTokens,
+          newapiRefRatesJson: config.newapiRefRatesJson,
+          newapiRefTiersJson: config.newapiRefTiersJson,
           refNewapiGroup: config.newapiGroup,
           sourceNote: '由目录基础价与上架折扣自动生成',
           publishedBy: SYSTEM_PUBLISHER,

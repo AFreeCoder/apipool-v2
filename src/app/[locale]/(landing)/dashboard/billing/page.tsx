@@ -12,7 +12,11 @@ import {
   formatLedgerUsdAmount,
   formatUsdAmount,
 } from '@/features/api-console/lib/money';
-import { getWalletBillingView } from '@/features/wallet/server/usage-view';
+import { checkoutEnabled } from '@/features/gateway/lib/config';
+import {
+  getWalletBillingView,
+  getWalletUsageView,
+} from '@/features/wallet/server/usage-view';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import enBillingMessages from '@/config/locale/messages/en/dashboard/billing.json';
@@ -82,20 +86,38 @@ export default async function BillingPage({
     locale,
     namespace: 'dashboard.billing',
   });
+  const canCheckout = checkoutEnabled();
   const user = await getUserInfo();
   let balanceUsd: number | undefined;
   let ledger: BillingLedgerRow[] = [];
-  const charges: ReturnType<typeof buildBillingUsageCharges> = [];
+  let charges: ReturnType<typeof buildBillingUsageCharges> = [];
   if (user) {
-    const wallet = await getWalletBillingView(user.id);
+    const [wallet, usage] = await Promise.all([
+      getWalletBillingView(user.id),
+      getWalletUsageView(user.id, 'all'),
+    ]);
     balanceUsd = wallet.balance.balanceUsd;
-    ledger = wallet.ledger.map((entry) => ({
-      orderNo: entry.orderNo,
-      amountUsd: entry.signedAmountUsd,
-      ledgerStatus: 'applied',
-      orderStatus: entry.entryType === 'recharge' ? 'paid' : null,
-      createdAt: new Date(entry.createdAt).getTime(),
-    }));
+    ledger = wallet.ledger
+      .filter((entry) => entry.entryType === 'recharge')
+      .map((entry) => ({
+        orderNo: entry.orderNo,
+        amountUsd: entry.signedAmountUsd,
+        ledgerStatus: 'applied',
+        orderStatus: 'paid',
+        createdAt: new Date(entry.createdAt).getTime(),
+      }));
+    charges = buildBillingUsageCharges({
+      logs: usage.logs.map((log) => ({
+        id: log.id,
+        keyMasked: log.keyMasked,
+        modelId: log.modelId,
+        status: log.status,
+        inputTokens: log.inputTokens ?? 0,
+        outputTokens: log.outputTokens ?? 0,
+        spendUsd: log.chargedUsd,
+        createdAt: new Date(log.createdAt),
+      })),
+    });
   }
 
   const pricingT = await getTranslations({
@@ -148,14 +170,16 @@ export default async function BillingPage({
         </div>
       </div>
 
-      <div>
-        <h2 className="mb-4 font-medium">{pageT('addCredit')}</h2>
-        <TopUpPackages
-          packages={packages}
-          locale={locale}
-          labels={pageT.raw('topUp')}
-        />
-      </div>
+      {canCheckout ? (
+        <div>
+          <h2 className="mb-4 font-medium">{pageT('addCredit')}</h2>
+          <TopUpPackages
+            packages={packages}
+            locale={locale}
+            labels={pageT.raw('topUp')}
+          />
+        </div>
+      ) : null}
 
       <div className="bg-card overflow-hidden rounded-xl border">
         <div className="border-b px-5 py-4 font-medium">
@@ -163,7 +187,11 @@ export default async function BillingPage({
         </div>
         {ledger.length === 0 ? (
           <div className="text-muted-foreground p-8 text-center text-sm">
-            {pageT('creditHistory.empty')}
+            {pageT(
+              canCheckout
+                ? 'creditHistory.empty'
+                : 'creditHistory.emptyCheckoutDisabled'
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">

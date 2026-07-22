@@ -109,4 +109,17 @@ test('per_call 表单保留 SKU 行并强制 default 档', () => {
       ),
     CatalogPricingFormError
   );
+
+  assert.throws(
+    () =>
+      parseModelPricingFormData(
+        form({
+          billingScheme: 'per_call',
+          billingCapabilitiesJson: '{}',
+          tiersJson: JSON.stringify([{ skuKey: 'default', price: '0' }]),
+        }),
+        messages
+      ),
+    CatalogPricingFormError
+  );
 });
