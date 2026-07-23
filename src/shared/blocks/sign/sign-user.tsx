@@ -12,8 +12,8 @@ import {
   SunDim,
   User,
 } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
+import { useTheme } from 'next-themes';
 
 import { authClient, signOut, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
@@ -40,7 +40,7 @@ import { cn } from '@/shared/lib/utils';
 import { User as UserType } from '@/shared/models/user';
 import { NavItem, UserNav } from '@/shared/types/blocks/common';
 
-import { UserMenuIcon } from '../common/user-menu-icon';
+import { MenuIcon } from '../common/menu-icon';
 import { SignModal } from './sign-modal';
 
 function extractSessionUser(data: any): UserType | null {
@@ -219,7 +219,7 @@ export function SignUser({
                     target={item.target || '_self'}
                   >
                     {item.icon && (
-                      <UserMenuIcon
+                      <MenuIcon
                         name={item.icon as string}
                         className="h-4 w-4"
                       />

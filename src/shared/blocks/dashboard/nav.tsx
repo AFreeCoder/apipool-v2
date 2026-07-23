@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 
 import { Link, usePathname, useRouter } from '@/core/i18n/navigation';
-import { SmartIcon } from '@/shared/blocks/common/smart-icon';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import {
   Collapsible,
   CollapsibleContent,
@@ -58,7 +58,7 @@ export function Nav({ nav, className }: { nav: NavType; className?: string }) {
                           : ''
                       }`}
                     >
-                      {item?.icon && <SmartIcon name={item.icon as string} />}
+                      {item?.icon && <MenuIcon name={item.icon as string} />}
                       <span>{item?.title || ''}</span>
                       <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                     </SidebarMenuButton>
@@ -80,7 +80,7 @@ export function Nav({ nav, className }: { nav: NavType; className?: string }) {
                       href={item?.url as string}
                       target={item?.target as string}
                     >
-                      {item?.icon && <SmartIcon name={item.icon as string} />}
+                      {item?.icon && <MenuIcon name={item.icon as string} />}
                       <span>{item?.title || ''}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -107,7 +107,7 @@ export function Nav({ nav, className }: { nav: NavType; className?: string }) {
                               target={subItem.target as string}
                             >
                               {/* {subItem.icon && (
-                                <SmartIcon name={subItem.icon as string} />
+                                <MenuIcon name={subItem.icon as string} />
                               )} */}
                               <span className="px-2">{subItem.title}</span>
                             </Link>

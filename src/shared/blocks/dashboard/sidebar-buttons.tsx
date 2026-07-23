@@ -1,7 +1,7 @@
 'use client';
 
 import { Link } from '@/core/i18n/navigation';
-import { SmartIcon } from '@/shared/blocks/common';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import { Button } from '@/shared/components/ui/button';
 import { useSidebar } from '@/shared/components/ui/sidebar';
 import { cn } from '@/shared/lib/utils';
@@ -32,7 +32,7 @@ export function SidebarButtons({ buttons }: { buttons: ButtonType[] }) {
             title={button.title || undefined}
           >
             {button.icon && (
-              <SmartIcon
+              <MenuIcon
                 name={button.icon as string}
                 className="size-4 shrink-0"
               />

@@ -3,7 +3,7 @@
 import { MoreHorizontal } from 'lucide-react';
 
 import { Link } from '@/core/i18n/navigation';
-import { SmartIcon } from '@/shared/blocks/common/smart-icon';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import { Button } from '@/shared/components/ui/button';
 import {
   DropdownMenu,
@@ -49,7 +49,7 @@ export function Dropdown({
                 className="flex w-full items-center gap-2"
               >
                 {item.icon && (
-                  <SmartIcon name={item.icon as string} className="h-4 w-4" />
+                  <MenuIcon name={item.icon as string} className="h-4 w-4" />
                 )}
                 {item.title}
               </Link>

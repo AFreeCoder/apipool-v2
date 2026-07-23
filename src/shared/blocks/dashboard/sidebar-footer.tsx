@@ -1,7 +1,7 @@
 'use client';
 
 import { Link } from '@/core/i18n/navigation';
-import { SmartIcon } from '@/shared/blocks/common/smart-icon';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import { Separator } from '@/shared/components/ui/separator';
 import { useSidebar } from '@/shared/components/ui/sidebar';
 import { NavItem } from '@/shared/types/blocks/common';
@@ -20,7 +20,7 @@ export function SidebarFooter({ footer }: { footer: SidebarFooterType }) {
             <div className="hover:text-primary cursor-pointer" key={idx}>
               <Link href={item.url || ''} target={item.target || '_self'}>
                 {item.icon && (
-                  <SmartIcon
+                  <MenuIcon
                     name={item.icon as string}
                     className="text-md"
                     size={20}

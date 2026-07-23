@@ -8,9 +8,9 @@ import {
   BrandLogo,
   LocaleSelector,
   SignUser,
-  SmartIcon,
   ThemeToggler,
 } from '@/shared/blocks/common';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import {
   Accordion,
   AccordionContent,
@@ -100,7 +100,7 @@ export function Header({ header }: { header: HeaderType }) {
                         : ''
                     }`}
                   >
-                    {item.icon && <SmartIcon name={item.icon as string} />}
+                    {item.icon && <MenuIcon name={item.icon as string} />}
                     {item.title}
                   </Link>
                 </NavigationMenuLink>
@@ -111,7 +111,7 @@ export function Header({ header }: { header: HeaderType }) {
               <NavigationMenuItem key={idx}>
                 <NavigationMenuTrigger className="flex flex-row items-center gap-2 text-sm">
                   {item.icon && (
-                    <SmartIcon name={item.icon as string} className="h-4 w-4" />
+                    <MenuIcon name={item.icon as string} className="h-4 w-4" />
                   )}
                   {item.title}
                 </NavigationMenuTrigger>
@@ -127,7 +127,7 @@ export function Header({ header }: { header: HeaderType }) {
                           description={subItem.description || ''}
                         >
                           {subItem.icon && (
-                            <SmartIcon name={subItem.icon as string} />
+                            <MenuIcon name={subItem.icon as string} />
                           )}
                         </ListItem>
                       ))}
@@ -180,7 +180,7 @@ export function Header({ header }: { header: HeaderType }) {
                                 className="flex items-center justify-center *:size-4"
                               >
                                 {subItem.icon && (
-                                  <SmartIcon name={subItem.icon as string} />
+                                  <MenuIcon name={subItem.icon as string} />
                                 )}
                               </div>
                               <div className="text-base">{subItem.title}</div>
@@ -303,7 +303,7 @@ export function Header({ header }: { header: HeaderType }) {
                         )}
                       >
                         {button.icon && (
-                          <SmartIcon
+                          <MenuIcon
                             name={button.icon as string}
                             className="size-4"
                           />

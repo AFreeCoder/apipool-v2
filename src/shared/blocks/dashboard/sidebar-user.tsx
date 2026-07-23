@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 
 import { signOut, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
-import { UserMenuIcon } from '@/shared/blocks/common/user-menu-icon';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import { SignModal } from '@/shared/blocks/sign/sign-modal';
 import {
   Avatar,
@@ -194,7 +194,10 @@ export function SidebarUser({ user }: { user: SidebarUserType }) {
                         className="flex w-full items-center gap-2"
                       >
                         {item?.icon && (
-                          <UserMenuIcon name={item.icon as string} />
+                          <MenuIcon
+                            name={item.icon as string}
+                            className="h-4 w-4"
+                          />
                         )}
                         {item?.title || ''}
                       </Link>

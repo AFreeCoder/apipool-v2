@@ -3,7 +3,7 @@
 import { ReactNode, useState } from 'react';
 
 import { Link, usePathname } from '@/core/i18n/navigation';
-import { SmartIcon } from '@/shared/blocks/common/smart-icon';
+import { MenuIcon } from '@/shared/blocks/common/menu-icon';
 import { Button } from '@/shared/components/ui/button';
 import {
   Sheet,
@@ -49,7 +49,7 @@ export function ConsoleLayout({
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
           }`}
         >
-          <SmartIcon name={item.icon as string} size={16} />
+          <MenuIcon name={item.icon as string} size={16} />
           <span>{item.title}</span>
         </Link>
       ))}
@@ -74,7 +74,7 @@ export function ConsoleLayout({
                   } hover:text-foreground duration-200 ease-linear`}
                 >
                   {item.icon && (
-                    <SmartIcon name={item.icon as string} size={16} />
+                    <MenuIcon name={item.icon as string} size={16} />
                   )}
                   {item.title}
                 </Link>
@@ -92,7 +92,7 @@ export function ConsoleLayout({
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="outline" size="icon" className="md:hidden">
-                  <SmartIcon name="Menu" size={20} />
+                  <MenuIcon name="Menu" size={20} />
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-64 px-4">
@@ -117,7 +117,7 @@ export function ConsoleLayout({
           <div className="hidden w-64 flex-shrink-0 md:block">
             {/* Search Box */}
             {/* <div className="relative mb-6">
-              <SmartIcon
+              <MenuIcon
                 name="Search"
                 size={16}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
