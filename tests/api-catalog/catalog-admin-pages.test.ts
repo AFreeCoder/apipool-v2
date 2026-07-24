@@ -255,10 +255,7 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     'vendorName',
     'categoryNames',
     'capabilityNames',
-    'inputPrice',
-    'outputPrice',
-    'imageInputPrice',
-    'imageOutputPrice',
+    'price',
   ]) {
     assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }

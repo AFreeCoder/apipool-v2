@@ -105,8 +105,8 @@ test('模型管理行只返回模型元数据与基准价，不投影第一条�
   for (let i = 0; i < 3; i++) {
     const row = rows.find((r: any) => r.modelId === `rows-model-${i}`);
     assert.ok(row, `expected rows-model-${i} to be present`);
-    assert.equal(row.inputPrice, '0.15');
-    assert.equal(row.outputPrice, '0.6');
+    assert.equal(row.price.inputSummary, '0.15');
+    assert.equal(row.price.outputSummary, '0.6');
     for (const field of ['groupName', 'discountRateBps', 'pricingStatus']) {
       assert.equal(
         Object.prototype.hasOwnProperty.call(row, field),
