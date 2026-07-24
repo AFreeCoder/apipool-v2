@@ -1,8 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 
-import { redirect } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { defaultLocale } from '@/config/locale';
+import { redirect } from '@/core/i18n/navigation';
 import { VerifyEmailPage } from '@/shared/blocks/sign/verify-email';
 
 export async function generateMetadata({

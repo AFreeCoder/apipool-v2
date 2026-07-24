@@ -1,6 +1,5 @@
 import { getPublicPortalErrorMessage } from '@/features/api-console/lib/public-errors';
 import { disablePortalApiKey } from '@/features/newapi-bridge/server/portal';
-
 import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr } from '@/shared/lib/resp';
 import { getUserInfo } from '@/shared/models/user';

@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { taxonomy } from '@/config/db/schema';
+import { db } from '@/core/db';
 
 export type Taxonomy = typeof taxonomy.$inferSelect;
 export type NewTaxonomy = typeof taxonomy.$inferInsert;

@@ -40,7 +40,11 @@ test('legacy public marketing routes redirect with locale-aware navigation', asy
     assert.match(source, /@\/core\/i18n\/navigation/, item.file);
     assert.doesNotMatch(source, /next\/navigation/, item.file);
     assert.match(source, /params:\s*Promise<\{\s*locale:\s*string/, item.file);
-    assert.match(source, new RegExp(`href:\\s*['"]${item.destination}`), item.file);
+    assert.match(
+      source,
+      new RegExp(`href:\\s*['"]${item.destination}`),
+      item.file
+    );
     assert.doesNotMatch(
       source,
       /DynamicPage|StaticPage|shared\/models\/post|content\/posts|TableCard|FormCard/,

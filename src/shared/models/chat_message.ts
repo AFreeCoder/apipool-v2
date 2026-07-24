@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { chatMessage } from '@/config/db/schema';
+import { db } from '@/core/db';
 
 import { Chat } from './chat';
 import { appendUserToResult, User } from './user';

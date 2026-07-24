@@ -1,5 +1,9 @@
 import 'server-only';
 
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+
+import { newApiUserBinding } from '@/config/db/schema';
+import { db } from '@/core/db';
 import { gatewayConfig } from '@/features/gateway/lib/config';
 import {
   createNewApiClient,
@@ -7,10 +11,6 @@ import {
   type RemoteQuota,
 } from '@/features/newapi-bridge/server/client';
 import { bindingToUserCredentials } from '@/features/newapi-bridge/server/portal';
-import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
-
-import { db } from '@/core/db';
-import { newApiUserBinding } from '@/config/db/schema';
 import { recordPortalAdminAudit } from '@/shared/models/portal-admin-audit';
 
 type RuntimePoolBinding = Pick<

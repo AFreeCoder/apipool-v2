@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+
 import { parseCustomTopUpAmountInput } from '@/features/api-console/lib/top-up-products';
 
 const componentPath = 'src/features/api-console/components/top-up-packages.tsx';

@@ -1,10 +1,10 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import {
   CatalogStatus,
   getStatuses,
 } from '@/features/api-catalog/server/catalog-service';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';
 import { Crumb } from '@/shared/types/blocks/common';

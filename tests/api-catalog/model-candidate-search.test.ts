@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { filterModelPricingCandidates } from '@/features/api-catalog/server/model-candidate-search';
 
 const openAiVendor = {

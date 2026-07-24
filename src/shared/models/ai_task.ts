@@ -1,7 +1,7 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { aiTask, credit } from '@/config/db/schema';
+import { db } from '@/core/db';
 import { AITaskStatus } from '@/extensions/ai';
 import { appendUserToResult, User } from '@/shared/models/user';
 

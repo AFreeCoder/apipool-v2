@@ -167,8 +167,8 @@ test('迁移 0013 将价格版本 map 化、等价迁移旧价并补齐账本 me
   await client.executeMultiple(await readFile(join(dir, migration), 'utf8'));
 
   const columns = async (table: string) =>
-    (await client.execute(`PRAGMA table_info(${table})`)).rows.map(
-      (row: any) => String(row.name)
+    (await client.execute(`PRAGMA table_info(${table})`)).rows.map((row: any) =>
+      String(row.name)
     );
   const priceColumns = await columns('model_price_version');
   assert.ok(priceColumns.includes('billing_scheme'));
@@ -193,7 +193,10 @@ test('迁移 0013 将价格版本 map 化、等价迁移旧价并补齐账本 me
   });
   assert.equal(migrated.rows[0].tiers_json, '{}');
   assert.equal(migrated.rows[0].long_context_threshold_tokens, null);
-  assert.equal(Number(migrated.rows[0].newapi_ref_input_micro_usd_per_m), 2_000_000);
+  assert.equal(
+    Number(migrated.rows[0].newapi_ref_input_micro_usd_per_m),
+    2_000_000
+  );
   assert.equal(migrated.rows[0].ref_newapi_group, 'legacy-group');
   assert.equal(migrated.rows[0].source_note, '保留备注');
 

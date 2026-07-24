@@ -15,9 +15,9 @@ import {
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 
+import { localeNames } from '@/config/locale';
 import { authClient, signOut, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
-import { localeNames } from '@/config/locale';
 import { useLocaleSwitcher } from '@/shared/blocks/common/use-locale-switcher';
 import {
   Avatar,

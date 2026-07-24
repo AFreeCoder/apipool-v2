@@ -1,18 +1,7 @@
 import 'server-only';
 
-import {
-  computePerCallChargeMicroUsd,
-  computeTokenChargeMicroUsd,
-  type RatesMap,
-} from '@/features/gateway/lib/billing';
-import type {
-  BillingScheme,
-  MeterKey,
-  MeterQuantities,
-} from '@/features/gateway/lib/meters';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   gatewayJobLock,
   modelPriceVersion,
@@ -23,6 +12,17 @@ import {
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import {
+  computePerCallChargeMicroUsd,
+  computeTokenChargeMicroUsd,
+  type RatesMap,
+} from '@/features/gateway/lib/billing';
+import type {
+  BillingScheme,
+  MeterKey,
+  MeterQuantities,
+} from '@/features/gateway/lib/meters';
 import { getUuid } from '@/shared/lib/hash';
 
 import { markFailedUnbilled as defaultMarkFailedUnbilled } from './admission';

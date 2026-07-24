@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 
+import { UnhandledPaymentEventError } from './errors';
 import {
   CheckoutSession,
   PaymentBilling,
@@ -17,8 +18,6 @@ import {
   type PaymentProvider,
   type PaymentSession,
 } from './types';
-
-import { UnhandledPaymentEventError } from './errors';
 
 /**
  * Stripe payment provider configs

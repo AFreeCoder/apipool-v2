@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { X } from 'lucide-react';
 import { useLocale } from 'next-intl';
 
-import { usePathname } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { localeNames, locales } from '@/config/locale';
+import { usePathname } from '@/core/i18n/navigation';
+import { localizePathForLocale } from '@/features/apipool-ui/lib/indexing';
 import { getLocaleDetectorCopy } from '@/shared/blocks/common/locale-detector-copy';
 import { Button } from '@/shared/components/ui/button';
 import { cacheGet, cacheSet } from '@/shared/lib/cache';

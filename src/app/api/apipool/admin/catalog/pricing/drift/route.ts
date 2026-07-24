@@ -1,5 +1,4 @@
 import { buildCatalogPriceDriftReport } from '@/features/api-catalog/server/pricing-sync';
-
 import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr } from '@/shared/lib/resp';
 
@@ -9,7 +8,10 @@ const CATALOG_READ_PERMISSION = 'admin.catalog.read';
 
 type PricingDriftRouteDeps = {
   getOperator: () => Promise<{ id: string } | null | undefined>;
-  hasPermissionForUser: (userId: string, permission: string) => Promise<boolean>;
+  hasPermissionForUser: (
+    userId: string,
+    permission: string
+  ) => Promise<boolean>;
   buildReport: typeof buildCatalogPriceDriftReport;
 };
 

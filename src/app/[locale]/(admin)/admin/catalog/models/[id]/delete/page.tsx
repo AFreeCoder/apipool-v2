@@ -1,12 +1,12 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import {
   deleteModel,
   getListingsByModel,
   getModelById,
 } from '@/features/api-catalog/server/catalog-service';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';

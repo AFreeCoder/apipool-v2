@@ -22,16 +22,34 @@ test('Compose routes NewAPI metadata sync through an internal healthy filter', a
     const newAPI = serviceBlock(compose, 'new-api');
 
     assert.doesNotMatch(filter, /^\s+ports:/m);
-    assert.match(newAPI, /SYNC_UPSTREAM_BASE:\s*http:\/\/newapi-metadata-filter:8080/);
+    assert.match(
+      newAPI,
+      /SYNC_UPSTREAM_BASE:\s*http:\/\/newapi-metadata-filter:8080/
+    );
     assert.match(
       newAPI,
       /depends_on:\s*\n\s+newapi-metadata-filter:\s*\n\s+condition:\s+service_healthy/
     );
   }
 
-  assert.match(serviceBlock(localCompose, 'newapi-metadata-filter'), /context:\s*\.\/services\/newapi-metadata-filter/);
-  assert.match(serviceBlock(localCompose, 'newapi-metadata-filter'), /official-vendors\.yaml:ro/);
-  assert.match(serviceBlock(productionCompose, 'newapi-metadata-filter'), /NEWAPI_METADATA_FILTER_IMAGE/);
-  assert.doesNotMatch(serviceBlock(productionCompose, 'newapi-metadata-filter'), /^\s+volumes:/m);
-  assert.match(productionEnv, /NEWAPI_METADATA_FILTER_IMAGE=ghcr\.io\/afreecoder\/apipool-v2-newapi-metadata-filter/);
+  assert.match(
+    serviceBlock(localCompose, 'newapi-metadata-filter'),
+    /context:\s*\.\/services\/newapi-metadata-filter/
+  );
+  assert.match(
+    serviceBlock(localCompose, 'newapi-metadata-filter'),
+    /official-vendors\.yaml:ro/
+  );
+  assert.match(
+    serviceBlock(productionCompose, 'newapi-metadata-filter'),
+    /NEWAPI_METADATA_FILTER_IMAGE/
+  );
+  assert.doesNotMatch(
+    serviceBlock(productionCompose, 'newapi-metadata-filter'),
+    /^\s+volumes:/m
+  );
+  assert.match(
+    productionEnv,
+    /NEWAPI_METADATA_FILTER_IMAGE=ghcr\.io\/afreecoder\/apipool-v2-newapi-metadata-filter/
+  );
 });

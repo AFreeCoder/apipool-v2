@@ -1,10 +1,9 @@
+import { PERMISSIONS } from '@/core/rbac';
 import { parseWalletAdjustmentAmount } from '@/features/wallet/lib/adjustment-input';
 import {
   applyManualAdjustment,
   IdempotencyConflictError,
 } from '@/features/wallet/server/ledger';
-
-import { PERMISSIONS } from '@/core/rbac';
 import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr, respJson } from '@/shared/lib/resp';
 import { findUserById, getUserInfo } from '@/shared/models/user';

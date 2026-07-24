@@ -84,27 +84,93 @@ export function ReconciliationTab() {
   return (
     <div className="space-y-4">
       <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-        <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder={t('reconciliation.notePlaceholder')} />
-        <Button variant="outline" onClick={() => void load()} disabled={loading}>{t('common.refresh')}</Button>
+        <Input
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder={t('reconciliation.notePlaceholder')}
+        />
+        <Button
+          variant="outline"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          {t('common.refresh')}
+        </Button>
       </div>
       <Notice message={notice} />
       <Panel title={t('reconciliation.mismatches')}>
-        <RecordTable rows={data?.mismatches ?? []} columns={columns} emptyLabel={t('common.empty')} actions={(row) => <Button size="sm" variant="outline" onClick={() => void resolve(row, 'explained')} disabled={loading}>{t('reconciliation.explain')}</Button>} />
+        <RecordTable
+          rows={data?.mismatches ?? []}
+          columns={columns}
+          emptyLabel={t('common.empty')}
+          actions={(row) => (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void resolve(row, 'explained')}
+              disabled={loading}
+            >
+              {t('reconciliation.explain')}
+            </Button>
+          )}
+        />
       </Panel>
-      <Panel title={t('reconciliation.waived')} description={t('reconciliation.waivedHelp')}>
+      <Panel
+        title={t('reconciliation.waived')}
+        description={t('reconciliation.waivedHelp')}
+      >
         <RecordTable
           rows={data?.waived ?? []}
-          columns={[{ key: 'id', label: 'ID' }, { key: 'source', label: t('reconciliation.source') }, { key: 'userId', label: t('reconciliation.user') }, { key: 'tokenName', label: t('reconciliation.tokenName') }, { key: 'reconcileStatus', label: t('reconciliation.status') }]}
+          columns={[
+            { key: 'id', label: 'ID' },
+            { key: 'source', label: t('reconciliation.source') },
+            { key: 'userId', label: t('reconciliation.user') },
+            { key: 'tokenName', label: t('reconciliation.tokenName') },
+            { key: 'reconcileStatus', label: t('reconciliation.status') },
+          ]}
           emptyLabel={t('common.empty')}
-          actions={(row) => row.source === 'orphan' ? <Button size="sm" variant="outline" onClick={() => void resolve(row, 'orphan_acknowledged')} disabled={loading}>{t('reconciliation.acknowledge')}</Button> : null}
+          actions={(row) =>
+            row.source === 'orphan' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void resolve(row, 'orphan_acknowledged')}
+                disabled={loading}
+              >
+                {t('reconciliation.acknowledge')}
+              </Button>
+            ) : null
+          }
         />
       </Panel>
       <Panel title={t('reconciliation.stuck')}>
-        <RecordTable rows={data?.stuck ?? []} columns={columns} emptyLabel={t('common.empty')} actions={(row) => <Button size="sm" variant="destructive" onClick={() => void resolve(row, 'manual_closed')} disabled={loading}>{t('reconciliation.manualClose')}</Button>} />
+        <RecordTable
+          rows={data?.stuck ?? []}
+          columns={columns}
+          emptyLabel={t('common.empty')}
+          actions={(row) => (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => void resolve(row, 'manual_closed')}
+              disabled={loading}
+            >
+              {t('reconciliation.manualClose')}
+            </Button>
+          )}
+        />
       </Panel>
       <Panel title={t('reconciliation.invariant')}>
-        <div className={data?.invariant.broken.length ? 'text-destructive text-sm' : 'text-muted-foreground text-sm'}>
-          {data?.invariant.broken.length ? data.invariant.broken.join(', ') : t('reconciliation.invariantOk')}
+        <div
+          className={
+            data?.invariant.broken.length
+              ? 'text-destructive text-sm'
+              : 'text-muted-foreground text-sm'
+          }
+        >
+          {data?.invariant.broken.length
+            ? data.invariant.broken.join(', ')
+            : t('reconciliation.invariantOk')}
         </div>
       </Panel>
     </div>

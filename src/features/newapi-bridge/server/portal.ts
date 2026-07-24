@@ -1,17 +1,8 @@
 import 'server-only';
 
 import { createHash, randomBytes } from 'node:crypto';
-import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
-import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
-import {
-  AdjustmentLedgerDraft,
-  createAdjustmentLedgerDraft,
-} from '@/features/apipool-ledger/lib/ledger';
-import { generatePortalKey } from '@/features/gateway/server/auth';
-import { ensureWalletAccount } from '@/features/wallet/server/ledger';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   apipoolLedgerEntry,
   catalogGroup,
@@ -24,6 +15,15 @@ import {
   usageSnapshot,
   user as userTable,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import { getGroupBySlug } from '@/features/api-catalog/server/catalog-service';
+import { getPublicUsageSyncErrorMessage } from '@/features/api-console/lib/public-errors';
+import {
+  AdjustmentLedgerDraft,
+  createAdjustmentLedgerDraft,
+} from '@/features/apipool-ledger/lib/ledger';
+import { generatePortalKey } from '@/features/gateway/server/auth';
+import { ensureWalletAccount } from '@/features/wallet/server/ledger';
 import { getUuid } from '@/shared/lib/hash';
 import { findUserById, User } from '@/shared/models/user';
 

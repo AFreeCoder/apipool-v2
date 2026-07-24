@@ -21,7 +21,13 @@ test('the script-injection allowlist carries no secret-looking keys', async () =
     .split('SCRIPT_INJECTION_CONFIG_KEYS = [')[1]
     .split('] as const')[0];
 
-  for (const forbidden of ['secret', 'token', 'password', 'api_key', 'signing']) {
+  for (const forbidden of [
+    'secret',
+    'token',
+    'password',
+    'api_key',
+    'signing',
+  ]) {
     assert.doesNotMatch(
       allowlist,
       new RegExp(forbidden, 'i'),

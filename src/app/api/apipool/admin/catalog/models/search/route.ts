@@ -1,8 +1,7 @@
+import { PERMISSIONS } from '@/core/rbac';
 import { getVendorById } from '@/features/api-catalog/server/catalog-service';
 import { filterModelPricingCandidates } from '@/features/api-catalog/server/model-candidate-search';
 import { createNewApiClient } from '@/features/newapi-bridge/server/client';
-
-import { PERMISSIONS } from '@/core/rbac';
 import { withNoStore } from '@/shared/lib/http-cache';
 import { respData, respErr } from '@/shared/lib/resp';
 import { getUserInfo } from '@/shared/models/user';

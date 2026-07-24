@@ -3,7 +3,6 @@ import {
   PaymentStatus,
   PaymentType,
 } from '@/extensions/payment/types';
-
 import type { Order } from '@/shared/models/order';
 
 /**

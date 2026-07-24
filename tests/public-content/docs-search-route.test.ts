@@ -14,7 +14,10 @@ test('docs layout points the search widget at an existing route', async () => {
   // 该路由必须真实存在，否则文档站搜索框每次查询都 404（对所有用户静默坏死）
   const route = await readFile(routePath, 'utf8');
   assert.match(route, /createFromSource/);
-  assert.match(route, /export const \{[^}]*GET[^}]*\}|export async function GET/);
+  assert.match(
+    route,
+    /export const \{[^}]*GET[^}]*\}|export async function GET/
+  );
 });
 
 test('docs search indexes the docs source for both locales', async () => {

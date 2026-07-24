@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { resolveEndpoint } from '@/features/gateway/lib/endpoints';
 import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
 

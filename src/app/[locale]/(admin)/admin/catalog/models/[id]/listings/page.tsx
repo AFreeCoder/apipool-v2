@@ -1,3 +1,6 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import {
   deriveBasePriceFromNewApiPricing,
   formatDecimal,
@@ -12,9 +15,6 @@ import {
   getStatuses,
   Listing,
 } from '@/features/api-catalog/server/catalog-service';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';

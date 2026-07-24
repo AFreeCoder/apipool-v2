@@ -1,7 +1,6 @@
+import { PaymentOrder, PaymentPrice } from '@/extensions/payment/types';
 import { resolveTopUpCheckout } from '@/features/api-console/lib/top-up-products';
 import { checkoutEnabled } from '@/features/gateway/lib/config';
-
-import { PaymentOrder, PaymentPrice } from '@/extensions/payment/types';
 import { getSnowId, getUuid } from '@/shared/lib/hash';
 import { respData, respErr } from '@/shared/lib/resp';
 import { getAllConfigs } from '@/shared/models/config';

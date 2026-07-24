@@ -8,7 +8,9 @@ export async function POST() {
       return respErr('no auth, please sign in');
     }
 
-    return respErr('Legacy credits are disabled for APIPool billing; use /dashboard/billing');
+    return respErr(
+      'Legacy credits are disabled for APIPool billing; use /dashboard/billing'
+    );
   } catch (e) {
     console.log('get user credits failed:', e);
     return respErr('get user credits failed');

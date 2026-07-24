@@ -2,13 +2,13 @@ import 'server-only';
 
 import { and, desc, eq, gte } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   portalApiKey,
   requestLedger,
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
 
 export type WalletUsageRange = '7d' | '30d' | 'month' | 'all';
 

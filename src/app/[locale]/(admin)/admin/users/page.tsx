@@ -138,7 +138,9 @@ export default async function AdminUsersPage({
   const rolesByUser = await getUserRolesForUserIds(users.map((u) => u.id));
 
   const hasActiveStatusFilter =
-    Boolean(newApiBindingStatus) || Boolean(lastSyncErrorCode) || Boolean(ledger);
+    Boolean(newApiBindingStatus) ||
+    Boolean(lastSyncErrorCode) ||
+    Boolean(ledger);
 
   const crumbs: Crumb[] = [
     { title: t('list.crumbs.admin'), url: '/admin' },
@@ -190,8 +192,7 @@ export default async function AdminUsersPage({
       {
         name: 'newApiBindingError',
         title: t('fields.newapi_sync_error'),
-        callback: (item: User) =>
-          item.newApiBinding?.lastSyncErrorCode || '-',
+        callback: (item: User) => item.newApiBinding?.lastSyncErrorCode || '-',
       },
       {
         name: 'roles',
@@ -217,7 +218,12 @@ export default async function AdminUsersPage({
         placeholder: '-',
       },
       { name: 'createdAt', title: t('fields.created_at'), type: 'time' },
-      { name: 'ip', title: t('fields.ip'), type: 'copy', className: 'font-mono text-xs' },
+      {
+        name: 'ip',
+        title: t('fields.ip'),
+        type: 'copy',
+        className: 'font-mono text-xs',
+      },
       { name: 'locale', title: t('fields.locale') },
       { name: 'utmSource', title: t('fields.utm_source') },
       {

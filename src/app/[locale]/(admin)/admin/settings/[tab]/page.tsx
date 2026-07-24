@@ -10,12 +10,12 @@ import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
 import { getAllConfigs, saveConfigs } from '@/shared/models/config';
 import { getUserInfo } from '@/shared/models/user';
+import { hasPermission } from '@/shared/services/rbac';
 import {
   getSettings,
   getSettingTabs,
   Setting,
 } from '@/shared/services/settings';
-import { hasPermission } from '@/shared/services/rbac';
 import { Button, Crumb } from '@/shared/types/blocks/common';
 import { Form, FormField } from '@/shared/types/blocks/form';
 

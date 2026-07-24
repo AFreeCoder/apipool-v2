@@ -1,7 +1,11 @@
 export type LedgerSource = 'manual_adjustment' | 'api_usage' | 'recharge';
 export type LedgerStatus = 'pending' | 'applied' | 'failed' | 'rolled_back';
 export type LedgerExecutor = 'newapi';
-export type RollbackStatus = 'not_required' | 'pending' | 'completed' | 'failed';
+export type RollbackStatus =
+  | 'not_required'
+  | 'pending'
+  | 'completed'
+  | 'failed';
 
 export type AdjustmentLedgerDraft = {
   portalUserId: string;

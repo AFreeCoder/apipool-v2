@@ -21,7 +21,10 @@ export function normalizePathWithoutLocale(pathname: string): string {
   return normalized === '' ? '/' : normalized;
 }
 
-export function localizePathForLocale(pathname: string, locale: string): string {
+export function localizePathForLocale(
+  pathname: string,
+  locale: string
+): string {
   const [, pathOnly = '/', suffix = ''] =
     pathname.match(/^([^?#]*)(.*)$/) ?? [];
   const normalizedPath = normalizePathWithoutLocale(pathOnly);

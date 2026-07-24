@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const componentPath =
-  'src/features/api-console/components/api-key-manager.tsx';
+const componentPath = 'src/features/api-console/components/api-key-manager.tsx';
 
 test('deleting an API key requires an explicit confirmation step', async () => {
   const source = await readFile(componentPath, 'utf8');

@@ -6,9 +6,9 @@ import { Loader2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 
+import { defaultLocale } from '@/config/locale';
 import { authClient, signUp } from '@/core/auth/client';
 import { Link } from '@/core/i18n/navigation';
-import { defaultLocale } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card,
@@ -46,7 +46,8 @@ export function SignUp({
   const isEmailAuthEnabled =
     configs.email_auth_enabled !== 'false' ||
     (!isGoogleAuthEnabled && !isGithubAuthEnabled); // no social providers enabled, auto enable email auth
-  const emailVerificationEnabled = configs.email_verification_enabled === 'true';
+  const emailVerificationEnabled =
+    configs.email_verification_enabled === 'true';
 
   if (callbackUrl) {
     if (
@@ -130,11 +131,11 @@ export function SignUp({
                 email
               )}&callbackUrl=${encodeURIComponent(normalizedCallbackUrl)}`;
 
-            // IMPORTANT: callbackURL must not contain its own '&' query params.
-            // We redirect to home/callbackUrl after verification; verify page is just the waiting UI.
+              // IMPORTANT: callbackURL must not contain its own '&' query params.
+              // We redirect to home/callbackUrl after verification; verify page is just the waiting UI.
               void authClient.sendVerificationEmail({
                 email,
-              callbackURL: `${base}${normalizedCallbackUrl || '/'}`,
+                callbackURL: `${base}${normalizedCallbackUrl || '/'}`,
               });
 
               // next/navigation router expects fully qualified path (including locale when non-default)

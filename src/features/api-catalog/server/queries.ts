@@ -1,14 +1,8 @@
 import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
-import {
-  resolveEffectiveCatalogPrice,
-  scaleMicroUsdByBps,
-} from '@/features/api-catalog/lib/pricing';
-import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   catalogCapability,
   catalogCategory,
@@ -21,6 +15,12 @@ import {
   catalogStatus,
   catalogVendor,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import {
+  resolveEffectiveCatalogPrice,
+  scaleMicroUsdByBps,
+} from '@/features/api-catalog/lib/pricing';
+import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 
 import type { FilterDimensions, ListingRow } from '../lib/types';
 

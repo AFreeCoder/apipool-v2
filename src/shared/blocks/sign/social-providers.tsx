@@ -5,8 +5,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { RiGithubFill, RiGoogleFill } from 'react-icons/ri';
 import { toast } from 'sonner';
 
-import { signIn } from '@/core/auth/client';
 import { defaultLocale } from '@/config/locale';
+import { signIn } from '@/core/auth/client';
 import { Button } from '@/shared/components/ui/button';
 import { useAppContext } from '@/shared/contexts/app';
 import { cn } from '@/shared/lib/utils';

@@ -1,3 +1,4 @@
+import { isProductionRuntime, UnhandledPaymentEventError } from './errors';
 import {
   CheckoutSession,
   PaymentBilling,
@@ -15,11 +16,6 @@ import {
   type PaymentProvider,
   type PaymentSession,
 } from './types';
-
-import {
-  isProductionRuntime,
-  UnhandledPaymentEventError,
-} from './errors';
 
 /**
  * PayPal payment provider configs
@@ -460,7 +456,10 @@ export class PayPalProvider implements PaymentProvider {
         if (verifyResponse.verification_status !== 'SUCCESS') {
           // 生产运行时一律拒绝：不能依赖 DB 配置项 paypal_environment，
           // 上线忘改成 production 就等于放行伪造 webhook。
-          if (this.configs.environment === 'production' || isProductionRuntime()) {
+          if (
+            this.configs.environment === 'production' ||
+            isProductionRuntime()
+          ) {
             throw new Error(
               `Invalid webhook signature: ${verifyResponse.verification_status}`
             );
@@ -476,7 +475,10 @@ export class PayPalProvider implements PaymentProvider {
       } else {
         // No signature headers - this is a simulated/test event from PayPal Dashboard
         // 同上：生产运行时无条件拒绝无签名事件。
-        if (this.configs.environment === 'production' || isProductionRuntime()) {
+        if (
+          this.configs.environment === 'production' ||
+          isProductionRuntime()
+        ) {
           throw new Error(
             'Missing webhook signature headers - rejecting event'
           );

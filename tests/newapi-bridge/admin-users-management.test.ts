@@ -51,7 +51,8 @@ async function insertRole(
   title: string,
   status = 'active'
 ) {
-  await modules.db()
+  await modules
+    .db()
     .insert(modules.schema.role)
     .values({ id, name, title, status });
   return { id, name, title, status };
@@ -63,7 +64,8 @@ async function assignRole(
   roleId: string,
   expiresAt?: Date
 ) {
-  await modules.db()
+  await modules
+    .db()
     .insert(modules.schema.userRole)
     .values({ id, userId, roleId, expiresAt });
 }
@@ -130,14 +132,27 @@ test('getUserRolesForUserIds batches active, non-expired roles per user', async 
   const u2 = await insertUser('roles_u2', 'roles-u2@example.com');
   const u3 = await insertUser('roles_u3', 'roles-u3@example.com');
 
-  const active1 = await insertRole('role_active_1', 'batch_active_1', 'Active 1');
-  const active2 = await insertRole('role_active_2', 'batch_active_2', 'Active 2');
+  const active1 = await insertRole(
+    'role_active_1',
+    'batch_active_1',
+    'Active 1'
+  );
+  const active2 = await insertRole(
+    'role_active_2',
+    'batch_active_2',
+    'Active 2'
+  );
   await insertRole('role_disabled', 'batch_disabled', 'Disabled', 'disabled');
 
   await assignRole('ur_u1_a1', u1.id, active1.id);
   await assignRole('ur_u1_a2', u1.id, active2.id);
   // Expired assignment must be excluded.
-  await assignRole('ur_u2_expired', u2.id, active1.id, new Date(Date.now() - 1000));
+  await assignRole(
+    'ur_u2_expired',
+    u2.id,
+    active1.id,
+    new Date(Date.now() - 1000)
+  );
   // Disabled role must be excluded.
   await assignRole('ur_u2_disabled', u2.id, 'role_disabled');
   await assignRole('ur_u3_a1', u3.id, active1.id);
@@ -148,18 +163,19 @@ test('getUserRolesForUserIds batches active, non-expired roles per user', async 
     u3.id,
   ]);
 
-  assert.deepEqual(
-    (map.get(u1.id) ?? []).map((r: any) => r.id).sort(),
-    ['role_active_1', 'role_active_2']
-  );
+  assert.deepEqual((map.get(u1.id) ?? []).map((r: any) => r.id).sort(), [
+    'role_active_1',
+    'role_active_2',
+  ]);
   assert.equal(
     map.has(u2.id),
     false,
     'user with only expired/disabled roles yields no entry'
   );
-  assert.deepEqual((map.get(u3.id) ?? []).map((r: any) => r.id), [
-    'role_active_1',
-  ]);
+  assert.deepEqual(
+    (map.get(u3.id) ?? []).map((r: any) => r.id),
+    ['role_active_1']
+  );
 
   // Empty input short-circuits.
   const empty = await modules.userModel.getUserRolesForUserIds([]);
@@ -213,7 +229,10 @@ test('quota lookup uses a unique case-insensitive exact match, not fuzzy search'
 
 test('getUsers can list only users whose ledger still has unresolved entries', async () => {
   const stuck = await insertUser('users_ledger_stuck', 'stuck@ledger.test');
-  const settled = await insertUser('users_ledger_settled', 'settled@ledger.test');
+  const settled = await insertUser(
+    'users_ledger_settled',
+    'settled@ledger.test'
+  );
 
   await modules
     .db()

@@ -2,8 +2,8 @@ import 'server-only';
 
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { walletAccount } from '@/config/db/schema';
+import { db } from '@/core/db';
 import { recordPortalAdminAudit } from '@/shared/models/portal-admin-audit';
 
 export async function freezeWallet(input: {

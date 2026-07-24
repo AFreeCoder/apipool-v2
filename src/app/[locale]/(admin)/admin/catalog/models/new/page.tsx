@@ -1,3 +1,6 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
 import {
   getCapabilities,
@@ -10,9 +13,6 @@ import {
   parseModelPricingFormData,
 } from '@/features/api-catalog/server/model-pricing-form';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { getUserInfo } from '@/shared/models/user';
 import { Crumb } from '@/shared/types/blocks/common';

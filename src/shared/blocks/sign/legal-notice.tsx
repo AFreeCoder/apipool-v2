@@ -10,13 +10,13 @@ export function LegalNotice() {
 
   return (
     <div className="grid gap-3">
-      <p className="text-center text-xs text-muted-foreground">
+      <p className="text-muted-foreground text-center text-xs">
         {t.rich('agree_terms', {
           terms: (chunks) => (
             <Link
               href="/terms-of-service"
               target="_blank"
-              className="underline underline-offset-2 hover:text-foreground"
+              className="hover:text-foreground underline underline-offset-2"
             >
               {chunks}
             </Link>
@@ -25,7 +25,7 @@ export function LegalNotice() {
             <Link
               href="/privacy-policy"
               target="_blank"
-              className="underline underline-offset-2 hover:text-foreground"
+              className="hover:text-foreground underline underline-offset-2"
             >
               {chunks}
             </Link>

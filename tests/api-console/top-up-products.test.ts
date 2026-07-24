@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
+import { PaymentInterval, PaymentType } from '@/extensions/payment/types';
 import {
   resolveTopUpCheckout,
   TOP_UP_CUSTOM_MAX_USD,
   TOP_UP_CUSTOM_MIN_USD,
 } from '@/features/api-console/lib/top-up-products';
-
-import { PaymentInterval, PaymentType } from '@/extensions/payment/types';
 import type { PricingItem } from '@/shared/types/blocks/pricing';
 
 const pricingItemsFixture: PricingItem[] = [

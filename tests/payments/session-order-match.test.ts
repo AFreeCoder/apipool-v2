@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assertPaymentSessionMatchesOrder } from '@/shared/services/payment-guards';
-
 import { PaymentStatus, PaymentType } from '@/extensions/payment/types';
+import { assertPaymentSessionMatchesOrder } from '@/shared/services/payment-guards';
 
 function oneTimeOrder(overrides: Record<string, any> = {}) {
   return {

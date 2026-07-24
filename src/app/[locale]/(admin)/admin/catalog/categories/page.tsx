@@ -1,10 +1,10 @@
-import {
-  getCategories,
-  Category,
-} from '@/features/api-catalog/server/catalog-service';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
+import {
+  Category,
+  getCategories,
+} from '@/features/api-catalog/server/catalog-service';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';
 import { Crumb } from '@/shared/types/blocks/common';

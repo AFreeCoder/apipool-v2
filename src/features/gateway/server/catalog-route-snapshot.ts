@@ -1,13 +1,13 @@
 import 'server-only';
 
+import { and, desc, eq } from 'drizzle-orm';
+
+import { modelPriceVersion, modelRoute } from '@/config/db/schema';
+import { db } from '@/core/db';
 import {
   assessPublishReadiness,
   type PublishReadiness,
 } from '@/features/api-catalog/server/publish-readiness';
-import { and, desc, eq } from 'drizzle-orm';
-
-import { db } from '@/core/db';
-import { modelPriceVersion, modelRoute } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 
 const SYSTEM_PUBLISHER = 'system:catalog';

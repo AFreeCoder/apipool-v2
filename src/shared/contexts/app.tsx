@@ -11,8 +11,8 @@ import {
   useState,
 } from 'react';
 
-import { getAuthClient } from '@/core/auth/client';
 import { envConfigs } from '@/config';
+import { getAuthClient } from '@/core/auth/client';
 import { User } from '@/shared/models/user';
 
 export interface ContextValue {

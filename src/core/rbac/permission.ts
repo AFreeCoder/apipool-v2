@@ -11,6 +11,7 @@ import {
   hasPermission,
   hasRole,
 } from '@/shared/services/rbac';
+
 import { PERMISSIONS as PURE_PERMISSION_CODES } from './permission-codes';
 
 // 保留在既有模块中的声明是管理端源码契约；纯常量模块供不加载 Next.js
@@ -37,8 +38,7 @@ export const PERMISSIONS = {
   APIPOOL_WALLET_ADJUST: 'admin.apipool.wallet.adjust',
   APIPOOL_WALLET_FREEZE: 'admin.apipool.wallet.freeze',
   APIPOOL_RECONCILIATION_READ: 'admin.apipool.reconciliation.read',
-  APIPOOL_RECONCILIATION_RESOLVE:
-    'admin.apipool.reconciliation.resolve',
+  APIPOOL_RECONCILIATION_RESOLVE: 'admin.apipool.reconciliation.resolve',
   APIKEYS_READ: 'admin.apikeys.read',
   APIKEYS_WRITE: 'admin.apikeys.write',
   APIKEYS_DELETE: 'admin.apikeys.delete',

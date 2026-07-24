@@ -36,7 +36,11 @@ test('a required checkbox field rejects an empty selection', () => {
   });
 
   const empty = schema.safeParse([]);
-  assert.equal(empty.success, false, 'empty array must fail a required checkbox');
+  assert.equal(
+    empty.success,
+    false,
+    'empty array must fail a required checkbox'
+  );
   if (!empty.success) {
     assert.equal(empty.error.issues[0].message, 'Roles is required');
   }
@@ -55,7 +59,10 @@ test('a required checkbox honors a custom validation message', () => {
   const result = schema.safeParse([]);
   assert.equal(result.success, false);
   if (!result.success) {
-    assert.equal(result.error.issues[0].message, 'Pick at least one permission');
+    assert.equal(
+      result.error.issues[0].message,
+      'Pick at least one permission'
+    );
   }
 });
 
@@ -80,7 +87,10 @@ test('edit-roles page warns on self-edit and surfaces business errors as returns
   assert.match(source, /isEditingSelf/);
   assert.match(source, /edit_roles\.self_edit_warning/);
   // Business errors return instead of throwing (production masks thrown errors).
-  assert.doesNotMatch(source, /throw new Error\('(user not found|invalid roles)'\)/);
+  assert.doesNotMatch(
+    source,
+    /throw new Error\('(user not found|invalid roles)'\)/
+  );
   assert.match(source, /status:\s*'error'\s*as const/);
   // Server-side allowlist validation is preserved.
   assert.match(source, /!allowedRoleIds\.has\(roleId\)/);
@@ -130,8 +140,12 @@ test('shared form button honors an optional disabled flag', async () => {
 // ---- i18n key presence & parity ----
 
 test('admin/common locale files add table + settings copy in both locales', async () => {
-  const en = JSON.parse(await read('src/config/locale/messages/en/admin/common.json'));
-  const zh = JSON.parse(await read('src/config/locale/messages/zh/admin/common.json'));
+  const en = JSON.parse(
+    await read('src/config/locale/messages/en/admin/common.json')
+  );
+  const zh = JSON.parse(
+    await read('src/config/locale/messages/zh/admin/common.json')
+  );
 
   for (const key of ['table.empty', 'table.copied', 'settings.readonly']) {
     assert.equal(typeof getByPath(en, key), 'string', `en missing ${key}`);
@@ -141,8 +155,12 @@ test('admin/common locale files add table + settings copy in both locales', asyn
 });
 
 test('admin/users locale files add the new filter/role/message keys in both locales', async () => {
-  const en = JSON.parse(await read('src/config/locale/messages/en/admin/users.json'));
-  const zh = JSON.parse(await read('src/config/locale/messages/zh/admin/users.json'));
+  const en = JSON.parse(
+    await read('src/config/locale/messages/en/admin/users.json')
+  );
+  const zh = JSON.parse(
+    await read('src/config/locale/messages/zh/admin/users.json')
+  );
 
   for (const key of [
     'list.filters.all',

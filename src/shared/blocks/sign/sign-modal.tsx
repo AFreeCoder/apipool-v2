@@ -40,8 +40,7 @@ export function SignModal({ callbackUrl = '/' }: { callbackUrl?: string }) {
     }
   };
 
-  const title =
-    mode === 'sign-in' ? t('sign_in_title') : t('sign_up_title');
+  const title = mode === 'sign-in' ? t('sign_in_title') : t('sign_up_title');
   const description =
     mode === 'sign-in' ? t('sign_in_description') : t('sign_up_description');
 

@@ -16,7 +16,9 @@ export function AuditTab() {
 
   const load = useCallback(async () => {
     try {
-      const query = action.trim() ? `?action=${encodeURIComponent(action.trim())}` : '';
+      const query = action.trim()
+        ? `?action=${encodeURIComponent(action.trim())}`
+        : '';
       const data = await apiRequest<{ audits: Array<Record<string, unknown>> }>(
         `/api/apipool/admin/gateway/audit${query}`
       );
@@ -27,14 +29,22 @@ export function AuditTab() {
     }
   }, [action, t]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <Panel title={t('audit.title')} description={t('audit.help')}>
       <div className="space-y-4">
         <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-          <Input value={action} onChange={(event) => setAction(event.target.value)} placeholder={t('audit.action')} />
-          <Button variant="outline" onClick={() => void load()}>{t('common.search')}</Button>
+          <Input
+            value={action}
+            onChange={(event) => setAction(event.target.value)}
+            placeholder={t('audit.action')}
+          />
+          <Button variant="outline" onClick={() => void load()}>
+            {t('common.search')}
+          </Button>
         </div>
         <Notice message={notice} />
         <RecordTable

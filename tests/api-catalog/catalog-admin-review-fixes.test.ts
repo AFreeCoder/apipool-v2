@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
 import { createClient } from '@libsql/client';
+
+import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
 
 // 覆盖 admin-review S-6~S-11 修复的运行时断言。静态（页面文本）断言见文件末尾。
 let modules: any;

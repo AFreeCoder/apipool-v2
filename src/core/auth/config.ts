@@ -1,11 +1,11 @@
-import { provisionPortalUserAfterSignup } from '@/features/newapi-bridge/server/portal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { oneTap } from 'better-auth/plugins';
 import { getLocale } from 'next-intl/server';
 
-import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import * as schema from '@/config/db/schema';
+import { db } from '@/core/db';
+import { provisionPortalUserAfterSignup } from '@/features/newapi-bridge/server/portal';
 import { VerifyEmail } from '@/shared/blocks/email/verify-email';
 import {
   getCookieFromCtx,

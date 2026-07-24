@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import { getThemePage } from '@/core/theme';
 import { envConfigs } from '@/config';
+import { getThemePage } from '@/core/theme';
 import { getLocalPage } from '@/shared/models/post';
 
 export const revalidate = 3600;

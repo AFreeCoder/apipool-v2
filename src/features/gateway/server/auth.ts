@@ -1,17 +1,17 @@
 import 'server-only';
 
 import { createHash, randomBytes } from 'node:crypto';
-import type { GatewayProtocol } from '@/features/gateway/lib/endpoints';
-import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
-import { ensureWalletAccount } from '@/features/wallet/server/ledger';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   newApiUserBinding,
   portalApiKey,
   walletAccount,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import type { GatewayProtocol } from '@/features/gateway/lib/endpoints';
+import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
+import { ensureWalletAccount } from '@/features/wallet/server/ledger';
 
 const KEY_PREFIX = 'sk-ap-';
 const LAST_USED_WRITE_INTERVAL_MS = 60_000;

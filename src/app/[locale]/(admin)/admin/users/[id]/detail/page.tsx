@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
+
+import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import {
   formatBalanceUsdAmount,
   formatLedgerUsdAmount,
@@ -20,9 +23,6 @@ import {
   getWalletBillingView,
   getWalletUsageView,
 } from '@/features/wallet/server/usage-view';
-import { getTranslations } from 'next-intl/server';
-
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { ConfirmActionButton } from '@/shared/blocks/common/confirm-action-button';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { Table } from '@/shared/blocks/table';

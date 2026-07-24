@@ -6,8 +6,8 @@ import { Loader2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 
-import { authClient, signUp } from '@/core/auth/client';
 import { defaultLocale } from '@/config/locale';
+import { authClient, signUp } from '@/core/auth/client';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
@@ -33,7 +33,8 @@ export function SignUpForm({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { configs, setIsShowSignModal, setUser, fetchUserInfo } = useAppContext();
+  const { configs, setIsShowSignModal, setUser, fetchUserInfo } =
+    useAppContext();
 
   const isGoogleAuthEnabled = configs.google_auth_enabled === 'true';
   const isGithubAuthEnabled = configs.github_auth_enabled === 'true';
@@ -188,7 +189,7 @@ export function SignUpForm({
                 value={email}
               />
               {emailVerificationEnabled && (
-                <p className="text-amber-600 text-xs">
+                <p className="text-xs text-amber-600">
                   {t('email_verification_hint')}
                 </p>
               )}

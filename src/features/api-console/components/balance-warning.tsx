@@ -1,7 +1,7 @@
-import { checkoutEnabled } from '@/features/gateway/lib/config';
 import { getTranslations } from 'next-intl/server';
 
 import { Link } from '@/core/i18n/navigation';
+import { checkoutEnabled } from '@/features/gateway/lib/config';
 
 import { BalanceWarningView, isLowBalance } from './balance-warning-view';
 

@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+
 import { SiteShell } from '@/features/apipool-ui/site-shell';
 
 export default async function LandingLayout({

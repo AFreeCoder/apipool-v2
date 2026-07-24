@@ -32,7 +32,9 @@ export function CatalogPricingSyncControls({ labels }: { labels: Labels }) {
       const payload = await response.json();
       if (payload.code !== 0) throw new Error(payload.message);
       const status =
-        payload.data?.status || payload.data?.latestRun?.status || labels.success;
+        payload.data?.status ||
+        payload.data?.latestRun?.status ||
+        labels.success;
       setMessage(`${labels.success}: ${status}`);
     } catch (error: any) {
       setMessage(`${labels.error}: ${error?.message || labels.error}`);

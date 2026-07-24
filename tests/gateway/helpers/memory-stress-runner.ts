@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import { extractTopLevelModel } from '@/features/gateway/lib/sse-parser';
 import { readBodyBounded } from '@/features/gateway/server/handler';
 

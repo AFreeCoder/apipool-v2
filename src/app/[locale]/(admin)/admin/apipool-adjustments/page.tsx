@@ -1,7 +1,7 @@
-import { QuotaAdjustmentForm } from '@/features/api-console/components/admin/quota-adjustment-form';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
+import { QuotaAdjustmentForm } from '@/features/api-console/components/admin/quota-adjustment-form';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { findUserById } from '@/shared/models/user';
 import { Crumb } from '@/shared/types/blocks/common';

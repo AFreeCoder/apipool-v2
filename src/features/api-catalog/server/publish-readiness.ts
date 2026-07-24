@@ -1,11 +1,7 @@
 import 'server-only';
 
-import { scaleMicroUsdByBps } from '@/features/api-catalog/lib/pricing';
-import { getLatestCostReferences } from '@/features/api-catalog/server/pricing-sync';
-import type { BillingScheme, MeterKey } from '@/features/gateway/lib/meters';
 import { and, asc, eq } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   catalogGroup,
   catalogModel,
@@ -14,6 +10,10 @@ import {
   catalogModelPriceTier,
   catalogStatus,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import { scaleMicroUsdByBps } from '@/features/api-catalog/lib/pricing';
+import { getLatestCostReferences } from '@/features/api-catalog/server/pricing-sync';
+import type { BillingScheme, MeterKey } from '@/features/gateway/lib/meters';
 
 type PublishSnapshot = {
   newapiGroup: string;

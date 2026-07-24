@@ -1,17 +1,7 @@
 import 'server-only';
 
-import {
-  deriveBasePriceFromNewApiPricing,
-  normalizeGroupRatio,
-  scaleMicroUsdByBps,
-} from '@/features/api-catalog/lib/pricing';
-import type {
-  RemotePricingModel,
-  RemotePricingSnapshot,
-} from '@/features/newapi-bridge/server/client';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   catalogGroup,
   catalogModel,
@@ -21,6 +11,16 @@ import {
   catalogStatus,
   modelPriceVersion,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import {
+  deriveBasePriceFromNewApiPricing,
+  normalizeGroupRatio,
+  scaleMicroUsdByBps,
+} from '@/features/api-catalog/lib/pricing';
+import type {
+  RemotePricingModel,
+  RemotePricingSnapshot,
+} from '@/features/newapi-bridge/server/client';
 import { getUuid } from '@/shared/lib/hash';
 
 type BackfillMode = 'report' | 'apply';

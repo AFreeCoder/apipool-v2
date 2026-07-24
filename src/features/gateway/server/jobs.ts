@@ -1,11 +1,11 @@
 import 'server-only';
 
 import { hostname } from 'node:os';
-import { gatewayConfig } from '@/features/gateway/lib/config';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { gatewayJobLock } from '@/config/db/schema';
+import { db } from '@/core/db';
+import { gatewayConfig } from '@/features/gateway/lib/config';
 
 const LOCK_ID = 'singleton';
 const DEFAULT_STALE_MS = 5 * 60_000;

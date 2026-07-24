@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 import test from 'node:test';
+
 import { GATEWAY_ENDPOINTS } from '@/features/gateway/lib/endpoints';
 
 const endpoint = GATEWAY_ENDPOINTS.find(

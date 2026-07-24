@@ -1,8 +1,8 @@
 import { cache } from 'react';
 import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { permission, role, rolePermission, userRole } from '@/config/db/schema';
+import { db } from '@/core/db';
 import { getUuid } from '@/shared/lib/hash';
 import { getAllConfigs } from '@/shared/models/config';
 import { User } from '@/shared/models/user';

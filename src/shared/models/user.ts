@@ -13,9 +13,9 @@ import {
   type SQL,
 } from 'drizzle-orm';
 
+import { newApiUserBinding, role, user, userRole } from '@/config/db/schema';
 import { getAuth } from '@/core/auth';
 import { db } from '@/core/db';
-import { newApiUserBinding, role, user, userRole } from '@/config/db/schema';
 
 import { Permission, Role } from '../services/rbac';
 import { getRemainingCredits } from './credit';
@@ -140,10 +140,7 @@ export async function getUsers({
   const result = await db()
     .select(userListSelect)
     .from(user)
-    .leftJoin(
-      newApiUserBinding,
-      eq(newApiUserBinding.portalUserId, user.id)
-    )
+    .leftJoin(newApiUserBinding, eq(newApiUserBinding.portalUserId, user.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(user.createdAt))
     .limit(limit)
@@ -158,10 +155,7 @@ export async function getUsersCount(filters: UserListFilters = {}) {
   const [result] = await db()
     .select({ count: count() })
     .from(user)
-    .leftJoin(
-      newApiUserBinding,
-      eq(newApiUserBinding.portalUserId, user.id)
-    )
+    .leftJoin(newApiUserBinding, eq(newApiUserBinding.portalUserId, user.id))
     .where(conditions.length ? and(...conditions) : undefined);
   return result?.count || 0;
 }
@@ -261,7 +255,9 @@ export async function getSignUser() {
 }
 
 export async function isEmailVerified(email: string): Promise<boolean> {
-  const normalized = String(email || '').trim().toLowerCase();
+  const normalized = String(email || '')
+    .trim()
+    .toLowerCase();
   if (!normalized) return false;
 
   const [row] = await db()

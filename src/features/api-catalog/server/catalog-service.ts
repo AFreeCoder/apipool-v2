@@ -1,7 +1,5 @@
-import { microUsdToDollars } from '@/features/api-catalog/lib/pricing';
 import { and, asc, count, eq, inArray, ne } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import {
   catalogCapability,
   catalogCategory,
@@ -16,6 +14,8 @@ import {
   catalogVendor,
   newApiKeyBinding,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import { microUsdToDollars } from '@/features/api-catalog/lib/pricing';
 import { getUuid } from '@/shared/lib/hash';
 
 export type Vendor = typeof catalogVendor.$inferSelect;

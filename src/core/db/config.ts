@@ -11,9 +11,10 @@ if (envConfigs.database_auth_token) {
 }
 
 // D1 uses sqlite dialect for drizzle-kit
-const dialect = envConfigs.database_provider === 'd1'
-  ? 'sqlite'
-  : envConfigs.database_provider;
+const dialect =
+  envConfigs.database_provider === 'd1'
+    ? 'sqlite'
+    : envConfigs.database_provider;
 
 // define config
 export default defineConfig({

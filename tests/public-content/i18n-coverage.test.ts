@@ -239,11 +239,11 @@ test('locale switchers strip any existing locale prefix before navigating', asyn
 
   assert.match(
     indexingSource,
-    /export function normalizePathWithoutLocale\(pathname: string\)/
+    /export function normalizePathWithoutLocale\(\s*pathname: string\s*\)/
   );
   assert.match(
     indexingSource,
-    /export function localizePathForLocale\(pathname: string, locale: string\)/
+    /export function localizePathForLocale\(\s*pathname: string,\s*locale: string\s*\)/
   );
 
   // 切换逻辑收敛在共享 hook 里；两个入口（头部选择器、头像菜单）都必须走它。

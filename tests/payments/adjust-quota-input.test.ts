@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { parseWalletAdjustmentAmount } from '@/features/wallet/lib/adjustment-input';
 
 test('quota adjustments accept whole dollars in both directions', () => {

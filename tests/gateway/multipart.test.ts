@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import { extractImageMultipartRequest } from '@/features/gateway/lib/multipart';
 
 async function encodedForm(form: FormData) {

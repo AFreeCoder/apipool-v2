@@ -1,3 +1,6 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { isUniqueConstraintError } from '@/features/api-catalog/lib/errors';
 import { microUsdToDollars } from '@/features/api-catalog/lib/pricing';
 import {
@@ -14,9 +17,6 @@ import {
 } from '@/features/api-catalog/server/model-pricing-form';
 import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { getUserInfo } from '@/shared/models/user';

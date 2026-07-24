@@ -89,7 +89,10 @@ test('auth pages sanitize the callback url through the shared helper', async () 
 });
 
 test('verify-email routes its callback through the shared safe-path helper', async () => {
-  const source = await readFile('src/shared/blocks/sign/verify-email.tsx', 'utf8');
+  const source = await readFile(
+    'src/shared/blocks/sign/verify-email.tsx',
+    'utf8'
+  );
 
   // 这里的 nextUrl 会喂给 window.location.assign(`${base}${nextUrl}`)，
   // 默认 locale 下 base 是空串——`//evil.com` 会直接离站。

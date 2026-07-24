@@ -82,10 +82,7 @@ export function LocaleSelector({
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         {Object.keys(localeNames).map((locale) => (
-          <DropdownMenuItem
-            key={locale}
-            onClick={() => switchLocale(locale)}
-          >
+          <DropdownMenuItem key={locale} onClick={() => switchLocale(locale)}>
             <span>{localeNames[locale]}</span>
             {locale === currentLocale && (
               <Check size={16} className="text-primary" />

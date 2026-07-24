@@ -1,3 +1,5 @@
+import { UnhandledPaymentEventError } from './errors';
+import { timingSafeEqualHex } from './signature';
 import {
   CheckoutSession,
   PaymentBilling,
@@ -14,9 +16,6 @@ import {
   SubscriptionInfo,
   SubscriptionStatus,
 } from './types';
-
-import { timingSafeEqualHex } from './signature';
-import { UnhandledPaymentEventError } from './errors';
 
 /**
  * Creem payment provider configs

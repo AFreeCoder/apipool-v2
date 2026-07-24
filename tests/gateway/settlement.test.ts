@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import type { MeterQuantities } from '@/features/gateway/lib/meters';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
+
+import type { MeterQuantities } from '@/features/gateway/lib/meters';
 
 let modules: any;
 

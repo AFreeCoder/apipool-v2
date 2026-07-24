@@ -1,5 +1,13 @@
 import 'server-only';
 
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+
+import {
+  modelPriceVersion,
+  requestLedger,
+  walletAccount,
+} from '@/config/db/schema';
+import { db } from '@/core/db';
 import {
   computePerCallChargeMicroUsd,
   computeTokenChargeMicroUsd,
@@ -15,14 +23,6 @@ import {
   appendLedgerEntryInTx,
   ensureWalletAccount,
 } from '@/features/wallet/server/ledger';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-
-import { db } from '@/core/db';
-import {
-  modelPriceVersion,
-  requestLedger,
-  walletAccount,
-} from '@/config/db/schema';
 
 export interface SettlementUsage {
   meters: MeterQuantities;

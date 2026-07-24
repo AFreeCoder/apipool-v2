@@ -1,12 +1,12 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
+
+import { APIPOOL_CONFIG } from '@/config/apipool';
 import {
   derivePricingFromNewApiPricing,
   normalizeGroupRatio,
 } from '@/features/api-catalog/lib/pricing';
-
-import { APIPOOL_CONFIG } from '@/config/apipool';
 
 export type NewApiBridgeErrorCode =
   | 'not_configured'

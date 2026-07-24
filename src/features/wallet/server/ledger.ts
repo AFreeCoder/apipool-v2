@@ -2,8 +2,8 @@ import 'server-only';
 
 import { eq, sql } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { walletAccount, walletLedger } from '@/config/db/schema';
+import { db } from '@/core/db';
 import { getUuid } from '@/shared/lib/hash';
 
 export type WalletEntryType =

@@ -1,9 +1,9 @@
-import { getGroupsForKeyCreation } from '@/features/api-catalog/server/queries';
-import { ApiKeyManager } from '@/features/api-console/components/api-key-manager';
-import { listPortalApiKeys } from '@/features/newapi-bridge/server/portal';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { APIPOOL_CONFIG } from '@/config/apipool';
+import { getGroupsForKeyCreation } from '@/features/api-catalog/server/queries';
+import { ApiKeyManager } from '@/features/api-console/components/api-key-manager';
+import { listPortalApiKeys } from '@/features/newapi-bridge/server/portal';
 import { getUserInfo } from '@/shared/models/user';
 
 export default async function ApiKeysPage({

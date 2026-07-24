@@ -25,7 +25,14 @@ test('indexing policy keeps authenticated and internal routes out of search', ()
     assert.equal(shouldNoIndexPath(path), true, path);
   }
 
-  const publicPaths = ['/', '/zh', '/models', '/zh/models', '/docs', '/zh/docs'];
+  const publicPaths = [
+    '/',
+    '/zh',
+    '/models',
+    '/zh/models',
+    '/docs',
+    '/zh/docs',
+  ];
   for (const path of publicPaths) {
     assert.equal(shouldNoIndexPath(path), false, path);
   }

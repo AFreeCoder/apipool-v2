@@ -1,6 +1,15 @@
 import 'server-only';
 
 import { createHash } from 'node:crypto';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+
+import {
+  credentialRetirement,
+  newApiUserBinding,
+  runtimeCredential,
+  user as userTable,
+} from '@/config/db/schema';
+import { db } from '@/core/db';
 import {
   createNewApiClient,
   type NewApiClient,
@@ -13,15 +22,6 @@ import {
   bindingToUserCredentials,
   ensurePortalUserBinding,
 } from '@/features/newapi-bridge/server/portal';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-
-import { db } from '@/core/db';
-import {
-  credentialRetirement,
-  newApiUserBinding,
-  runtimeCredential,
-  user as userTable,
-} from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import { recordPortalAdminAudit } from '@/shared/models/portal-admin-audit';
 
