@@ -1,3 +1,8 @@
+import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { APIPOOL_CONFIG } from '@/config/apipool';
+import { Link } from '@/core/i18n/navigation';
 import { BalanceWarning } from '@/features/api-console/components/balance-warning';
 import { StatCard } from '@/features/api-console/components/stat-card';
 import {
@@ -15,11 +20,6 @@ import {
 import { checkoutEnabled } from '@/features/gateway/lib/config';
 import { listPortalApiKeys } from '@/features/newapi-bridge/server/portal';
 import { getWalletUsageView } from '@/features/wallet/server/usage-view';
-import { Activity, BarChart3, KeyRound, Wallet } from 'lucide-react';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { Link } from '@/core/i18n/navigation';
-import { APIPOOL_CONFIG } from '@/config/apipool';
 import { Button } from '@/shared/components/ui/button';
 import { getUserInfo } from '@/shared/models/user';
 
@@ -89,7 +89,7 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="bg-card flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm">
+      <div className="bg-card flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4 text-sm shadow-sm">
         <span className="text-muted-foreground text-xs tracking-wide uppercase">
           {t('baseUrl')}
         </span>
@@ -136,7 +136,7 @@ export default async function DashboardPage({
 
       <BalanceWarning balanceUsd={usage.summary.balanceUsd} />
 
-      <div className="bg-card overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="font-medium">{t('recentRequests.title')}</h2>
           <Link

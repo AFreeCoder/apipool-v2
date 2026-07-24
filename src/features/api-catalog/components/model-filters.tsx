@@ -13,6 +13,8 @@ export interface ModelFilterGroup {
   allHref: string;
   activeName: string | null;
   options: ModelFilterOption[];
+  /** 隐藏「全部」选项：用于按设计恒选单一分组的维度。 */
+  hideAll?: boolean;
 }
 
 /**
@@ -40,9 +42,11 @@ export function ModelFilters({
           <span className="text-muted-foreground w-20 shrink-0 text-xs tracking-wide uppercase">
             {group.label}
           </span>
-          <FilterLink active={group.activeName === null} href={group.allHref}>
-            {allLabel}
-          </FilterLink>
+          {!group.hideAll && (
+            <FilterLink active={group.activeName === null} href={group.allHref}>
+              {allLabel}
+            </FilterLink>
+          )}
           {group.options.map((option) => (
             <FilterLink
               key={option.slug}

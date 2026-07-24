@@ -1,3 +1,7 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import enBillingMessages from '@/config/locale/messages/en/dashboard/billing.json';
+import zhBillingMessages from '@/config/locale/messages/zh/dashboard/billing.json';
 import {
   TopUpPackages,
   type TopUpPackage,
@@ -20,10 +24,6 @@ import {
   getWalletBillingView,
   getWalletUsageView,
 } from '@/features/wallet/server/usage-view';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import enBillingMessages from '@/config/locale/messages/en/dashboard/billing.json';
-import zhBillingMessages from '@/config/locale/messages/zh/dashboard/billing.json';
 import { getUserInfo } from '@/shared/models/user';
 
 type BillingLedgerRow = {
@@ -165,11 +165,11 @@ export default async function BillingPage({
             {pageT('description')}
           </p>
         </div>
-        <div className="bg-card rounded-xl border px-5 py-4">
-          <div className="text-muted-foreground text-xs tracking-wide uppercase">
+        <div className="from-primary to-primary/85 text-primary-foreground rounded-xl bg-gradient-to-br px-6 py-5 shadow-md">
+          <div className="text-primary-foreground/80 text-xs tracking-wide uppercase">
             {pageT('currentBalance')}
           </div>
-          <div className="mt-1 font-mono text-2xl font-semibold">
+          <div className="mt-1.5 font-mono text-3xl font-semibold tracking-tight">
             {formatBalanceUsdAmount(balanceUsd)}
           </div>
         </div>
@@ -186,7 +186,7 @@ export default async function BillingPage({
         </div>
       ) : null}
 
-      <div className="bg-card overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
         <div className="border-b px-5 py-4 font-medium">
           {pageT('creditHistory.title')}
         </div>
@@ -259,7 +259,7 @@ export default async function BillingPage({
         )}
       </div>
 
-      <div className="bg-card overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
         <div className="border-b px-5 py-4 font-medium">
           {pageT('balanceAdjustments.title')}
         </div>
@@ -309,7 +309,7 @@ export default async function BillingPage({
         )}
       </div>
 
-      <div className="bg-card overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
         <div className="border-b px-5 py-4 font-medium">
           {pageT('usageCharges.title')}
         </div>

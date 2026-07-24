@@ -18,6 +18,14 @@
   @apply mx-auto max-w-7xl px-4 md:px-8;
 }
 
+/* 网格纹理背景，配合 var(--grid-line) 明暗双态使用 */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

@@ -13,7 +13,9 @@
     "capability": "能力",
     "status": "状态",
     "all": "全部",
-    "clear": "清除筛选"
+    "clear": "清除筛选",
+    "search": "搜索模型名称…",
+    "reset": "重置"
   },
   "dimensions": {
     "groups": {
@@ -56,6 +58,9 @@
     "perCall": "次",
     "output": "输出·1M",
     "status": "状态",
+    "savings": "节省",
     "discount": "{fold} 折 ({percent}%)"
-  }
+  },
+  "count": "共 {count} 个模型",
+  "notReady": "未就绪"
 }

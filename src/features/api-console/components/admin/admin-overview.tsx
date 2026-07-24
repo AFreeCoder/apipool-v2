@@ -70,7 +70,7 @@ export async function AdminOverview({
         const inner = (
           <div
             className={cn(
-              'bg-card flex h-full flex-col rounded-xl border p-5 transition-colors',
+              'bg-card flex h-full flex-col rounded-xl border p-5 shadow-sm transition-colors',
               isAlert && 'border-destructive/50',
               card.href &&
                 'group-hover:border-primary/60 group-focus-visible:border-primary/60'

@@ -1,10 +1,12 @@
 {
   "nav": {
     "ariaLabel": "控制台导航",
+    "section": "控制台",
     "overview": "概览",
     "apiKeys": "API 密钥",
     "balance": "余额",
-    "usage": "用量"
+    "usage": "用量",
+    "docs": "文档"
   },
   "usageSync": {
     "empty": "最近 7 天暂无用量。",

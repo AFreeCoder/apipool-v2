@@ -1,94 +1,109 @@
 {
   "hero": {
-    "eyebrow": "// 统一 LLM API",
-    "titleLine1": "一个端点。",
-    "titleLine2": "调用所有前沿模型。",
-    "description": "通过同一个 API 调用 OpenAI、Anthropic 等模型。按 token 透明计费，余额自己掌控，用量清晰可见。",
-    "start": "开始使用",
-    "docs": "阅读文档",
-    "bullets": ["兼容 OpenAI", "无需订阅", "余额永不过期"]
+    "badge": "OpenAI 兼容 · 一个网关接入全部大模型",
+    "titleLead": "一个 API Key，",
+    "titleAccent": "接入所有大模型",
+    "description": "用一套 OpenAI 兼容协议聚合 OpenAI、Claude、Gemini 等主流厂商。智能路由、实时计费、价格透明——只需替换 base_url。",
+    "ctaPrimary": "立即接入",
+    "ctaSecondary": "查看文档",
+    "note": "随用随充 · 计费透明 · 无需订阅"
   },
-  "providers": {
-    "label": "供应商"
+  "marquee": {
+    "label": "已接入 OpenAI · Anthropic · Google · 字节跳动，更多厂商陆续接入中",
+    "soon": "即将"
   },
-  "scenarios": {
-    "title": "从智能体到图像生成",
-    "description": "无论你在构建什么，都共用一份余额和一个 API Key。",
-    "modelsLink": "模型与价格",
-    "items": [
-      {
-        "title": "编程智能体",
-        "description": "支持长时间运行的智能体和开发工具，用前沿模型完成规划、编辑与测试。",
-        "vignetteLine1": "▸ agent run · fix-build",
-        "vignetteLine2": "计划 → 编辑 → 测试",
-        "vignetteLine3": "✓ 修改 14 个文件",
-        "vignetteLine4": "✓ 测试 42 秒通过"
-      },
-      {
-        "title": "聊天与 Copilot",
-        "description": "面向生产的助手，支持流式响应和按会话追踪成本。",
-        "vignetteUser": "总结这个 PR 供评审",
-        "vignetteAssistant": "3 项变更：鉴权中间件、重试逻辑、测试…"
-      },
-      {
-        "title": "图像与多媒体生成",
-        "description": "为产品图、缩略图和创意工具提供多模态生成流水线。"
-      },
-      {
-        "title": "批处理与数据管道",
-        "description": "用于大规模抽取、分类和评测，支出可预测。",
-        "vignetteLine1": "正在处理 12,408 份文档…",
-        "vignetteFile": "batch-07.jsonl"
-      }
-    ]
-  },
-  "steps": {
-    "title": "几分钟内开始调用",
-    "items": [
-      {
-        "index": "01",
-        "title": "创建账号",
-        "description": "注册并为余额充值。按 token 用量计费，无需订阅，余额永不过期。"
-      },
-      {
-        "index": "02",
-        "title": "创建 API Key",
-        "description": "在控制台生成 Key。明文 Key 只展示一次，请妥善保存。"
-      },
-      {
-        "index": "03",
-        "title": "调用任意模型",
-        "description": "用一个 Key 接入常用 SDK。切换模型只需要改模型名。"
-      }
-    ]
+  "terminal": {
+    "response": "你好！今天我能帮你做什么？"
   },
   "features": {
+    "eyebrow": "API 网关",
+    "heading": "为生产环境而生",
+    "sub": "从第一行代码到规模化调用，一个平台全部搞定。",
     "items": [
       {
-        "title": "透明价格",
-        "description": "按 token 展示价格，并与官方价格并列；你看到的就是实际扣费。"
+        "tag": "兼容",
+        "title": "OpenAI 兼容接口",
+        "description": "沿用现有 SDK，改一行 base_url 即可迁移，零学习成本。"
       },
       {
-        "title": "按量付费",
-        "description": "美元充值，按 token 消耗。无套餐、无锁定、无过期。"
+        "tag": "路由",
+        "title": "智能路由",
+        "description": "按调用的模型自动路由到对应厂商上游。"
       },
       {
-        "title": "兼容 OpenAI",
-        "description": "只需替换 Base URL，就能配合官方 SDK 和多数工具使用。"
+        "tag": "密钥",
+        "title": "一个 Key，全部模型",
+        "description": "单个密钥访问所有厂商与模型，按分组控制访问权限。"
       },
       {
-        "title": "真实用量数据",
-        "description": "请求数、token 和模型花费都在控制台中实时可见。"
+        "tag": "计费",
+        "title": "精细用量计费",
+        "description": "按 token 或按次实时计量，用量看板与低余额提醒一目了然。"
+      },
+      {
+        "tag": "透明",
+        "title": "价格透明",
+        "description": "每个模型价格公开透明，只为实际用量付费。"
+      },
+      {
+        "tag": "安全",
+        "title": "数据合规与审计",
+        "description": "密钥加密隔离、完整调用审计日志，满足合规要求。"
+      }
+    ]
+  },
+  "usecases": {
+    "eyebrow": "适用场景",
+    "heading": "无论个人还是企业，都能快速落地",
+    "sub": "从原型验证到规模化生产，覆盖每个阶段。",
+    "items": [
+      {
+        "no": "01",
+        "title": "AI 应用开发",
+        "description": "快速接入多模型能力，专注产品体验而非基础设施。"
+      },
+      {
+        "no": "02",
+        "title": "企业统一网关",
+        "description": "集中管理密钥、配额与账单，团队协作更可控。"
+      },
+      {
+        "no": "03",
+        "title": "模型评测与切换",
+        "description": "一处切换即可横向对比不同模型的效果与成本。"
+      }
+    ]
+  },
+  "faq": {
+    "heading": "常见问题",
+    "sub": "还有疑问？欢迎联系我们的团队。",
+    "items": [
+      {
+        "q": "如何开始使用？",
+        "a": "注册后在控制台创建一个 API Key，将请求的 base_url 指向 {baseUrl}，即可用现有的 OpenAI SDK 调用全部模型。"
+      },
+      {
+        "q": "支持哪些模型？",
+        "a": "目前已接入 OpenAI、Anthropic、Google、字节跳动等厂商的主流模型，如 Claude-Opus-4.8、Claude-Sonnet-5、GPT-5.6、Gemini-3-Pro 等，更多厂商与模型正在陆续接入中。"
+      },
+      {
+        "q": "如何计费？",
+        "a": "按实际消耗的 token（按次模型按 SKU）实时计费，无月费，余额永不过期，最低充值 10 美元。控制台提供用量看板与低余额提醒。"
+      },
+      {
+        "q": "兼容 OpenAI SDK 吗？",
+        "a": "完全兼容 Chat Completions 等主流接口，通常只需替换 base_url 与 api_key 两处配置。"
+      },
+      {
+        "q": "数据安全如何保障？",
+        "a": "密钥加密存储与隔离，公网 API 全程 HTTPS，提供完整调用审计日志，且不用于任何模型训练。"
       }
     ]
   },
   "cta": {
-    "title": "今天就用一个 API 发货",
-    "description": "创建 Key、充值余额，并在五分钟内完成第一次调用。",
-    "console": "打开控制台",
-    "models": "浏览模型"
-  },
-  "terminal": {
-    "response": "你好！今天我能帮你做什么？"
+    "title": "几分钟接入，立即上线",
+    "description": "随用随充，计费透明，随规模平滑扩展。",
+    "primary": "立即接入",
+    "secondary": "浏览模型"
   }
 }

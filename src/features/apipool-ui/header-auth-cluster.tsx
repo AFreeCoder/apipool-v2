@@ -39,9 +39,11 @@ export function HeaderAuthCluster({
     setMounted(true);
   }, []);
 
+  // 主 CTA（进入控制台 / 开始使用）用品牌绿实心按钮，贴合设计稿；
+  // 仍保持"头部至多两个控件、登录用 ghost、在 /dashboard 内隐藏控制台入口"。
   const cta = user ? (
     inConsole ? null : (
-      <Button asChild variant="outline" size="sm">
+      <Button asChild size="sm">
         <Link href="/dashboard">
           {consoleLabel}
           <ArrowRight className="size-4" />
@@ -49,7 +51,7 @@ export function HeaderAuthCluster({
       </Button>
     )
   ) : (
-    <Button asChild variant="outline" size="sm">
+    <Button asChild size="sm">
       <Link href="/sign-up">
         {getStartedLabel}
         <ArrowRight className="size-4" />

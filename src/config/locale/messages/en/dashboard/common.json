@@ -1,10 +1,12 @@
 {
   "nav": {
     "ariaLabel": "Console navigation",
+    "section": "Console",
     "overview": "Overview",
     "apiKeys": "API Keys",
     "balance": "Balance",
-    "usage": "Usage"
+    "usage": "Usage",
+    "docs": "Docs"
   },
   "usageSync": {
     "empty": "No usage in the last 7 days yet.",

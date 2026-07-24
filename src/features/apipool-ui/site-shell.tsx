@@ -2,14 +2,26 @@ import { ReactNode } from 'react';
 import { ArrowRight, Mail } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 
-import { Link } from '@/core/i18n/navigation';
 import { APIPOOL_CONFIG } from '@/config/apipool';
+import { Link } from '@/core/i18n/navigation';
 import { LocaleSelector, ThemeToggler } from '@/shared/blocks/common';
 import { Button } from '@/shared/components/ui/button';
 import { cn } from '@/shared/lib/utils';
 
 import { HeaderAuthCluster } from './header-auth-cluster';
 import { MobileNav } from './mobile-nav';
+
+// 品牌标记：品牌绿圆角方块 + 白色等宽 “/”，带柔和绿光。
+function BrandMark() {
+  return (
+    <span
+      aria-hidden
+      className="bg-primary text-primary-foreground shadow-primary/40 inline-flex size-7 shrink-0 items-center justify-center rounded-lg font-mono text-[15px] font-bold shadow-lg"
+    >
+      /
+    </span>
+  );
+}
 
 export async function SiteShell({ children }: { children: ReactNode }) {
   const t = await getTranslations('site');
@@ -32,8 +44,9 @@ export async function SiteShell({ children }: { children: ReactNode }) {
           />
           <Link
             href="/"
-            className="inline-flex shrink-0 items-center gap-2 text-base font-semibold"
+            className="inline-flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight"
           >
+            <BrandMark />
             <span>{APIPOOL_CONFIG.brandName}</span>
           </Link>
           <nav className="hidden items-center gap-1 text-sm lg:flex">
@@ -87,9 +100,10 @@ export async function SiteShell({ children }: { children: ReactNode }) {
       </header>
       <main>{children}</main>
       <footer className="border-border border-t">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 text-sm sm:px-6 md:grid-cols-[1.6fr_0.7fr_0.7fr] lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 text-sm sm:px-6 md:grid-cols-[1.5fr_repeat(3,0.7fr)] lg:px-8">
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-base font-semibold">
+            <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
+              <BrandMark />
               <span>{APIPOOL_CONFIG.brandName}</span>
             </div>
             <p className="text-muted-foreground max-w-sm leading-6">
@@ -146,19 +160,25 @@ export async function SiteShell({ children }: { children: ReactNode }) {
               </Link>
             </div>
           </div>
+          <div className="space-y-3">
+            <div className="font-medium">{t('footer.company')}</div>
+            <div className="text-muted-foreground grid gap-2">
+              <a
+                href={`mailto:${APIPOOL_CONFIG.supportEmail}`}
+                className="hover:text-foreground transition-colors"
+              >
+                {t('footer.contact')}
+              </a>
+            </div>
+          </div>
         </div>
         <div className="border-border text-muted-foreground mx-auto flex max-w-7xl flex-col gap-2 border-t px-4 py-6 text-xs sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>
             {t('footer.copyright', { brand: APIPOOL_CONFIG.brandName })}
           </span>
-          <div className="flex items-center gap-4">
-            <span className="font-mono text-xs tracking-widest uppercase">
-              {t('footer.tagline')}
-            </span>
-            <div className="flex items-center gap-2">
-              <LocaleSelector type="button" />
-              <ThemeToggler type="toggle" className="h-8" />
-            </div>
+          <div className="flex items-center gap-2">
+            <LocaleSelector type="button" />
+            <ThemeToggler type="toggle" className="h-8" />
           </div>
         </div>
       </footer>

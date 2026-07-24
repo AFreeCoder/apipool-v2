@@ -2,12 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import {
-  canCleanupKeyStatus,
-  canDeleteKeyStatus,
-  canDisableKeyStatus,
-  type KeyLifecycleStatus,
-} from '@/features/api-console/lib/status';
-import {
   AlertCircle,
   Ban,
   CheckCircle2,
@@ -20,6 +14,12 @@ import {
 import { useTranslations } from 'next-intl';
 
 import { APIPOOL_PUBLIC_CONFIG } from '@/config/apipool/public';
+import {
+  canCleanupKeyStatus,
+  canDeleteKeyStatus,
+  canDisableKeyStatus,
+  type KeyLifecycleStatus,
+} from '@/features/api-console/lib/status';
 import { Button } from '@/shared/components/ui/button';
 import {
   Dialog,
@@ -279,7 +279,7 @@ export function ApiKeyManager({
 
   return (
     <div className="space-y-6">
-      <div className="bg-card rounded-xl border p-5">
+      <div className="bg-card rounded-xl border p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2 font-medium">
           <KeyRound className="size-4" />
           {t('form.title')}
@@ -357,7 +357,7 @@ export function ApiKeyManager({
         )}
       </div>
 
-      <div className="bg-card rounded-xl border">
+      <div className="bg-card rounded-xl border shadow-sm">
         <div className="border-b p-5">
           <h2 className="font-medium">
             {t('table.title', { baseUrl: APIPOOL_PUBLIC_CONFIG.apiBaseUrl })}

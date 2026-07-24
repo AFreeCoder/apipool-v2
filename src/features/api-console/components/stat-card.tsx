@@ -12,14 +12,14 @@ export function StatCard({
   icon?: ReactNode;
 }) {
   return (
-    <div className="bg-card rounded-xl border p-5">
+    <div className="bg-card rounded-xl border p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-muted-foreground text-xs tracking-wide uppercase">
           {label}
         </div>
         {icon}
       </div>
-      <div className="font-mono text-2xl font-semibold tracking-tight">
+      <div className="font-mono text-3xl font-semibold tracking-tight">
         {value}
       </div>
       {help && <div className="text-muted-foreground mt-2 text-xs">{help}</div>}

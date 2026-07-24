@@ -1,3 +1,5 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
 import { StatCard } from '@/features/api-console/components/stat-card';
 import {
   formatConsoleDateTime,
@@ -9,8 +11,6 @@ import {
   getUsageSyncDescription,
 } from '@/features/api-console/lib/status';
 import { getWalletUsageView } from '@/features/wallet/server/usage-view';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
 import { getUserInfo } from '@/shared/models/user';
 
 export default async function UsagePage({
@@ -67,6 +67,11 @@ export default async function UsagePage({
           date: formatConsoleDateTime(usage.summary.syncedAt, locale),
         })
       : usageSyncDescription;
+  // 模型分布条的相对长度以各模型花费占最高花费的比例呈现。
+  const maxModelSpend = Math.max(
+    0,
+    ...usage.summary.byModel.map((model) => model.spendUsd)
+  );
 
   return (
     <div className="space-y-6">
@@ -96,57 +101,52 @@ export default async function UsagePage({
         />
       </div>
 
-      <div className="bg-card overflow-hidden rounded-xl border">
-        <div className="border-b px-5 py-4 font-medium">
+      <div className="bg-card rounded-xl border p-5 shadow-sm sm:p-6">
+        <h2 className="mb-5 font-medium">
           {t('sections.modelDistribution.title')}
-        </div>
+        </h2>
         {usage.summary.byModel.length === 0 ? (
-          <div className="text-muted-foreground p-8 text-center text-sm">
+          <div className="text-muted-foreground py-8 text-center text-sm">
             {t('sections.modelDistribution.empty')}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
-              <thead>
-                <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                  <th className="px-4 py-2.5 text-left font-medium">
-                    {t('columns.model')}
-                  </th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    {t('columns.requests')}
-                  </th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    {t('columns.tokens')}
-                  </th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    {t('columns.spend')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {usage.summary.byModel.map((model) => (
-                  <tr key={model.modelId} className="border-b last:border-b-0">
-                    <td className="px-4 py-2.5 font-mono text-xs">
-                      {model.modelId}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono">
-                      {formatConsoleNumber(model.requests, locale)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono">
-                      {formatConsoleNumber(model.tokens, locale)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono">
-                      {formatUsdAmount(model.spendUsd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            {usage.summary.byModel.map((model) => {
+              const pct =
+                maxModelSpend > 0
+                  ? Math.max(
+                      2,
+                      Math.round((model.spendUsd / maxModelSpend) * 100)
+                    )
+                  : 0;
+              return (
+                <div key={model.modelId}>
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="font-mono text-xs">{model.modelId}</span>
+                    <span className="text-muted-foreground text-xs">
+                      <span className="font-mono">
+                        {formatConsoleNumber(model.requests, locale)}
+                      </span>
+                      {' · '}
+                      <span className="text-primary font-mono font-medium">
+                        {formatUsdAmount(model.spendUsd)}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="bg-muted h-2 overflow-hidden rounded-full">
+                    <div
+                      className="bg-primary h-full rounded-full"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      <div className="bg-card overflow-hidden rounded-xl border">
+      <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
         <div className="border-b px-5 py-4 font-medium">
           {t('sections.requestLog.title')}
         </div>

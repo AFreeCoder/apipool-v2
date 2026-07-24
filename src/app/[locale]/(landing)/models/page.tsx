@@ -1,7 +1,14 @@
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+
+import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
 import {
   ModelFilters,
   type ModelFilterGroup,
 } from '@/features/api-catalog/components/model-filters';
+import {
+  ModelsCatalog,
+  type CatalogRow,
+} from '@/features/api-catalog/components/models-catalog';
 import {
   buildModelFilterHref,
   formatMicroUsdPerCall,
@@ -9,25 +16,11 @@ import {
   parseModelFilters,
 } from '@/features/api-catalog/lib/catalog';
 import { formatDecimal } from '@/features/api-catalog/lib/pricing';
-import type { ListingRow } from '@/features/api-catalog/lib/types';
 import {
   getFilterDimensions,
   getPublicListings,
 } from '@/features/api-catalog/server/queries';
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-
-import { Link } from '@/core/i18n/navigation';
-import { PRICE_DISCLAIMER_EN, PRICE_DISCLAIMER_ZH } from '@/config/apipool';
-import { Badge } from '@/shared/components/ui/badge';
-import { Button } from '@/shared/components/ui/button';
 import { getMetadata } from '@/shared/lib/seo';
-
-function formatContextWindow(tokens: number | null) {
-  if (!tokens) return '—';
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
-  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
-  return String(tokens);
-}
 
 type CatalogDimension = 'groups' | 'categories' | 'capabilities' | 'statuses';
 
@@ -61,12 +54,20 @@ export default async function ModelsPage({
   const { locale } = await params;
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: 'pages.models' });
-  const filters = parseModelFilters(await searchParams);
-  const [listings, dimensions] = await Promise.all([
-    getPublicListings(filters),
-    getFilterDimensions(),
-  ]);
+  const rawFilters = parseModelFilters(await searchParams);
+  const dimensions = await getFilterDimensions();
+  // 分组按设计单选、默认「官方」：未指定分组时回退到 official（无则取首个分组），
+  // 使表格恒展示单一分组，避免同模型多分组价格无法区分（价格随 Key 的分组生效）。
+  const defaultGroupSlug = dimensions.groups.some((g) => g.slug === 'official')
+    ? 'official'
+    : dimensions.groups[0]?.slug;
+  const filters = {
+    ...rawFilters,
+    group: rawFilters.group ?? defaultGroupSlug,
+  };
+  const listings = await getPublicListings(filters);
   const dimensionMessages = t.raw('dimensions') as CatalogDimensionMessages;
+  const tableLabels = t.raw('table') as Record<string, string>;
   const localizeOption = (
     dimension: CatalogDimension,
     option: { slug: string; name: string }
@@ -79,35 +80,90 @@ export default async function ModelsPage({
       option.name
     ),
   });
-  const localizedListings = listings.map((listing) => ({
-    ...listing,
-    groupName: localizeCatalogDimension(
-      dimensionMessages,
-      'groups',
-      listing.groupSlug,
-      listing.groupName
-    ),
-    category: localizeCatalogDimension(
-      dimensionMessages,
-      'categories',
-      listing.category,
-      listing.category
-    ),
-    capabilities: listing.capabilities.map((capability) =>
-      localizeCatalogDimension(
+
+  // 折扣文案按 locale 渲染（中文「9 折 (90%)」/ 英文「10% off」），服务层只回传
+  // discountBps，绝不产出预格式化的单语字符串。
+  const formatDiscount = (discountBps: number) =>
+    t('table.discount', {
+      fold: formatDecimal(discountBps / 1000),
+      percent: formatDecimal(discountBps / 100),
+      off: formatDecimal((10000 - discountBps) / 100),
+    });
+
+  // 服务端把每行的价格/划线/折扣/状态都预格式化成字符串，客户端只做搜索与渲染。
+  const rows: CatalogRow[] = listings.map((listing) => {
+    const showConfirmedPrice = listing.pricePresentation?.showPrice === true;
+    const showStrikethrough =
+      showConfirmedPrice &&
+      listing.pricePresentation?.showStrikethrough === true;
+    const inputPrice =
+      showConfirmedPrice && listing.effectiveInputMicroUsd !== undefined
+        ? listing.effectiveInputMicroUsd
+        : undefined;
+    const outputPrice =
+      showConfirmedPrice && listing.effectiveOutputMicroUsd !== undefined
+        ? listing.effectiveOutputMicroUsd
+        : undefined;
+    const perCall = listing.billingScheme === 'per_call';
+
+    return {
+      key: `${listing.modelId}:${listing.groupSlug}`,
+      displayName: listing.displayName,
+      modelId: listing.modelId,
+      description: listing.description ?? null,
+      vendorName: listing.vendorName,
+      category: localizeCatalogDimension(
         dimensionMessages,
-        'capabilities',
-        capability,
-        capability
-      )
-    ),
-    statusName: localizeCatalogDimension(
-      dimensionMessages,
-      'statuses',
-      listing.statusSlug,
-      listing.statusName
-    ),
-  }));
+        'categories',
+        listing.category,
+        listing.category
+      ),
+      capabilities: listing.capabilities.map((capability) =>
+        localizeCatalogDimension(
+          dimensionMessages,
+          'capabilities',
+          capability,
+          capability
+        )
+      ),
+      perCall,
+      tiers: (listing.tiers ?? []).map((tier) => ({
+        skuKey: tier.skuKey,
+        price: formatMicroUsdPerCall(tier.priceMicroUsd, tableLabels.perCall),
+      })),
+      inputMain: perCall
+        ? ''
+        : inputPrice === undefined
+          ? '—'
+          : formatMicroUsdPerMillion(inputPrice),
+      inputOrig:
+        !perCall && showStrikethrough && listing.listInputMicroUsd !== undefined
+          ? formatMicroUsdPerMillion(listing.listInputMicroUsd)
+          : null,
+      outputMain:
+        outputPrice === undefined ? '—' : formatMicroUsdPerMillion(outputPrice),
+      outputOrig:
+        showStrikethrough && listing.listOutputMicroUsd !== undefined
+          ? formatMicroUsdPerMillion(listing.listOutputMicroUsd)
+          : null,
+      savings: listing.pricePresentation?.discountBps
+        ? formatDiscount(listing.pricePresentation.discountBps)
+        : null,
+      note: listing.pricePresentation?.note ?? null,
+      statusName: localizeCatalogDimension(
+        dimensionMessages,
+        'statuses',
+        listing.statusSlug,
+        listing.statusName
+      ),
+      statusSlug: listing.statusSlug,
+      // 可用性以发布就绪结果 isCallable 为准：status=available 但未就绪
+      // （缺分组映射/锁价/计费配置）的条目不应被展示成正常可用。
+      isCallable: listing.isCallable,
+      searchText: `${listing.displayName} ${listing.modelId}`.toLowerCase(),
+    };
+  });
+
   const filterGroups: ModelFilterGroup[] = (
     [
       {
@@ -147,6 +203,8 @@ export default async function ModelsPage({
   ).map((group) => ({
     key: group.key,
     label: group.label,
+    // 分组维度按设计单选、无「全部」；其余维度保留「全部」。
+    hideAll: group.key === 'group',
     allHref: buildModelFilterHref(filters, { [group.key]: undefined }),
     activeName:
       group.options.find((option) => option.slug === filters[group.key])
@@ -159,250 +217,51 @@ export default async function ModelsPage({
     })),
   }));
 
+  const catalogLabels = {
+    model: tableLabels.model,
+    provider: tableLabels.provider,
+    inputOrCall: tableLabels.inputOrCall,
+    output: tableLabels.output,
+    savings: tableLabels.savings,
+    search: t('filters.search'),
+    reset: t('filters.reset'),
+    count: t.raw('count') as string,
+    emptyTitle: t('empty.title'),
+    emptyClear: t('empty.clear'),
+    notReady: t('notReady'),
+  };
+
   return (
-    <div className="bg-background">
-      {/* 标题 + 筛选：全量筛选清单平铺（供应商/分组/分类/能力/状态），不放 hero */}
+    <div className="bg-grid bg-muted/20 min-h-screen">
+      {/* 标题 */}
       <section className="border-border border-b">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-          <div className="text-primary font-mono text-xs tracking-widest uppercase">
+        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <div className="text-primary font-mono text-xs tracking-[0.14em] uppercase">
             {t('eyebrow')}
           </div>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             {t('title')}
           </h1>
-          <p className="text-muted-foreground mt-3 max-w-2xl leading-7">
+          <p className="text-muted-foreground mt-3 max-w-2xl leading-7 text-pretty">
             {t('description')}
           </p>
-
-          <div className="mt-6">
-            <ModelFilters
-              groups={filterGroups}
-              allLabel={t('filters.all')}
-              clearLabel={t('filters.clear')}
-              clearHref="/models"
-            />
-          </div>
         </div>
       </section>
 
-      <section className="space-y-10 py-10 sm:py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {listings.length === 0 ? (
-            <div className="rounded-xl border p-10 text-center">
-              <div className="font-medium">{t('empty.title')}</div>
-              <Button asChild variant="outline" className="mt-4 rounded-md">
-                <Link href="/models">{t('empty.clear')}</Link>
-              </Button>
-            </div>
-          ) : (
-            <ModelsTable
-              listings={localizedListings}
-              labels={t.raw('table')}
-              formatDiscount={(discountBps) =>
-                t('table.discount', {
-                  fold: formatDecimal(discountBps / 1000),
-                  percent: formatDecimal(discountBps / 100),
-                  off: formatDecimal((10000 - discountBps) / 100),
-                })
-              }
-            />
-          )}
-          <p className="text-muted-foreground mt-3 text-xs">
-            {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
-          </p>
-        </div>
+      {/* 筛选卡 + 价格表 */}
+      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <ModelsCatalog rows={rows} labels={catalogLabels} clearHref="/models">
+          <ModelFilters
+            groups={filterGroups}
+            allLabel={t('filters.all')}
+            clearLabel={t('filters.clear')}
+            clearHref="/models"
+          />
+        </ModelsCatalog>
+        <p className="text-muted-foreground mt-4 text-xs">
+          {locale === 'zh' ? PRICE_DISCLAIMER_ZH : PRICE_DISCLAIMER_EN}
+        </p>
       </section>
     </div>
-  );
-}
-
-function ModelsTable({
-  listings,
-  labels,
-  formatDiscount,
-}: {
-  listings: ListingRow[];
-  labels: Record<string, string>;
-  // 折扣文案按 locale 渲染：中文是「9 折 (90%)」，英文是「10% off」。
-  // 服务层只回传 discountBps，绝不产出预格式化的单语字符串。
-  formatDiscount: (discountBps: number) => string;
-}) {
-  if (listings.length === 0) return null;
-
-  return (
-    <>
-      <p className="text-muted-foreground mb-2 text-xs min-[960px]:hidden">
-        {labels.mobileHint}
-      </p>
-      <div className="relative">
-        <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full min-w-[920px] text-sm">
-            <thead>
-              <tr className="bg-muted text-muted-foreground border-b text-xs uppercase">
-                <th className="px-4 py-3 text-left font-medium">
-                  {labels.model}
-                </th>
-                <th className="px-4 py-3 text-left font-medium">
-                  {labels.provider}
-                </th>
-                <th className="px-4 py-3 text-left font-medium">
-                  {labels.group}
-                </th>
-                <th className="px-4 py-3 text-left font-medium">
-                  {labels.category}
-                </th>
-                <th className="px-4 py-3 text-left font-medium">
-                  {labels.capabilities}
-                </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  {labels.context}
-                </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  {labels.inputOrCall}
-                </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  {labels.output}
-                </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  {labels.status}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {listings.map((listing) => {
-                const showConfirmedPrice =
-                  listing.pricePresentation?.showPrice === true;
-                const showStrikethrough =
-                  showConfirmedPrice &&
-                  listing.pricePresentation?.showStrikethrough === true;
-                const inputPrice =
-                  showConfirmedPrice &&
-                  listing.effectiveInputMicroUsd !== undefined
-                    ? listing.effectiveInputMicroUsd
-                    : undefined;
-                const outputPrice =
-                  showConfirmedPrice &&
-                  listing.effectiveOutputMicroUsd !== undefined
-                    ? listing.effectiveOutputMicroUsd
-                    : undefined;
-
-                return (
-                  <tr
-                    key={`${listing.modelId}:${listing.groupSlug}`}
-                    className="hover:bg-muted/50 border-b transition-colors last:border-b-0"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{listing.displayName}</div>
-                      <div className="text-muted-foreground font-mono text-xs">
-                        {listing.modelId}
-                      </div>
-                      {listing.description && (
-                        <div className="text-muted-foreground mt-1 text-xs">
-                          {listing.description}
-                        </div>
-                      )}
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3">
-                      {listing.vendorName}
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3">
-                      {listing.groupName}
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3">
-                      {listing.category}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {listing.capabilities.map((capability) => (
-                          <span
-                            key={capability}
-                            className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-xs"
-                          >
-                            {capability}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3 text-right font-mono">
-                      {formatContextWindow(listing.contextWindow)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {listing.billingScheme === 'per_call' ? (
-                        <div className="space-y-1 text-xs">
-                          {(listing.tiers ?? []).map((tier) => (
-                            <div key={tier.skuKey}>
-                              <div className="text-muted-foreground break-all">
-                                {tier.skuKey}
-                              </div>
-                              <div>
-                                {formatMicroUsdPerCall(
-                                  tier.priceMicroUsd,
-                                  labels.perCall
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : inputPrice === undefined ? (
-                        '—'
-                      ) : (
-                        formatMicroUsdPerMillion(inputPrice)
-                      )}
-                      {listing.billingScheme !== 'per_call' &&
-                        showStrikethrough &&
-                        listing.listInputMicroUsd !== undefined && (
-                          <div className="text-muted-foreground text-xs line-through">
-                            {formatMicroUsdPerMillion(
-                              listing.listInputMicroUsd
-                            )}
-                          </div>
-                        )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {outputPrice === undefined
-                        ? '—'
-                        : formatMicroUsdPerMillion(outputPrice)}
-                      {showStrikethrough &&
-                        listing.listOutputMicroUsd !== undefined && (
-                          <div className="text-muted-foreground text-xs line-through">
-                            {formatMicroUsdPerMillion(
-                              listing.listOutputMicroUsd
-                            )}
-                          </div>
-                        )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Badge
-                        variant={listing.isCallable ? 'default' : 'secondary'}
-                        className={
-                          listing.isCallable
-                            ? 'bg-primary/10 text-primary border-transparent'
-                            : ''
-                        }
-                      >
-                        {listing.statusName}
-                      </Badge>
-                      {listing.pricePresentation?.discountBps ? (
-                        <div className="text-muted-foreground mt-1 text-xs">
-                          {formatDiscount(
-                            listing.pricePresentation.discountBps
-                          )}
-                        </div>
-                      ) : null}
-                      {listing.pricePresentation?.note && (
-                        <div className="text-muted-foreground mt-1 text-xs">
-                          {listing.pricePresentation.note}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="from-background pointer-events-none absolute inset-y-0 right-0 w-12 rounded-r-xl bg-gradient-to-l to-transparent min-[960px]:hidden" />
-      </div>
-    </>
   );
 }

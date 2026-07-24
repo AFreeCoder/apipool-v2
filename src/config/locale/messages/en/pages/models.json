@@ -13,7 +13,9 @@
     "capability": "Capabilities",
     "status": "Status",
     "all": "All",
-    "clear": "Clear filters"
+    "clear": "Clear filters",
+    "search": "Search models…",
+    "reset": "Reset"
   },
   "dimensions": {
     "groups": {
@@ -56,6 +58,9 @@
     "perCall": "call",
     "output": "Output·1M",
     "status": "Status",
+    "savings": "Savings",
     "discount": "{off}% off"
-  }
+  },
+  "count": "{count} models",
+  "notReady": "Not ready"
 }

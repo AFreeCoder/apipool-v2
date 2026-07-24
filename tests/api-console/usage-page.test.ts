@@ -11,7 +11,8 @@ test('usage page renders model distribution from synced usage summary', async ()
   assert.match(source, /sections\.modelDistribution\.title/);
   assert.match(source, /usage\.summary\.byModel/);
   assert.match(source, /model\.requests/);
-  assert.match(source, /model\.tokens/);
+  // 模型分布按设计改为条形图，展示「调用数 · 花费」，token 明细仍在下方请求日志表。
+  assert.match(source, /model\.spendUsd/);
   assert.doesNotMatch(source, /tokens:\s*0/);
   assert.doesNotMatch(source, /keyMasked:\s*['"]—['"]/);
 });

@@ -223,14 +223,19 @@ test('locale detector banner copy comes from the target common locale namespace'
 });
 
 test('locale switchers strip any existing locale prefix before navigating', async () => {
-  const [switcherSource, selectorSource, signUserSource, detectorSource, indexingSource] =
-    await Promise.all([
-      readFile('src/shared/blocks/common/use-locale-switcher.ts', 'utf8'),
-      readFile('src/shared/blocks/common/locale-selector.tsx', 'utf8'),
-      readFile('src/shared/blocks/sign/sign-user.tsx', 'utf8'),
-      readFile('src/shared/blocks/common/locale-detector.tsx', 'utf8'),
-      readFile('src/features/apipool-ui/lib/indexing.ts', 'utf8'),
-    ]);
+  const [
+    switcherSource,
+    selectorSource,
+    signUserSource,
+    detectorSource,
+    indexingSource,
+  ] = await Promise.all([
+    readFile('src/shared/blocks/common/use-locale-switcher.ts', 'utf8'),
+    readFile('src/shared/blocks/common/locale-selector.tsx', 'utf8'),
+    readFile('src/shared/blocks/sign/sign-user.tsx', 'utf8'),
+    readFile('src/shared/blocks/common/locale-detector.tsx', 'utf8'),
+    readFile('src/features/apipool-ui/lib/indexing.ts', 'utf8'),
+  ]);
 
   assert.match(
     indexingSource,
@@ -285,7 +290,8 @@ test('models page localizes public catalog dimensions instead of echoing admin d
 
   assert.match(source, /localizeCatalogDimension/);
   assert.match(source, /t\.raw\(['"]dimensions['"]\)/);
-  assert.match(source, /groupName:\s*localizeCatalogDimension/);
+  // 目录表按设计合并「模型与价格」，分组不再作为独立列，改由筛选 chip 本地化展示。
+  assert.match(source, /localizeOption\(['"]groups['"]/);
   assert.match(source, /statusName:\s*localizeCatalogDimension/);
   assert.match(source, /capabilities:\s*listing\.capabilities\.map/);
 

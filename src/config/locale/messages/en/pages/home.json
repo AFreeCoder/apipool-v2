@@ -1,94 +1,109 @@
 {
   "hero": {
-    "eyebrow": "// unified llm api",
-    "titleLine1": "One endpoint.",
-    "titleLine2": "Every frontier model.",
-    "description": "Call OpenAI, Anthropic, and more through a single API. Transparent per-token pricing, balance you control, usage you can see.",
-    "start": "Start building",
-    "docs": "Read the docs",
-    "bullets": ["OpenAI-compatible", "No subscription", "Balance never expires"]
+    "badge": "OpenAI-compatible · one gateway for every LLM",
+    "titleLead": "One API key for ",
+    "titleAccent": "every model",
+    "description": "Aggregate OpenAI, Claude, Gemini and more behind a single OpenAI-compatible protocol. Smart routing, real-time billing, transparent pricing — just swap the base_url.",
+    "ctaPrimary": "Get started",
+    "ctaSecondary": "Read the docs",
+    "note": "Pay as you go · Transparent billing · No subscription"
   },
-  "providers": {
-    "label": "Providers"
+  "marquee": {
+    "label": "OpenAI · Anthropic · Google · ByteDance integrated — more coming soon",
+    "soon": "Soon"
   },
-  "scenarios": {
-    "title": "From agents to images",
-    "description": "One balance and one key behind whatever you are building.",
-    "modelsLink": "Models & pricing",
-    "items": [
-      {
-        "title": "Coding agents",
-        "description": "Long-running agents and dev tools that plan, edit, and test with frontier models.",
-        "vignetteLine1": "▸ agent run · fix-build",
-        "vignetteLine2": "plan → edit → test",
-        "vignetteLine3": "✓ 14 files changed",
-        "vignetteLine4": "✓ tests passed in 42s"
-      },
-      {
-        "title": "Chat & copilots",
-        "description": "Production assistants with streaming responses and per-conversation cost control.",
-        "vignetteUser": "Summarize this PR for review",
-        "vignetteAssistant": "3 changes: auth middleware, retry logic, tests…"
-      },
-      {
-        "title": "Image & media generation",
-        "description": "Multimodal pipelines for product art, thumbnails, and creative tooling."
-      },
-      {
-        "title": "Batch & data pipelines",
-        "description": "Large-scale extraction, classification, and evals with predictable spend.",
-        "vignetteLine1": "processing 12,408 docs…",
-        "vignetteFile": "batch-07.jsonl"
-      }
-    ]
-  },
-  "steps": {
-    "title": "Up and running in minutes",
-    "items": [
-      {
-        "index": "01",
-        "title": "Create an account",
-        "description": "Sign up and add credit to your balance. Usage is billed per token — no subscription, balance never expires."
-      },
-      {
-        "index": "02",
-        "title": "Create an API key",
-        "description": "Generate a key in the console. The plaintext key is shown once — keep it safe."
-      },
-      {
-        "index": "03",
-        "title": "Call any model",
-        "description": "Use your favorite SDK with one key. Switch models by name — that is the whole migration."
-      }
-    ]
+  "terminal": {
+    "response": "Hello! How can I help you today?"
   },
   "features": {
+    "eyebrow": "API gateway",
+    "heading": "Built for production",
+    "sub": "From your first request to scale, one platform handles it all.",
     "items": [
       {
-        "title": "Transparent pricing",
-        "description": "Per-token prices listed next to official rates. What you see is what you pay."
-      },
-      {
-        "title": "Pay as you go",
-        "description": "Top up in dollars, spend by the token. No plans, no lock-in, no expiry."
-      },
-      {
+        "tag": "API",
         "title": "OpenAI-compatible",
-        "description": "Works with the official SDKs and most tools by changing one base URL."
+        "description": "Keep your existing SDK — change one base_url line to migrate, zero learning curve."
       },
       {
-        "title": "Real usage data",
-        "description": "Requests, tokens, and spend per model — live in your console."
+        "tag": "RTE",
+        "title": "Smart routing",
+        "description": "Every request is routed to the right provider for the model you call."
+      },
+      {
+        "tag": "KEY",
+        "title": "One key, all models",
+        "description": "A single key reaches every provider and model, with group-based access control."
+      },
+      {
+        "tag": "USE",
+        "title": "Granular usage billing",
+        "description": "Metered per token or per call in real time, with usage dashboards and low-balance warnings."
+      },
+      {
+        "tag": "PRC",
+        "title": "Transparent pricing",
+        "description": "See every model's price up front, and pay only for what you use."
+      },
+      {
+        "tag": "SEC",
+        "title": "Compliance & audit",
+        "description": "Encrypted, isolated keys and full request audit logs to meet compliance needs."
+      }
+    ]
+  },
+  "usecases": {
+    "eyebrow": "Use cases",
+    "heading": "For solo builders and enterprises alike",
+    "sub": "From prototype to production, covering every stage.",
+    "items": [
+      {
+        "no": "01",
+        "title": "AI app development",
+        "description": "Tap into multi-model capabilities fast and focus on product, not infra."
+      },
+      {
+        "no": "02",
+        "title": "Enterprise gateway",
+        "description": "Centralize keys, quotas and billing for controllable team collaboration."
+      },
+      {
+        "no": "03",
+        "title": "Model eval & switching",
+        "description": "Switch in one place to compare quality and cost across models."
+      }
+    ]
+  },
+  "faq": {
+    "heading": "Frequently asked questions",
+    "sub": "Still have questions? Reach out to our team.",
+    "items": [
+      {
+        "q": "How do I get started?",
+        "a": "Create an API key in the console, point your base_url to {baseUrl}, and call every model with your existing OpenAI SDK."
+      },
+      {
+        "q": "Which models are supported?",
+        "a": "Flagship models from OpenAI, Anthropic, Google and ByteDance are live today — such as Claude-Opus-4.8, Claude-Sonnet-5, GPT-5.6 and Gemini-3-Pro — with more providers and models being added."
+      },
+      {
+        "q": "How does billing work?",
+        "a": "Metered per token (or per call for SKU-priced models) in real time, with no monthly fee and a balance that never expires. Top-ups start at $10, and the console shows usage dashboards and low-balance warnings."
+      },
+      {
+        "q": "Is it OpenAI SDK compatible?",
+        "a": "Fully compatible with Chat Completions and other common endpoints — usually just swap base_url and api_key."
+      },
+      {
+        "q": "How is my data protected?",
+        "a": "Keys are encrypted and isolated, the public API is served over HTTPS, full audit logs are provided, and nothing is used for model training."
       }
     ]
   },
   "cta": {
-    "title": "Ship with one API today",
-    "description": "Create a key, add credit, and make your first call in under five minutes.",
-    "console": "Open the console",
-    "models": "Browse models"
-  },
-  "terminal": {
-    "response": "Hello! How can I help you today?"
+    "title": "Integrate in minutes, ship today",
+    "description": "Pay as you go, transparent billing, scaling smoothly as you grow.",
+    "primary": "Get started",
+    "secondary": "Browse models"
   }
 }
