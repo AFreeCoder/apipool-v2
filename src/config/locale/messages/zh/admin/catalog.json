@@ -56,6 +56,7 @@
     "discountRate": "折扣",
     "discountNote": "折扣说明",
     "description": "说明",
+    "price": "价格",
     "createdAt": "创建时间",
     "actions": "操作",
     "pricingStatus": "定价状态",
@@ -300,6 +301,16 @@
       "crumb": "模型元数据",
       "buttons": {
         "new": "新增模型"
+      },
+      "pricing": {
+        "detail": "详情",
+        "empty": "—",
+        "perCall": "按次",
+        "inputShort": "入",
+        "outputShort": "出",
+        "sectionBase": "基础 Meter",
+        "sectionLong": "长上下文",
+        "threshold": "阈值（tokens）"
       }
     },
     "pricingSync": {

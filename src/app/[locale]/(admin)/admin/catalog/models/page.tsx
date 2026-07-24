@@ -4,12 +4,14 @@ import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import {
   getModelAdminRows,
   ModelAdminRow,
+  type ModelAdminPriceMeterKey,
 } from '@/features/api-catalog/server/catalog-service';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';
 import { Crumb } from '@/shared/types/blocks/common';
 import { type Table } from '@/shared/types/blocks/table';
 
+import { ModelPriceCell, type ModelPriceLabels } from './model-price-cell';
 import { CatalogPricingSyncControls } from './pricing-sync-controls';
 
 export default async function AdminCatalogModelsPage({
@@ -28,6 +30,36 @@ export default async function AdminCatalogModelsPage({
 
   const t = await getTranslations('admin.catalog');
   const models = await getModelAdminRows();
+
+  // meter 明细的行标签直接复用编辑表单那套 fields.* 文案，保证同名同义；
+  // 摘要与分组标题用 models.list.pricing.* 下的精简文案。
+  const meterLabels: Record<ModelAdminPriceMeterKey, string> = {
+    inputMicroUsd: t('fields.inputMicroUsd'),
+    cachedInputMicroUsd: t('fields.cachedInputMicroUsd'),
+    cacheWriteMicroUsd: t('fields.cacheWriteMicroUsd'),
+    cacheWrite5mMicroUsd: t('fields.cacheWrite5mMicroUsd'),
+    cacheWrite1hMicroUsd: t('fields.cacheWrite1hMicroUsd'),
+    outputMicroUsd: t('fields.outputMicroUsd'),
+    imageInputMicroUsd: t('fields.imageInputMicroUsd'),
+    cachedImageInputMicroUsd: t('fields.cachedImageInputMicroUsd'),
+    imageOutputMicroUsd: t('fields.imageOutputMicroUsd'),
+    webSearchMicroUsd: t('fields.webSearchMicroUsd'),
+    inputLongMicroUsd: t('fields.inputLongMicroUsd'),
+    cachedInputLongMicroUsd: t('fields.cachedInputLongMicroUsd'),
+    cacheWriteLongMicroUsd: t('fields.cacheWriteLongMicroUsd'),
+    outputLongMicroUsd: t('fields.outputLongMicroUsd'),
+  };
+  const priceLabels: ModelPriceLabels = {
+    detail: t('models.list.pricing.detail'),
+    empty: t('models.list.pricing.empty'),
+    perCall: t('models.list.pricing.perCall'),
+    inputShort: t('models.list.pricing.inputShort'),
+    outputShort: t('models.list.pricing.outputShort'),
+    sectionBase: t('models.list.pricing.sectionBase'),
+    sectionLong: t('models.list.pricing.sectionLong'),
+    threshold: t('models.list.pricing.threshold'),
+    meterLabels,
+  };
 
   const crumbs: Crumb[] = [
     { title: t('crumbs.admin'), url: '/admin' },
@@ -48,24 +80,11 @@ export default async function AdminCatalogModelsPage({
       { name: 'categoryNames', title: t('fields.categories') },
       { name: 'capabilityNames', title: t('fields.capabilities') },
       {
-        name: 'inputPrice',
-        title: t('fields.inputMicroUsd'),
-        className: 'font-mono text-xs',
-      },
-      {
-        name: 'outputPrice',
-        title: t('fields.outputMicroUsd'),
-        className: 'font-mono text-xs',
-      },
-      {
-        name: 'imageInputPrice',
-        title: t('fields.imageInputMicroUsd'),
-        className: 'font-mono text-xs',
-      },
-      {
-        name: 'imageOutputPrice',
-        title: t('fields.imageOutputMicroUsd'),
-        className: 'font-mono text-xs',
+        name: 'price',
+        title: t('fields.price'),
+        callback: (item: ModelAdminRow) => (
+          <ModelPriceCell price={item.price} labels={priceLabels} />
+        ),
       },
       { name: 'createdAt', title: t('fields.createdAt'), type: 'time' },
       {

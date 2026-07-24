@@ -117,6 +117,43 @@ export type ModelMetadataAdminConfigResult = Omit<
   'listing'
 >;
 
+// 模型列表里逐个 meter 的展示条目；label 由页面按 fields.<key> 翻译解析，
+// 这里只回传稳定的 key 与已格式化的美元字符串（仅非空 meter）。
+export type ModelAdminPriceMeterKey =
+  | 'inputMicroUsd'
+  | 'cachedInputMicroUsd'
+  | 'cacheWriteMicroUsd'
+  | 'cacheWrite5mMicroUsd'
+  | 'cacheWrite1hMicroUsd'
+  | 'outputMicroUsd'
+  | 'imageInputMicroUsd'
+  | 'cachedImageInputMicroUsd'
+  | 'imageOutputMicroUsd'
+  | 'webSearchMicroUsd'
+  | 'inputLongMicroUsd'
+  | 'cachedInputLongMicroUsd'
+  | 'cacheWriteLongMicroUsd'
+  | 'outputLongMicroUsd';
+
+export type ModelAdminPriceMeter = {
+  key: ModelAdminPriceMeterKey;
+  value: string;
+};
+
+// 模型元数据列表的价格聚合：不再逐 meter 平铺成列，而是收进一格气泡卡。
+// summary 供单元格常态展示，base/long meters 供展开明细。
+export type ModelAdminPrice = {
+  billingScheme: string;
+  hasPrice: boolean;
+  inputSummary: string | null;
+  outputSummary: string | null;
+  fixedPrice: string | null;
+  fixedPriceUnit: string | null;
+  longContextThresholdTokens: number | null;
+  baseMeters: ModelAdminPriceMeter[];
+  longMeters: ModelAdminPriceMeter[];
+};
+
 export type ModelAdminRow = {
   id: string;
   modelId: string;
@@ -124,10 +161,7 @@ export type ModelAdminRow = {
   vendorName: string;
   categoryNames: string;
   capabilityNames: string;
-  inputPrice: string;
-  outputPrice: string;
-  imageInputPrice: string;
-  imageOutputPrice: string;
+  price: ModelAdminPrice;
   createdAt: Date;
 };
 
@@ -547,6 +581,60 @@ export async function getModels(): Promise<Model[]> {
     .orderBy(asc(catalogModel.displayName));
 }
 
+// meter 展示 key ↔ 价格快照列的映射，顺序与模型编辑表单一致，方便管理员对照。
+const ADMIN_BASE_METER_COLUMNS: [ModelAdminPriceMeterKey, keyof ModelPrice][] =
+  [
+    ['inputMicroUsd', 'baseInputMicroUsd'],
+    ['cachedInputMicroUsd', 'baseCachedInputMicroUsd'],
+    ['cacheWriteMicroUsd', 'baseCacheWriteMicroUsd'],
+    ['cacheWrite5mMicroUsd', 'baseCacheWrite5mMicroUsd'],
+    ['cacheWrite1hMicroUsd', 'baseCacheWrite1hMicroUsd'],
+    ['outputMicroUsd', 'baseOutputMicroUsd'],
+    ['imageInputMicroUsd', 'baseImageInputMicroUsd'],
+    ['cachedImageInputMicroUsd', 'baseCachedImageInputMicroUsd'],
+    ['imageOutputMicroUsd', 'baseImageOutputMicroUsd'],
+    ['webSearchMicroUsd', 'baseWebSearchMicroUsd'],
+  ];
+
+const ADMIN_LONG_METER_COLUMNS: [ModelAdminPriceMeterKey, keyof ModelPrice][] =
+  [
+    ['inputLongMicroUsd', 'baseInputLongMicroUsd'],
+    ['cachedInputLongMicroUsd', 'baseCachedInputLongMicroUsd'],
+    ['cacheWriteLongMicroUsd', 'baseCacheWriteLongMicroUsd'],
+    ['outputLongMicroUsd', 'baseOutputLongMicroUsd'],
+  ];
+
+function buildModelAdminPrice(
+  basePrice: ModelPrice | undefined
+): ModelAdminPrice {
+  const toMeters = (
+    defs: [ModelAdminPriceMeterKey, keyof ModelPrice][]
+  ): ModelAdminPriceMeter[] =>
+    defs.flatMap(([key, column]) => {
+      const value = microUsdToDollars(
+        basePrice?.[column] as number | null | undefined
+      );
+      return value === '' ? [] : [{ key, value }];
+    });
+
+  const baseMeters = toMeters(ADMIN_BASE_METER_COLUMNS);
+  const longMeters = toMeters(ADMIN_LONG_METER_COLUMNS);
+  const fixedPrice = microUsdToDollars(basePrice?.fixedPriceMicroUsd) || null;
+
+  return {
+    billingScheme: basePrice?.billingScheme ?? 'token',
+    hasPrice:
+      baseMeters.length > 0 || longMeters.length > 0 || fixedPrice !== null,
+    inputSummary: microUsdToDollars(basePrice?.baseInputMicroUsd) || null,
+    outputSummary: microUsdToDollars(basePrice?.baseOutputMicroUsd) || null,
+    fixedPrice,
+    fixedPriceUnit: basePrice?.fixedPriceUnit ?? null,
+    longContextThresholdTokens: basePrice?.longContextThresholdTokens ?? null,
+    baseMeters,
+    longMeters,
+  };
+}
+
 export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
   const [models, vendors] = await Promise.all([getModels(), getVendors()]);
   if (models.length === 0) return [];
@@ -622,10 +710,7 @@ export async function getModelAdminRows(): Promise<ModelAdminRow[]> {
       categoryNames:
         categoryNames.length > 0 ? categoryNames.join(', ') : model.category,
       capabilityNames: capabilityNames.join(', '),
-      inputPrice: microUsdToDollars(basePrice?.baseInputMicroUsd),
-      outputPrice: microUsdToDollars(basePrice?.baseOutputMicroUsd),
-      imageInputPrice: microUsdToDollars(basePrice?.baseImageInputMicroUsd),
-      imageOutputPrice: microUsdToDollars(basePrice?.baseImageOutputMicroUsd),
+      price: buildModelAdminPrice(basePrice),
       createdAt: model.createdAt,
     };
   });

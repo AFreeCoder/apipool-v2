@@ -56,6 +56,7 @@
     "discountRate": "Discount",
     "discountNote": "Discount Note",
     "description": "Description",
+    "price": "Price",
     "createdAt": "Created At",
     "actions": "Actions",
     "pricingStatus": "Pricing Status",
@@ -300,6 +301,16 @@
       "crumb": "Model Metadata",
       "buttons": {
         "new": "New Model"
+      },
+      "pricing": {
+        "detail": "Details",
+        "empty": "—",
+        "perCall": "Per call",
+        "inputShort": "In",
+        "outputShort": "Out",
+        "sectionBase": "Base meters",
+        "sectionLong": "Long context",
+        "threshold": "Threshold (tokens)"
       }
     },
     "pricingSync": {
