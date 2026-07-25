@@ -37,6 +37,7 @@ export default async function CatalogModelListingEditPage({
 
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
+  const missingNewapiGroupMessage = t('errors.missingNewapiGroup');
   const updateFailedMessage = t('errors.updateFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const successMessage = t('listings.edit.success');
@@ -79,6 +80,13 @@ export default async function CatalogModelListingEditPage({
         validation: { required: true },
         options: groupOptions,
         attributes: { disabled: true },
+      },
+      {
+        name: 'newapiGroup',
+        type: 'text',
+        title: t('fields.newapiGroup'),
+        validation: { required: true },
+        tip: t('fields.newapiGroupTip'),
       },
       {
         name: 'statusId',
@@ -145,11 +153,20 @@ export default async function CatalogModelListingEditPage({
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
+        const newapiGroup = (data.get('newapiGroup') as string | null)?.trim();
+        if (!newapiGroup) {
+          return {
+            status: 'error' as const,
+            message: missingNewapiGroupMessage,
+          };
+        }
+
         let patch: UpdateListing;
         try {
           // 只写本表单拥有的字段。modelId/groupId/featured/
           // sortOrder 不在 patch 里 —— Partial 更新，未提供即保持不变。
           patch = {
+            newapiGroup,
             statusId: (data.get('statusId') as string).trim(),
             discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
@@ -163,7 +180,10 @@ export default async function CatalogModelListingEditPage({
         }
 
         // 折扣是唯一售卖倍率；变更时清除旧的派生价缓存。
-        if (patch.discountRateBps !== freshListing.discountRateBps) {
+        if (
+          patch.discountRateBps !== freshListing.discountRateBps ||
+          patch.newapiGroup !== freshListing.newapiGroup
+        ) {
           patch.priceDriftStatus = 'cost_changed';
           patch.effectivePriceFormula = JSON.stringify({
             source: 'catalog_base_price_x_listing_discount',

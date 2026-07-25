@@ -293,7 +293,7 @@ export async function assessPublishReadiness(
   const rows = (await db()
     .select({
       listingId: catalogModelListing.id,
-      newapiGroup: catalogGroup.newapiGroup,
+      newapiGroup: catalogModelListing.newapiGroup,
       newapiModelId: catalogModel.modelId,
       category: catalogModel.category,
       isCallable: catalogStatus.isCallable,
@@ -383,7 +383,11 @@ export async function assessPublishReadiness(
   }
 
   const allowLongContext = Boolean(row.allowLongContext);
-  const costReference = (await getLatestCostReferences())[row.listingId];
+  const storedCostReference = (await getLatestCostReferences())[row.listingId];
+  const costReference =
+    storedCostReference?.newapiGroup === row.newapiGroup
+      ? storedCostReference
+      : undefined;
   const newapiRefRatesJson = JSON.stringify(
     costReference?.billingScheme === 'token' ? (costReference.rates ?? {}) : {}
   );

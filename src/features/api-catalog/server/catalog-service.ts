@@ -88,6 +88,7 @@ export type ModelAdminConfigInput = {
   listing: {
     id?: string;
     groupId: string;
+    newapiGroup: string;
     statusId: string;
     listInputMicroUsd?: number | null;
     listOutputMicroUsd?: number | null;
@@ -508,43 +509,12 @@ export async function updateGroup(
   const current = await getGroupById(id);
   assertImmutableSlug(current?.slug, patch.slug, 'group');
 
-  // 改了 New API 映射 = 建 Key / 计费立刻走新分组，但缓存的倍率仍是旧分组的。
-  // 不失效就会让 /models 按旧倍率展示价格，与实际扣费不符。
-  // 失效后公开价自动转为「—」，直到重新跑一次价格同步确认（hide-until-confirmed）。
-  const remapped =
-    patch.newapiGroup !== undefined &&
-    patch.newapiGroup !== current?.newapiGroup;
-
-  if (!remapped) {
-    const [result] = await db()
-      .update(catalogGroup)
-      .set(patch)
-      .where(eq(catalogGroup.id, id))
-      .returning();
-    return result;
-  }
-
-  return await db().transaction(async (tx: any) => {
-    const [result] = await tx
-      .update(catalogGroup)
-      .set({
-        ...patch,
-        newapiGroupRatioBps: null,
-        newapiGroupRatioDecimal: null,
-        newapiGroupRatioRaw: null,
-        pricingSyncStatus: 'unknown',
-        pricingSyncedAt: null,
-      })
-      .where(eq(catalogGroup.id, id))
-      .returning();
-
-    await tx
-      .update(catalogModelListing)
-      .set({ priceDriftStatus: 'needs_live_check' })
-      .where(eq(catalogModelListing.groupId, id));
-
-    return result;
-  });
+  const [result] = await db()
+    .update(catalogGroup)
+    .set(patch)
+    .where(eq(catalogGroup.id, id))
+    .returning();
+  return result;
 }
 
 export async function deleteGroup(id: string): Promise<void> {
@@ -1082,6 +1052,7 @@ export async function upsertModelAdminConfig(
     const listingPatch: Record<string, unknown> = {
       modelId: model.id,
       groupId: listingInput.groupId,
+      newapiGroup: listingInput.newapiGroup.trim(),
       statusId: listingInput.statusId,
       inputMicroUsd: input.basePrice.inputMicroUsd ?? 0,
       outputMicroUsd: input.basePrice.outputMicroUsd ?? 0,
@@ -1198,13 +1169,4 @@ async function getListingByModelAndGroupInTx(
       )
     );
   return result;
-}
-
-export async function getGroupNewapiMapping(groupId: string): Promise<string> {
-  const [result] = await db()
-    .select({ newapiGroup: catalogGroup.newapiGroup })
-    .from(catalogGroup)
-    .where(eq(catalogGroup.id, groupId));
-
-  return result?.newapiGroup ?? '';
 }

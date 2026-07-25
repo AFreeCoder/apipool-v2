@@ -45,7 +45,7 @@ test('catalog tables are exported from the schema barrel', () => {
   }
 });
 
-test('catalog model listing exposes image pricing and discount columns', () => {
+test('模型售卖项同时拥有图片价格、折扣和 New API 分组映射', () => {
   const listing = schemaExports.catalogModelListing as
     | Record<string, unknown>
     | undefined;
@@ -54,21 +54,16 @@ test('catalog model listing exposes image pricing and discount columns', () => {
   assert.ok(listing.imageInputMicroUsd, 'imageInputMicroUsd should exist');
   assert.ok(listing.imageOutputMicroUsd, 'imageOutputMicroUsd should exist');
   assert.ok(listing.discountRateBps, 'discountRateBps should exist');
+  assert.ok(listing.newapiGroup, 'newapiGroup should exist on each listing');
 });
 
 test('catalog meter pricing tables and columns are exported from sqlite schema', () => {
-  const group = schemaExports.catalogGroup as Record<string, unknown>;
   const listing = schemaExports.catalogModelListing as Record<string, unknown>;
   const price = schemaExports.catalogModelPrice as Record<string, unknown>;
   const tier = schemaExports.catalogModelPriceTier as Record<string, unknown>;
   const syncRun = schemaExports.catalogPriceSyncRun as Record<string, unknown>;
   const usageLog = schemaExports.usageLogSnapshot as Record<string, unknown>;
 
-  assert.ok(group.newapiGroupRatioDecimal);
-  assert.ok(group.newapiGroupRatioBps);
-  assert.ok(group.newapiGroupRatioRaw);
-  assert.ok(group.pricingSyncStatus);
-  assert.ok(group.pricingSyncedAt);
   assert.ok(price.pricingMode);
   assert.ok(price.billingScheme);
   assert.ok(price.baseCacheWriteMicroUsd);
@@ -88,6 +83,7 @@ test('catalog meter pricing tables and columns are exported from sqlite schema',
   assert.ok(tier.skuKey);
   assert.ok(tier.priceMicroUsd);
   assert.ok(listing.allowLongContext);
+  assert.ok(listing.newapiGroup);
   assert.equal(Boolean(listing.pricePolicy), false);
   assert.equal(Boolean(listing.overrideStatus), false);
   assert.ok(listing.priceDriftStatus);

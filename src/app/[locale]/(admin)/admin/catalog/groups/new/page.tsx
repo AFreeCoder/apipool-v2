@@ -58,11 +58,6 @@ export default async function CatalogGroupNewPage({
         title: t('fields.userDescription'),
       },
       {
-        name: 'newapiGroup',
-        type: 'text',
-        title: t('fields.newapiGroup'),
-      },
-      {
         name: 'allowCreateKey',
         type: 'switch',
         title: t('fields.allowCreateKey'),
@@ -86,7 +81,6 @@ export default async function CatalogGroupNewPage({
     ],
     data: {
       userDescription: '',
-      newapiGroup: '',
       allowCreateKey: true,
       sortOrder: 0,
       status: 'active',
@@ -105,7 +99,6 @@ export default async function CatalogGroupNewPage({
           name: (data.get('name') as string).trim(),
           userDescription:
             (data.get('userDescription') as string | null)?.trim() || null,
-          newapiGroup: (data.get('newapiGroup') as string | null)?.trim() || '',
           allowCreateKey: data.get('allowCreateKey') === 'true',
           sortOrder: Number(data.get('sortOrder') ?? 0),
           status: (data.get('status') as string) || 'active',

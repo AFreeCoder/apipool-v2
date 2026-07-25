@@ -7,9 +7,8 @@
 
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq, inArray } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 
-import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import type {
   catalogCapability as catalogCapabilityTable,
@@ -22,6 +21,7 @@ import type {
   catalogStatus as catalogStatusTable,
   catalogVendor as catalogVendorTable,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
 import { getUuid } from '@/shared/lib/hash';
 
 type CatalogSchemaTables = {
@@ -91,7 +91,6 @@ const groups = [
     slug: 'official',
     name: 'Official',
     userDescription: 'Default verified model route for production usage.',
-    newapiGroup: 'official',
     allowCreateKey: true,
     sortOrder: 10,
     status: 'active',
@@ -117,6 +116,7 @@ const listings = [
   {
     modelId: 'gpt-4o-mini',
     groupSlug: 'official',
+    newapiGroup: 'official',
     statusSlug: 'available',
     inputMicroUsd: 150000,
     outputMicroUsd: 600000,
@@ -283,20 +283,12 @@ export async function initCatalog() {
           slug: group.slug,
           name: group.name,
           userDescription: group.userDescription,
-          newapiGroup: group.newapiGroup,
           allowCreateKey: group.allowCreateKey,
           sortOrder: group.sortOrder,
           status: group.status,
         }))
       )
       .onConflictDoNothing({ target: catalogGroup.slug });
-
-    await tx
-      .update(catalogGroup)
-      .set({ newapiGroup: 'official' })
-      .where(
-        and(eq(catalogGroup.slug, 'official'), eq(catalogGroup.newapiGroup, ''))
-      );
 
     const groupBySlug = indexBy<CatalogGroupRow, 'slug'>(
       await tx
@@ -383,6 +375,7 @@ export async function initCatalog() {
           id: getUuid(),
           modelId: requireRow(modelByModelId, listing.modelId, 'model').id,
           groupId: requireRow(groupBySlug, listing.groupSlug, 'group').id,
+          newapiGroup: listing.newapiGroup,
           statusId: requireRow(statusBySlug, listing.statusSlug, 'status').id,
           inputMicroUsd: listing.inputMicroUsd,
           outputMicroUsd: listing.outputMicroUsd,

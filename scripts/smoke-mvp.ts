@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
+import { and, desc, eq } from 'drizzle-orm';
+
+import { APIPOOL_CONFIG } from '@/config/apipool';
+import { modelPriceVersion, requestLedger } from '@/config/db/schema';
+import { db } from '@/core/db';
 import type { ListingRow } from '@/features/api-catalog/lib/types';
 import {
   getCallableListingsByGroupUncached,
@@ -16,11 +21,6 @@ import {
   disablePortalApiKey,
 } from '@/features/newapi-bridge/server/portal';
 import { applyManualAdjustment } from '@/features/wallet/server/ledger';
-import { and, desc, eq } from 'drizzle-orm';
-
-import { db } from '@/core/db';
-import { APIPOOL_CONFIG } from '@/config/apipool';
-import { modelPriceVersion, requestLedger } from '@/config/db/schema';
 import { findUserById } from '@/shared/models/user';
 import { hasPermission } from '@/shared/services/rbac';
 
@@ -529,8 +529,8 @@ export async function main() {
   let plainKey: string | undefined;
 
   try {
-    // 冒烟分组必须通过 catalog_group.newapiGroup 映射到具备可调用渠道和能力的
-    // New API 分组；门户 Key 本身只在 APIPool 保存。
+    // 冒烟模型在所选门户逻辑分组下，必须通过 catalog_model_listing.newapiGroup
+    // 映射到具备可调用渠道和能力的 New API 分组；门户 Key 本身只绑定逻辑分组。
     const created = await createPortalApiKey(user, {
       name: `MVP smoke ${new Date().toISOString()}`,
       groupSlug: smokeGroupSlug,

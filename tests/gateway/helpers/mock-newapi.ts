@@ -383,6 +383,7 @@ export async function seedGatewayFixture(
       id: `integration-listing-${suffix}`,
       modelId: modelPk,
       groupId,
+      newapiGroup,
       statusId: 'integration-callable',
       inputMicroUsd: 1_000_000,
       outputMicroUsd: 2_000_000,

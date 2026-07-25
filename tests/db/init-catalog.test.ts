@@ -109,11 +109,10 @@ test('migrations seed the minimum official catalog needed at production startup'
   await applyMigrations(client);
 
   const official = await client.execute(
-    "select slug, newapi_group, allow_create_key, status from catalog_group where slug = 'official'"
+    "select slug, allow_create_key, status from catalog_group where slug = 'official'"
   );
   assert.deepEqual(official.rows[0], {
     slug: 'official',
-    newapi_group: 'official',
     allow_create_key: 1,
     status: 'active',
   });
@@ -121,6 +120,7 @@ test('migrations seed the minimum official catalog needed at production startup'
   const listing = await client.execute(`
     select
       catalog_model.model_id as model_id,
+      catalog_model_listing.newapi_group as newapi_group,
       catalog_model_listing.smoke_tested as smoke_tested,
       catalog_status.is_callable as is_callable
     from catalog_model_listing
@@ -131,6 +131,8 @@ test('migrations seed the minimum official catalog needed at production startup'
   `);
   assert.deepEqual(listing.rows[0], {
     model_id: 'gpt-4o-mini',
+    // 结构迁移只加字段，绝不从旧门户分组映射自动回填。
+    newapi_group: '',
     smoke_tested: 1,
     is_callable: 1,
   });
@@ -184,7 +186,6 @@ test('initCatalog seeds the required first catalog data', async () => {
     'official'
   );
   assert.equal(official?.name, 'Official');
-  assert.equal(official?.newapiGroup, 'official');
   assert.equal(official?.allowCreateKey, true);
   assert.equal(official?.status, 'active');
 
@@ -250,78 +251,43 @@ test('initCatalog seeds the required first catalog data', async () => {
     .limit(1);
   assert.equal(listing?.inputMicroUsd, 150000);
   assert.equal(listing?.outputMicroUsd, 600000);
+  assert.equal(listing?.newapiGroup, '');
   assert.equal(listing?.statusId, available.id);
   assert.equal(listing?.smokeTested, true);
   assert.equal(listing?.sortOrder, 10);
 });
 
-test('initCatalog repairs older official groups that still target the default New API group', async () => {
+test('initCatalog 不会为已有售卖项推断模型级映射', async () => {
   await modules.initCatalog();
 
-  const { catalogGroup } = modules.schema;
+  const { catalogModelListing } = modules.schema;
+  const [listing] = await modules.db().select().from(catalogModelListing);
   await modules
     .db()
-    .update(catalogGroup)
+    .update(catalogModelListing)
     .set({ newapiGroup: '' })
-    .where(eq(catalogGroup.slug, 'official'));
+    .where(eq(catalogModelListing.id, listing.id));
 
   await modules.initCatalog();
 
-  const official = await findBySlug(
-    catalogGroup,
-    catalogGroup.slug,
-    'official'
-  );
-  assert.equal(official?.newapiGroup, 'official');
+  const [after] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.id, listing.id));
+  assert.equal(after.newapiGroup, '');
 });
 
-test('official New API group migration repairs older empty mappings', async () => {
+test('initCatalog 仅在新建售卖项时写入 New API 分组', async () => {
   await modules.initCatalog();
 
-  const { catalogGroup } = modules.schema;
-  await modules
-    .db()
-    .update(catalogGroup)
-    .set({ newapiGroup: '' })
-    .where(eq(catalogGroup.slug, 'official'));
-
-  const migration = await readFile(
-    join(
-      process.cwd(),
-      'src/config/db/migrations_sqlite/0006_official_newapi_group.sql'
-    ),
-    'utf8'
-  );
-  const client = createClient({ url: process.env.DATABASE_URL! });
-  await client.executeMultiple(migration);
-  await client.executeMultiple(migration);
-
-  const official = await findBySlug(
-    catalogGroup,
-    catalogGroup.slug,
-    'official'
-  );
-  assert.equal(official?.newapiGroup, 'official');
-});
-
-test('initCatalog preserves an operator-provided official New API mapping', async () => {
-  await modules.initCatalog();
-
-  const { catalogGroup } = modules.schema;
-  await modules
-    .db()
-    .update(catalogGroup)
-    .set({ newapiGroup: 'production-official' })
-    .where(eq(catalogGroup.slug, 'official'));
+  const { catalogModelListing } = modules.schema;
+  await modules.db().delete(catalogModelListing);
 
   await modules.initCatalog();
 
-  const official = await findBySlug(
-    catalogGroup,
-    catalogGroup.slug,
-    'official'
-  );
-  assert.equal(official?.newapiGroup, 'production-official');
+  const [created] = await modules.db().select().from(catalogModelListing);
+  assert.equal(created.newapiGroup, 'official');
 });
 
 test('initCatalog handles concurrent re-entry without unique conflicts', async () => {

@@ -48,6 +48,14 @@ async function setupDb() {
   };
 
   await modules.initCatalog();
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ newapiGroup: 'official' });
+  await modules
+    .db()
+    .update(modules.schema.catalogGroup)
+    .set({ newapiGroup: 'legacy-wrong-group' });
 }
 
 test.before(setupDb);
@@ -125,7 +133,6 @@ async function createBackfillFixtureModel(input: {
 
 test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok 基线', async () => {
   const {
-    catalogGroup,
     catalogModel,
     catalogModelListing,
     catalogModelPrice,
@@ -199,22 +206,13 @@ test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok �
   assert.equal(price.syncStatus, 'reference_current');
   assert.equal(price.driftStatus, 'ok');
 
-  const [group] = await modules
-    .db()
-    .select()
-    .from(catalogGroup)
-    .where(eq(catalogGroup.slug, 'official'))
-    .limit(1);
-  assert.equal(group.newapiGroupRatioDecimal, '0.5');
-  assert.equal(group.newapiGroupRatioBps, 5000);
-  assert.equal(group.pricingSyncStatus, 'reference_current');
-
   const [listing] = await modules
     .db()
     .select()
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
+  assert.equal(listing.newapiGroup, 'official');
   assert.equal(listing.priceDriftStatus, 'ok');
   assert.match(listing.effectivePriceFormula, /catalog_base_price/);
 
@@ -239,7 +237,7 @@ test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok �
 });
 
 test('成本参照缺少当前分组倍率时告警，但不清空门户售价展示', async () => {
-  const { catalogGroup, catalogModel, catalogModelListing, catalogModelPrice } =
+  const { catalogModel, catalogModelListing, catalogModelPrice } =
     modules.schema;
   const [model] = await modules
     .db()
@@ -247,22 +245,6 @@ test('成本参照缺少当前分组倍率时告警，但不清空门户售价�
     .from(catalogModel)
     .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
     .limit(1);
-  const [official] = await modules
-    .db()
-    .select()
-    .from(catalogGroup)
-    .where(eq(catalogGroup.slug, 'official'))
-    .limit(1);
-
-  await modules
-    .db()
-    .update(catalogGroup)
-    .set({
-      newapiGroupRatioDecimal: '0.5',
-      newapiGroupRatioBps: 5000,
-      pricingSyncStatus: 'synced',
-    })
-    .where(eq(catalogGroup.id, official.id));
   await modules
     .db()
     .update(catalogModelPrice)
@@ -621,18 +603,17 @@ test('成本守卫逐 meter 检出参照变动与售价倒挂，且绝不改门�
 });
 
 test('per_call 成本守卫只比较 default 档，并保留门户 tier 配置', async () => {
-  const { catalogGroup, catalogModel, catalogModelPrice, modelPriceVersion } =
-    modules.schema;
+  const {
+    catalogModel,
+    catalogModelListing,
+    catalogModelPrice,
+    modelPriceVersion,
+  } = modules.schema;
   const [model] = await modules
     .db()
     .select()
     .from(catalogModel)
     .where(eq(catalogModel.modelId, 'gpt-4o-mini'));
-  const [official] = await modules
-    .db()
-    .select()
-    .from(catalogGroup)
-    .where(eq(catalogGroup.slug, 'official'));
   await modules
     .db()
     .update(modelPriceVersion)
@@ -694,7 +675,12 @@ test('per_call 成本守卫只比较 default 档，并保留门户 tier 配置',
     .where(eq(catalogModelPrice.modelId, model.id));
   assert.equal(price.fixedPriceMicroUsd, 777);
   assert.equal(price.driftStatus, 'cost_alert');
-  assert.equal(official.newapiGroup, 'official');
+  const [listing] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.modelId, model.id));
+  assert.equal(listing.newapiGroup, 'official');
 });
 
 test('backfillCatalogModelPrices prefers official list price, official effective, consistent listing price, then callable fallback', async () => {

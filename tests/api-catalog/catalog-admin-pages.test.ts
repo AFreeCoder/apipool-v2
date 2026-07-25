@@ -205,12 +205,12 @@ test('catalog status forms expose callable and public visibility switches', asyn
   }
 });
 
-test('catalog group forms expose mapping and key creation controls', async () => {
+test('门户分组表单只暴露逻辑分组的 Key 创建控制项', async () => {
   const newPage = await readFile(pagePath('groups', 'new'), 'utf8');
   const editPage = await readFile(pagePath('groups', 'edit'), 'utf8');
 
   for (const source of [newPage, editPage]) {
-    assert.match(source, fieldPattern('newapiGroup'));
+    assert.doesNotMatch(source, fieldPattern('newapiGroup'));
     assert.match(source, switchFieldPattern('allowCreateKey'));
   }
 });
@@ -402,6 +402,7 @@ test('catalog listing child pages expose per-model group discount CRUD without a
   );
   assert.match(listPage, /name:\s*['"]groupSlug['"]/);
   assert.match(listPage, /name:\s*['"]groupName['"]/);
+  assert.match(listPage, /name:\s*['"]newapiGroup['"]/);
   assert.match(listPage, /name:\s*['"]discountRate['"]/);
   for (const pricingColumn of [
     'basePrice',
@@ -433,6 +434,7 @@ test('catalog listing child pages expose per-model group discount CRUD without a
     assert.match(source, callPattern('getGroups'));
     assert.match(source, callPattern('getStatuses'));
     assert.match(source, typedFieldPattern('groupId', 'select'));
+    assert.match(source, typedFieldPattern('newapiGroup', 'text'));
     assert.match(source, typedFieldPattern('statusId', 'select'));
     assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
@@ -490,6 +492,7 @@ test('catalog listing child pages expose per-model group discount CRUD without a
 });
 
 type SidebarNavItem = {
+  title?: string;
   url?: string;
   icon?: string;
   children?: SidebarNavItem[];
@@ -552,6 +555,18 @@ test('catalog sidebar exposes every model catalog route in both locales', async 
     // ...and each carries an icon.
     assert.ok(leaves.every((item) => item.icon));
   }
+  assert.equal(
+    collectCatalogLeaves(enCatalog.items).find(
+      (item) => item.url === '/admin/catalog/groups'
+    )?.title,
+    'Portal Group Management'
+  );
+  assert.equal(
+    collectCatalogLeaves(zhCatalog.items).find(
+      (item) => item.url === '/admin/catalog/groups'
+    )?.title,
+    '门户分组管理'
+  );
 });
 
 test('legacy categories admin route redirects to catalog models', async () => {

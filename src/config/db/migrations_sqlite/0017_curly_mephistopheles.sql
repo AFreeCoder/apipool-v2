@@ -1,0 +1,1 @@
+ALTER TABLE `catalog_model_listing` ADD `newapi_group` text DEFAULT '' NOT NULL;

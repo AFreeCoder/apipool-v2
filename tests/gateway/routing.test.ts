@@ -82,7 +82,7 @@ async function setupDb() {
     id: IDs.group,
     slug: IDs.group,
     name: 'Routing Group',
-    newapiGroup: 'official',
+    newapiGroup: 'legacy-wrong-group',
     newapiGroupRatioBps: 8_000,
     pricingSyncStatus: 'synced',
   });
@@ -102,6 +102,7 @@ async function setupDb() {
     id: IDs.listing,
     modelId: IDs.model,
     groupId: IDs.group,
+    newapiGroup: 'official',
     statusId: IDs.status,
     inputMicroUsd: 1_000_000,
     outputMicroUsd: 5_000_000,
@@ -160,13 +161,8 @@ test('模型目录自动生成路由与不可变价格快照', async () => {
 test('上架折扣或映射变化会自动滚动快照版本', async () => {
   await modules
     .db()
-    .update(modules.schema.catalogGroup)
-    .set({ newapiGroup: 'vip' })
-    .where(eq(modules.schema.catalogGroup.id, IDs.group));
-  await modules
-    .db()
     .update(modules.schema.catalogModelListing)
-    .set({ discountRateBps: 9_000 })
+    .set({ newapiGroup: 'vip', discountRateBps: 9_000 })
     .where(eq(modules.schema.catalogModelListing.id, IDs.listing));
   const route = await modules.routing.resolveActiveRoute(
     IDs.group,
@@ -205,4 +201,68 @@ test('售卖项下线会阻断请求并退役运行时快照', async () => {
     .from(modules.schema.modelRoute)
     .where(eq(modules.schema.modelRoute.status, 'active'));
   assert.equal(activeRoutes.length, 0);
+});
+
+test('同一门户逻辑分组下的两个模型可映射到不同 New API 分组', async () => {
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({
+      statusId: IDs.status,
+      newapiGroup: 'price-70',
+      discountRateBps: 7_000,
+    })
+    .where(eq(modules.schema.catalogModelListing.id, IDs.listing));
+
+  const secondModelPk = 'routing-model-pk-second';
+  const secondModelId = 'portal-routing-model-second';
+  await modules.db().insert(modules.schema.catalogModel).values({
+    id: secondModelPk,
+    modelId: secondModelId,
+    displayName: 'Portal Routing Model Second',
+    vendorId: IDs.vendor,
+    category: IDs.category,
+  });
+  await modules.db().insert(modules.schema.catalogModelCapability).values({
+    id: 'routing-model-capability-second',
+    modelId: secondModelPk,
+    capabilityId: IDs.capability,
+  });
+  await modules.db().insert(modules.schema.catalogModelListing).values({
+    id: 'routing-listing-second',
+    modelId: secondModelPk,
+    groupId: IDs.group,
+    newapiGroup: 'price-50',
+    statusId: IDs.status,
+    inputMicroUsd: 1_000_000,
+    outputMicroUsd: 5_000_000,
+    discountRateBps: 5_000,
+  });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPrice)
+    .values({
+      id: 'routing-base-price-second',
+      modelId: secondModelPk,
+      baseInputMicroUsd: 1_000_000,
+      baseOutputMicroUsd: 5_000_000,
+      sourceSupportedEndpointTypes: JSON.stringify(['responses']),
+      billingCapabilitiesJson: '{}',
+      syncStatus: 'manual',
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+
+  const first = await modules.routing.resolveActiveRoute(
+    IDs.group,
+    IDs.modelId
+  );
+  const second = await modules.routing.resolveActiveRoute(
+    IDs.group,
+    secondModelId
+  );
+
+  assert.equal(first.newapiGroup, 'price-70');
+  assert.equal(second.newapiGroup, 'price-50');
+  assert.equal(first.rates.input, 700_000);
+  assert.equal(second.rates.input, 500_000);
 });

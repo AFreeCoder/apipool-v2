@@ -36,7 +36,7 @@
           "icon": "Bot"
         },
         {
-          "title": "分组折扣",
+          "title": "门户分组管理",
           "url": "/admin/catalog/groups",
           "icon": "Layers"
         },

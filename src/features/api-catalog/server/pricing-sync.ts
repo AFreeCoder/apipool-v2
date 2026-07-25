@@ -40,7 +40,7 @@ type SyncListingRow = {
   id: string;
   modelPk: string;
   groupId: string;
-  groupNewapiGroup: string;
+  newapiGroup: string;
 };
 
 type ActiveSaleSnapshot = {
@@ -52,6 +52,7 @@ type ActiveSaleSnapshot = {
 };
 
 export type CostReference = {
+  newapiGroup: string;
   billingScheme: 'token' | 'per_call';
   rates?: Record<string, number>;
   defaultTier?: number;
@@ -444,6 +445,7 @@ function parsePriceMap(raw: string): Record<string, number> | null {
 
 function buildCostReference(
   remote: RemotePricingModel,
+  newapiGroup: string,
   groupRatioBps: number
 ): CostReference | null {
   const { derived } = remoteToReference(remote);
@@ -455,6 +457,7 @@ function buildCostReference(
       return null;
     }
     return {
+      newapiGroup,
       billingScheme: 'per_call',
       defaultTier: scaleMicroUsdByBps(
         derived.fixedPriceMicroUsd,
@@ -479,7 +482,7 @@ function buildCostReference(
     }
   }
   return Object.keys(rates).length > 0
-    ? { billingScheme: 'token', rates }
+    ? { newapiGroup, billingScheme: 'token', rates }
     : null;
 }
 
@@ -575,7 +578,6 @@ export async function syncCatalogPricingFromSnapshot({
   const remoteByModelId = new Map(
     snapshot.models.map((model) => [model.modelId, model])
   );
-  const groups = await db().select().from(catalogGroup);
   const activeSales = (await db()
     .select({
       portalGroupId: modelPriceVersion.portalGroupId,
@@ -602,30 +604,6 @@ export async function syncCatalogPricingFromSnapshot({
   let driftCount = 0;
 
   await db().transaction(async (tx: any) => {
-    for (const group of groups) {
-      const remoteGroup = group.newapiGroup
-        ? snapshot.groupRatios[group.newapiGroup]
-        : undefined;
-      if (!remoteGroup) {
-        missingGroupCount += 1;
-        await tx
-          .update(catalogGroup)
-          .set({ pricingSyncStatus: 'reference_missing' })
-          .where(eq(catalogGroup.id, group.id));
-        continue;
-      }
-      await tx
-        .update(catalogGroup)
-        .set({
-          newapiGroupRatioRaw: encodeJson(remoteGroup.raw),
-          newapiGroupRatioDecimal: remoteGroup.decimal,
-          newapiGroupRatioBps: remoteGroup.bps,
-          pricingSyncStatus: 'reference_current',
-          pricingSyncedAt: now(),
-        })
-        .where(eq(catalogGroup.id, group.id));
-    }
-
     for (const price of prices) {
       const model = models.find((item) => item.id === price.modelId);
       const remote = model ? remoteByModelId.get(model.modelId) : undefined;
@@ -659,39 +637,39 @@ export async function syncCatalogPricingFromSnapshot({
         id: catalogModelListing.id,
         modelPk: catalogModelListing.modelId,
         groupId: catalogModelListing.groupId,
-        groupNewapiGroup: catalogGroup.newapiGroup,
+        newapiGroup: catalogModelListing.newapiGroup,
       })
-      .from(catalogModelListing)
-      .innerJoin(
-        catalogGroup,
-        eq(catalogModelListing.groupId, catalogGroup.id)
-      )) as SyncListingRow[];
+      .from(catalogModelListing)) as SyncListingRow[];
 
     for (const listing of listings) {
       const model = models.find((item) => item.id === listing.modelPk);
       const remote = model ? remoteByModelId.get(model.modelId) : undefined;
+      const newapiGroup = listing.newapiGroup.trim();
       const enabled = Boolean(
-        remote &&
-          listing.groupNewapiGroup &&
-          remote.enabledGroups.includes(listing.groupNewapiGroup)
+        remote && newapiGroup && remote.enabledGroups.includes(newapiGroup)
       );
-      const groupRatio = listing.groupNewapiGroup
-        ? snapshot.groupRatios[listing.groupNewapiGroup]
+      const groupRatio = newapiGroup
+        ? snapshot.groupRatios[newapiGroup]
         : undefined;
+      if (!newapiGroup || (remote && (!enabled || !groupRatio))) {
+        missingGroupCount += 1;
+      }
       const cost =
         remote && enabled && groupRatio
-          ? buildCostReference(remote, groupRatio.bps)
+          ? buildCostReference(remote, newapiGroup, groupRatio.bps)
           : null;
       let priceDriftStatus: CostGuardStatus = 'ok';
       let reportType: string | null = null;
       let alerts: string[] = [];
       if (!cost) {
         priceDriftStatus = 'cost_changed';
-        reportType = remote
-          ? enabled
-            ? 'cost_reference_missing_group_ratio'
-            : 'cost_reference_group_unavailable'
-          : 'cost_reference_model_missing';
+        reportType = !newapiGroup
+          ? 'cost_reference_mapping_missing'
+          : remote
+            ? enabled
+              ? 'cost_reference_missing_group_ratio'
+              : 'cost_reference_group_unavailable'
+            : 'cost_reference_model_missing';
       } else {
         costReferences[listing.id] = cost;
         const changed =
@@ -728,7 +706,7 @@ export async function syncCatalogPricingFromSnapshot({
           type: reportType,
           modelId: model?.modelId,
           listingId: listing.id,
-          newapiGroup: listing.groupNewapiGroup,
+          newapiGroup,
           meters: alerts,
         });
       }

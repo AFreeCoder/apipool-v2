@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { revalidateTag, unstable_cache } from 'next/cache';
-import { and, asc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import {
   catalogCapability,
@@ -526,13 +526,9 @@ export async function getGroupsForKeyCreationUncached(): Promise<
     .where(
       and(
         eq(catalogGroup.status, 'active'),
-        eq(catalogGroup.allowCreateKey, true),
-        // 新建分组默认 allowCreateKey=true 且 newapiGroup=''：admin 还没填映射
-        // 就进了下拉，用户选中后 createPortalApiKey 必然抛 group not available。
-        ne(catalogGroup.newapiGroup, ''),
-        // 价格同步已经证明远端不存在这个分组；映射非空也没用。
-        // 'unknown'（从未同步）必须放行——初始 seed 的分组就是 unknown。
-        ne(catalogGroup.pricingSyncStatus, 'missing_remote_group')
+        // 门户 Key 只绑定逻辑分组。具体 New API 分组由每个模型的
+        // catalog_model_listing 决定，不得在这里要求全局分组映射。
+        eq(catalogGroup.allowCreateKey, true)
       )
     )
     .orderBy(asc(catalogGroup.sortOrder));

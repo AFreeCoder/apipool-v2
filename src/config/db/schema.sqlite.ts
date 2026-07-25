@@ -494,6 +494,8 @@ export const catalogGroup = table(
     slug: text('slug').unique().notNull(),
     name: text('name').notNull(),
     userDescription: text('user_description'),
+    // 兼容旧库保留的废弃列。门户分组只是逻辑分组，运行时不得从这里读取
+    // New API 映射；映射的唯一事实源是 catalog_model_listing.newapi_group。
     newapiGroup: text('newapi_group').default('').notNull(),
     newapiGroupRatioDecimal: text('newapi_group_ratio_decimal'),
     newapiGroupRatioBps: integer('newapi_group_ratio_bps'),
@@ -679,6 +681,8 @@ export const catalogModelListing = table(
     groupId: text('group_id')
       .notNull()
       .references(() => catalogGroup.id, { onDelete: 'cascade' }),
+    // 同一门户逻辑分组下，每个模型都可独立路由到不同的 New API 分组。
+    newapiGroup: text('newapi_group').default('').notNull(),
     statusId: text('status_id')
       .notNull()
       .references(() => catalogStatus.id),

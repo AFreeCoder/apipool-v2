@@ -97,6 +97,7 @@ async function createModelListing(slug: string) {
   const listing = await modules.service.createListing({
     modelId: model.id,
     groupId: group.id,
+    newapiGroup: `${slug}-gateway`,
     statusId: status.id,
     inputMicroUsd: 1,
     outputMicroUsd: 2,
@@ -452,7 +453,7 @@ test('setModelCapabilities replaces all capability links for a model', async () 
   assert.deepEqual(await linkedCapabilityIds(), []);
 });
 
-test('listing service returns listings by model and exposes group mapping server-side', async () => {
+test('售卖项服务返回每个模型级 New API 分组映射', async () => {
   const vendor = await createVendor('listing-vendor');
   const status = await createStatus('listing-status');
   const model = await createModel('listing-model', vendor.id);
@@ -462,6 +463,7 @@ test('listing service returns listings by model and exposes group mapping server
   const first = await modules.service.createListing({
     modelId: model.id,
     groupId: official.id,
+    newapiGroup: 'official-gateway',
     statusId: status.id,
     inputMicroUsd: 150000,
     outputMicroUsd: 600000,
@@ -476,6 +478,7 @@ test('listing service returns listings by model and exposes group mapping server
   const second = await modules.service.createListing({
     modelId: model.id,
     groupId: deal.id,
+    newapiGroup: 'deal-gateway',
     statusId: status.id,
     inputMicroUsd: 100000,
     outputMicroUsd: 500000,
@@ -490,9 +493,9 @@ test('listing service returns listings by model and exposes group mapping server
     listings.map((listing: { id: string }) => listing.id),
     [first.id, second.id]
   );
-  assert.equal(
-    await modules.service.getGroupNewapiMapping(official.id),
-    'official-gateway'
+  assert.deepEqual(
+    listings.map((listing: { newapiGroup: string }) => listing.newapiGroup),
+    ['official-gateway', 'deal-gateway']
   );
 });
 
@@ -504,6 +507,7 @@ test('createListing lets the database reject duplicate model and group pairs', a
   const listing = {
     modelId: model.id,
     groupId: group.id,
+    newapiGroup: 'duplicate-gateway',
     statusId: status.id,
     inputMicroUsd: 1,
     outputMicroUsd: 2,
@@ -585,6 +589,7 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     },
     listing: {
       groupId: group.id,
+      newapiGroup: 'admin-model-gateway',
       statusId: status.id,
       discountRateBps: 500,
       discountNote: '0.5 fold launch discount',
@@ -649,6 +654,7 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     listing: {
       id: created.listing.id,
       groupId: group.id,
+      newapiGroup: 'admin-model-gateway-v2',
       statusId: status.id,
       discountRateBps: 50,
       discountNote: '0.05 fold experimental discount',
@@ -663,6 +669,7 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   assert.equal(updated.model.modelId, 'admin-gpt-image-latest');
   assert.equal(updated.model.category, 'admin-model-image');
   assert.equal(updated.listing.id, created.listing.id);
+  assert.equal(updated.listing.newapiGroup, 'admin-model-gateway-v2');
   assert.equal(updated.listing.inputMicroUsd, 4_000_000);
   assert.equal(updated.listing.imageInputMicroUsd, 8_000_000);
   assert.equal(updated.listing.discountRateBps, 50);
@@ -833,6 +840,7 @@ test('deleteModel removes catalog model relations even without sqlite foreign ke
     },
     listing: {
       groupId: group.id,
+      newapiGroup: 'delete-model-gateway',
       statusId: status.id,
       smokeTested: true,
       featured: false,
@@ -905,41 +913,29 @@ async function seedSyncedGroupPricing(groupId: string, listingId: string) {
     .where(eq(modules.schema.catalogModelListing.id, listingId));
 }
 
-test('remapping a group to another New API group invalidates its cached ratio and listing prices', async () => {
+test('New API 分组映射属于模型售卖项，不属于门户逻辑分组', async () => {
   const { group, listing } = await createModelListing('remap');
   await seedSyncedGroupPricing(group.id, listing.id);
 
-  // 建 Key 与计费立刻走新映射，展示价却仍按旧倍率算 → 用户按页面价估算会扣错钱
-  await modules.service.updateGroup(group.id, {
-    slug: group.slug,
-    name: group.name,
+  await modules.service.updateListing(listing.id, {
     newapiGroup: 'another-gateway',
-    allowCreateKey: true,
-    sortOrder: 30,
-    status: 'active',
+    priceDriftStatus: 'cost_changed',
   });
 
   const groupRow = await readGroupRow(group.id);
-  assert.equal(groupRow.newapiGroup, 'another-gateway');
-  assert.equal(groupRow.newapiGroupRatioBps, null);
-  assert.equal(groupRow.newapiGroupRatioDecimal, null);
-  assert.equal(groupRow.newapiGroupRatioRaw, null);
-  assert.equal(groupRow.pricingSyncStatus, 'unknown');
-  assert.equal(groupRow.pricingSyncedAt, null);
-
-  // 公开价转为「—」，直到重新跑一次价格同步确认
+  assert.equal(groupRow.newapiGroup, 'remap-gateway');
   const listingRow = await readListingRow(listing.id);
-  assert.equal(listingRow.priceDriftStatus, 'needs_live_check');
+  assert.equal(listingRow.newapiGroup, 'another-gateway');
+  assert.equal(listingRow.priceDriftStatus, 'cost_changed');
 });
 
-test('editing a group without changing its New API mapping keeps synced pricing intact', async () => {
+test('编辑门户逻辑分组不会改动任何售卖项映射', async () => {
   const { group, listing } = await createModelListing('rename-only');
   await seedSyncedGroupPricing(group.id, listing.id);
 
   await modules.service.updateGroup(group.id, {
     slug: group.slug,
     name: 'Renamed Group',
-    newapiGroup: 'rename-only-gateway',
     allowCreateKey: true,
     sortOrder: 31,
     status: 'active',
@@ -951,6 +947,7 @@ test('editing a group without changing its New API mapping keeps synced pricing 
   assert.equal(groupRow.pricingSyncStatus, 'synced');
 
   const listingRow = await readListingRow(listing.id);
+  assert.equal(listingRow.newapiGroup, 'rename-only-gateway');
   assert.equal(listingRow.priceDriftStatus, 'matched');
 });
 

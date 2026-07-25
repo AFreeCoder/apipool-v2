@@ -2,7 +2,6 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { PERMISSIONS, requirePermission } from '@/core/rbac';
 import {
-  deriveBasePriceFromNewApiPricing,
   formatDecimal,
   microUsdToDollars,
   scaleMicroUsdByBps,
@@ -15,6 +14,10 @@ import {
   getStatuses,
   Listing,
 } from '@/features/api-catalog/server/catalog-service';
+import {
+  getLatestCostReferences,
+  type CostReference,
+} from '@/features/api-catalog/server/pricing-sync';
 import { Empty } from '@/shared/blocks/common';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { TableCard } from '@/shared/blocks/table';
@@ -39,6 +42,17 @@ function formatPricePair(input?: number | null, output?: number | null) {
   return values.join(' / ');
 }
 
+function formatCostReference(
+  reference: CostReference | undefined,
+  newapiGroup: string
+) {
+  if (!reference || reference.newapiGroup !== newapiGroup) return '';
+  if (reference.billingScheme === 'per_call') {
+    return formatPricePair(reference.defaultTier);
+  }
+  return formatPricePair(reference.rates?.input, reference.rates?.output);
+}
+
 export default async function AdminCatalogModelListingsPage({
   params,
 }: {
@@ -60,12 +74,14 @@ export default async function AdminCatalogModelListingsPage({
     return <Empty message={t('listings.list.notFound')} />;
   }
 
-  const [groups, statuses, listings, config] = await Promise.all([
-    getGroups(),
-    getStatuses(),
-    getListingsByModel(model.id),
-    getModelAdminConfig(model.id),
-  ]);
+  const [groups, statuses, listings, config, costReferences] =
+    await Promise.all([
+      getGroups(),
+      getStatuses(),
+      getListingsByModel(model.id),
+      getModelAdminConfig(model.id),
+      getLatestCostReferences(),
+    ]);
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const statusNames = new Map(
     statuses.map((status) => [status.id, status.name])
@@ -81,32 +97,6 @@ export default async function AdminCatalogModelListingsPage({
         });
   const basePrice = config?.basePrice;
   const defaultTier = config?.tiers.find((tier) => tier.skuKey === 'default');
-  const sourceNote = (() => {
-    try {
-      return JSON.parse(basePrice?.cachePriceNote || '{}');
-    } catch {
-      return {};
-    }
-  })();
-  const sourceDerived = basePrice
-    ? deriveBasePriceFromNewApiPricing({
-        quota_type: basePrice.sourceQuotaType ?? 0,
-        model_ratio: Number(basePrice.sourceModelRatio ?? 0),
-        model_price:
-          sourceNote.modelPriceMicroUsd === null ||
-          sourceNote.modelPriceMicroUsd === undefined
-            ? null
-            : Number(sourceNote.modelPriceMicroUsd) / 1_000_000,
-        completion_ratio: Number(basePrice.sourceCompletionRatio ?? 1),
-        cache_ratio: sourceNote.cacheRatio,
-        create_cache_ratio: sourceNote.createCacheRatio,
-        image_ratio:
-          basePrice.sourceImageRatio === null
-            ? null
-            : Number(basePrice.sourceImageRatio),
-        supported_endpoint_types: basePrice.sourceSupportedEndpointTypes,
-      })
-    : null;
   const rows: ListingRow[] = listings.map((listing) => {
     const group = groupById.get(listing.groupId);
     const discountBps = listing.discountRateBps ?? 10_000;
@@ -115,22 +105,6 @@ export default async function AdminCatalogModelListingsPage({
       ? defaultTier?.priceMicroUsd
       : basePrice?.baseInputMicroUsd;
     const baseOutput = isPerCall ? null : basePrice?.baseOutputMicroUsd;
-    const groupRatioBps = group?.newapiGroupRatioBps;
-    const costInput =
-      sourceDerived && groupRatioBps !== null && groupRatioBps !== undefined
-        ? scaleMicroUsdByBps(
-            sourceDerived.source === 'fixed-price'
-              ? sourceDerived.fixedPriceMicroUsd
-              : sourceDerived.inputMicroUsd,
-            groupRatioBps
-          )
-        : null;
-    const costOutput =
-      sourceDerived?.source === 'ratio' &&
-      groupRatioBps !== null &&
-      groupRatioBps !== undefined
-        ? scaleMicroUsdByBps(sourceDerived.outputMicroUsd, groupRatioBps)
-        : null;
     return {
       ...listing,
       groupSlug: group?.slug ?? listing.groupId,
@@ -142,7 +116,10 @@ export default async function AdminCatalogModelListingsPage({
         scaleMicroUsdByBps(baseInput, discountBps),
         scaleMicroUsdByBps(baseOutput, discountBps)
       ),
-      costReference: formatPricePair(costInput, costOutput),
+      costReference: formatCostReference(
+        costReferences[listing.id],
+        listing.newapiGroup
+      ),
       longContext: listing.allowLongContext
         ? t('boolean.yes')
         : t('boolean.no'),
@@ -160,6 +137,11 @@ export default async function AdminCatalogModelListingsPage({
     columns: [
       { name: 'groupSlug', title: t('fields.groupSlug'), type: 'copy' },
       { name: 'groupName', title: t('fields.name') },
+      {
+        name: 'newapiGroup',
+        title: t('fields.newapiGroup'),
+        type: 'copy',
+      },
       { name: 'statusName', title: t('fields.status'), type: 'label' },
       { name: 'basePrice', title: t('fields.basePrice') },
       { name: 'discountRate', title: t('fields.discountRate') },

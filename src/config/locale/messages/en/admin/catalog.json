@@ -11,7 +11,8 @@
     "isCallable": "Callable",
     "isPublicVisible": "Publicly Visible",
     "userDescription": "User Description",
-    "newapiGroup": "New API Group",
+    "newapiGroup": "Target New API Group",
+    "newapiGroupTip": "Applies only to this portal group and model ID. Other models in the same portal group may target different New API groups.",
     "allowCreateKey": "Allow Key Creation",
     "modelId": "Model ID",
     "displayName": "Model Name",
@@ -85,6 +86,7 @@
     "deleteFailed": "Delete failed",
     "missingRecord": "Record is missing",
     "missingBasePrice": "Missing model base input/output prices. Save the model base prices before creating a group discount.",
+    "missingNewapiGroup": "Configure a New API group for this model and portal group.",
     "invalidPrice": "Price must be a non-negative finite number",
     "duplicateListing": "This model already has a listing in the selected group. Edit the existing one instead.",
     "duplicateSlug": "This slug is already in use. Choose a different one.",
@@ -259,35 +261,35 @@
   },
   "groups": {
     "list": {
-      "title": "Groups",
-      "crumb": "Groups",
+      "title": "Portal Groups",
+      "crumb": "Portal Groups",
       "buttons": {
-        "new": "New Group"
+        "new": "New Portal Group"
       }
     },
     "new": {
-      "title": "New Group",
-      "crumb": "New Group",
-      "success": "Group created",
+      "title": "New Portal Group",
+      "crumb": "New Portal Group",
+      "success": "Portal group created",
       "buttons": {
         "submit": "Create"
       }
     },
     "edit": {
-      "title": "Edit Group",
-      "crumb": "Edit Group",
-      "notFound": "Group not found",
-      "success": "Group updated",
+      "title": "Edit Portal Group",
+      "crumb": "Edit Portal Group",
+      "notFound": "Portal group not found",
+      "success": "Portal group updated",
       "buttons": {
         "submit": "Update"
       }
     },
     "delete": {
-      "title": "Delete Group",
-      "crumb": "Delete Group",
-      "notFound": "Group not found",
-      "description": "Delete group {name} ({slug})? Only groups not referenced by listings or non-deleted API keys can be deleted.",
-      "success": "Group deleted",
+      "title": "Delete Portal Group",
+      "crumb": "Delete Portal Group",
+      "notFound": "Portal group not found",
+      "description": "Delete portal group {name} ({slug})? Only groups not referenced by listings or non-deleted API keys can be deleted.",
+      "success": "Portal group deleted",
       "blocked": "This record is still used by the catalog and cannot be deleted. Disable or unpublish the related entry instead.",
       "buttons": {
         "submit": "Confirm Delete",
@@ -315,7 +317,7 @@
     },
     "pricingSync": {
       "title": "Cost Guard Sync",
-      "description": "Refresh New API cost references and group ratios without overwriting portal sale prices. Inversions and changes are alerts only.",
+      "description": "Refresh cost references from each group discount's New API mapping without overwriting portal sale prices. Inversions and changes are alerts only.",
       "sync": "Sync Cost References",
       "syncing": "Syncing",
       "drift": "View Cost Alerts",

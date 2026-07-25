@@ -46,7 +46,7 @@ export type AdminPricingSummaryDto = {
     driftStatus: string;
     sourceSyncedAt?: Date | null;
   };
-  groupPricing?: {
+  listingPricing?: {
     groupSlug: string;
     newapiGroup: string;
     ratioDecimal?: string | null;

@@ -46,6 +46,14 @@ async function setupDb() {
   };
 
   await modules.initCatalog();
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ newapiGroup: 'official' });
+  await modules
+    .db()
+    .update(modules.schema.catalogGroup)
+    .set({ newapiGroup: 'legacy-wrong-group' });
 }
 
 test.before(setupDb);
@@ -56,8 +64,12 @@ test.afterEach(() => {
 });
 
 test('admin pricing sync and drift routes run success path without leaking sensitive fields', async () => {
-  const { catalogGroup, catalogModel, catalogModelPrice, catalogPriceSyncRun } =
-    modules.schema;
+  const {
+    catalogModel,
+    catalogModelListing,
+    catalogModelPrice,
+    catalogPriceSyncRun,
+  } = modules.schema;
   const operator = { id: 'operator-route' };
   const hasPermissionForUser = async () => true;
 
@@ -124,13 +136,14 @@ test('admin pricing sync and drift routes run success path without leaking sensi
   assert.equal(price.driftStatus, 'ok');
   assert.equal(price.sourceFingerprint, 'route-fingerprint');
 
-  const [group] = await modules
+  const [listing] = await modules
     .db()
     .select()
-    .from(catalogGroup)
-    .where(eq(catalogGroup.slug, 'official'))
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
-  assert.equal(group.newapiGroupRatioBps, 5000);
+  assert.equal(listing.newapiGroup, 'official');
+  assert.equal(listing.priceDriftStatus, 'ok');
 
   const [run] = await modules
     .db()

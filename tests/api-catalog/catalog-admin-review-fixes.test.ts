@@ -92,6 +92,7 @@ test('模型管理行只返回模型元数据与基准价，不投影第一条�
       basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
       listing: {
         groupId: dims.group.id,
+        newapiGroup: 'gw-rows',
         statusId: dims.status.id,
         discountRateBps: 9000,
       },
@@ -130,6 +131,7 @@ test('S-11c: upsertModelAdminConfig preserves list prices when the caller omits 
     basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
     listing: {
       groupId: dims.group.id,
+      newapiGroup: 'gw-listprice',
       statusId: dims.status.id,
       listInputMicroUsd: 999000,
       listOutputMicroUsd: 1999000,
@@ -154,6 +156,7 @@ test('S-11c: upsertModelAdminConfig preserves list prices when the caller omits 
     listing: {
       id: created.listing.id,
       groupId: dims.group.id,
+      newapiGroup: 'gw-listprice',
       statusId: dims.status.id,
       discountRateBps: 8000,
     },
@@ -176,6 +179,7 @@ test('S-11c: upsertModelAdminConfig preserves list prices when the caller omits 
     listing: {
       id: created.listing.id,
       groupId: dims.group.id,
+      newapiGroup: 'gw-listprice',
       statusId: dims.status.id,
       listInputMicroUsd: null,
       listOutputMicroUsd: null,
@@ -218,7 +222,11 @@ test('S-11a: dictionary slug and model modelId unique collisions surface a UNIQU
       categoryIds: [dims.category.id],
     },
     basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
-    listing: { groupId: dims.group.id, statusId: dims.status.id },
+    listing: {
+      groupId: dims.group.id,
+      newapiGroup: 'gw-dup',
+      statusId: dims.status.id,
+    },
     capabilityIds: [dims.capability.id],
   });
 
@@ -233,7 +241,11 @@ test('S-11a: dictionary slug and model modelId unique collisions surface a UNIQU
           categoryIds: [dims.category.id],
         },
         basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
-        listing: { groupId: dims.group.id, statusId: dims.status.id },
+        listing: {
+          groupId: dims.group.id,
+          newapiGroup: 'gw-dup',
+          statusId: dims.status.id,
+        },
         capabilityIds: [dims.capability.id],
       }),
     (error: unknown) => {

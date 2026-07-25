@@ -182,8 +182,26 @@ test('createPortalApiKey 只持久化本地 groupId、哈希和前缀，不泄�
   assert.equal(Object.hasOwn(result.binding, 'keyHash'), false);
 });
 
-test('createPortalApiKey 拒绝未映射、禁用、锁定和不存在的分组且零远端调用', async () => {
-  for (const groupSlug of ['unmapped', 'disabled', 'locked', 'missing']) {
+test('createPortalApiKey 允许逻辑分组先建 Key，不要求分组级 New API 映射', async () => {
+  const portalUser = await insertUser(
+    'create_key_unmapped_group',
+    'unmapped-key@t.co'
+  );
+  const remote = createForbiddenRemoteClient();
+
+  const result = await modules.portal.createPortalApiKey(
+    portalUser,
+    { name: 'Logical group key', groupSlug: 'unmapped' },
+    remote.client as any
+  );
+
+  const row = await getLocalKey(result.binding.id);
+  assert.equal(row.groupId, groupIds.unmapped);
+  assert.equal(remote.getCalls(), 0);
+});
+
+test('createPortalApiKey 拒绝禁用、锁定和不存在的门户分组且零远端调用', async () => {
+  for (const groupSlug of ['disabled', 'locked', 'missing']) {
     const portalUser = await insertUser(
       `create_key_reject_${groupSlug}`,
       `rej-${groupSlug}@t.co`

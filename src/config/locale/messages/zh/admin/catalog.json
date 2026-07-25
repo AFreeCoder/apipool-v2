@@ -11,7 +11,8 @@
     "isCallable": "可调用",
     "isPublicVisible": "前台可见",
     "userDescription": "用户可见说明",
-    "newapiGroup": "New API 分组",
+    "newapiGroup": "目标 New API 分组",
+    "newapiGroupTip": "仅作用于当前“门户分组 + 模型 ID”；同一门户分组下的其他模型可映射到不同的 New API 分组。",
     "allowCreateKey": "允许创建 Key",
     "modelId": "模型 ID",
     "displayName": "模型名称",
@@ -85,6 +86,7 @@
     "deleteFailed": "删除失败",
     "missingRecord": "记录不存在",
     "missingBasePrice": "缺少模型基准输入/输出价格，请先在模型表单保存基准价格后再新增分组折扣",
+    "missingNewapiGroup": "请为当前模型与门户分组配置 New API 分组",
     "invalidPrice": "价格必须是非负有限数字",
     "duplicateListing": "该模型在所选分组下已存在售卖项，请直接编辑已有的那条。",
     "duplicateSlug": "该标识已被占用，请换一个。",
@@ -259,35 +261,35 @@
   },
   "groups": {
     "list": {
-      "title": "分组",
-      "crumb": "分组",
+      "title": "门户分组",
+      "crumb": "门户分组",
       "buttons": {
-        "new": "新增分组"
+        "new": "新增门户分组"
       }
     },
     "new": {
-      "title": "新增分组",
-      "crumb": "新增分组",
-      "success": "分组已创建",
+      "title": "新增门户分组",
+      "crumb": "新增门户分组",
+      "success": "门户分组已创建",
       "buttons": {
         "submit": "创建"
       }
     },
     "edit": {
-      "title": "编辑分组",
-      "crumb": "编辑分组",
-      "notFound": "分组不存在",
-      "success": "分组已更新",
+      "title": "编辑门户分组",
+      "crumb": "编辑门户分组",
+      "notFound": "门户分组不存在",
+      "success": "门户分组已更新",
       "buttons": {
         "submit": "更新"
       }
     },
     "delete": {
-      "title": "删除分组",
-      "crumb": "删除分组",
-      "notFound": "分组不存在",
-      "description": "确认删除分组 {name}（{slug}）？只有未被售卖项或未删除 API Key 引用的分组可以删除。",
-      "success": "分组已删除",
+      "title": "删除门户分组",
+      "crumb": "删除门户分组",
+      "notFound": "门户分组不存在",
+      "description": "确认删除门户分组 {name}（{slug}）？只有未被售卖项或未删除 API Key 引用的分组可以删除。",
+      "success": "门户分组已删除",
       "blocked": "该记录仍被模型目录使用，不能删除。请改为禁用或下架相关入口。",
       "buttons": {
         "submit": "确认删除",
@@ -315,7 +317,7 @@
     },
     "pricingSync": {
       "title": "成本守卫同步",
-      "description": "只刷新 New API 成本参照与分组倍率，绝不覆盖门户卖价；倒挂和变动仅告警。",
+      "description": "按每条分组折扣的 New API 分组映射刷新成本参照，绝不覆盖门户卖价；倒挂和变动仅告警。",
       "sync": "同步成本参照",
       "syncing": "同步中",
       "drift": "查看成本告警",

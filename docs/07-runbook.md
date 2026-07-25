@@ -173,7 +173,7 @@ docker compose --env-file .env.deploy --env-file release.env -f docker-compose.p
 npm run catalog:init
 ```
 
-冒烟分组默认是 `official`，也可以通过 `APIPOOL_SMOKE_GROUP_SLUG` 指向实际售卖分组。该分组必须在后台维护好 `newapiGroup`，并与 New API 侧真实可调用 group 对齐；不能让 `newapiGroup` 为空落入 New API 默认分组。New API 侧也必须启用同名或指定分组：`GroupRatio` 包含该 group，相关 channel 的 group 包含该 group，并通过 New API 后台保存渠道或重建 abilities 使选路表生效。门户创建 Key 时会把 New API 用户 group 补齐到本次 `newapiGroup`，否则 New API 会以无权访问该分组拒绝 `/v1` 调用。
+冒烟分组默认是 `official`，也可以通过 `APIPOOL_SMOKE_GROUP_SLUG` 指向实际售卖分组。门户分组只是 Key 所绑定的逻辑分组；该分组下被调用模型对应的每条“分组折扣”都必须单独维护 `newapiGroup`，并与 New API 侧真实可调用 group 对齐。售卖项映射为空会被发布门禁拒绝，不能依赖 New API 默认分组。New API 侧也必须启用映射后的分组：`GroupRatio` 包含该 group，相关 channel 的 group 包含该 group，并通过 New API 后台保存渠道或重建 abilities 使选路表生效。实际请求选中模型后，网关再按该售卖项的 `newapiGroup` 创建或复用运行时凭证；同一门户逻辑分组下的不同模型可以使用不同的 New API 分组。
 
 冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。冒烟调额写入本地钱包，不修改 New API quota。`APIPOOL_SMOKE_MODEL` 设置时必须指向当前冒烟分组中可调用的模型；不设置时使用该分组中的默认或首个可调用模型。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
 
@@ -459,7 +459,7 @@ checkout 前态、恢复演练证据、当前镜像 smoke 标志或人工确认�
    演练并保存证据；数据库与 `APIPOOL_CREDENTIALS_SECRET` 必须能在恢复环境重聚。
 2. 确认 `.env.deploy` 中 `APIPOOL_CHECKOUT_ENABLED=false`。
 3. 部署目标 `IMAGE_TAG`，等待数据库迁移和容器健康检查完成。
-4. 在“模型目录 → 分组折扣”确认门户分组只映射一个 New API 分组，执行价格同步并复核模型基准价与售卖项状态。网关会据此自动生成路由和不可变价格快照，不再人工发布第二套路由/价格。
+4. 在“模型目录 → 模型元数据 → 某模型 → 分组折扣”为每条“门户分组 + 模型 ID”分别配置 New API 分组；同一门户逻辑分组下的不同模型允许映射到不同 New API 分组。随后执行成本守卫同步并复核模型基准价与售卖项状态。网关会据此自动生成路由和不可变价格快照，不再人工发布第二套路由/价格。
 5. 执行生产库只读核验（§6.2）。
 6. 执行 `./deploy/go-live.sh verify`。脚本依次验证固定路由、MVP smoke、充值
    smoke 和 Gateway smoke，并把两类专项标志绑定到当前 `IMAGE_TAG`。

@@ -53,6 +53,7 @@ export default async function CatalogModelListingNewPage({
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
   const missingBasePriceMessage = t('errors.missingBasePrice');
+  const missingNewapiGroupMessage = t('errors.missingNewapiGroup');
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const duplicateListingMessage = t('errors.duplicateListing');
@@ -98,6 +99,13 @@ export default async function CatalogModelListingNewPage({
         options: groupOptions,
       },
       {
+        name: 'newapiGroup',
+        type: 'text',
+        title: t('fields.newapiGroup'),
+        validation: { required: true },
+        tip: t('fields.newapiGroupTip'),
+      },
+      {
         name: 'statusId',
         type: 'select',
         title: t('fields.status'),
@@ -134,6 +142,7 @@ export default async function CatalogModelListingNewPage({
     ],
     data: {
       groupId: groups[0]?.id ?? '',
+      newapiGroup: '',
       statusId: statuses[0]?.id ?? '',
       discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '',
       discountNote: '',
@@ -186,11 +195,20 @@ export default async function CatalogModelListingNewPage({
           throw error;
         }
 
+        const newapiGroup = (data.get('newapiGroup') as string | null)?.trim();
+        if (!newapiGroup) {
+          return {
+            status: 'error' as const,
+            message: missingNewapiGroupMessage,
+          };
+        }
+
         let newListing: NewListing;
         try {
           newListing = {
             modelId: model.id,
             groupId: (data.get('groupId') as string).trim(),
+            newapiGroup,
             statusId: (data.get('statusId') as string).trim(),
             inputMicroUsd,
             outputMicroUsd,

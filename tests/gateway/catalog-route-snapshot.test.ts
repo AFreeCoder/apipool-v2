@@ -75,7 +75,7 @@ async function setupDb() {
     id: IDs.group,
     slug: IDs.group,
     name: '快照测试分组',
-    newapiGroup: 'official',
+    newapiGroup: 'legacy-wrong-group',
   });
   await modules.db().insert(schema.catalogModel).values({
     id: IDs.model,
@@ -93,6 +93,7 @@ async function setupDb() {
     id: IDs.listing,
     modelId: IDs.model,
     groupId: IDs.group,
+    newapiGroup: 'official',
     statusId: IDs.status,
     inputMicroUsd: 1_000_000,
     outputMicroUsd: 2_000_000,

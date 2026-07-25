@@ -74,7 +74,8 @@ async function setupDb() {
     id: IDs.group,
     slug: IDs.group,
     name: '发布测试分组',
-    newapiGroup: 'official',
+    // 旧分组级字段故意放一个错误值，证明发布链路不会再读取它。
+    newapiGroup: 'legacy-wrong-group',
     pricingSyncStatus: 'missing_remote_group',
   });
   await modules.db().insert(schema.catalogModel).values({
@@ -88,6 +89,7 @@ async function setupDb() {
     id: IDs.listing,
     modelId: IDs.model,
     groupId: IDs.group,
+    newapiGroup: 'official',
     statusId: IDs.status,
     inputMicroUsd: 1_000_001,
     outputMicroUsd: 5_000_000,
@@ -107,7 +109,11 @@ async function resetReadyTokenPrice() {
   await modules
     .db()
     .update(catalogModelListing)
-    .set({ allowLongContext: false, discountRateBps: 5_000 })
+    .set({
+      newapiGroup: 'official',
+      allowLongContext: false,
+      discountRateBps: 5_000,
+    })
     .where(eq(catalogModelListing.id, IDs.listing));
   await modules
     .db()
@@ -148,6 +154,7 @@ test('满配 token 模型可发布，旧漂移与分组同步状态不再构成�
   );
 
   assert.equal(result.ready, true);
+  assert.equal(result.snapshot.newapiGroup, 'official');
   assert.deepEqual(JSON.parse(result.snapshot.ratesJson), {
     input: 500001,
     cached_input: 50000,
@@ -158,6 +165,22 @@ test('满配 token 模型可发布，旧漂移与分组同步状态不再构成�
   assert.equal(result.snapshot.longContextThresholdTokens, null);
   assert.equal(result.snapshot.admissionLongContextThreshold, 272_000);
   assert.equal(result.snapshot.allowLongContext, false);
+});
+
+test('模型售卖项未配置 New API 分组时明确拒绝发布', async () => {
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ newapiGroup: '' })
+    .where(eq(modules.schema.catalogModelListing.id, IDs.listing));
+
+  const result = await modules.publishReadiness.assessPublishReadiness(
+    IDs.group,
+    IDs.modelId
+  );
+
+  assert.equal(result.ready, false);
+  assert.ok(result.reasons.includes('缺少 New API 分组映射'));
 });
 
 test('长上下文开关只控制计费快照，检测字段始终保留目录阈值', async () => {

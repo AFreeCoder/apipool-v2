@@ -40,7 +40,6 @@ export default async function AdminCatalogGroupsPage({
     columns: [
       { name: 'slug', title: t('fields.slug'), type: 'copy' },
       { name: 'name', title: t('fields.name') },
-      { name: 'newapiGroup', title: t('fields.newapiGroup'), type: 'copy' },
       {
         name: 'allowCreateKey',
         title: t('fields.allowCreateKey'),

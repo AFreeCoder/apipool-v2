@@ -79,6 +79,7 @@ async function createFixtureModel(input: {
   await modules.service.createListing({
     modelId: model.id,
     groupId: input.groupId,
+    newapiGroup: `test-${input.groupId}`,
     statusId: input.statusId,
     inputMicroUsd: 100000 + input.sortOrder,
     outputMicroUsd: 200000 + input.sortOrder,
@@ -207,7 +208,7 @@ async function seedQueryFixtures() {
     sortOrder: 91,
     status: 'active',
   });
-  // 新建分组默认 allowCreateKey=true、newapiGroup=''：没有映射就必然建 Key 失败
+  // 门户分组只是逻辑分组，即使暂时没有任何模型映射，也允许先创建 Key。
   await modules.service.createGroup({
     slug: 'unmapped-group',
     name: 'Unmapped Group',
@@ -336,6 +337,7 @@ async function seedQueryFixtures() {
   await modules.service.createListing({
     modelId: seededModel.id,
     groupId: partnerGroup.id,
+    newapiGroup: `test-${partnerGroup.id}`,
     statusId: available.id,
     inputMicroUsd: 90000,
     outputMicroUsd: 180000,
@@ -347,6 +349,11 @@ async function seedQueryFixtures() {
     featured: false,
     sortOrder: 14,
   });
+  await modules
+    .db()
+    .update(modules.schema.catalogModelListing)
+    .set({ newapiGroup: `test-${official.id}` })
+    .where(eq(modules.schema.catalogModelListing.modelId, seededModel.id));
   await seedActiveRoutePrice(official.id, seededModel.modelId);
   await seedActiveRoutePrice(partnerGroup.id, seededModel.modelId);
 
@@ -810,15 +817,16 @@ test('getGroupsForKeyCreation returns active key-capable groups regardless of li
     'official',
     'partner',
     'empty-key-group',
+    'unmapped-group',
+    'missing-remote-group',
     'capability-only-group',
     'cross-hidden-group',
   ]);
   assert.equal(slugs.includes('disabled-route'), false);
   assert.equal(slugs.includes('read-only-route'), false);
-  // 没填 New API 映射的分组进下拉 = 用户选中后 100% 报 group not available
-  assert.equal(slugs.includes('unmapped-group'), false);
-  // 远端分组已被证明不存在，映射非空也没用
-  assert.equal(slugs.includes('missing-remote-group'), false);
+  // Key 只绑定门户逻辑分组；模型级 New API 映射是否完成不属于建 Key 门禁。
+  assert.equal(slugs.includes('unmapped-group'), true);
+  assert.equal(slugs.includes('missing-remote-group'), true);
 
   for (const group of groups) {
     assert.deepEqual(

@@ -1415,9 +1415,6 @@ export async function createPortalApiKey(
   if (!group || group.status !== 'active' || group.allowCreateKey !== true) {
     throw new Error('group not available');
   }
-  if (!group.newapiGroup.trim()) {
-    throw new Error('group not available');
-  }
 
   const [duplicateName] = await db()
     .select({ id: portalApiKey.id })
