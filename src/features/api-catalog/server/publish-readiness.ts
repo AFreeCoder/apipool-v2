@@ -6,284 +6,150 @@ import {
   catalogGroup,
   catalogModel,
   catalogModelListing,
-  catalogModelPrice,
-  catalogModelPriceTier,
+  catalogModelPricingProfile,
+  catalogModelPricingRate,
   catalogStatus,
 } from '@/config/db/schema';
 import { db } from '@/core/db';
-import { scaleMicroUsdByBps } from '@/features/api-catalog/lib/pricing';
-import { getLatestCostReferences } from '@/features/api-catalog/server/pricing-sync';
-import type { BillingScheme, MeterKey } from '@/features/gateway/lib/meters';
+import {
+  buildEffectivePricingSpec,
+  getAllowedPricingBases,
+  getAllowedQuantityMeters,
+  type PricingProfile,
+  type PricingProfileRate,
+} from '@/features/api-catalog/server/pricing-profile-service';
+import {
+  legacyBillingSchemeForBasis,
+  type PricingBasis,
+  type PricingSpec,
+} from '@/features/gateway/lib/pricing-spec';
 
 type PublishSnapshot = {
   newapiGroup: string;
   newapiModelId: string;
-  billingScheme: BillingScheme;
+  pricingBasis: PricingBasis;
+  billingScheme: 'token' | 'per_call';
+  pricingSpecJson: string;
+  pricingProfileId: string;
+  pricingProfileRuleHash: string | null;
   ratesJson: string;
   tiersJson: string;
   longContextThresholdTokens: number | null;
   admissionLongContextThreshold: number | null;
   allowLongContext: boolean;
-  newapiRefRatesJson: string;
-  newapiRefTiersJson: string;
 };
 
 export type PublishReadiness =
   | { ready: true; snapshot: PublishSnapshot }
   | { ready: false; reasons: string[] };
 
-const CAPABILITY_KEYS = [
-  'cached_input',
-  'cache_write',
-  'cache_ttl_split',
-  'image_input',
-  'cached_image_input',
-  'image_output',
-  'long_context',
-  'web_search',
-] as const;
-
-type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
-type BillingCapabilities = Partial<Record<CapabilityKey, boolean>>;
-
 type PublishRow = {
   listingId: string;
+  listingModelId: string;
+  pricingProfileId: string | null;
   newapiGroup: string;
   newapiModelId: string;
   category: string;
   isCallable: boolean;
   discountRateBps: number | null;
   allowLongContext: boolean;
-  priceId: string | null;
-  billingScheme: string | null;
-  endpointTypesJson: string | null;
-  syncStatus: string | null;
+  profileId: string | null;
+  profileModelId: string | null;
+  profileName: string | null;
+  pricingBasis: string | null;
+  quantityMeter: string | null;
+  skuRuleSource: string | null;
+  skuRuleAstJson: string | null;
+  compilerVersion: number | null;
+  ruleHash: string | null;
+  longContextThresholdTokens: number | null;
+  reviewedBy: string | null;
   reviewedAt: Date | null;
-  billingCapabilitiesJson: string | null;
-  baseInput: number | null;
-  baseCachedInput: number | null;
-  baseCacheWrite: number | null;
-  baseCacheWrite5m: number | null;
-  baseCacheWrite1h: number | null;
-  baseOutput: number | null;
-  baseImageInput: number | null;
-  baseCachedImageInput: number | null;
-  baseImageOutput: number | null;
-  baseWebSearch: number | null;
-  longContextThreshold: number | null;
-  baseInputLong: number | null;
-  baseCachedInputLong: number | null;
-  baseCacheWriteLong: number | null;
-  baseOutputLong: number | null;
-  tierSkuKey: string | null;
-  tierPrice: number | null;
+  reviewNote: string | null;
+  profileCreatedAt: Date | null;
+  profileUpdatedAt: Date | null;
+  rateId: string | null;
+  rateMeterKey: string | null;
+  rateSkuKey: string | null;
+  rateUnitSize: number | null;
+  ratePriceMicroUsd: number | null;
+  rateNote: string | null;
 };
 
-function parseCapabilities(
-  raw: string | null,
-  reasons: Set<string>
-): BillingCapabilities | null {
-  if (!raw?.trim()) {
-    reasons.add('缺少计费能力声明');
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      reasons.add('计费能力声明不是合法 JSON 对象');
-      return null;
-    }
-    const allowed = new Set<string>(CAPABILITY_KEYS);
-    for (const [key, value] of Object.entries(parsed)) {
-      if (!allowed.has(key) || typeof value !== 'boolean') {
-        reasons.add('计费能力声明包含未知键或非布尔值');
-        return null;
-      }
-    }
-    return parsed as BillingCapabilities;
-  } catch {
-    reasons.add('计费能力声明不是合法 JSON 对象');
-    return null;
-  }
+function validDiscount(value: number) {
+  return Number.isSafeInteger(value) && value > 0 && value <= 10_000;
 }
 
-function parseEndpointTypes(raw: string | null, category: string): string[] {
-  if (raw?.trim()) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (
-        Array.isArray(parsed) &&
-        parsed.every((value) => typeof value === 'string')
-      ) {
-        return parsed.map((value) => value.toLowerCase());
-      }
-    } catch {
-      // 旧目录可能没有可靠的端点元数据，按模型分类采用保守基础集。
-    }
-  }
-  return category.toLowerCase().includes('image') ? ['images'] : ['responses'];
-}
-
-function validPrice(value: number | null): value is number {
-  return value !== null && Number.isSafeInteger(value) && Number(value) >= 0;
-}
-
-function requireRate(
-  rates: Partial<Record<MeterKey, number>>,
-  key: MeterKey,
-  value: number | null,
-  discountRateBps: number,
-  reasons: Set<string>
-) {
-  if (!validPrice(value)) {
-    reasons.add(`缺少计价项：${key}`);
+function validateCategoryAndMeter(row: PublishRow, reasons: Set<string>) {
+  if (!row.pricingBasis) return;
+  const basis = row.pricingBasis as PricingBasis;
+  if (!getAllowedPricingBases(row.category).includes(basis)) {
+    reasons.add(`模型分类 ${row.category} 不支持 ${basis} 计费`);
     return;
   }
-  rates[key] = scaleMicroUsdByBps(value, discountRateBps)!;
+  const allowedMeters = getAllowedQuantityMeters(row.category, basis);
+  if (basis === 'token') {
+    if (row.quantityMeter !== null) reasons.add('Token 定价不能设置数量 meter');
+    return;
+  }
+  if (!row.quantityMeter || !allowedMeters.includes(row.quantityMeter as any)) {
+    reasons.add('数量 meter 与模型分类或计费方式不匹配');
+  }
 }
 
-function buildTokenRates(
-  row: PublishRow,
-  capabilities: BillingCapabilities,
-  discountRateBps: number,
+function validateRequiredTokenMeters(
+  category: string,
+  spec: PricingSpec,
+  allowLongContext: boolean,
+  longContextThresholdTokens: number | null,
   reasons: Set<string>
 ) {
-  const rates: Partial<Record<MeterKey, number>> = {};
-  const endpointTypes = parseEndpointTypes(row.endpointTypesJson, row.category);
-  const hasImageEndpoint = endpointTypes.some((value) =>
-    value.includes('image')
-  );
-  const onlyEmbeddings =
-    endpointTypes.length > 0 &&
-    endpointTypes.every((value) => value.includes('embedding'));
-  const requiresOutput = !onlyEmbeddings && !hasImageEndpoint;
-
-  requireRate(rates, 'input', row.baseInput, discountRateBps, reasons);
-  if (capabilities.cached_input) {
-    requireRate(
-      rates,
-      'cached_input',
-      row.baseCachedInput,
-      discountRateBps,
-      reasons
-    );
+  if (spec.basis !== 'token') return;
+  const meters = new Set(spec.rates.map((rate) => rate.meterKey));
+  const required =
+    category === 'embedding'
+      ? ['input']
+      : category === 'image'
+        ? ['input', 'image_input', 'image_output']
+        : category === 'llm'
+          ? ['input', 'output']
+          : [];
+  for (const meter of required) {
+    if (!meters.has(meter as any)) reasons.add(`缺少计价项：${meter}`);
   }
-  if (capabilities.cache_ttl_split) {
-    requireRate(
-      rates,
-      'cache_write_5m',
-      row.baseCacheWrite5m,
-      discountRateBps,
-      reasons
-    );
-    requireRate(
-      rates,
-      'cache_write_1h',
-      row.baseCacheWrite1h,
-      discountRateBps,
-      reasons
-    );
-  } else if (capabilities.cache_write) {
-    requireRate(
-      rates,
-      'cache_write',
-      row.baseCacheWrite,
-      discountRateBps,
-      reasons
-    );
-  }
-  if (requiresOutput) {
-    requireRate(rates, 'output', row.baseOutput, discountRateBps, reasons);
-  }
-
-  if (hasImageEndpoint || capabilities.image_input) {
-    requireRate(
-      rates,
-      'image_input',
-      row.baseImageInput,
-      discountRateBps,
-      reasons
-    );
-  }
-  if (capabilities.cached_image_input) {
-    requireRate(
-      rates,
-      'cached_image_input',
-      row.baseCachedImageInput,
-      discountRateBps,
-      reasons
-    );
-  }
-  if (hasImageEndpoint || capabilities.image_output) {
-    requireRate(
-      rates,
-      'image_output',
-      row.baseImageOutput,
-      discountRateBps,
-      reasons
-    );
-  }
-  if (capabilities.web_search) {
-    requireRate(
-      rates,
-      'web_search',
-      row.baseWebSearch,
-      discountRateBps,
-      reasons
-    );
-  }
-
-  const requiresLongContext =
-    capabilities.long_context || row.longContextThreshold !== null;
-  if (requiresLongContext) {
+  if (allowLongContext) {
     if (
-      row.longContextThreshold === null ||
-      !Number.isSafeInteger(row.longContextThreshold) ||
-      row.longContextThreshold <= 0
+      longContextThresholdTokens === null ||
+      !Number.isSafeInteger(longContextThresholdTokens) ||
+      longContextThresholdTokens <= 0
     ) {
-      reasons.add('缺少有效的长上下文阈值');
+      reasons.add('开放长上下文时必须配置有效阈值');
     }
-    const longRates: Array<[MeterKey, number | null]> = [
-      ['input_long', row.baseInputLong],
-      ['cached_input_long', row.baseCachedInputLong],
-      ['cache_write_long', row.baseCacheWriteLong],
-      ['output_long', row.baseOutputLong],
-    ];
-    for (const [key, value] of longRates) {
-      if (row.allowLongContext) {
-        requireRate(rates, key, value, discountRateBps, reasons);
-      } else if (!validPrice(value)) {
-        reasons.add(`缺少计价项：${key}`);
-      }
+    for (const meter of ['input_long', 'output_long']) {
+      if (!meters.has(meter as any)) reasons.add(`缺少计价项：${meter}`);
     }
   }
-
-  return rates;
 }
 
-function buildTiers(
-  rows: PublishRow[],
-  discountRateBps: number,
-  reasons: Set<string>
-) {
-  const tiers: Record<string, number> = {};
-  for (const row of rows) {
-    if (!row.tierSkuKey) continue;
-    if (!validPrice(row.tierPrice) || row.tierPrice <= 0) {
-      reasons.add(`按次档位价格必须大于 0：${row.tierSkuKey}`);
-      continue;
-    }
-    const scaled = scaleMicroUsdByBps(row.tierPrice, discountRateBps);
-    if (scaled === null || scaled <= 0) {
-      reasons.add(`按次档位折后价格必须大于 0：${row.tierSkuKey}`);
-      continue;
-    }
-    tiers[row.tierSkuKey] = scaled;
+function legacyMaps(spec: PricingSpec) {
+  if (spec.basis === 'token') {
+    return {
+      ratesJson: JSON.stringify(
+        Object.fromEntries(
+          spec.rates.map((rate) => [rate.meterKey, rate.priceMicroUsd])
+        )
+      ),
+      tiersJson: '{}',
+    };
   }
-  if (!Object.hasOwn(tiers, 'default')) {
-    reasons.add('缺少按次默认档：default');
-  }
-  return tiers;
+  return {
+    ratesJson: '{}',
+    tiersJson: JSON.stringify(
+      Object.fromEntries(
+        spec.rates.map((rate) => [rate.skuKey, rate.priceMicroUsd])
+      )
+    ),
+  };
 }
 
 export async function assessPublishReadiness(
@@ -293,35 +159,36 @@ export async function assessPublishReadiness(
   const rows = (await db()
     .select({
       listingId: catalogModelListing.id,
+      listingModelId: catalogModelListing.modelId,
+      pricingProfileId: catalogModelListing.pricingProfileId,
       newapiGroup: catalogModelListing.newapiGroup,
       newapiModelId: catalogModel.modelId,
       category: catalogModel.category,
       isCallable: catalogStatus.isCallable,
       discountRateBps: catalogModelListing.discountRateBps,
       allowLongContext: catalogModelListing.allowLongContext,
-      priceId: catalogModelPrice.id,
-      billingScheme: catalogModelPrice.billingScheme,
-      endpointTypesJson: catalogModelPrice.sourceSupportedEndpointTypes,
-      syncStatus: catalogModelPrice.syncStatus,
-      reviewedAt: catalogModelPrice.reviewedAt,
-      billingCapabilitiesJson: catalogModelPrice.billingCapabilitiesJson,
-      baseInput: catalogModelPrice.baseInputMicroUsd,
-      baseCachedInput: catalogModelPrice.baseCachedInputMicroUsd,
-      baseCacheWrite: catalogModelPrice.baseCacheWriteMicroUsd,
-      baseCacheWrite5m: catalogModelPrice.baseCacheWrite5mMicroUsd,
-      baseCacheWrite1h: catalogModelPrice.baseCacheWrite1hMicroUsd,
-      baseOutput: catalogModelPrice.baseOutputMicroUsd,
-      baseImageInput: catalogModelPrice.baseImageInputMicroUsd,
-      baseCachedImageInput: catalogModelPrice.baseCachedImageInputMicroUsd,
-      baseImageOutput: catalogModelPrice.baseImageOutputMicroUsd,
-      baseWebSearch: catalogModelPrice.baseWebSearchMicroUsd,
-      longContextThreshold: catalogModelPrice.longContextThresholdTokens,
-      baseInputLong: catalogModelPrice.baseInputLongMicroUsd,
-      baseCachedInputLong: catalogModelPrice.baseCachedInputLongMicroUsd,
-      baseCacheWriteLong: catalogModelPrice.baseCacheWriteLongMicroUsd,
-      baseOutputLong: catalogModelPrice.baseOutputLongMicroUsd,
-      tierSkuKey: catalogModelPriceTier.skuKey,
-      tierPrice: catalogModelPriceTier.priceMicroUsd,
+      profileId: catalogModelPricingProfile.id,
+      profileModelId: catalogModelPricingProfile.modelId,
+      profileName: catalogModelPricingProfile.name,
+      pricingBasis: catalogModelPricingProfile.pricingBasis,
+      quantityMeter: catalogModelPricingProfile.quantityMeter,
+      skuRuleSource: catalogModelPricingProfile.skuRuleSource,
+      skuRuleAstJson: catalogModelPricingProfile.skuRuleAstJson,
+      compilerVersion: catalogModelPricingProfile.compilerVersion,
+      ruleHash: catalogModelPricingProfile.ruleHash,
+      longContextThresholdTokens:
+        catalogModelPricingProfile.longContextThresholdTokens,
+      reviewedBy: catalogModelPricingProfile.reviewedBy,
+      reviewedAt: catalogModelPricingProfile.reviewedAt,
+      reviewNote: catalogModelPricingProfile.reviewNote,
+      profileCreatedAt: catalogModelPricingProfile.createdAt,
+      profileUpdatedAt: catalogModelPricingProfile.updatedAt,
+      rateId: catalogModelPricingRate.id,
+      rateMeterKey: catalogModelPricingRate.meterKey,
+      rateSkuKey: catalogModelPricingRate.skuKey,
+      rateUnitSize: catalogModelPricingRate.unitSize,
+      ratePriceMicroUsd: catalogModelPricingRate.priceMicroUsd,
+      rateNote: catalogModelPricingRate.note,
     })
     .from(catalogModelListing)
     .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
@@ -330,10 +197,13 @@ export async function assessPublishReadiness(
       catalogStatus,
       eq(catalogModelListing.statusId, catalogStatus.id)
     )
-    .leftJoin(catalogModelPrice, eq(catalogModelPrice.modelId, catalogModel.id))
     .leftJoin(
-      catalogModelPriceTier,
-      eq(catalogModelPriceTier.modelId, catalogModel.id)
+      catalogModelPricingProfile,
+      eq(catalogModelListing.pricingProfileId, catalogModelPricingProfile.id)
+    )
+    .leftJoin(
+      catalogModelPricingRate,
+      eq(catalogModelPricingRate.profileId, catalogModelPricingProfile.id)
     )
     .where(
       and(
@@ -341,7 +211,10 @@ export async function assessPublishReadiness(
         eq(catalogModel.modelId, portalModelId)
       )
     )
-    .orderBy(asc(catalogModelPriceTier.skuKey))) as PublishRow[];
+    .orderBy(
+      asc(catalogModelPricingRate.meterKey),
+      asc(catalogModelPricingRate.skuKey)
+    )) as PublishRow[];
 
   if (rows.length === 0) {
     return { ready: false, reasons: ['未找到目录售卖项'] };
@@ -351,67 +224,111 @@ export async function assessPublishReadiness(
   const reasons = new Set<string>();
   if (!row.isCallable) reasons.add('售卖状态不可调用');
   if (!row.newapiGroup.trim()) reasons.add('缺少 New API 分组映射');
-  if (!row.priceId) reasons.add('缺少模型基础价');
-  // syncStatus 自成本守卫起只表示参照新鲜度；人工锁定的唯一持久证据是
-  // reviewedAt，New API 参照缺失或变化不得反向阻断已复核售价。
-  if (row.reviewedAt === null) {
-    reasons.add('基础价尚未人工锁定并复核');
-  }
-  const discountRateBps = row.discountRateBps ?? 10_000;
+  if (!row.pricingProfileId || !row.profileId) reasons.add('缺少定价档案');
   if (
-    !Number.isSafeInteger(discountRateBps) ||
-    discountRateBps <= 0 ||
-    discountRateBps > 10_000
+    row.profileId &&
+    (row.profileId !== row.pricingProfileId ||
+      row.profileModelId !== row.listingModelId)
   ) {
+    reasons.add('定价档案不属于当前模型');
+  }
+  if (row.reviewedAt === null) reasons.add('定价档案尚未人工确认');
+
+  const discountRateBps = row.discountRateBps ?? 10_000;
+  if (!validDiscount(discountRateBps)) {
     reasons.add('上架折扣必须是 1 到 10000 bps');
   }
+  validateCategoryAndMeter(row, reasons);
 
-  const capabilities = parseCapabilities(row.billingCapabilitiesJson, reasons);
-  const billingScheme = row.billingScheme;
-  let rates: Partial<Record<MeterKey, number>> = {};
-  let tiers: Record<string, number> = {};
-  if (capabilities && billingScheme === 'token') {
-    rates = buildTokenRates(row, capabilities, discountRateBps, reasons);
-  } else if (capabilities && billingScheme === 'per_call') {
-    tiers = buildTiers(rows, discountRateBps, reasons);
-  } else if (billingScheme !== 'token' && billingScheme !== 'per_call') {
-    reasons.add('未知计费方案');
+  const profile =
+    row.profileId &&
+    row.profileModelId &&
+    row.profileName &&
+    row.pricingBasis &&
+    row.profileCreatedAt &&
+    row.profileUpdatedAt
+      ? ({
+          id: row.profileId,
+          modelId: row.profileModelId,
+          name: row.profileName,
+          pricingBasis: row.pricingBasis,
+          quantityMeter: row.quantityMeter,
+          skuRuleSource: row.skuRuleSource,
+          skuRuleAstJson: row.skuRuleAstJson,
+          compilerVersion: row.compilerVersion,
+          ruleHash: row.ruleHash,
+          longContextThresholdTokens: row.longContextThresholdTokens,
+          reviewedBy: row.reviewedBy,
+          reviewedAt: row.reviewedAt,
+          reviewNote: row.reviewNote,
+          createdAt: row.profileCreatedAt,
+          updatedAt: row.profileUpdatedAt,
+        } satisfies PricingProfile)
+      : null;
+  const rates = rows.flatMap((candidate) =>
+    candidate.rateId &&
+    candidate.profileId &&
+    candidate.rateMeterKey &&
+    candidate.rateSkuKey &&
+    candidate.rateUnitSize !== null &&
+    candidate.ratePriceMicroUsd !== null
+      ? [
+          {
+            id: candidate.rateId,
+            profileId: candidate.profileId,
+            meterKey: candidate.rateMeterKey,
+            skuKey: candidate.rateSkuKey,
+            unitSize: candidate.rateUnitSize,
+            priceMicroUsd: candidate.ratePriceMicroUsd,
+            note: candidate.rateNote,
+          } satisfies PricingProfileRate,
+        ]
+      : []
+  );
+  if (rates.length === 0) reasons.add('定价档案没有费率');
+
+  let spec: PricingSpec | null = null;
+  if (profile && rates.length > 0 && validDiscount(discountRateBps)) {
+    try {
+      spec = buildEffectivePricingSpec({ profile, rates }, discountRateBps);
+      validateRequiredTokenMeters(
+        row.category,
+        spec,
+        Boolean(row.allowLongContext),
+        row.longContextThresholdTokens,
+        reasons
+      );
+    } catch (error) {
+      reasons.add(
+        error instanceof Error ? error.message : '定价档案无法生成发布规格'
+      );
+    }
   }
 
-  if (reasons.size > 0) {
+  if (!spec || !profile || reasons.size > 0) {
     return { ready: false, reasons: [...reasons] };
   }
 
   const allowLongContext = Boolean(row.allowLongContext);
-  const storedCostReference = (await getLatestCostReferences())[row.listingId];
-  const costReference =
-    storedCostReference?.newapiGroup === row.newapiGroup
-      ? storedCostReference
-      : undefined;
-  const newapiRefRatesJson = JSON.stringify(
-    costReference?.billingScheme === 'token' ? (costReference.rates ?? {}) : {}
-  );
-  const newapiRefTiersJson = JSON.stringify(
-    costReference?.billingScheme === 'per_call' &&
-      costReference.defaultTier !== undefined
-      ? { default: costReference.defaultTier }
-      : {}
-  );
+  const legacy = legacyMaps(spec);
   return {
     ready: true,
     snapshot: {
       newapiGroup: row.newapiGroup,
       newapiModelId: row.newapiModelId,
-      billingScheme: billingScheme as BillingScheme,
-      ratesJson: JSON.stringify(rates),
-      tiersJson: JSON.stringify(tiers),
-      longContextThresholdTokens: allowLongContext
-        ? row.longContextThreshold
-        : null,
-      admissionLongContextThreshold: row.longContextThreshold,
+      pricingBasis: spec.basis,
+      billingScheme: legacyBillingSchemeForBasis(spec.basis),
+      pricingSpecJson: JSON.stringify(spec),
+      pricingProfileId: profile.id,
+      pricingProfileRuleHash: profile.ruleHash,
+      ...legacy,
+      longContextThresholdTokens:
+        allowLongContext && spec.basis === 'token'
+          ? profile.longContextThresholdTokens
+          : null,
+      admissionLongContextThreshold:
+        spec.basis === 'token' ? profile.longContextThresholdTokens : null,
       allowLongContext,
-      newapiRefRatesJson,
-      newapiRefTiersJson,
     },
   };
 }

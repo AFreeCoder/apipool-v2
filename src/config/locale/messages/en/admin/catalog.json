@@ -23,7 +23,20 @@
     "categories": "Categories",
     "contextWindow": "Context Window",
     "capabilities": "Capabilities",
+    "pricingProfiles": "Sale Pricing Profiles",
+    "pricingProfile": "Sale Pricing Profile",
+    "pricingProfileTip": "This group reads its billing basis, prices, and SKU rule from the selected profile. Different groups for the same model may select different profiles.",
     "billingScheme": "Billing Scheme",
+    "pricingBasisTip": "Only billing bases supported by the {category} category are available.",
+    "quantityMeter": "Quantity Meter",
+    "quantityMeterTip": "For unit or duration billing, this value is measured from the request or upstream response. Image unit billing always uses the actual output image count.",
+    "rates": "Rate Table (JSON)",
+    "ratesTip": "Use meter names as keys for token billing and SKU names for unit or duration billing. Amounts are in USD.",
+    "skuRule": "SKU Selection Rule",
+    "skuRuleTip": "Restricted rule DSL for selecting a SKU or rejecting a request only. It cannot alter quantity, price, or the final charge.",
+    "profileLongContextTip": "Token profiles only. When configured, long-context rates such as input_long and output_long may be defined.",
+    "reviewNote": "Review Note",
+    "reviewedAt": "Reviewed At",
     "tokenScheme": "Usage (token)",
     "perCallScheme": "Per Call",
     "tokenPrices": "Meter Base Prices (USD / 1M)",
@@ -70,6 +83,7 @@
     "edit": "Edit",
     "capabilities": "Capabilities",
     "listings": "Group Discounts",
+    "pricingProfiles": "Sale Pricing",
     "delete": "Delete"
   },
   "statusOptions": {
@@ -79,6 +93,18 @@
   "boolean": {
     "yes": "Yes",
     "no": "No"
+  },
+  "pricingBasis": {
+    "token": "Per Token",
+    "unit": "Per Unit",
+    "duration": "Per Duration"
+  },
+  "quantityMeter": {
+    "none": "Not Applicable",
+    "request_count": "Request Count",
+    "output_count": "Actual Output Count",
+    "audio_duration_ms": "Audio Duration (ms)",
+    "video_duration_ms": "Video Duration (ms)"
   },
   "errors": {
     "createFailed": "Create failed",
@@ -91,6 +117,8 @@
     "duplicateListing": "This model already has a listing in the selected group. Edit the existing one instead.",
     "duplicateSlug": "This slug is already in use. Choose a different one.",
     "duplicateModelId": "This model ID already exists. Edit the existing model instead.",
+    "missingPricingProfile": "Select a sale pricing profile that belongs to this model.",
+    "duplicatePricingProfile": "A sale pricing profile with this name already exists for the model.",
     "invalidBillingCapabilities": "The billing capability declaration is invalid.",
     "invalidLongContextThreshold": "The long-context threshold must be a positive integer.",
     "invalidTiers": "Per-call prices must be unique and include a valid default tier.",
@@ -317,7 +345,7 @@
     },
     "pricingSync": {
       "title": "Cost Guard Sync",
-      "description": "Refresh cost references from each group discount's New API mapping without overwriting portal sale prices. Inversions and changes are alerts only.",
+      "description": "Refresh cost references from each group discount's New API mapping without overwriting portal sale prices. Missing or changed references are alerts only.",
       "sync": "Sync Cost References",
       "syncing": "Syncing",
       "drift": "View Cost Alerts",
@@ -375,6 +403,46 @@
       }
     }
   },
+  "pricingProfiles": {
+    "list": {
+      "title": "Sale Pricing for {model}",
+      "crumb": "Sale Pricing",
+      "description": "Maintain billing basis, base rates, and SKU rules in profiles, then select one from each group discount.",
+      "notFound": "Model not found",
+      "buttons": {
+        "new": "New Pricing Profile"
+      }
+    },
+    "new": {
+      "title": "New Sale Pricing Profile",
+      "crumb": "New Pricing Profile",
+      "notFound": "Model not found",
+      "success": "Sale pricing profile created",
+      "buttons": {
+        "submit": "Create"
+      }
+    },
+    "edit": {
+      "title": "Edit Sale Pricing Profile",
+      "crumb": "Edit Pricing Profile",
+      "notFound": "Sale pricing profile not found",
+      "success": "Sale pricing profile updated",
+      "buttons": {
+        "submit": "Update"
+      }
+    },
+    "delete": {
+      "title": "Delete Sale Pricing Profile",
+      "crumb": "Delete Pricing Profile",
+      "description": "Delete {name}? Profiles still referenced by group discounts cannot be deleted.",
+      "notFound": "Sale pricing profile not found",
+      "success": "Sale pricing profile deleted",
+      "buttons": {
+        "submit": "Confirm Delete",
+        "cancel": "Back to List"
+      }
+    }
+  },
   "listings": {
     "list": {
       "title": "Group Discounts",
@@ -416,7 +484,6 @@
   },
   "messages": {
     "priceHiddenAfterSave": "Saved. The public price is hidden until you run a price sync for this model.",
-    "costReviewAfterSave": "The sale price remains active; the cost guard is marked for review.",
     "capabilitiesEmptyWarning": "This model has no capabilities selected and will not appear on the public catalog or in key creation."
   }
 }

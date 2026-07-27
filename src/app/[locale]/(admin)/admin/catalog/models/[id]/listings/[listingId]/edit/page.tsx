@@ -13,6 +13,10 @@ import {
   updateListing,
   UpdateListing,
 } from '@/features/api-catalog/server/catalog-service';
+import {
+  getPricingProfileConfig,
+  getPricingProfilesByModel,
+} from '@/features/api-catalog/server/pricing-profile-service';
 import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { Empty } from '@/shared/blocks/common';
@@ -38,6 +42,7 @@ export default async function CatalogModelListingEditPage({
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
   const missingNewapiGroupMessage = t('errors.missingNewapiGroup');
+  const missingPricingProfileMessage = t('errors.missingPricingProfile');
   const updateFailedMessage = t('errors.updateFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const successMessage = t('listings.edit.success');
@@ -50,7 +55,11 @@ export default async function CatalogModelListingEditPage({
     return <Empty message={t('listings.edit.notFound')} />;
   }
 
-  const [groups, statuses] = await Promise.all([getGroups(), getStatuses()]);
+  const [groups, statuses, pricingProfiles] = await Promise.all([
+    getGroups(),
+    getStatuses(),
+    getPricingProfilesByModel(model.id),
+  ]);
   const groupOptions = groups.map((group) => ({
     title: group.name,
     value: group.id,
@@ -87,6 +96,17 @@ export default async function CatalogModelListingEditPage({
         title: t('fields.newapiGroup'),
         validation: { required: true },
         tip: t('fields.newapiGroupTip'),
+      },
+      {
+        name: 'pricingProfileId',
+        type: 'select',
+        title: t('fields.pricingProfile'),
+        validation: { required: true },
+        options: pricingProfiles.map((profile) => ({
+          title: `${profile.name} · ${t(`pricingBasis.${profile.pricingBasis}` as any)}`,
+          value: profile.id,
+        })),
+        tip: t('fields.pricingProfileTip'),
       },
       {
         name: 'statusId',
@@ -160,6 +180,21 @@ export default async function CatalogModelListingEditPage({
             message: missingNewapiGroupMessage,
           };
         }
+        const pricingProfileId = String(
+          data.get('pricingProfileId') ?? ''
+        ).trim();
+        const pricingProfile = pricingProfileId
+          ? await getPricingProfileConfig(pricingProfileId)
+          : undefined;
+        if (
+          !pricingProfile ||
+          pricingProfile.profile.modelId !== freshModel.id
+        ) {
+          return {
+            status: 'error' as const,
+            message: missingPricingProfileMessage,
+          };
+        }
 
         let patch: UpdateListing;
         try {
@@ -167,6 +202,7 @@ export default async function CatalogModelListingEditPage({
           // sortOrder 不在 patch 里 —— Partial 更新，未提供即保持不变。
           patch = {
             newapiGroup,
+            pricingProfileId,
             statusId: (data.get('statusId') as string).trim(),
             discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
@@ -182,11 +218,13 @@ export default async function CatalogModelListingEditPage({
         // 折扣是唯一售卖倍率；变更时清除旧的派生价缓存。
         if (
           patch.discountRateBps !== freshListing.discountRateBps ||
-          patch.newapiGroup !== freshListing.newapiGroup
+          patch.newapiGroup !== freshListing.newapiGroup ||
+          patch.pricingProfileId !== freshListing.pricingProfileId
         ) {
-          patch.priceDriftStatus = 'cost_changed';
+          patch.priceDriftStatus = 'ok';
           patch.effectivePriceFormula = JSON.stringify({
-            source: 'catalog_base_price_x_listing_discount',
+            source: 'pricing_profile_x_listing_discount',
+            pricingProfileId,
           });
           patch.effectivePriceSyncedAt = new Date();
         }

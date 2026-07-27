@@ -32,7 +32,10 @@ async function setupDb() {
   const schema = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
   const service = await import('@/features/api-catalog/server/catalog-service');
-  modules = { db, schema, service };
+  const pricingProfiles = await import(
+    '@/features/api-catalog/server/pricing-profile-service'
+  );
+  modules = { db, pricingProfiles, schema, service };
 }
 
 async function seedDimensions(suffix: string) {
@@ -78,47 +81,58 @@ test('setup catalog admin review fixes db', async () => {
   await setupDb();
 });
 
-test('模型管理行只返回模型元数据与基准价，不投影第一条分组折扣', async () => {
+test('模型管理行只返回模型元数据与定价档案数量，不投影售卖价格或分组折扣', async () => {
   const dims = await seedDimensions('rows');
 
   for (let i = 0; i < 3; i++) {
-    await modules.service.upsertModelAdminConfig({
+    const result = await modules.service.upsertModelAdminConfig({
       model: {
         modelId: `rows-model-${i}`,
         displayName: `Rows Model ${i}`,
         vendorId: dims.vendor.id,
         categoryIds: [dims.category.id],
       },
-      basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
-      listing: {
-        groupId: dims.group.id,
-        newapiGroup: 'gw-rows',
-        statusId: dims.status.id,
-        discountRateBps: 9000,
-      },
       capabilityIds: [dims.capability.id],
+    });
+    await modules.pricingProfiles.upsertPricingProfile({
+      modelId: result.model.id,
+      form: {
+        name: '默认售卖价',
+        pricingBasis: 'token',
+        quantityMeter: null,
+        ratesJson: '{"input":"0.15","output":"0.6"}',
+        skuRuleSource: '',
+        longContextThresholdTokens: null,
+        reviewNote: null,
+      },
     });
   }
 
   const rows = await modules.service.getModelAdminRows();
 
-  // 批量查询必须覆盖 N 个模型（此前是每模型 4-5 条 N+1）——三个都要在场且字段正确。
+  // 批量查询必须覆盖 N 个模型，且模型表只汇总档案数量。
   for (let i = 0; i < 3; i++) {
     const row = rows.find((r: any) => r.modelId === `rows-model-${i}`);
     assert.ok(row, `expected rows-model-${i} to be present`);
-    assert.equal(row.price.inputSummary, '0.15');
-    assert.equal(row.price.outputSummary, '0.6');
-    for (const field of ['groupName', 'discountRateBps', 'pricingStatus']) {
+    assert.equal(row.pricingProfileCount, 1);
+    for (const field of [
+      'price',
+      'basePrice',
+      'billingScheme',
+      'groupName',
+      'discountRateBps',
+      'pricingStatus',
+    ]) {
       assert.equal(
         Object.prototype.hasOwnProperty.call(row, field),
         false,
-        `${field} 属于分组折扣，不属于模型元数据`
+        `${field} 不属于模型元数据`
       );
     }
   }
 });
 
-test('S-11c: upsertModelAdminConfig preserves list prices when the caller omits them, clears them on explicit null', async () => {
+test('更新模型元数据不会修改定价档案或分组售卖项', async () => {
   const dims = await seedDimensions('listprice');
 
   const created = await modules.service.upsertModelAdminConfig({
@@ -128,23 +142,32 @@ test('S-11c: upsertModelAdminConfig preserves list prices when the caller omits 
       vendorId: dims.vendor.id,
       categoryIds: [dims.category.id],
     },
-    basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
-    listing: {
-      groupId: dims.group.id,
-      newapiGroup: 'gw-listprice',
-      statusId: dims.status.id,
-      listInputMicroUsd: 999000,
-      listOutputMicroUsd: 1999000,
-      discountRateBps: 9000,
-    },
     capabilityIds: [dims.capability.id],
   });
+  const profile = await modules.pricingProfiles.upsertPricingProfile({
+    modelId: created.model.id,
+    form: {
+      name: '独立售卖价',
+      pricingBasis: 'token',
+      quantityMeter: null,
+      ratesJson: '{"input":"0.15","output":"0.6"}',
+      skuRuleSource: '',
+      longContextThresholdTokens: null,
+      reviewNote: '独立于模型元数据',
+    },
+  });
+  const listing = await modules.service.createListing({
+    modelId: created.model.id,
+    groupId: dims.group.id,
+    newapiGroup: 'gw-listprice',
+    pricingProfileId: profile.profile.id,
+    statusId: dims.status.id,
+    inputMicroUsd: 0,
+    outputMicroUsd: 0,
+    discountRateBps: 9000,
+  });
 
-  assert.equal(created.listing.listInputMicroUsd, 999000);
-  assert.equal(created.listing.listOutputMicroUsd, 1999000);
-
-  // 模型编辑表单根本不提交划线价字段（undefined）：不应被静默抹成 null
-  const preserved = await modules.service.upsertModelAdminConfig({
+  await modules.service.upsertModelAdminConfig({
     modelId: created.model.id,
     model: {
       modelId: 'listprice-model',
@@ -152,44 +175,23 @@ test('S-11c: upsertModelAdminConfig preserves list prices when the caller omits 
       vendorId: dims.vendor.id,
       categoryIds: [dims.category.id],
     },
-    basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
-    listing: {
-      id: created.listing.id,
-      groupId: dims.group.id,
-      newapiGroup: 'gw-listprice',
-      statusId: dims.status.id,
-      discountRateBps: 8000,
-    },
     capabilityIds: [dims.capability.id],
   });
 
-  assert.equal(preserved.listing.listInputMicroUsd, 999000);
-  assert.equal(preserved.listing.listOutputMicroUsd, 1999000);
-
-  // 显式 null 仍然清空（有意的写入路径不受影响）
-  const cleared = await modules.service.upsertModelAdminConfig({
-    modelId: created.model.id,
-    model: {
-      modelId: 'listprice-model',
-      displayName: 'List Price Model Cleared',
-      vendorId: dims.vendor.id,
-      categoryIds: [dims.category.id],
-    },
-    basePrice: { inputMicroUsd: 150000, outputMicroUsd: 600000 },
-    listing: {
-      id: created.listing.id,
-      groupId: dims.group.id,
-      newapiGroup: 'gw-listprice',
-      statusId: dims.status.id,
-      listInputMicroUsd: null,
-      listOutputMicroUsd: null,
-      discountRateBps: 8000,
-    },
-    capabilityIds: [dims.capability.id],
-  });
-
-  assert.equal(cleared.listing.listInputMicroUsd, null);
-  assert.equal(cleared.listing.listOutputMicroUsd, null);
+  const savedListing = await modules.service.getListingById(listing.id);
+  const savedProfile = await modules.pricingProfiles.getPricingProfileConfig(
+    profile.profile.id
+  );
+  assert.equal(savedListing.discountRateBps, 9000);
+  assert.equal(savedListing.pricingProfileId, profile.profile.id);
+  assert.equal(savedProfile.profile.name, '独立售卖价');
+  assert.deepEqual(
+    savedProfile.rates.map((rate: any) => [rate.meterKey, rate.priceMicroUsd]),
+    [
+      ['input', 150000],
+      ['output', 600000],
+    ]
+  );
 });
 
 test('S-11a: dictionary slug and model modelId unique collisions surface a UNIQUE constraint error the pages can catch', async () => {
@@ -395,10 +397,11 @@ test('S-11a: create/upsert pages catch UNIQUE collisions and map them to transla
   }
 });
 
-test('S-11b: new group discount success explains cost review without hiding price', async () => {
+test('S-11b: new listing success no longer couples sale pricing to cost review', async () => {
   const newPage = await readFile(
     join(modelsRoot, '[id]/listings/new/page.tsx'),
     'utf8'
   );
-  assert.match(newPage, /messages\.costReviewAfterSave/);
+  assert.match(newPage, /message: successMessage/);
+  assert.doesNotMatch(newPage, /costReviewAfterSave|cost_alert|cost_changed/);
 });

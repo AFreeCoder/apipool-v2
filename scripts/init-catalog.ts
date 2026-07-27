@@ -7,7 +7,7 @@
 
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import { envConfigs } from '@/config';
 import type {
@@ -17,6 +17,8 @@ import type {
   catalogModelCapability as catalogModelCapabilityTable,
   catalogModelListing as catalogModelListingTable,
   catalogModelPrice as catalogModelPriceTable,
+  catalogModelPricingProfile as catalogModelPricingProfileTable,
+  catalogModelPricingRate as catalogModelPricingRateTable,
   catalogModel as catalogModelTable,
   catalogStatus as catalogStatusTable,
   catalogVendor as catalogVendorTable,
@@ -33,6 +35,8 @@ type CatalogSchemaTables = {
   catalogModel: typeof catalogModelTable;
   catalogModelCapability: typeof catalogModelCapabilityTable;
   catalogModelPrice: typeof catalogModelPriceTable;
+  catalogModelPricingProfile: typeof catalogModelPricingProfileTable;
+  catalogModelPricingRate: typeof catalogModelPricingRateTable;
   catalogModelListing: typeof catalogModelListingTable;
 };
 
@@ -41,6 +45,8 @@ type CatalogCapabilityRow = typeof catalogCapabilityTable.$inferSelect;
 type CatalogStatusRow = typeof catalogStatusTable.$inferSelect;
 type CatalogGroupRow = typeof catalogGroupTable.$inferSelect;
 type CatalogModelRow = typeof catalogModelTable.$inferSelect;
+type CatalogModelPricingProfileRow =
+  typeof catalogModelPricingProfileTable.$inferSelect;
 
 const vendors = [
   { slug: 'openai', name: 'OpenAI', sortOrder: 10 },
@@ -53,6 +59,7 @@ const categories = [
   { slug: 'embedding', name: 'Embedding', sortOrder: 20 },
   { slug: 'image', name: 'Image', sortOrder: 30 },
   { slug: 'audio', name: 'Audio', sortOrder: 40 },
+  { slug: 'video', name: 'Video', sortOrder: 50 },
 ];
 
 const capabilities = [
@@ -118,22 +125,45 @@ const listings = [
     groupSlug: 'official',
     newapiGroup: 'official',
     statusSlug: 'available',
-    inputMicroUsd: 150000,
-    outputMicroUsd: 600000,
+    pricingProfileName: '默认售卖价',
     sortOrder: 10,
+  },
+];
+
+const pricingProfiles = [
+  {
+    modelId: 'gpt-4o-mini',
+    name: '默认售卖价',
+    pricingBasis: 'token',
+    quantityMeter: null,
+    rates: [
+      {
+        meterKey: 'input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 150000,
+      },
+      {
+        meterKey: 'output',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 600000,
+      },
+    ],
   },
 ];
 
 const modelPrices = [
   {
     modelId: 'gpt-4o-mini',
-    pricingMode: 'manual_token',
-    source: 'migration',
+    pricingMode: 'cost_token',
+    source: 'seed_cost',
     baseInputMicroUsd: 150000,
     baseOutputMicroUsd: 600000,
     syncStatus: 'manual',
     driftStatus: 'unknown',
-    reviewNote: 'Seeded from initial official listing price.',
+    reviewNote:
+      'Independent sample upstream cost reference for local bootstrap.',
   },
 ];
 
@@ -178,6 +208,8 @@ export async function initCatalog() {
     catalogModel,
     catalogModelCapability,
     catalogModelPrice,
+    catalogModelPricingProfile,
+    catalogModelPricingRate,
     catalogModelListing,
   } = await loadSchemaTables();
 
@@ -369,22 +401,115 @@ export async function initCatalog() {
       });
 
     await tx
+      .insert(catalogModelPricingProfile)
+      .values(
+        pricingProfiles.map((profile) => ({
+          id: getUuid(),
+          modelId: requireRow(modelByModelId, profile.modelId, 'model').id,
+          name: profile.name,
+          pricingBasis: profile.pricingBasis,
+          quantityMeter: profile.quantityMeter,
+          reviewedAt: new Date(),
+          reviewNote: '初始化脚本写入的已确认售卖定价。',
+        }))
+      )
+      .onConflictDoNothing({
+        target: [
+          catalogModelPricingProfile.modelId,
+          catalogModelPricingProfile.name,
+        ],
+      });
+
+    const pricingProfileRows = (await tx
+      .select()
+      .from(catalogModelPricingProfile)
+      .where(
+        inArray(
+          catalogModelPricingProfile.modelId,
+          Object.values(modelByModelId).map((model) => model.id)
+        )
+      )) as CatalogModelPricingProfileRow[];
+    const pricingProfileByModelAndName = Object.fromEntries(
+      pricingProfileRows.map((profile) => [
+        `${profile.modelId}:${profile.name}`,
+        profile,
+      ])
+    ) as Record<string, CatalogModelPricingProfileRow>;
+
+    await tx
+      .insert(catalogModelPricingRate)
+      .values(
+        pricingProfiles.flatMap((profile) => {
+          const model = requireRow(modelByModelId, profile.modelId, 'model');
+          const savedProfile = requireRow(
+            pricingProfileByModelAndName,
+            `${model.id}:${profile.name}`,
+            'pricing profile'
+          );
+          return profile.rates.map((rate) => ({
+            id: getUuid(),
+            profileId: savedProfile.id,
+            ...rate,
+          }));
+        })
+      )
+      .onConflictDoNothing({
+        target: [
+          catalogModelPricingRate.profileId,
+          catalogModelPricingRate.meterKey,
+          catalogModelPricingRate.skuKey,
+        ],
+      });
+
+    await tx
       .insert(catalogModelListing)
       .values(
-        listings.map((listing) => ({
-          id: getUuid(),
-          modelId: requireRow(modelByModelId, listing.modelId, 'model').id,
-          groupId: requireRow(groupBySlug, listing.groupSlug, 'group').id,
-          newapiGroup: listing.newapiGroup,
-          statusId: requireRow(statusBySlug, listing.statusSlug, 'status').id,
-          inputMicroUsd: listing.inputMicroUsd,
-          outputMicroUsd: listing.outputMicroUsd,
-          sortOrder: listing.sortOrder,
-        }))
+        listings.map((listing) => {
+          const model = requireRow(modelByModelId, listing.modelId, 'model');
+          const profile = requireRow(
+            pricingProfileByModelAndName,
+            `${model.id}:${listing.pricingProfileName}`,
+            'pricing profile'
+          );
+          return {
+            id: getUuid(),
+            modelId: model.id,
+            groupId: requireRow(groupBySlug, listing.groupSlug, 'group').id,
+            newapiGroup: listing.newapiGroup,
+            pricingProfileId: profile.id,
+            statusId: requireRow(statusBySlug, listing.statusSlug, 'status').id,
+            // 旧列只为数据库迁移兼容保留，售卖链路不再读取。
+            inputMicroUsd: 0,
+            outputMicroUsd: 0,
+            sortOrder: listing.sortOrder,
+          };
+        })
       )
       .onConflictDoNothing({
         target: [catalogModelListing.modelId, catalogModelListing.groupId],
       });
+
+    // 旧迁移已经写入种子 listing、但当时可能尚无 catalog_model_price，
+    // 因而 0018 无法为它关联定价档案。初始化时只补空引用，绝不覆盖管理员选择。
+    for (const listing of listings) {
+      const model = requireRow(modelByModelId, listing.modelId, 'model');
+      const group = requireRow(groupBySlug, listing.groupSlug, 'group');
+      const profile = requireRow(
+        pricingProfileByModelAndName,
+        `${model.id}:${listing.pricingProfileName}`,
+        'pricing profile'
+      );
+      await tx
+        .update(catalogModelListing)
+        .set({ pricingProfileId: profile.id })
+        .where(
+          and(
+            eq(catalogModelListing.modelId, model.id),
+            eq(catalogModelListing.groupId, group.id),
+            isNull(catalogModelListing.pricingProfileId)
+          )
+        );
+    }
   });
 }
 

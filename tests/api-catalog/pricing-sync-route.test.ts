@@ -131,7 +131,7 @@ test('admin pricing sync and drift routes run success path without leaking sensi
     .where(eq(catalogModelPrice.modelId, model.id))
     .limit(1);
   assert.equal(price.baseInputMicroUsd, 150000);
-  assert.equal(price.source, 'migration');
+  assert.equal(price.source, 'newapi');
   assert.equal(price.syncStatus, 'reference_current');
   assert.equal(price.driftStatus, 'ok');
   assert.equal(price.sourceFingerprint, 'route-fingerprint');
@@ -143,7 +143,7 @@ test('admin pricing sync and drift routes run success path without leaking sensi
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
   assert.equal(listing.newapiGroup, 'official');
-  assert.equal(listing.priceDriftStatus, 'ok');
+  assert.equal(listing.priceDriftStatus, 'unknown');
 
   const [run] = await modules
     .db()

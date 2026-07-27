@@ -1,22 +1,9 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
-import {
-  computePerCallChargeMicroUsd,
-  computeTokenChargeMicroUsd,
-  type RatesMap,
-} from '@/features/gateway/lib/billing';
-import type { MeterKey, MeterQuantities } from '@/features/gateway/lib/meters';
-import { hashPortalKey } from '@/features/gateway/server/auth';
-import {
-  createPortalApiKey,
-  disablePortalApiKey,
-} from '@/features/newapi-bridge/server/portal';
-import { applyManualAdjustment } from '@/features/wallet/server/ledger';
 import Anthropic from '@anthropic-ai/sdk';
 import { eq, inArray } from 'drizzle-orm';
 import OpenAI from 'openai';
 
-import { db } from '@/core/db';
 import {
   catalogModel,
   catalogModelPrice,
@@ -27,6 +14,18 @@ import {
   walletAccount,
   walletLedger,
 } from '@/config/db/schema';
+import { db } from '@/core/db';
+import type { MeterKey, MeterQuantities } from '@/features/gateway/lib/meters';
+import {
+  computePricingCharge,
+  parsePricingSpec,
+} from '@/features/gateway/lib/pricing-spec';
+import { hashPortalKey } from '@/features/gateway/server/auth';
+import {
+  createPortalApiKey,
+  disablePortalApiKey,
+} from '@/features/newapi-bridge/server/portal';
+import { applyManualAdjustment } from '@/features/wallet/server/ledger';
 import { findUserById } from '@/shared/models/user';
 
 import { assertSmokeIdentity, SMOKE_PORTAL_EMAIL } from './smoke-identities';
@@ -39,28 +38,6 @@ function requiredEnv(name: string) {
 
 function invariant(ok: unknown, message: string): asserts ok {
   if (!ok) throw new Error(`gateway smoke invariant failed: ${message}`);
-}
-
-function parsePriceMap(raw: string, label: string): Record<string, number> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`${label} 无法解析`, { cause: error });
-  }
-  invariant(
-    parsed && typeof parsed === 'object' && !Array.isArray(parsed),
-    `${label} must be an object`
-  );
-  const result: Record<string, number> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    invariant(
-      Number.isSafeInteger(value) && Number(value) >= 0,
-      `${label}.${key} must be a non-negative safe integer`
-    );
-    result[key] = Number(value);
-  }
-  return result;
 }
 
 function addMeter(
@@ -98,21 +75,13 @@ function expectedLedgerCharge(
   row: typeof requestLedger.$inferSelect,
   price: typeof modelPriceVersion.$inferSelect
 ) {
-  if (price.billingScheme === 'token') {
-    const rates = parsePriceMap(price.ratesJson, 'rates_json') as RatesMap;
-    return computeTokenChargeMicroUsd(metersFromLedger(row), rates, {
-      webSearchCount: row.webSearchCount ?? 0,
-      webSearchPriceMicroUsd: rates.web_search ?? null,
-    }).charged;
-  }
-  invariant(price.billingScheme === 'per_call', 'unknown billing scheme');
-  const tiers = parsePriceMap(price.tiersJson, 'tiers_json');
-  const skuKey = row.skuKey ?? 'default';
-  const unitCount = row.unitCount ?? 0;
-  const tierPrice = tiers[skuKey];
-  invariant(unitCount > 0, 'per_call ledger missing unit_count');
-  invariant(tierPrice > 0, `per_call price missing SKU ${skuKey}`);
-  return computePerCallChargeMicroUsd(unitCount, tierPrice);
+  const spec = parsePricingSpec(price.pricingSpecJson);
+  return computePricingCharge(spec, {
+    meters: metersFromLedger(row),
+    webSearchCount: row.webSearchCount ?? 0,
+    skuKey: row.skuKey,
+    quantity: row.unitCount,
+  }).charged;
 }
 
 function sleep(ms: number) {

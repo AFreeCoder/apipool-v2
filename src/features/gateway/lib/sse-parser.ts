@@ -773,6 +773,9 @@ export type RequestAdmissionMetadata = {
   hasServerTool: boolean;
   quality: string | null;
   size: string | null;
+  resolution?: string | null;
+  format?: string | null;
+  voice?: string | null;
 };
 
 export type RequestAdmissionMetadataExtraction =
@@ -784,6 +787,11 @@ const TOOLS_KEY = [0x74, 0x6f, 0x6f, 0x6c, 0x73];
 const TYPE_KEY = [0x74, 0x79, 0x70, 0x65];
 const QUALITY_KEY = [0x71, 0x75, 0x61, 0x6c, 0x69, 0x74, 0x79];
 const SIZE_KEY = [0x73, 0x69, 0x7a, 0x65];
+const RESOLUTION_KEY = [
+  0x72, 0x65, 0x73, 0x6f, 0x6c, 0x75, 0x74, 0x69, 0x6f, 0x6e,
+];
+const FORMAT_KEY = [0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74];
+const VOICE_KEY = [0x76, 0x6f, 0x69, 0x63, 0x65];
 
 /** 只扫描准入所需元数据，不物化请求内的大文本或文件内容。 */
 export function extractRequestAdmissionMetadata(
@@ -817,12 +825,29 @@ export function extractRequestAdmissionMetadata(
 
   let quality: string | null = null;
   let size: string | null = null;
+  let resolution: string | null = null;
+  let format: string | null = null;
+  let voice: string | null = null;
   if (options.includeSku) {
     const qualityScan = findDirectStringProperty(body, root, QUALITY_KEY);
     const sizeScan = findDirectStringProperty(body, root, SIZE_KEY);
-    if (!qualityScan.ok || !sizeScan.ok) return { ok: false };
+    const resolutionScan = findDirectStringProperty(body, root, RESOLUTION_KEY);
+    const formatScan = findDirectStringProperty(body, root, FORMAT_KEY);
+    const voiceScan = findDirectStringProperty(body, root, VOICE_KEY);
+    if (
+      !qualityScan.ok ||
+      !sizeScan.ok ||
+      !resolutionScan.ok ||
+      !formatScan.ok ||
+      !voiceScan.ok
+    ) {
+      return { ok: false };
+    }
     quality = qualityScan.value;
     size = sizeScan.value;
+    resolution = resolutionScan.value;
+    format = formatScan.value;
+    voice = voiceScan.value;
   }
 
   return {
@@ -836,6 +861,9 @@ export function extractRequestAdmissionMetadata(
       hasServerTool,
       quality,
       size,
+      resolution,
+      format,
+      voice,
     },
   };
 }

@@ -18,6 +18,8 @@ const CATALOG_EXPORTS = [
   'catalogModel',
   'catalogModelCategory',
   'catalogModelCapability',
+  'catalogModelPricingProfile',
+  'catalogModelPricingRate',
   'catalogModelPrice',
   'catalogModelPriceTier',
   'catalogModelListing',
@@ -45,25 +47,45 @@ test('catalog tables are exported from the schema barrel', () => {
   }
 });
 
-test('模型售卖项同时拥有图片价格、折扣和 New API 分组映射', () => {
+test('模型售卖项同时拥有定价档案、折扣和 New API 分组映射', () => {
   const listing = schemaExports.catalogModelListing as
     | Record<string, unknown>
     | undefined;
 
   assert.ok(listing);
-  assert.ok(listing.imageInputMicroUsd, 'imageInputMicroUsd should exist');
-  assert.ok(listing.imageOutputMicroUsd, 'imageOutputMicroUsd should exist');
+  assert.ok(listing.pricingProfileId, 'pricingProfileId should exist');
   assert.ok(listing.discountRateBps, 'discountRateBps should exist');
   assert.ok(listing.newapiGroup, 'newapiGroup should exist on each listing');
 });
 
-test('catalog meter pricing tables and columns are exported from sqlite schema', () => {
+test('catalog cost reference and sale pricing profile columns are exported', () => {
   const listing = schemaExports.catalogModelListing as Record<string, unknown>;
+  const profile = schemaExports.catalogModelPricingProfile as Record<
+    string,
+    unknown
+  >;
+  const rate = schemaExports.catalogModelPricingRate as Record<string, unknown>;
   const price = schemaExports.catalogModelPrice as Record<string, unknown>;
   const tier = schemaExports.catalogModelPriceTier as Record<string, unknown>;
   const syncRun = schemaExports.catalogPriceSyncRun as Record<string, unknown>;
   const usageLog = schemaExports.usageLogSnapshot as Record<string, unknown>;
+  const priceVersion = schemaExports.modelPriceVersion as Record<
+    string,
+    unknown
+  >;
+  const requestLedger = schemaExports.requestLedger as Record<string, unknown>;
 
+  assert.ok(profile.modelId);
+  assert.ok(profile.pricingBasis);
+  assert.ok(profile.quantityMeter);
+  assert.ok(profile.skuRuleSource);
+  assert.ok(profile.skuRuleAstJson);
+  assert.ok(profile.ruleHash);
+  assert.ok(rate.profileId);
+  assert.ok(rate.meterKey);
+  assert.ok(rate.skuKey);
+  assert.ok(rate.unitSize);
+  assert.ok(rate.priceMicroUsd);
   assert.ok(price.pricingMode);
   assert.ok(price.billingScheme);
   assert.ok(price.baseCacheWriteMicroUsd);
@@ -82,6 +104,7 @@ test('catalog meter pricing tables and columns are exported from sqlite schema',
   assert.ok(tier.modelId);
   assert.ok(tier.skuKey);
   assert.ok(tier.priceMicroUsd);
+  assert.ok(listing.pricingProfileId);
   assert.ok(listing.allowLongContext);
   assert.ok(listing.newapiGroup);
   assert.equal(Boolean(listing.pricePolicy), false);
@@ -94,6 +117,13 @@ test('catalog meter pricing tables and columns are exported from sqlite schema',
   assert.ok(usageLog.cacheCreationTokens);
   assert.ok(usageLog.cacheCreationRatio);
   assert.ok(usageLog.usageSemantic);
+  assert.ok(priceVersion.pricingSpecJson);
+  assert.ok(priceVersion.pricingProfileId);
+  assert.ok(priceVersion.pricingProfileRuleHash);
+  assert.ok(priceVersion.admissionLongContextThresholdTokens);
+  assert.ok(priceVersion.allowLongContext);
+  assert.ok(requestLedger.pricingBasis);
+  assert.ok(requestLedger.quantityMeter);
 });
 
 test('latest sqlite migration has matching journal and snapshot entries', async () => {
@@ -122,6 +152,14 @@ test('latest sqlite migration has matching journal and snapshot entries', async 
   assert.match(snapshot, /cache_creation_tokens/);
   assert.match(snapshot, /cache_creation_ratio/);
   assert.match(snapshot, /usage_semantic/);
+  assert.match(snapshot, /catalog_model_pricing_profile/);
+  assert.match(snapshot, /catalog_model_pricing_rate/);
+  assert.match(snapshot, /pricing_profile_id/);
+  assert.match(snapshot, /pricing_spec_json/);
+  assert.match(snapshot, /pricing_basis/);
+  assert.match(snapshot, /quantity_meter/);
+  assert.match(snapshot, /admission_long_context_threshold_tokens/);
+  assert.match(snapshot, /allow_long_context/);
 
   const legacyPricingJournal = await readFile(
     join(migrationsDir, 'meta', '_journal.json'),

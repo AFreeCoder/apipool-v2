@@ -18,6 +18,7 @@ const IDs = {
   model: 'routing-model-pk',
   modelId: 'portal-routing-model',
   listing: 'routing-listing',
+  profile: 'routing-pricing-profile',
 };
 
 async function setupDb() {
@@ -91,45 +92,57 @@ async function setupDb() {
     modelId: IDs.modelId,
     displayName: 'Portal Routing Model',
     vendorId: IDs.vendor,
-    category: IDs.category,
+    category: 'llm',
   });
   await modules.db().insert(schema.catalogModelCapability).values({
     id: 'routing-model-capability',
     modelId: IDs.model,
     capabilityId: IDs.capability,
   });
+  await modules
+    .db()
+    .insert(schema.catalogModelPricingProfile)
+    .values({
+      id: IDs.profile,
+      modelId: IDs.model,
+      name: 'Routing Sale Price',
+      pricingBasis: 'token',
+      longContextThresholdTokens: 272_000,
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+  await modules
+    .db()
+    .insert(schema.catalogModelPricingRate)
+    .values(
+      [
+        ['input', 1_000_000],
+        ['cached_input', 100_000],
+        ['cache_write_5m', 1_250_000],
+        ['cache_write_1h', 2_000_000],
+        ['output', 5_000_000],
+        ['input_long', 2_000_000],
+        ['output_long', 9_000_000],
+      ].map(([meterKey, priceMicroUsd]) => ({
+        id: `routing-rate-${meterKey}`,
+        profileId: IDs.profile,
+        meterKey: String(meterKey),
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: Number(priceMicroUsd),
+      }))
+    );
   await modules.db().insert(schema.catalogModelListing).values({
     id: IDs.listing,
     modelId: IDs.model,
     groupId: IDs.group,
     newapiGroup: 'official',
+    pricingProfileId: IDs.profile,
     statusId: IDs.status,
     inputMicroUsd: 1_000_000,
     outputMicroUsd: 5_000_000,
     discountRateBps: 8_000,
     priceDriftStatus: 'matched',
   });
-  await modules
-    .db()
-    .insert(schema.catalogModelPrice)
-    .values({
-      id: 'routing-base-price',
-      modelId: IDs.model,
-      baseInputMicroUsd: 1_000_000,
-      baseCachedInputMicroUsd: 100_000,
-      baseCacheWrite5mMicroUsd: 1_250_000,
-      baseCacheWrite1hMicroUsd: 2_000_000,
-      baseOutputMicroUsd: 5_000_000,
-      sourceSupportedEndpointTypes: JSON.stringify(['messages']),
-      billingCapabilitiesJson: JSON.stringify({
-        cached_input: true,
-        cache_write: true,
-        cache_ttl_split: true,
-      }),
-      syncStatus: 'manual',
-      reviewedAt: new Date('2026-07-20T00:00:00Z'),
-      driftStatus: 'matched',
-    });
 }
 
 test.before(setupDb);
@@ -144,25 +157,41 @@ test('模型目录自动生成路由与不可变价格快照', async () => {
   assert.equal(route.newapiModelId, IDs.modelId);
   assert.equal(route.routeVersion, 1);
   assert.equal(route.billingScheme, 'token');
+  assert.equal(route.allowLongContext, false);
+  assert.equal(route.longContextThresholdTokens, null);
+  assert.equal(route.admissionLongContextThreshold, 272_000);
   assert.deepEqual(route.rates, {
     input: 800_000,
     cached_input: 80_000,
     cache_write_5m: 1_000_000,
     cache_write_1h: 1_600_000,
     output: 4_000_000,
+    input_long: 1_600_000,
+    output_long: 7_200_000,
   });
   const [snapshot] = await modules
     .db()
     .select()
     .from(modules.schema.modelRoute)
     .where(eq(modules.schema.modelRoute.id, route.routeId));
+  const [priceSnapshot] = await modules
+    .db()
+    .select()
+    .from(modules.schema.modelPriceVersion)
+    .where(eq(modules.schema.modelPriceVersion.id, route.priceVersionId));
   assert.equal(snapshot.publishedBy, 'system:catalog');
+  assert.equal(priceSnapshot.allowLongContext, false);
+  assert.equal(priceSnapshot.admissionLongContextThresholdTokens, 272_000);
 });
 test('上架折扣或映射变化会自动滚动快照版本', async () => {
   await modules
     .db()
     .update(modules.schema.catalogModelListing)
-    .set({ newapiGroup: 'vip', discountRateBps: 9_000 })
+    .set({
+      newapiGroup: 'vip',
+      discountRateBps: 9_000,
+      allowLongContext: true,
+    })
     .where(eq(modules.schema.catalogModelListing.id, IDs.listing));
   const route = await modules.routing.resolveActiveRoute(
     IDs.group,
@@ -171,6 +200,22 @@ test('上架折扣或映射变化会自动滚动快照版本', async () => {
   assert.equal(route.routeVersion, 2);
   assert.equal(route.newapiGroup, 'vip');
   assert.equal(route.rates.input, 900_000);
+  assert.equal(route.allowLongContext, true);
+  assert.equal(route.longContextThresholdTokens, 272_000);
+  assert.equal(route.admissionLongContextThreshold, 272_000);
+
+  await modules
+    .db()
+    .update(modules.schema.catalogModelPricingProfile)
+    .set({ longContextThresholdTokens: 300_000 })
+    .where(eq(modules.schema.catalogModelPricingProfile.id, IDs.profile));
+  const thresholdRoute = await modules.routing.resolveActiveRoute(
+    IDs.group,
+    IDs.modelId
+  );
+  assert.equal(thresholdRoute.routeVersion, 3);
+  assert.equal(thresholdRoute.longContextThresholdTokens, 300_000);
+  assert.equal(thresholdRoute.admissionLongContextThreshold, 300_000);
   const activeRoutes = await modules
     .db()
     .select()
@@ -221,37 +266,56 @@ test('同一门户逻辑分组下的两个模型可映射到不同 New API 分�
     modelId: secondModelId,
     displayName: 'Portal Routing Model Second',
     vendorId: IDs.vendor,
-    category: IDs.category,
+    category: 'llm',
   });
   await modules.db().insert(modules.schema.catalogModelCapability).values({
     id: 'routing-model-capability-second',
     modelId: secondModelPk,
     capabilityId: IDs.capability,
   });
+  const secondProfileId = 'routing-pricing-profile-second';
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingProfile)
+    .values({
+      id: secondProfileId,
+      modelId: secondModelPk,
+      name: 'Second Sale Price',
+      pricingBasis: 'token',
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingRate)
+    .values([
+      {
+        id: 'routing-rate-second-input',
+        profileId: secondProfileId,
+        meterKey: 'input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 1_000_000,
+      },
+      {
+        id: 'routing-rate-second-output',
+        profileId: secondProfileId,
+        meterKey: 'output',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 5_000_000,
+      },
+    ]);
   await modules.db().insert(modules.schema.catalogModelListing).values({
     id: 'routing-listing-second',
     modelId: secondModelPk,
     groupId: IDs.group,
     newapiGroup: 'price-50',
+    pricingProfileId: secondProfileId,
     statusId: IDs.status,
     inputMicroUsd: 1_000_000,
     outputMicroUsd: 5_000_000,
     discountRateBps: 5_000,
   });
-  await modules
-    .db()
-    .insert(modules.schema.catalogModelPrice)
-    .values({
-      id: 'routing-base-price-second',
-      modelId: secondModelPk,
-      baseInputMicroUsd: 1_000_000,
-      baseOutputMicroUsd: 5_000_000,
-      sourceSupportedEndpointTypes: JSON.stringify(['responses']),
-      billingCapabilitiesJson: '{}',
-      syncStatus: 'manual',
-      reviewedAt: new Date('2026-07-20T00:00:00Z'),
-    });
-
   const first = await modules.routing.resolveActiveRoute(
     IDs.group,
     IDs.modelId

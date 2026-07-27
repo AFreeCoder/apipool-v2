@@ -42,7 +42,7 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
 }
 
 function readyRoute(overrides: Record<string, unknown> = {}) {
-  return {
+  const route = {
     routeId: 'route-1',
     routeVersion: 1,
     newapiGroup: 'official',
@@ -57,6 +57,62 @@ function readyRoute(overrides: Record<string, unknown> = {}) {
     portalGroupId: 'group-1',
     portalModelId: 'portal-model',
     ...overrides,
+  };
+  const perCall = route.billingScheme === 'per_call';
+  const rates = route.rates as Record<string, number>;
+  const tiers = route.tiers as Record<string, number>;
+  return {
+    ...route,
+    pricingBasis: perCall ? 'unit' : 'token',
+    pricingSpec: perCall
+      ? {
+          version: 1,
+          basis: 'unit',
+          quantityMeter: 'output_count',
+          rates: Object.entries(tiers).map(([skuKey, priceMicroUsd]) => ({
+            meterKey: 'output_count',
+            skuKey,
+            unitSize: 1,
+            priceMicroUsd,
+          })),
+          skuRule: {
+            version: 1,
+            rules: [
+              {
+                conditions: [{ field: 'quality', operator: 'missing' }],
+                output: { type: 'sku', template: 'default' },
+              },
+              {
+                conditions: [
+                  { field: 'quality', operator: 'eq', value: 'auto' },
+                ],
+                output: { type: 'sku', template: 'default' },
+              },
+              {
+                conditions: [{ field: 'size', operator: 'missing' }],
+                output: { type: 'sku', template: 'default' },
+              },
+              {
+                conditions: [{ field: 'size', operator: 'eq', value: 'auto' }],
+                output: { type: 'sku', template: 'default' },
+              },
+            ],
+            fallback: {
+              type: 'sku',
+              template: 'quality=${quality};size=${size}',
+            },
+          },
+        }
+      : {
+          version: 1,
+          basis: 'token',
+          rates: Object.entries(rates).map(([meterKey, priceMicroUsd]) => ({
+            meterKey,
+            skuKey: 'default',
+            unitSize: meterKey === 'web_search' ? 1 : 1_000_000,
+            priceMicroUsd,
+          })),
+        },
   };
 }
 
@@ -221,21 +277,7 @@ test('路由存在但运行 Key pending → 503 + Retry-After', async () => {
     request('/v1/chat/completions', '{"model":"portal-model"}'),
     ['chat', 'completions'],
     baseDeps({
-      resolveRoute: async () => ({
-        routeId: 'route-1',
-        routeVersion: 1,
-        newapiGroup: 'official',
-        newapiModelId: 'remote-model',
-        priceVersionId: 'price-1',
-        billingScheme: 'token',
-        rates: { input: 1_000_000, output: 2_000_000 },
-        tiers: {},
-        longContextThresholdTokens: null,
-        admissionLongContextThreshold: null,
-        allowLongContext: false,
-        portalGroupId: 'group-1',
-        portalModelId: 'portal-model',
-      }),
+      resolveRoute: async () => readyRoute(),
     }) as any
   );
   assert.equal(response.status, 503);

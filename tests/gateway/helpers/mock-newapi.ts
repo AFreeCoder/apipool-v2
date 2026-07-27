@@ -312,7 +312,34 @@ export async function seedGatewayFixture(
   const newapiGroup = options.newapiGroup ?? 'official';
   const runtimeKey = options.runtimeKey ?? `sk-upstream-${suffix}`;
   const billingScheme = options.billingScheme ?? 'token';
-  const tiers = options.tiers ?? {};
+  const tiers =
+    options.tiers ?? (billingScheme === 'per_call' ? { default: 300_000 } : {});
+  const profileId = `integration-pricing-profile-${suffix}`;
+  const imageSkuRule = {
+    version: 1,
+    rules: [
+      {
+        conditions: [{ field: 'quality', operator: 'missing' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'quality', operator: 'eq', value: 'auto' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'size', operator: 'missing' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'size', operator: 'eq', value: 'auto' }],
+        output: { type: 'sku', template: 'default' },
+      },
+    ],
+    fallback: {
+      type: 'sku',
+      template: 'quality=${quality};size=${size}',
+    },
+  };
 
   await modules
     .db()
@@ -361,13 +388,16 @@ export async function seedGatewayFixture(
         `integration-access-${suffix}`
       ),
     });
-  await modules.db().insert(modules.schema.catalogModel).values({
-    id: modelPk,
-    modelId,
-    displayName: modelId,
-    vendorId: 'integration-vendor',
-    category: 'integration-category',
-  });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModel)
+    .values({
+      id: modelPk,
+      modelId,
+      displayName: modelId,
+      vendorId: 'integration-vendor',
+      category: billingScheme === 'per_call' ? 'image' : 'llm',
+    });
   await modules
     .db()
     .insert(modules.schema.catalogModelCapability)
@@ -378,16 +408,79 @@ export async function seedGatewayFixture(
     });
   await modules
     .db()
+    .insert(modules.schema.catalogModelPricingProfile)
+    .values({
+      id: profileId,
+      modelId: modelPk,
+      name: '集成测试售卖价',
+      pricingBasis: billingScheme === 'per_call' ? 'unit' : 'token',
+      quantityMeter: billingScheme === 'per_call' ? 'output_count' : null,
+      skuRuleSource:
+        billingScheme === 'per_call'
+          ? 'when quality is missing => "default"\nwhen quality == "auto" => "default"\nwhen size is missing => "default"\nwhen size == "auto" => "default"\nelse => "quality=${quality};size=${size}"'
+          : null,
+      skuRuleAstJson:
+        billingScheme === 'per_call' ? JSON.stringify(imageSkuRule) : null,
+      compilerVersion: billingScheme === 'per_call' ? 1 : null,
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+  const tokenRates = [
+    {
+      meterKey: 'input',
+      priceMicroUsd: options.price?.input ?? 1_000_000,
+    },
+    {
+      meterKey: 'cached_input',
+      priceMicroUsd: options.price?.cached ?? 500_000,
+    },
+    {
+      meterKey: 'cache_write_5m',
+      priceMicroUsd: options.price?.write5m ?? 1_250_000,
+    },
+    {
+      meterKey: 'cache_write_1h',
+      priceMicroUsd: options.price?.write1h ?? 2_000_000,
+    },
+    {
+      meterKey: 'output',
+      priceMicroUsd: options.price?.output ?? 2_000_000,
+    },
+  ];
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingRate)
+    .values(
+      billingScheme === 'per_call'
+        ? Object.entries(tiers).map(([skuKey, priceMicroUsd]) => ({
+            id: `integration-pricing-rate-${suffix}-${skuKey}`,
+            profileId,
+            meterKey: 'output_count',
+            skuKey,
+            unitSize: 1,
+            priceMicroUsd,
+          }))
+        : tokenRates.map((rate) => ({
+            id: `integration-pricing-rate-${suffix}-${rate.meterKey}`,
+            profileId,
+            meterKey: rate.meterKey,
+            skuKey: 'default',
+            unitSize: 1_000_000,
+            priceMicroUsd: rate.priceMicroUsd,
+          }))
+    );
+  await modules
+    .db()
     .insert(modules.schema.catalogModelListing)
     .values({
       id: `integration-listing-${suffix}`,
       modelId: modelPk,
       groupId,
       newapiGroup,
+      pricingProfileId: profileId,
       statusId: 'integration-callable',
-      inputMicroUsd: 1_000_000,
-      outputMicroUsd: 2_000_000,
-      priceDriftStatus: 'matched',
+      inputMicroUsd: 0,
+      outputMicroUsd: 0,
+      priceDriftStatus: 'ok',
     });
   await modules
     .db()
@@ -432,41 +525,6 @@ export async function seedGatewayFixture(
   }
   await modules
     .db()
-    .insert(modules.schema.modelRoute)
-    .values({
-      id: `integration-route-${suffix}`,
-      portalGroupId: groupId,
-      portalModelId: modelId,
-      newapiGroup,
-      newapiModelId: modelId,
-      version: 1,
-      publishedBy: 'integration-test',
-    });
-  await modules
-    .db()
-    .insert(modules.schema.modelPriceVersion)
-    .values({
-      id: `integration-price-${suffix}`,
-      portalGroupId: groupId,
-      portalModelId: modelId,
-      version: 1,
-      billingScheme,
-      ratesJson:
-        billingScheme === 'per_call'
-          ? '{}'
-          : JSON.stringify({
-              input: options.price?.input ?? 1_000_000,
-              cached_input: options.price?.cached ?? 500_000,
-              cache_write_5m: options.price?.write5m ?? 1_250_000,
-              cache_write_1h: options.price?.write1h ?? 2_000_000,
-              output: options.price?.output ?? 2_000_000,
-            }),
-      tiersJson: JSON.stringify(tiers),
-      refNewapiGroup: newapiGroup,
-      publishedBy: 'integration-test',
-    });
-  await modules
-    .db()
     .insert(modules.schema.runtimeCredential)
     .values({
       id: `integration-credential-${suffix}`,
@@ -485,6 +543,8 @@ export async function seedGatewayFixture(
       keyMasked: `sk-…${runtimeKey.slice(-4)}`,
       status: options.credentialStatus ?? 'active',
     });
+  const route = await modules.routing.resolveActiveRoute(groupId, modelId);
+  if (!route) throw new Error('集成测试目录未生成活动定价快照');
 
   return {
     credentialId: `integration-credential-${suffix}`,
@@ -492,7 +552,9 @@ export async function seedGatewayFixture(
     keyId: `integration-key-${suffix}`,
     modelId,
     plainKey,
-    priceVersionId: `integration-price-${suffix}`,
+    priceVersionId: route.priceVersionId,
+    pricingProfileId: profileId,
+    routeVersion: route.routeVersion,
     runtimeKey,
     userId,
   };

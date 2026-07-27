@@ -104,7 +104,8 @@ export default async function ModelsPage({
       showConfirmedPrice && listing.effectiveOutputMicroUsd !== undefined
         ? listing.effectiveOutputMicroUsd
         : undefined;
-    const perCall = listing.billingScheme === 'per_call';
+    const pricingBasis = listing.pricingBasis ?? 'token';
+    const nonToken = pricingBasis !== 'token';
 
     return {
       key: `${listing.modelId}:${listing.groupSlug}`,
@@ -126,24 +127,45 @@ export default async function ModelsPage({
           capability
         )
       ),
-      perCall,
+      pricingBasis,
       tiers: (listing.tiers ?? []).map((tier) => ({
         skuKey: tier.skuKey,
-        price: formatMicroUsdPerCall(tier.priceMicroUsd, tableLabels.perCall),
+        price: formatMicroUsdPerCall(
+          tier.priceMicroUsd,
+          pricingBasis === 'duration'
+            ? tableLabels.perSecond
+            : tableLabels.perCall
+        ),
+        originalPrice:
+          showStrikethrough && tier.listPriceMicroUsd !== undefined
+            ? formatMicroUsdPerCall(
+                tier.listPriceMicroUsd,
+                pricingBasis === 'duration'
+                  ? tableLabels.perSecond
+                  : tableLabels.perCall
+              )
+            : null,
       })),
-      inputMain: perCall
+      inputMain: nonToken
         ? ''
         : inputPrice === undefined
           ? '—'
           : formatMicroUsdPerMillion(inputPrice),
       inputOrig:
-        !perCall && showStrikethrough && listing.listInputMicroUsd !== undefined
+        !nonToken &&
+        showStrikethrough &&
+        listing.listInputMicroUsd !== undefined
           ? formatMicroUsdPerMillion(listing.listInputMicroUsd)
           : null,
-      outputMain:
-        outputPrice === undefined ? '—' : formatMicroUsdPerMillion(outputPrice),
+      outputMain: nonToken
+        ? ''
+        : outputPrice === undefined
+          ? '—'
+          : formatMicroUsdPerMillion(outputPrice),
       outputOrig:
-        showStrikethrough && listing.listOutputMicroUsd !== undefined
+        !nonToken &&
+        showStrikethrough &&
+        listing.listOutputMicroUsd !== undefined
           ? formatMicroUsdPerMillion(listing.listOutputMicroUsd)
           : null,
       savings: listing.pricePresentation?.discountBps

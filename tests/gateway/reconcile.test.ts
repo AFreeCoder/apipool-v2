@@ -93,30 +93,74 @@ async function seedPrice(
   overrides: Record<string, unknown> = {}
 ) {
   const id = `reconcile-price-${suffix}`;
+  const row: Record<string, any> = {
+    id,
+    portalGroupId: 'reconcile-group',
+    portalModelId: `model-${suffix}`,
+    version: 1,
+    ratesJson: JSON.stringify({
+      input: 1_000_000,
+      cached_input: 500_000,
+      cache_write_5m: 1_250_000,
+      cache_write_1h: 2_000_000,
+      output: 2_000_000,
+    }),
+    newapiRefInputMicroUsdPerM: 1_000_000,
+    newapiRefCachedInputMicroUsdPerM: 500_000,
+    newapiRefCacheWrite5mMicroUsdPerM: 1_250_000,
+    newapiRefCacheWrite1hMicroUsdPerM: 2_000_000,
+    newapiRefOutputMicroUsdPerM: 2_000_000,
+    refNewapiGroup: 'official',
+    publishedBy: 'reconcile-test',
+    ...overrides,
+  };
+  const billingScheme = String(row.billingScheme ?? 'token');
+  const rates = JSON.parse(String(row.ratesJson ?? '{}')) as Record<
+    string,
+    number
+  >;
+  const tiers = JSON.parse(String(row.tiersJson ?? '{}')) as Record<
+    string,
+    number
+  >;
+  const pricingSpecJson =
+    typeof row.pricingSpecJson === 'string'
+      ? row.pricingSpecJson
+      : JSON.stringify(
+          billingScheme === 'per_call'
+            ? {
+                version: 1,
+                basis: 'unit',
+                quantityMeter: 'output_count',
+                rates: Object.entries(tiers).map(([skuKey, priceMicroUsd]) => ({
+                  meterKey: 'output_count',
+                  skuKey,
+                  unitSize: 1,
+                  priceMicroUsd,
+                })),
+                skuRule: {
+                  version: 1,
+                  rules: [],
+                  fallback: { type: 'sku', template: 'default' },
+                },
+              }
+            : {
+                version: 1,
+                basis: 'token',
+                rates: Object.entries(rates).map(
+                  ([meterKey, priceMicroUsd]) => ({
+                    meterKey,
+                    skuKey: 'default',
+                    unitSize: meterKey === 'web_search' ? 1 : 1_000_000,
+                    priceMicroUsd,
+                  })
+                ),
+              }
+        );
   await modules
     .db()
     .insert(modules.schema.modelPriceVersion)
-    .values({
-      id,
-      portalGroupId: 'reconcile-group',
-      portalModelId: `model-${suffix}`,
-      version: 1,
-      ratesJson: JSON.stringify({
-        input: 1_000_000,
-        cached_input: 500_000,
-        cache_write_5m: 1_250_000,
-        cache_write_1h: 2_000_000,
-        output: 2_000_000,
-      }),
-      newapiRefInputMicroUsdPerM: 1_000_000,
-      newapiRefCachedInputMicroUsdPerM: 500_000,
-      newapiRefCacheWrite5mMicroUsdPerM: 1_250_000,
-      newapiRefCacheWrite1hMicroUsdPerM: 2_000_000,
-      newapiRefOutputMicroUsdPerM: 2_000_000,
-      refNewapiGroup: 'official',
-      publishedBy: 'reconcile-test',
-      ...overrides,
-    });
+    .values({ ...row, pricingSpecJson });
   return id;
 }
 
@@ -294,17 +338,14 @@ test('用量层不一致 → token_mismatch', async () => {
   assert.equal((await ledgerRow(ledger.id)).reconcileStatus, 'token_mismatch');
 });
 
-test('金额外部超差为 amount_mismatch，±10 micro 容差内 matched', async () => {
+test('上游成本金额只记录为遥测，不与门户售卖金额比较', async () => {
   const mismatch = await seedLedger('amount-mismatch', { status: 'settled' });
   const tolerance = await seedLedger('amount-tolerance', { status: 'settled' });
   await run([
     logFor(mismatch, { quota: 50, spendUsd: 100 / 1_000_000 }),
     logFor(tolerance, { quota: 12, spendUsd: 23 / 1_000_000 }),
   ]);
-  assert.equal(
-    (await ledgerRow(mismatch.id)).reconcileStatus,
-    'amount_mismatch'
-  );
+  assert.equal((await ledgerRow(mismatch.id)).reconcileStatus, 'matched');
   assert.equal((await ledgerRow(tolerance.id)).reconcileStatus, 'matched');
 });
 
@@ -336,8 +377,7 @@ test('meter 对账重算覆盖长档与 web_search，并统计非空 billing fla
   const row = await ledgerRow(ledger.id);
   assert.equal(row.chargedMicroUsd, 60);
   assert.equal(row.reconcileStatus, 'matched');
-  assert.match(row.reconcileNote, /ref_missing:input_long/);
-  assert.match(row.reconcileNote, /ref_missing:web_search/);
+  assert.equal(row.reconcileNote, null);
   assert.equal(result.flaggedRequests, 1);
 });
 
@@ -407,7 +447,7 @@ test('per_call 对账按 unit_count × tier 重算，NewAPI 日志仅作对照',
   const row = await ledgerRow(ledger.id);
   assert.equal(row.chargedMicroUsd, 500_000);
   assert.equal(row.reconcileStatus, 'matched');
-  assert.match(row.reconcileNote, /ref_missing:per_call/);
+  assert.equal(row.reconcileNote, null);
 });
 
 test('open 命中日志只做对照，门户请求仍按缺 usage 免单', async () => {
@@ -720,7 +760,7 @@ test('ref 缺维且对应桶非零：只做内部核对，不产生假 amount_mi
   await run([logFor(ledger, { inputTokens: 12, spendUsd: 19 / 1_000_000 })]);
   const row = await ledgerRow(ledger.id);
   assert.equal(row.reconcileStatus, 'matched');
-  assert.match(row.reconcileNote, /ref_missing:cached_input/);
+  assert.equal(row.reconcileNote, null);
 });
 
 test('日志模型与账本模型不一致 → token_mismatch + model_mismatch note', async () => {
@@ -731,10 +771,10 @@ test('日志模型与账本模型不一致 → token_mismatch + model_mismatch n
   assert.match(row.reconcileNote, /model_mismatch/);
 });
 
-test('未知维度成本通过外部金额差额呈现为 amount_mismatch', async () => {
+test('未知上游成本维度不反向改变门户售卖对账结果', async () => {
   const ledger = await seedLedger('unmapped-cost', { status: 'settled' });
   await run([logFor(ledger, { quota: 500, spendUsd: 1000 / 1_000_000 })]);
-  assert.equal((await ledgerRow(ledger.id)).reconcileStatus, 'amount_mismatch');
+  assert.equal((await ledgerRow(ledger.id)).reconcileStatus, 'matched');
 });
 
 test('admin 失败时 fallback 按时间片逐用户追平并推进水位', async () => {

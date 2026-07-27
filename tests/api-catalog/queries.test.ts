@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 let modules: any;
 
@@ -76,57 +76,55 @@ async function createFixtureModel(input: {
   });
 
   await modules.service.setModelCapabilities(model.id, input.capabilityIds);
+  const profileId = `profile-${input.modelId}`;
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingProfile)
+    .values({
+      id: profileId,
+      modelId: model.id,
+      name: '测试售卖价',
+      pricingBasis: 'token',
+      reviewedAt:
+        input.activeRoutePrice === false
+          ? null
+          : new Date('2026-07-20T00:00:00Z'),
+    });
+  const rateValues =
+    input.category === 'image'
+      ? {
+          input: 100_000,
+          image_input: 150_000,
+          image_output: 200_000,
+        }
+      : { input: 100_000, output: 200_000 };
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingRate)
+    .values(
+      Object.entries(rateValues).map(([meterKey, priceMicroUsd]) => ({
+        id: `rate-${input.modelId}-${meterKey}`,
+        profileId,
+        meterKey,
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd,
+      }))
+    );
   await modules.service.createListing({
     modelId: model.id,
     groupId: input.groupId,
     newapiGroup: `test-${input.groupId}`,
+    pricingProfileId: profileId,
     statusId: input.statusId,
-    inputMicroUsd: 100000 + input.sortOrder,
-    outputMicroUsd: 200000 + input.sortOrder,
+    inputMicroUsd: 0,
+    outputMicroUsd: 0,
     smokeTested: true,
     featured: false,
     sortOrder: input.sortOrder,
   });
-  if (input.activeRoutePrice !== false) {
-    await seedActiveRoutePrice(input.groupId, model.modelId);
-  }
 
   return model;
-}
-
-async function seedActiveRoutePrice(groupId: string, modelId: string) {
-  const safeId = `${groupId}-${modelId}`;
-  await modules
-    .db()
-    .insert(modules.schema.modelPriceVersion)
-    .values({
-      id: `price-${safeId}`,
-      portalGroupId: groupId,
-      portalModelId: modelId,
-      version: 1,
-      status: 'active',
-      ratesJson: JSON.stringify({
-        input: 100_000,
-        cached_input: 50_000,
-        cache_write_5m: 125_000,
-        cache_write_1h: 200_000,
-        output: 200_000,
-      }),
-      publishedBy: 'queries-test',
-    });
-  await modules
-    .db()
-    .insert(modules.schema.modelRoute)
-    .values({
-      id: `route-${safeId}`,
-      portalGroupId: groupId,
-      portalModelId: modelId,
-      newapiGroup: `test-${groupId}`,
-      newapiModelId: modelId,
-      version: 1,
-      status: 'active',
-      publishedBy: 'queries-test',
-    });
 }
 
 async function seedQueryFixtures() {
@@ -179,6 +177,14 @@ async function seedQueryFixtures() {
     .select()
     .from(catalogModel)
     .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
+    .limit(1);
+  const [seededProfile] = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogModelPricingProfile)
+    .where(
+      eq(modules.schema.catalogModelPricingProfile.modelId, seededModel.id)
+    )
     .limit(1);
 
   const partnerGroup = await modules.service.createGroup({
@@ -338,11 +344,10 @@ async function seedQueryFixtures() {
     modelId: seededModel.id,
     groupId: partnerGroup.id,
     newapiGroup: `test-${partnerGroup.id}`,
+    pricingProfileId: seededProfile.id,
     statusId: available.id,
-    inputMicroUsd: 90000,
-    outputMicroUsd: 180000,
-    listInputMicroUsd: 120000,
-    listOutputMicroUsd: 240000,
+    inputMicroUsd: 0,
+    outputMicroUsd: 0,
     discountNote: 'Partner price',
     description: 'Partner listing',
     smokeTested: true,
@@ -354,8 +359,6 @@ async function seedQueryFixtures() {
     .update(modules.schema.catalogModelListing)
     .set({ newapiGroup: `test-${official.id}` })
     .where(eq(modules.schema.catalogModelListing.modelId, seededModel.id));
-  await seedActiveRoutePrice(official.id, seededModel.modelId);
-  await seedActiveRoutePrice(partnerGroup.id, seededModel.modelId);
 
   await createFixtureModel({
     modelId: 'claude-query-test',
@@ -663,7 +666,7 @@ test('getPublicListings aggregates capabilities for each model without exposing 
   assert.equal('overrideStatus' in seeded, false);
 });
 
-test('public listings do not expose confirmed discounts before New API group match', async () => {
+test('公开售卖价不依赖 New API 成本分组匹配状态', async () => {
   const listings = await modules.queries.getPublicListingsUncached({
     group: 'partner',
   });
@@ -672,20 +675,26 @@ test('public listings do not expose confirmed discounts before New API group mat
   );
 
   assert.ok(partner);
-  assert.equal(partner.inputMicroUsd, undefined);
-  assert.equal(partner.outputMicroUsd, undefined);
+  assert.equal(partner.inputMicroUsd, 150000);
+  assert.equal(partner.outputMicroUsd, 600000);
   assert.equal(partner.imageInputMicroUsd, undefined);
   assert.equal(partner.imageOutputMicroUsd, undefined);
   assert.equal(partner.listInputMicroUsd, undefined);
   assert.equal(partner.listOutputMicroUsd, undefined);
-  assert.equal(partner.discountNote, undefined);
-  assert.equal(partner.effectiveInputMicroUsd, undefined);
-  assert.equal(partner.pricePresentation.showPrice, false);
+  assert.equal(partner.discountNote, 'Partner price');
+  assert.equal(partner.effectiveInputMicroUsd, 150000);
+  assert.equal(partner.pricePresentation.showPrice, true);
 });
 
 test('public listings derive sale price from listing discount and ignore New API group ratio', async () => {
-  const { catalogGroup, catalogModel, catalogModelListing, catalogModelPrice } =
-    modules.schema;
+  const {
+    catalogGroup,
+    catalogModel,
+    catalogModelListing,
+    catalogModelPrice,
+    catalogModelPricingProfile,
+    catalogModelPricingRate,
+  } = modules.schema;
   const official = await findBySlug(
     catalogGroup,
     catalogGroup.slug,
@@ -707,25 +716,46 @@ test('public listings derive sale price from listing discount and ignore New API
       pricingSyncStatus: 'synced',
     })
     .where(eq(catalogGroup.id, official.id));
+  const [profile] = await modules
+    .db()
+    .select()
+    .from(catalogModelPricingProfile)
+    .where(eq(catalogModelPricingProfile.modelId, model.id))
+    .limit(1);
+  await modules
+    .db()
+    .update(catalogModelPricingRate)
+    .set({ priceMicroUsd: 150000 })
+    .where(
+      and(
+        eq(catalogModelPricingRate.profileId, profile.id),
+        eq(catalogModelPricingRate.meterKey, 'input')
+      )
+    );
+  await modules
+    .db()
+    .update(catalogModelPricingRate)
+    .set({ priceMicroUsd: 600000 })
+    .where(
+      and(
+        eq(catalogModelPricingRate.profileId, profile.id),
+        eq(catalogModelPricingRate.meterKey, 'output')
+      )
+    );
   await modules
     .db()
     .update(catalogModelPrice)
     .set({
-      baseInputMicroUsd: 150000,
-      baseOutputMicroUsd: 600000,
-      sourceSupportedEndpointTypes: JSON.stringify(['responses']),
-      billingCapabilitiesJson: '{}',
-      syncStatus: 'manual',
-      reviewedAt: new Date('2026-07-20T00:00:00Z'),
-      driftStatus: 'matched',
+      baseInputMicroUsd: 99_000_000,
+      baseOutputMicroUsd: 199_000_000,
+      syncStatus: 'reference_missing',
     })
     .where(eq(catalogModelPrice.modelId, model.id));
   await modules
     .db()
     .update(catalogModelListing)
     .set({
-      listInputMicroUsd: 150000,
-      listOutputMicroUsd: 600000,
+      pricingProfileId: profile.id,
       discountNote: 'Official ratio',
       discountRateBps: 5000,
       priceDriftStatus: 'matched',
@@ -787,6 +817,7 @@ test('getFilterDimensions returns all active admin-configured dimensions in sort
       'embedding',
       'image',
       'audio',
+      'video',
       'capability-only-category',
       'cross-hidden-category',
     ]

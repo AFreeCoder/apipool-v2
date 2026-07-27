@@ -14,15 +14,13 @@ import {
 } from '@/config/db/schema';
 import { db } from '@/core/db';
 import {
-  computePerCallChargeMicroUsd,
-  computeTokenChargeMicroUsd,
-  type RatesMap,
-} from '@/features/gateway/lib/billing';
-import type {
-  BillingScheme,
-  MeterKey,
-  MeterQuantities,
+  type MeterKey,
+  type MeterQuantities,
 } from '@/features/gateway/lib/meters';
+import {
+  computePricingCharge,
+  parsePricingSpec,
+} from '@/features/gateway/lib/pricing-spec';
 import { getUuid } from '@/shared/lib/hash';
 
 import { markFailedUnbilled as defaultMarkFailedUnbilled } from './admission';
@@ -106,120 +104,18 @@ function ledgerMeters(row: typeof requestLedger.$inferSelect): MeterQuantities {
   return meters;
 }
 
-function parsePriceMap(raw: string, label: string): Record<string, number> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`${label} 无法解析`, { cause: error });
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} 必须是对象`);
-  }
-  const result: Record<string, number> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (!Number.isSafeInteger(value) || Number(value) < 0) {
-      throw new Error(`${label} 的 ${key} 不是有效非负整数`);
-    }
-    result[key] = Number(value);
-  }
-  return result;
-}
-
 function retailExpectedCharge(
   price: typeof modelPriceVersion.$inferSelect,
   row: typeof requestLedger.$inferSelect,
   meters: MeterQuantities
 ) {
-  const billingScheme = price.billingScheme as BillingScheme;
-  if (billingScheme === 'token') {
-    const rates = parsePriceMap(price.ratesJson, '价格 rates_json') as RatesMap;
-    return computeTokenChargeMicroUsd(meters, rates, {
-      webSearchCount: row.webSearchCount ?? 0,
-      webSearchPriceMicroUsd: rates.web_search ?? null,
-    }).charged;
-  }
-  if (billingScheme === 'per_call') {
-    const tiers = parsePriceMap(price.tiersJson, '价格 tiers_json');
-    const skuKey = row.skuKey ?? 'default';
-    const unitCount = row.unitCount ?? 0;
-    const tierPrice = tiers[skuKey];
-    if (!Number.isSafeInteger(unitCount) || unitCount <= 0) {
-      throw new Error('per_call 对账缺少正整数 unit_count');
-    }
-    if (!Number.isSafeInteger(tierPrice) || tierPrice <= 0) {
-      throw new Error(`per_call 对账缺少 SKU 价格：${skuKey}`);
-    }
-    return computePerCallChargeMicroUsd(unitCount, tierPrice);
-  }
-  throw new Error(`不支持的计费方案：${price.billingScheme}`);
-}
-
-function referenceExpectedCharge(
-  price: typeof modelPriceVersion.$inferSelect,
-  row: typeof requestLedger.$inferSelect,
-  meters: MeterQuantities
-): { charged: bigint | null; missing: string[] } {
-  if (price.billingScheme === 'per_call') {
-    const tiers = parsePriceMap(
-      price.newapiRefTiersJson,
-      'New API 参照 tiers_json'
-    );
-    const skuKey = row.skuKey ?? 'default';
-    const tierPrice = tiers[skuKey];
-    if (!Number.isSafeInteger(tierPrice) || tierPrice <= 0) {
-      return { charged: null, missing: [`per_call:${skuKey}`] };
-    }
-    const unitCount = row.unitCount ?? 0;
-    if (!Number.isSafeInteger(unitCount) || unitCount <= 0) {
-      return { charged: null, missing: ['unit_count'] };
-    }
-    return {
-      charged: computePerCallChargeMicroUsd(unitCount, tierPrice),
-      missing: [],
-    };
-  }
-  let rates = parsePriceMap(
-    price.newapiRefRatesJson,
-    'New API 参照 rates_json'
-  ) as RatesMap;
-  if (Object.keys(rates).length === 0) {
-    // 兼容升级前已生成的不可变快照。
-    rates = {
-      ...(price.newapiRefInputMicroUsdPerM !== null
-        ? { input: price.newapiRefInputMicroUsdPerM }
-        : {}),
-      ...(price.newapiRefCachedInputMicroUsdPerM !== null
-        ? { cached_input: price.newapiRefCachedInputMicroUsdPerM }
-        : {}),
-      ...(price.newapiRefCacheWrite5mMicroUsdPerM !== null
-        ? { cache_write_5m: price.newapiRefCacheWrite5mMicroUsdPerM }
-        : {}),
-      ...(price.newapiRefCacheWrite1hMicroUsdPerM !== null
-        ? { cache_write_1h: price.newapiRefCacheWrite1hMicroUsdPerM }
-        : {}),
-      ...(price.newapiRefOutputMicroUsdPerM !== null
-        ? { output: price.newapiRefOutputMicroUsdPerM }
-        : {}),
-    };
-  }
-  const missing = (Object.entries(meters) as [MeterKey, number][])
-    .filter(([key, quantity]) => quantity > 0 && rates[key] === undefined)
-    .map(([key]) => key);
-  if ((row.webSearchCount ?? 0) > 0 && rates.web_search === undefined) {
-    missing.push('web_search');
-  }
-  const uniqueMissing = [...new Set(missing)];
-  if (uniqueMissing.length > 0) {
-    return { charged: null, missing: uniqueMissing };
-  }
-  return {
-    charged: computeTokenChargeMicroUsd(meters, rates, {
-      webSearchCount: row.webSearchCount ?? 0,
-      webSearchPriceMicroUsd: rates.web_search ?? null,
-    }).charged,
-    missing: [],
-  };
+  const spec = parsePricingSpec(price.pricingSpecJson);
+  return computePricingCharge(spec, {
+    meters,
+    webSearchCount: row.webSearchCount ?? 0,
+    skuKey: row.skuKey,
+    quantity: row.unitCount,
+  }).charged;
 }
 
 const INPUT_METER_KEYS: MeterKey[] = [
@@ -240,6 +136,11 @@ function meterTotal(meters: MeterQuantities, keys: MeterKey[]) {
   return keys.reduce((total, key) => total + (meters[key] ?? 0), 0);
 }
 
+/*
+ * New API quota 是独立的上游成本观测，不再与售卖价格快照比较。这里仅验证：
+ * 1. 上游日志的模型与 token 数量是否和门户账本一致；
+ * 2. 门户账本金额能否由自己的不可变售卖快照重算。
+ */
 async function reconcileSettled(
   row: typeof requestLedger.$inferSelect,
   log: UsageLog,
@@ -270,25 +171,10 @@ async function reconcileSettled(
   }
   if (internalMismatch) notes.push('internal_amount_mismatch');
 
-  const quota = quotaFromLog(log);
-  const ref = referenceExpectedCharge(price, row, meters);
-  let externalMismatch = false;
-  if (ref.missing.length > 0) {
-    notes.push(...ref.missing.map((name) => `ref_missing:${name}`));
-  } else if (quota === null) {
-    notes.push('quota_missing');
-  } else {
-    const actualMicroUsd = quota * 2;
-    const expectedMicroUsd = Number(ref.charged!);
-    const tolerance = Math.max(10, Math.ceil(Math.abs(actualMicroUsd) * 0.01));
-    externalMismatch = Math.abs(actualMicroUsd - expectedMicroUsd) > tolerance;
-    if (externalMismatch) notes.push('external_amount_mismatch');
-  }
-
   const reconcileStatus =
     tokenMismatch || modelMismatch
       ? 'token_mismatch'
-      : internalMismatch || externalMismatch
+      : internalMismatch
         ? 'amount_mismatch'
         : 'matched';
   await db()

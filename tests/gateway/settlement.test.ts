@@ -11,6 +11,19 @@ let modules: any;
 
 const NORMAL_USAGE: MeterQuantities = { input: 1000 };
 
+function tokenPricingSpec(rates: Record<string, number>) {
+  return JSON.stringify({
+    version: 1,
+    basis: 'token',
+    rates: Object.entries(rates).map(([meterKey, priceMicroUsd]) => ({
+      meterKey,
+      skuKey: 'default',
+      unitSize: meterKey === 'web_search' ? 1 : 1_000_000,
+      priceMicroUsd,
+    })),
+  });
+}
+
 async function setupDb() {
   const dbPath = join(process.cwd(), '.tmp', 'gateway-settlement.db');
   await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
@@ -48,6 +61,13 @@ async function setupDb() {
 }
 
 async function seedPrice(id: string, inputMicroUsdPerM = 2_500_000) {
+  const rates = {
+    input: inputMicroUsdPerM,
+    cached_input: 0,
+    cache_write_5m: 0,
+    cache_write_1h: 0,
+    output: 0,
+  };
   await modules
     .db()
     .insert(modules.schema.modelPriceVersion)
@@ -57,13 +77,8 @@ async function seedPrice(id: string, inputMicroUsdPerM = 2_500_000) {
       portalModelId: id,
       version: 1,
       status: 'active',
-      ratesJson: JSON.stringify({
-        input: inputMicroUsdPerM,
-        cached_input: 0,
-        cache_write_5m: 0,
-        cache_write_1h: 0,
-        output: 0,
-      }),
+      ratesJson: JSON.stringify(rates),
+      pricingSpecJson: tokenPricingSpec(rates),
       publishedBy: 'operator',
     });
 }
@@ -81,6 +96,24 @@ async function seedPerCallPrice(id: string) {
       billingScheme: 'per_call',
       ratesJson: '{}',
       tiersJson: JSON.stringify({ default: 300_000 }),
+      pricingSpecJson: JSON.stringify({
+        version: 1,
+        basis: 'unit',
+        quantityMeter: 'output_count',
+        rates: [
+          {
+            meterKey: 'output_count',
+            skuKey: 'default',
+            unitSize: 1,
+            priceMicroUsd: 300_000,
+          },
+        ],
+        skuRule: {
+          version: 1,
+          rules: [],
+          fallback: { type: 'sku', template: 'default' },
+        },
+      }),
       publishedBy: 'operator',
     });
 }
@@ -273,6 +306,12 @@ test('failed_unbilled 终态不可结算', async () => {
 });
 
 test('meter 列映射、工具附加费、未知价格标记与原始凭证同事务落库', async () => {
+  const rates = {
+    input: 1_000_000,
+    cache_write: 2_000_000,
+    image_input: 3_000_000,
+    web_search: 10,
+  };
   await modules
     .db()
     .insert(modules.schema.modelPriceVersion)
@@ -281,12 +320,8 @@ test('meter 列映射、工具附加费、未知价格标记与原始凭证同�
       portalGroupId: 'settlement-group',
       portalModelId: 'price-meter-map',
       version: 1,
-      ratesJson: JSON.stringify({
-        input: 1_000_000,
-        cache_write: 2_000_000,
-        image_input: 3_000_000,
-        web_search: 10,
-      }),
+      ratesJson: JSON.stringify(rates),
+      pricingSpecJson: tokenPricingSpec(rates),
       publishedBy: 'operator',
     });
   await seedUser('settle-meter-map', 50_000);
@@ -330,6 +365,12 @@ test('meter 列映射、工具附加费、未知价格标记与原始凭证同�
 });
 
 test('长档 meter 写回普通数量列并标记 longContextApplied', async () => {
+  const rates = {
+    input_long: 10_000_000,
+    cached_input_long: 1_000_000,
+    cache_write_long: 12_500_000,
+    output_long: 40_000_000,
+  };
   await modules
     .db()
     .insert(modules.schema.modelPriceVersion)
@@ -338,12 +379,8 @@ test('长档 meter 写回普通数量列并标记 longContextApplied', async () 
       portalGroupId: 'settlement-group',
       portalModelId: 'price-long',
       version: 1,
-      ratesJson: JSON.stringify({
-        input_long: 10_000_000,
-        cached_input_long: 1_000_000,
-        cache_write_long: 12_500_000,
-        output_long: 40_000_000,
-      }),
+      ratesJson: JSON.stringify(rates),
+      pricingSpecJson: tokenPricingSpec(rates),
       longContextThresholdTokens: 272_000,
       publishedBy: 'operator',
     });

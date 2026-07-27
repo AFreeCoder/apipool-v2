@@ -14,6 +14,10 @@ import {
   getStatuses,
   NewListing,
 } from '@/features/api-catalog/server/catalog-service';
+import {
+  getPricingProfileConfig,
+  getPricingProfilesByModel,
+} from '@/features/api-catalog/server/pricing-profile-service';
 import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
 import { revalidateCatalog } from '@/features/api-catalog/server/queries';
 import { Empty } from '@/shared/blocks/common';
@@ -21,20 +25,6 @@ import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { FormCard } from '@/shared/blocks/form';
 import { Crumb } from '@/shared/types/blocks/common';
 import { Form } from '@/shared/types/blocks/form';
-
-// 业务校验错误：server action 里捕获后转成 { status: 'error' } 返回。
-// 直接 throw 的话生产环境会被 Next.js 脱敏成通用英文错误。
-class FormValidationError extends Error {}
-
-function requiredBasePrice(
-  value: number | null | undefined,
-  message: string
-): number {
-  if (value === null || value === undefined) {
-    throw new FormValidationError(message);
-  }
-  return value;
-}
 
 export default async function CatalogModelListingNewPage({
   params,
@@ -52,15 +42,16 @@ export default async function CatalogModelListingNewPage({
 
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
-  const missingBasePriceMessage = t('errors.missingBasePrice');
+  const missingPricingProfileMessage = t('errors.missingPricingProfile');
   const missingNewapiGroupMessage = t('errors.missingNewapiGroup');
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const duplicateListingMessage = t('errors.duplicateListing');
-  const successMessage = `${t('listings.new.success')} ${t('messages.costReviewAfterSave')}`;
-  const [model, config] = await Promise.all([
+  const successMessage = t('listings.new.success');
+  const [model, config, pricingProfiles] = await Promise.all([
     getModelById(id),
     getModelAdminConfig(id),
+    getPricingProfilesByModel(id),
   ]);
 
   if (!model) {
@@ -106,6 +97,17 @@ export default async function CatalogModelListingNewPage({
         tip: t('fields.newapiGroupTip'),
       },
       {
+        name: 'pricingProfileId',
+        type: 'select',
+        title: t('fields.pricingProfile'),
+        validation: { required: true },
+        options: pricingProfiles.map((profile) => ({
+          title: `${profile.name} · ${t(`pricingBasis.${profile.pricingBasis}` as any)}`,
+          value: profile.id,
+        })),
+        tip: t('fields.pricingProfileTip'),
+      },
+      {
         name: 'statusId',
         type: 'select',
         title: t('fields.status'),
@@ -143,6 +145,7 @@ export default async function CatalogModelListingNewPage({
     data: {
       groupId: groups[0]?.id ?? '',
       newapiGroup: '',
+      pricingProfileId: pricingProfiles[0]?.id ?? '',
       statusId: statuses[0]?.id ?? '',
       discountFold: bpsToDiscountFold(defaultListing?.discountRateBps) || '',
       discountNote: '',
@@ -159,40 +162,24 @@ export default async function CatalogModelListingNewPage({
         await requirePermission({ code: PERMISSIONS.CATALOG_WRITE });
 
         // 绝不信任客户端回传的记录快照：表单实参可被伪造、也可能是陈旧页面的旧值。
-        // 模型与用于填充新 listing 价格字段的基准价，一律按路由参数在服务端重查。
+        // 模型和定价档案一律按路由参数在服务端重查。
         const model = await getModelById(id);
 
         if (!model) {
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
-        const config = await getModelAdminConfig(id);
-        const basePrice = config?.basePrice;
-        const defaultListing = config?.listing;
-
-        let inputMicroUsd: number;
-        let outputMicroUsd: number;
-        try {
-          inputMicroUsd = requiredBasePrice(
-            basePrice?.baseInputMicroUsd ??
-              (basePrice?.billingScheme === 'per_call'
-                ? 0
-                : defaultListing?.inputMicroUsd),
-            missingBasePriceMessage
-          );
-          outputMicroUsd = requiredBasePrice(
-            basePrice?.baseOutputMicroUsd ??
-              (basePrice?.billingScheme === 'per_call'
-                ? 0
-                : defaultListing?.outputMicroUsd),
-            missingBasePriceMessage
-          );
-        } catch (error) {
-          if (error instanceof FormValidationError) {
-            return { status: 'error' as const, message: error.message };
-          }
-          // 未知错误继续上抛：真 500 应进 error 边界，而不是伪装成业务错误。
-          throw error;
+        const pricingProfileId = String(
+          data.get('pricingProfileId') ?? ''
+        ).trim();
+        const pricingProfile = pricingProfileId
+          ? await getPricingProfileConfig(pricingProfileId)
+          : undefined;
+        if (!pricingProfile || pricingProfile.profile.modelId !== model.id) {
+          return {
+            status: 'error' as const,
+            message: missingPricingProfileMessage,
+          };
         }
 
         const newapiGroup = (data.get('newapiGroup') as string | null)?.trim();
@@ -209,22 +196,24 @@ export default async function CatalogModelListingNewPage({
             modelId: model.id,
             groupId: (data.get('groupId') as string).trim(),
             newapiGroup,
+            pricingProfileId,
             statusId: (data.get('statusId') as string).trim(),
-            inputMicroUsd,
-            outputMicroUsd,
-            imageInputMicroUsd:
-              basePrice?.baseImageInputMicroUsd ??
-              defaultListing?.imageInputMicroUsd ??
-              null,
-            imageOutputMicroUsd:
-              basePrice?.baseImageOutputMicroUsd ??
-              defaultListing?.imageOutputMicroUsd ??
-              null,
-            listInputMicroUsd: defaultListing?.listInputMicroUsd ?? null,
-            listOutputMicroUsd: defaultListing?.listOutputMicroUsd ?? null,
+            // 遗留缓存列不再是售卖事实源；新发布只读取 pricingProfileId。
+            inputMicroUsd: 0,
+            outputMicroUsd: 0,
+            imageInputMicroUsd: null,
+            imageOutputMicroUsd: null,
+            listInputMicroUsd: null,
+            listOutputMicroUsd: null,
             discountRateBps: discountFoldToBps(data.get('discountFold')),
             discountNote:
               (data.get('discountNote') as string | null)?.trim() || null,
+            priceDriftStatus: 'ok',
+            effectivePriceFormula: JSON.stringify({
+              source: 'pricing_profile_x_listing_discount',
+              pricingProfileId,
+            }),
+            effectivePriceSyncedAt: new Date(),
             allowLongContext: data.get('allowLongContext') === 'true',
             description:
               (data.get('description') as string | null)?.trim() || null,

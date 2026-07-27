@@ -8,17 +8,13 @@ import {
   walletAccount,
 } from '@/config/db/schema';
 import { db } from '@/core/db';
-import {
-  computePerCallChargeMicroUsd,
-  computeTokenChargeMicroUsd,
-  type RatesMap,
-} from '@/features/gateway/lib/billing';
 import { gatewayConfig } from '@/features/gateway/lib/config';
-import type {
-  BillingScheme,
-  MeterKey,
-  MeterQuantities,
-} from '@/features/gateway/lib/meters';
+import type { MeterKey, MeterQuantities } from '@/features/gateway/lib/meters';
+import {
+  computePricingCharge,
+  legacyBillingSchemeForBasis,
+  parsePricingSpec,
+} from '@/features/gateway/lib/pricing-spec';
 import {
   appendLedgerEntryInTx,
   ensureWalletAccount,
@@ -49,26 +45,6 @@ const LEDGER_METER_COLUMNS = {
   cachedImageInputTokens: ['cached_image_input'],
   imageOutputTokens: ['image_output'],
 } as const satisfies Record<string, readonly MeterKey[]>;
-
-function parsePriceMap(raw: string, label: string): Record<string, number> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`${label} 无法解析`, { cause: error });
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} 必须是对象`);
-  }
-  const result: Record<string, number> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (!Number.isSafeInteger(value) || Number(value) < 0) {
-      throw new Error(`${label} 的 ${key} 不是有效非负整数`);
-    }
-    result[key] = Number(value);
-  }
-  return result;
-}
 
 function quantity(meters: MeterQuantities, ...keys: MeterKey[]) {
   return keys.reduce((total, key) => total + (meters[key] ?? 0), 0);
@@ -150,38 +126,25 @@ async function settleRow(
     .limit(1);
   if (!price) throw new Error(`price version ${ledger.priceVersionId} missing`);
 
-  const billingScheme = price.billingScheme as BillingScheme;
+  const pricingSpec = parsePricingSpec(price.pricingSpecJson);
+  const billingScheme = legacyBillingSchemeForBasis(pricingSpec.basis);
   const flags = [...new Set(usage.flags)];
   let charged: bigint;
   let skuKey: string | null = null;
   let unitCount: number | null = null;
-  if (billingScheme === 'token') {
-    const rates = parsePriceMap(price.ratesJson, '价格 rates_json') as RatesMap;
-    const result = computeTokenChargeMicroUsd(usage.meters, rates, {
-      webSearchCount: usage.webSearchCount,
-      webSearchPriceMicroUsd: rates.web_search ?? null,
-    });
-    charged = result.charged;
-    for (const meter of result.unpricedMeters) {
-      flags.push(`unpriced:${meter}`);
-    }
-    if (usage.webSearchCount > 0 && rates.web_search === undefined) {
-      flags.push('unpriced:web_search');
-    }
-  } else if (billingScheme === 'per_call') {
-    const tiers = parsePriceMap(price.tiersJson, '价格 tiers_json');
+  if (pricingSpec.basis !== 'token') {
     skuKey = usage.skuKey ?? 'default';
     unitCount = usage.unitCount ?? 0;
-    if (!Number.isSafeInteger(unitCount) || unitCount <= 0) {
-      throw new Error('per_call 结算需要正整数 unitCount');
-    }
-    const tierPrice = tiers[skuKey];
-    if (!Number.isSafeInteger(tierPrice) || tierPrice <= 0) {
-      throw new Error(`per_call 结算缺少 SKU 价格：${skuKey}`);
-    }
-    charged = computePerCallChargeMicroUsd(unitCount, tierPrice);
-  } else {
-    throw new Error(`不支持的计费方案：${price.billingScheme}`);
+  }
+  const computed = computePricingCharge(pricingSpec, {
+    meters: usage.meters,
+    webSearchCount: usage.webSearchCount,
+    skuKey,
+    quantity: unitCount,
+  });
+  charged = computed.charged;
+  for (const meter of computed.unpricedMeters) {
+    flags.push(`unpriced:${meter}`);
   }
   if (charged > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error('charge exceeds safe integer');
@@ -197,6 +160,8 @@ async function settleRow(
         .set({
           status: 'settled',
           billingScheme,
+          pricingBasis: pricingSpec.basis,
+          quantityMeter: pricingSpec.quantityMeter ?? null,
           ...ledgerMeterColumns(usage.meters),
           reasoningTokens: reasoningTokens(usage.rawUsage),
           skuKey,

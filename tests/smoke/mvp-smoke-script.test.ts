@@ -254,12 +254,41 @@ test('MVP smoke price reconciliation uses local usage buckets and immutable pric
       cache_write_1h: 50,
       output: 500,
     },
-    price: {
-      input: 1_000_000,
-      cached_input: 500_000,
-      cache_write_5m: 1_250_000,
-      cache_write_1h: 2_000_000,
-      output: 2_000_000,
+    pricingSpec: {
+      version: 1,
+      basis: 'token',
+      rates: [
+        {
+          meterKey: 'input',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 1_000_000,
+        },
+        {
+          meterKey: 'cached_input',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 500_000,
+        },
+        {
+          meterKey: 'cache_write_5m',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 1_250_000,
+        },
+        {
+          meterKey: 'cache_write_1h',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 2_000_000,
+        },
+        {
+          meterKey: 'output',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 2_000_000,
+        },
+      ],
     },
     actualChargedMicroUsd: 2_325,
     toleranceMicroUsd: 0,
@@ -288,9 +317,23 @@ test('MVP smoke price reconciliation fails without a settled local charge', () =
       input: 1_000,
       output: 500,
     },
-    price: {
-      input: 1_000_000,
-      output: 2_000_000,
+    pricingSpec: {
+      version: 1,
+      basis: 'token',
+      rates: [
+        {
+          meterKey: 'input',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 1_000_000,
+        },
+        {
+          meterKey: 'output',
+          skuKey: 'default',
+          unitSize: 1_000_000,
+          priceMicroUsd: 2_000_000,
+        },
+      ],
     },
     actualChargedMicroUsd: null,
     toleranceMicroUsd: 0,

@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { requestLedger, walletAccount } from '@/config/db/schema';
 import { db } from '@/core/db';
+import { evaluateSkuRule } from '@/features/api-catalog/lib/sku-rule';
 import { gatewayConfig } from '@/features/gateway/lib/config';
 import type { GatewayEndpointKey } from '@/features/gateway/lib/endpoints';
 import {
@@ -41,23 +42,16 @@ export type ForwardAdmissionDecision =
 
 type ForwardAdmissionRoute = Pick<
   ResolvedRoute,
-  | 'billingScheme'
+  | 'pricingBasis'
+  | 'pricingSpec'
   | 'rates'
-  | 'tiers'
   | 'admissionLongContextThreshold'
   | 'allowLongContext'
 >;
 
-function deriveSkuKey(quality: string | null, size: string | null): string {
-  if (
-    quality === null ||
-    size === null ||
-    quality.toLowerCase() === 'auto' ||
-    size.toLowerCase() === 'auto'
-  ) {
-    return 'default';
-  }
-  return `quality=${quality};size=${size}`;
+function normalizeFact(value?: string | null) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
 }
 
 export function evaluateForwardAdmission(
@@ -65,7 +59,7 @@ export function evaluateForwardAdmission(
   route: ForwardAdmissionRoute
 ): ForwardAdmissionDecision {
   const extraction = extractRequestAdmissionMetadata(body, {
-    includeSku: route.billingScheme === 'per_call',
+    includeSku: route.pricingBasis !== 'token',
     serverToolPrefixes: SERVER_TOOL_PREFIXES,
   });
   if (!extraction.ok) {
@@ -102,16 +96,44 @@ export function evaluateForwardAdmissionMetadata(
     };
   }
 
-  if (route.billingScheme !== 'per_call') {
+  if (route.pricingBasis === 'token') {
     return { ok: true, skuKey: null, estimatedInputTokens };
   }
 
-  const skuKey = deriveSkuKey(metadata.quality, metadata.size);
-  if (!Object.hasOwn(route.tiers, skuKey)) {
+  const rule = route.pricingSpec.skuRule;
+  if (!rule) {
     return {
       ok: false,
       status: 400,
-      message: '该质量/尺寸组合未开放。',
+      message: '该定价档案缺少 SKU 规则。',
+    };
+  }
+  const evaluated = evaluateSkuRule(rule, {
+    quality: normalizeFact(metadata.quality),
+    size: normalizeFact(metadata.size),
+    resolution: normalizeFact(metadata.resolution),
+    format: normalizeFact(metadata.format),
+    voice: normalizeFact(metadata.voice),
+  });
+  if (!evaluated.ok) {
+    return {
+      ok: false,
+      status: 400,
+      message: '该请求参数组合未开放。',
+    };
+  }
+  const skuKey = evaluated.skuKey;
+  if (
+    !route.pricingSpec.rates.some(
+      (rate) =>
+        rate.meterKey === route.pricingSpec.quantityMeter &&
+        rate.skuKey === skuKey
+    )
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      message: '该 SKU 参数组合未开放。',
     };
   }
   return { ok: true, skuKey, estimatedInputTokens };

@@ -60,77 +60,6 @@ async function setupDb() {
 
 test.before(setupDb);
 
-async function findBySlug(table: any, slugColumn: any, slug: string) {
-  const [row] = await modules
-    .db()
-    .select()
-    .from(table)
-    .where(eq(slugColumn, slug))
-    .limit(1);
-
-  return row;
-}
-
-async function createGroup(slug: string) {
-  const { catalogGroup } = modules.schema;
-  const group = {
-    id: testId(`group-${slug}`),
-    slug,
-    name: `Group ${slug}`,
-    newapiGroup: slug,
-    allowCreateKey: true,
-    sortOrder: 50,
-    status: 'active',
-  };
-  await modules.db().insert(catalogGroup).values(group);
-  return group;
-}
-
-async function createBackfillFixtureModel(input: {
-  modelId: string;
-  listings: Array<{
-    groupId: string;
-    statusId: string;
-    inputMicroUsd: number;
-    outputMicroUsd: number;
-    listInputMicroUsd?: number | null;
-    listOutputMicroUsd?: number | null;
-    smokeTested?: boolean;
-    sortOrder: number;
-  }>;
-}) {
-  const { catalogModel, catalogVendor, catalogModelListing } = modules.schema;
-  const openai = await findBySlug(catalogVendor, catalogVendor.slug, 'openai');
-  const model = {
-    id: testId(`model-${input.modelId}`),
-    modelId: input.modelId,
-    displayName: input.modelId,
-    vendorId: openai.id,
-    category: 'llm',
-    contextWindow: 128000,
-  };
-  await modules.db().insert(catalogModel).values(model);
-  for (const [index, listing] of input.listings.entries()) {
-    await modules
-      .db()
-      .insert(catalogModelListing)
-      .values({
-        id: testId(`listing-${input.modelId}-${index}`),
-        modelId: model.id,
-        groupId: listing.groupId,
-        statusId: listing.statusId,
-        inputMicroUsd: listing.inputMicroUsd,
-        outputMicroUsd: listing.outputMicroUsd,
-        listInputMicroUsd: listing.listInputMicroUsd ?? null,
-        listOutputMicroUsd: listing.listOutputMicroUsd ?? null,
-        smokeTested: listing.smokeTested ?? false,
-        featured: false,
-        sortOrder: listing.sortOrder,
-      });
-  }
-  return model;
-}
-
 test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok 基线', async () => {
   const {
     catalogModel,
@@ -138,6 +67,16 @@ test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok �
     catalogModelPrice,
     catalogPriceSyncRun,
   } = modules.schema;
+  const [model] = await modules
+    .db()
+    .select()
+    .from(catalogModel)
+    .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
+    .limit(1);
+  await modules
+    .db()
+    .delete(catalogModelPrice)
+    .where(eq(catalogModelPrice.modelId, model.id));
 
   const report = await modules.pricingSync.syncCatalogPricingFromSnapshot({
     operatorUserId: 'operator-1',
@@ -183,21 +122,15 @@ test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok �
   assert.equal(report.remoteModelCount, 1);
   assert.equal(report.fixedPriceCount, 0);
 
-  const [model] = await modules
-    .db()
-    .select()
-    .from(catalogModel)
-    .where(eq(catalogModel.modelId, 'gpt-4o-mini'))
-    .limit(1);
   const [price] = await modules
     .db()
     .select()
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id))
     .limit(1);
-  assert.equal(price.source, 'migration');
+  assert.equal(price.source, 'newapi');
   assert.equal(price.baseInputMicroUsd, 150000);
-  assert.equal(price.baseCachedInputMicroUsd, null);
+  assert.equal(price.baseCachedInputMicroUsd, 15_000);
   assert.equal(price.baseCacheWrite5mMicroUsd, null);
   assert.equal(price.baseCacheWrite1hMicroUsd, null);
   assert.equal(price.baseOutputMicroUsd, 600000);
@@ -213,8 +146,8 @@ test('成本同步只更新 New API 参照，不改门户卖价，并建立 ok �
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
   assert.equal(listing.newapiGroup, 'official');
-  assert.equal(listing.priceDriftStatus, 'ok');
-  assert.match(listing.effectivePriceFormula, /catalog_base_price/);
+  assert.equal(listing.priceDriftStatus, 'unknown');
+  assert.equal(listing.effectivePriceFormula, null);
 
   const [run] = await modules
     .db()
@@ -304,9 +237,9 @@ test('成本参照缺少当前分组倍率时告警，但不清空门户售价�
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
-  assert.equal(listing.priceDriftStatus, 'cost_changed');
-  assert.match(listing.effectivePriceFormula, /catalog_base_price/);
-  assert.ok(listing.effectivePriceSyncedAt);
+  assert.equal(listing.priceDriftStatus, 'matched');
+  assert.equal(listing.effectivePriceFormula, '{"source":"stale"}');
+  assert.equal(listing.effectivePriceSyncedAt, null);
 
   const publicListings = await modules.queries.getPublicListingsUncached({
     group: 'official',
@@ -322,7 +255,7 @@ test('成本参照缺少当前分组倍率时告警，但不清空门户售价�
   assert.equal(publicListing.pricePresentation.showPrice, true);
 });
 
-test('固定价参照不覆盖门户 token 配置，仅作为不可比提示', async () => {
+test('固定价成本参照与门户 token 售卖配置可独立共存', async () => {
   const { catalogModel, catalogModelListing, catalogModelPrice } =
     modules.schema;
   const [model] = await modules
@@ -380,7 +313,7 @@ test('固定价参照不覆盖门户 token 配置，仅作为不可比提示', a
 
   assert.equal(report.status, 'success');
   assert.equal(report.fixedPriceCount, 1);
-  assert.equal(report.conflicts[0]?.type, 'sale_snapshot_missing');
+  assert.deepEqual(report.conflicts, []);
 
   const [price] = await modules
     .db()
@@ -388,8 +321,10 @@ test('固定价参照不覆盖门户 token 配置，仅作为不可比提示', a
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id))
     .limit(1);
-  assert.equal(price.pricingMode, 'manual_token');
-  assert.equal(price.fixedPriceMicroUsd, null);
+  assert.equal(price.pricingMode, 'cost_fixed');
+  assert.equal(price.billingScheme, 'per_call');
+  assert.equal(price.fixedPriceMicroUsd, 10_000);
+  assert.equal(price.baseInputMicroUsd, null);
   assert.equal(price.driftStatus, 'ok');
 
   const [listing] = await modules
@@ -398,8 +333,8 @@ test('固定价参照不覆盖门户 token 配置，仅作为不可比提示', a
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
-  assert.equal(listing.priceDriftStatus, 'ok');
-  assert.match(listing.effectivePriceFormula, /catalog_base_price/);
+  assert.equal(listing.priceDriftStatus, 'matched');
+  assert.equal(listing.effectivePriceFormula, '{"source":"stale"}');
 
   const publicListings = await modules.queries.getPublicListingsUncached({
     group: 'official',
@@ -473,10 +408,10 @@ test('syncCatalogPricingFromSnapshot preserves the listing discount as the sole 
     .where(eq(catalogModelListing.modelId, model.id))
     .limit(1);
   assert.equal(listing.discountRateBps, 6500);
-  assert.equal(listing.priceDriftStatus, 'cost_changed');
+  assert.equal(listing.priceDriftStatus, 'matched');
 });
 
-test('成本守卫逐 meter 检出参照变动与售价倒挂，且绝不改门户价格', async () => {
+test('成本参照只与上一版成本比较，售卖快照变化不会触发成本告警', async () => {
   const {
     catalogGroup,
     catalogModel,
@@ -580,29 +515,34 @@ test('成本守卫逐 meter 检出参照变动与售价倒挂，且绝不改门�
   const alert = await modules.pricingSync.syncCatalogPricingFromSnapshot({
     snapshot: snapshot(0.08, 'cost-alert'),
   });
-  assert.equal(alert.status, 'partial');
-  assert.equal(alert.driftCount, 1);
-  assert.equal(alert.conflicts[0]?.type, 'cost_alert');
-  assert.deepEqual(alert.conflicts[0]?.meters, ['input']);
+  assert.equal(alert.status, 'success');
+  assert.equal(alert.driftCount, 0);
+  assert.deepEqual(alert.conflicts, []);
 
   const [price] = await modules
     .db()
     .select()
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id));
-  assert.equal(price.baseInputMicroUsd, 9_000_000);
-  assert.equal(price.baseOutputMicroUsd, 12_000_000);
-  assert.equal(price.driftStatus, 'cost_alert');
+  assert.equal(price.baseInputMicroUsd, 160_000);
+  assert.equal(price.baseOutputMicroUsd, 640_000);
+  assert.equal(price.driftStatus, 'ok');
   assert.equal(price.syncStatus, 'reference_current');
   const [listing] = await modules
     .db()
     .select()
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id));
-  assert.equal(listing.priceDriftStatus, 'cost_alert');
+  assert.equal(listing.priceDriftStatus, 'matched');
+  const [sale] = await modules
+    .db()
+    .select()
+    .from(modelPriceVersion)
+    .where(eq(modelPriceVersion.id, saleId));
+  assert.equal(JSON.parse(sale.ratesJson).input, 79_999);
 });
 
-test('per_call 成本守卫只比较 default 档，并保留门户 tier 配置', async () => {
+test('per_call 成本参照按自身版本检测变化，并保留门户 tier 配置', async () => {
   const {
     catalogModel,
     catalogModelListing,
@@ -666,204 +606,28 @@ test('per_call 成本守卫只比较 default 档，并保留门户 tier 配置',
   });
 
   assert.equal(report.status, 'partial');
-  assert.equal(report.conflicts[0]?.type, 'cost_alert');
-  assert.deepEqual(report.conflicts[0]?.meters, ['default']);
+  assert.equal(report.conflicts[0]?.type, 'cost_changed');
   const [price] = await modules
     .db()
     .select()
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id));
-  assert.equal(price.fixedPriceMicroUsd, 777);
-  assert.equal(price.driftStatus, 'cost_alert');
+  assert.equal(price.fixedPriceMicroUsd, 30_000);
+  assert.equal(price.driftStatus, 'cost_changed');
   const [listing] = await modules
     .db()
     .select()
     .from(catalogModelListing)
     .where(eq(catalogModelListing.modelId, model.id));
   assert.equal(listing.newapiGroup, 'official');
-});
-
-test('backfillCatalogModelPrices prefers official list price, official effective, consistent listing price, then callable fallback', async () => {
-  const {
-    catalogGroup,
-    catalogModelListing,
-    catalogModelPrice,
-    catalogStatus,
-  } = modules.schema;
-  const official = await findBySlug(
-    catalogGroup,
-    catalogGroup.slug,
-    'official'
-  );
-  const available = await findBySlug(
-    catalogStatus,
-    catalogStatus.slug,
-    'available'
-  );
-  const partner = await createGroup(testId('partner-backfill'));
-  const customA = await createGroup(testId('custom-a'));
-  const customB = await createGroup(testId('custom-b'));
-
-  const officialListModel = await createBackfillFixtureModel({
-    modelId: testId('official-list'),
-    listings: [
-      {
-        groupId: official.id,
-        statusId: available.id,
-        inputMicroUsd: 500,
-        outputMicroUsd: 1000,
-        listInputMicroUsd: 1000,
-        listOutputMicroUsd: 2000,
-        sortOrder: 20,
-      },
-      {
-        groupId: partner.id,
-        statusId: available.id,
-        inputMicroUsd: 300,
-        outputMicroUsd: 600,
-        sortOrder: 1,
-      },
-    ],
-  });
-  const officialEffectiveModel = await createBackfillFixtureModel({
-    modelId: testId('official-effective'),
-    listings: [
-      {
-        groupId: official.id,
-        statusId: available.id,
-        inputMicroUsd: 111,
-        outputMicroUsd: 222,
-        sortOrder: 20,
-      },
-      {
-        groupId: partner.id,
-        statusId: available.id,
-        inputMicroUsd: 333,
-        outputMicroUsd: 444,
-        sortOrder: 1,
-      },
-    ],
-  });
-  const consistentModel = await createBackfillFixtureModel({
-    modelId: testId('consistent'),
-    listings: [
-      {
-        groupId: customA.id,
-        statusId: available.id,
-        inputMicroUsd: 77,
-        outputMicroUsd: 88,
-        sortOrder: 20,
-      },
-      {
-        groupId: customB.id,
-        statusId: available.id,
-        inputMicroUsd: 77,
-        outputMicroUsd: 88,
-        sortOrder: 1,
-      },
-    ],
-  });
-  const fallbackModel = await createBackfillFixtureModel({
-    modelId: testId('fallback'),
-    listings: [
-      {
-        groupId: customA.id,
-        statusId: available.id,
-        inputMicroUsd: 10,
-        outputMicroUsd: 20,
-        sortOrder: 1,
-      },
-      {
-        groupId: customB.id,
-        statusId: available.id,
-        inputMicroUsd: 30,
-        outputMicroUsd: 40,
-        sortOrder: 30,
-      },
-    ],
-  });
-
-  const report = await modules.pricingSync.backfillCatalogModelPrices({
-    mode: 'apply',
-    operatorUserId: 'operator-backfill-order',
-  });
-
-  async function modelPrice(modelId: string) {
-    const [price] = await modules
-      .db()
-      .select()
-      .from(catalogModelPrice)
-      .where(eq(catalogModelPrice.modelId, modelId))
-      .limit(1);
-    return price;
-  }
-
-  assert.equal(
-    (await modelPrice(officialListModel.id)).baseInputMicroUsd,
-    1000
-  );
-  assert.equal(
-    (await modelPrice(officialListModel.id)).baseOutputMicroUsd,
-    2000
-  );
-  assert.equal(
-    (await modelPrice(officialEffectiveModel.id)).baseInputMicroUsd,
-    111
-  );
-  assert.equal((await modelPrice(consistentModel.id)).baseInputMicroUsd, 77);
-  assert.equal((await modelPrice(fallbackModel.id)).baseInputMicroUsd, 10);
-
-  const conflictedListings = await modules
+  assert.equal(listing.priceDriftStatus, 'matched');
+  const [sale] = await modules
     .db()
     .select()
-    .from(catalogModelListing)
-    .where(eq(catalogModelListing.modelId, officialListModel.id));
-  assert.equal(
-    conflictedListings.every(
-      (listing: any) => listing.priceDriftStatus === 'needs_live_check'
-    ),
-    true
-  );
-  assert.equal(
-    report.conflicts.some(
-      (conflict: Record<string, unknown>) =>
-        conflict.modelId === officialListModel.modelId
-    ),
-    true
-  );
-});
-
-test('backfillCatalogModelPrices reports conflicts without changing listing cache', async () => {
-  const { catalogModelListing } = modules.schema;
-  const before = await modules.db().select().from(catalogModelListing);
-
-  await modules.db().delete(modules.schema.catalogModelPrice);
-  const report = await modules.pricingSync.backfillCatalogModelPrices({
-    mode: 'apply',
-    operatorUserId: 'operator-2',
+    .from(modelPriceVersion)
+    .where(eq(modelPriceVersion.status, 'active'));
+  assert.deepEqual(JSON.parse(sale.tiersJson), {
+    default: 10_000,
+    premium: 50_000,
   });
-  const after = await modules.db().select().from(catalogModelListing);
-  const prices = await modules
-    .db()
-    .select()
-    .from(modules.schema.catalogModelPrice);
-
-  assert.ok(report.created >= 1);
-  assert.equal(prices.length >= 1, true);
-  assert.deepEqual(
-    after.map((listing: any) => ({
-      id: listing.id,
-      inputMicroUsd: listing.inputMicroUsd,
-      outputMicroUsd: listing.outputMicroUsd,
-      imageInputMicroUsd: listing.imageInputMicroUsd,
-      imageOutputMicroUsd: listing.imageOutputMicroUsd,
-    })),
-    before.map((listing: any) => ({
-      id: listing.id,
-      inputMicroUsd: listing.inputMicroUsd,
-      outputMicroUsd: listing.outputMicroUsd,
-      imageInputMicroUsd: listing.imageInputMicroUsd,
-      imageOutputMicroUsd: listing.imageOutputMicroUsd,
-    }))
-  );
 });

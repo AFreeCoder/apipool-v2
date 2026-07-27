@@ -62,6 +62,18 @@ const targets: AuthzTarget[] = [
     permission: 'CATALOG_WRITE',
   },
   {
+    path: 'src/app/[locale]/(admin)/admin/catalog/models/[id]/pricing-profiles/new/page.tsx',
+    permission: 'CATALOG_WRITE',
+  },
+  {
+    path: 'src/app/[locale]/(admin)/admin/catalog/models/[id]/pricing-profiles/[profileId]/edit/page.tsx',
+    permission: 'CATALOG_WRITE',
+  },
+  {
+    path: 'src/app/[locale]/(admin)/admin/catalog/models/[id]/pricing-profiles/[profileId]/delete/page.tsx',
+    permission: 'CATALOG_WRITE',
+  },
+  {
     path: 'src/app/[locale]/(admin)/admin/settings/[tab]/page.tsx',
     permission: 'SETTINGS_WRITE',
   },

@@ -30,9 +30,13 @@ async function setupDb() {
   const schema = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
   const service = await import('@/features/api-catalog/server/catalog-service');
+  const pricingProfiles = await import(
+    '@/features/api-catalog/server/pricing-profile-service'
+  );
 
   modules = {
     db,
+    pricingProfiles,
     schema,
     service,
   };
@@ -531,22 +535,17 @@ test('模型元数据保存不会静默创建分组折扣', async () => {
   });
 
   const created = await modules.service.upsertModelAdminConfig({
-    operatorUserId: 'metadata-only-operator',
     model: {
       modelId: 'metadata-only-model',
       displayName: 'Metadata Only Model',
       vendorId: vendor.id,
       categoryIds: [category.id],
     },
-    basePrice: {
-      inputMicroUsd: 1_000_000,
-      outputMicroUsd: 2_000_000,
-    },
     capabilityIds: [capability.id],
   });
 
   assert.equal(created.model.modelId, 'metadata-only-model');
-  assert.equal(created.basePrice.baseInputMicroUsd, 1_000_000);
+  assert.equal('basePrice' in created, false);
   assert.equal('listing' in created, false);
   assert.deepEqual(
     await modules.service.getListingsByModel(created.model.id),
@@ -554,10 +553,8 @@ test('模型元数据保存不会静默创建分组折扣', async () => {
   );
 });
 
-test('upsertModelAdminConfig creates and updates model, default listing, categories, and capabilities', async () => {
+test('upsertModelAdminConfig 只创建和更新模型、分类及能力', async () => {
   const vendor = await createVendor('admin-model-vendor');
-  const status = await createStatus('admin-model-status');
-  const group = await createGroup('admin-model-group', 'admin-model-gateway');
   const textCategory = await createCategory('admin-model-llm');
   const imageCategory = await createCategory('admin-model-image');
   const text = await modules.service.createCapability({
@@ -574,42 +571,19 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   });
 
   const created = await modules.service.upsertModelAdminConfig({
-    operatorUserId: 'operator-create-admin-model',
     model: {
       modelId: 'admin-gpt-image',
       displayName: 'Admin GPT Image',
       vendorId: vendor.id,
       categoryIds: [textCategory.id, imageCategory.id],
     },
-    basePrice: {
-      inputMicroUsd: 5_000_000,
-      outputMicroUsd: 40_000_000,
-      imageInputMicroUsd: 10_000_000,
-      imageOutputMicroUsd: 40_000_000,
-    },
-    listing: {
-      groupId: group.id,
-      newapiGroup: 'admin-model-gateway',
-      statusId: status.id,
-      discountRateBps: 500,
-      discountNote: '0.5 fold launch discount',
-      smokeTested: true,
-      featured: false,
-      sortOrder: 1,
-    },
     capabilityIds: [text.id, vision.id],
   });
 
   assert.equal(created.model.modelId, 'admin-gpt-image');
   assert.equal(created.model.category, 'admin-model-llm');
-  assert.equal(created.listing.imageInputMicroUsd, 10_000_000);
-  assert.equal(created.listing.imageOutputMicroUsd, 40_000_000);
-  assert.equal(created.listing.discountRateBps, 500);
-  assert.equal(created.basePrice.baseInputMicroUsd, 5_000_000);
-  assert.equal(created.basePrice.baseOutputMicroUsd, 40_000_000);
-  assert.equal(created.basePrice.pricingMode, 'manual_token');
-  assert.equal(created.basePrice.source, 'manual');
-  assert.equal(created.basePrice.reviewedBy, 'operator-create-admin-model');
+  assert.equal('basePrice' in created, false);
+  assert.equal('listing' in created, false);
   assert.deepEqual(
     new Set(
       (await modules.service.getModelCategories(created.model.id)).map(
@@ -625,42 +599,13 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     [text.id, vision.id]
   );
 
-  const { catalogModelListing } = modules.schema;
-  await modules
-    .db()
-    .update(catalogModelListing)
-    .set({
-      priceDriftStatus: 'matched',
-      effectivePriceFormula: '{"source":"newapi_group_ratio"}',
-      effectivePriceSyncedAt: new Date(),
-    })
-    .where(eq(catalogModelListing.id, created.listing.id));
-
   const updated = await modules.service.upsertModelAdminConfig({
     modelId: created.model.id,
-    operatorUserId: 'operator-update-admin-model',
     model: {
       modelId: 'admin-gpt-image-latest',
       displayName: 'Admin GPT Image Latest',
       vendorId: vendor.id,
       categoryIds: [imageCategory.id],
-    },
-    basePrice: {
-      inputMicroUsd: 4_000_000,
-      outputMicroUsd: 32_000_000,
-      imageInputMicroUsd: 8_000_000,
-      imageOutputMicroUsd: 32_000_000,
-    },
-    listing: {
-      id: created.listing.id,
-      groupId: group.id,
-      newapiGroup: 'admin-model-gateway-v2',
-      statusId: status.id,
-      discountRateBps: 50,
-      discountNote: '0.05 fold experimental discount',
-      smokeTested: false,
-      featured: true,
-      sortOrder: 2,
     },
     capabilityIds: [vision.id],
   });
@@ -668,18 +613,6 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
   assert.equal(updated.model.id, created.model.id);
   assert.equal(updated.model.modelId, 'admin-gpt-image-latest');
   assert.equal(updated.model.category, 'admin-model-image');
-  assert.equal(updated.listing.id, created.listing.id);
-  assert.equal(updated.listing.newapiGroup, 'admin-model-gateway-v2');
-  assert.equal(updated.listing.inputMicroUsd, 4_000_000);
-  assert.equal(updated.listing.imageInputMicroUsd, 8_000_000);
-  assert.equal(updated.listing.discountRateBps, 50);
-  assert.equal(updated.basePrice.id, created.basePrice.id);
-  assert.equal(updated.basePrice.baseInputMicroUsd, 4_000_000);
-  assert.equal(updated.basePrice.baseImageInputMicroUsd, 8_000_000);
-  assert.equal(updated.basePrice.reviewedBy, 'operator-update-admin-model');
-  assert.equal(updated.listing.priceDriftStatus, 'cost_changed');
-  assert.match(updated.listing.effectivePriceFormula, /catalog_base_price/);
-  assert.ok(updated.listing.effectivePriceSyncedAt);
   assert.deepEqual(
     (await modules.service.getModelCategories(created.model.id)).map(
       (category: { id: string }) => category.id
@@ -692,127 +625,192 @@ test('upsertModelAdminConfig creates and updates model, default listing, categor
     ),
     [vision.id]
   );
-
-  const { catalogModelPrice } = modules.schema;
-  const [storedBasePrice] = await modules
-    .db()
-    .select()
-    .from(catalogModelPrice)
-    .where(eq(catalogModelPrice.modelId, created.model.id))
-    .limit(1);
-  assert.equal(storedBasePrice.baseOutputMicroUsd, 32_000_000);
-  assert.equal(storedBasePrice.syncStatus, 'reference_stale');
+  assert.deepEqual(
+    await modules.service.getListingsByModel(created.model.id),
+    []
+  );
 });
 
-test('模型管理保存 meter 化字段与 per_call tier，并原子替换旧档位', async () => {
+test('图片按次定价档案保存受限 DSL，并原子替换旧费率', async () => {
   const [vendor] = await modules.service.getVendors();
-  const [category] = await modules.service.getCategories();
+  const category = (await modules.service.getCategories()).find(
+    (item: { slug: string }) => item.slug === 'image'
+  );
   assert.ok(vendor && category);
 
   const created = await modules.service.upsertModelAdminConfig({
-    operatorUserId: 'operator-meter-pricing',
     model: {
       modelId: `meter-pricing-${Date.now()}`,
       displayName: 'Meter Pricing',
       vendorId: vendor.id,
       categoryIds: [category.id],
     },
-    basePrice: {
-      billingScheme: 'per_call',
-      inputMicroUsd: null,
-      outputMicroUsd: null,
-      cachedInputMicroUsd: 125_000,
-      cacheWriteMicroUsd: 1_250_000,
-      cachedImageInputMicroUsd: 500_000,
-      webSearchMicroUsd: 10_000,
-      longContextThresholdTokens: 272_000,
-      inputLongMicroUsd: 2_000_000,
-      cachedInputLongMicroUsd: 200_000,
-      cacheWriteLongMicroUsd: 2_500_000,
-      outputLongMicroUsd: 10_000_000,
-      billingCapabilitiesJson: JSON.stringify({ long_context: true }),
-      sourceSupportedEndpointTypes: JSON.stringify(['images']),
-      tiers: [
-        { skuKey: 'default', priceMicroUsd: 300_000 },
-        {
-          skuKey: 'quality=low;size=1024x1024',
-          priceMicroUsd: 15_000,
-        },
-      ],
-    },
     capabilityIds: [],
   });
-
-  assert.equal(created.basePrice.billingScheme, 'per_call');
-  assert.equal(created.basePrice.baseCachedInputMicroUsd, 125_000);
-  assert.equal(created.basePrice.baseWebSearchMicroUsd, 10_000);
-  assert.equal(created.basePrice.longContextThresholdTokens, 272_000);
-  assert.equal(created.basePrice.syncStatus, 'reference_stale');
+  const profile = await modules.pricingProfiles.upsertPricingProfile({
+    modelId: created.model.id,
+    operatorUserId: 'operator-meter-pricing',
+    form: {
+      name: '图片按次',
+      pricingBasis: 'unit',
+      quantityMeter: 'output_count',
+      ratesJson: '{"default":"0.3","quality=low;size=1024x1024":"0.015"}',
+      skuRuleSource:
+        'when quality is missing => "default"\nwhen size is missing => "default"\nelse => "quality=${quality};size=${size}"',
+      longContextThresholdTokens: null,
+      reviewNote: '测试',
+    },
+  });
+  assert.equal(profile.profile.pricingBasis, 'unit');
+  assert.equal(profile.profile.quantityMeter, 'output_count');
+  assert.ok(profile.profile.skuRuleAstJson);
   assert.deepEqual(
-    created.tiers.map((tier: any) => [tier.skuKey, tier.priceMicroUsd]),
+    profile.rates.map((tier: any) => [tier.skuKey, tier.priceMicroUsd]),
     [
       ['default', 300_000],
       ['quality=low;size=1024x1024', 15_000],
     ]
   );
 
-  const updated = await modules.service.upsertModelAdminConfig({
+  const updated = await modules.pricingProfiles.upsertPricingProfile({
+    profileId: profile.profile.id,
     modelId: created.model.id,
     operatorUserId: 'operator-meter-pricing-update',
-    model: {
-      modelId: created.model.modelId,
-      displayName: created.model.displayName,
-      vendorId: vendor.id,
-      categoryIds: [category.id],
+    form: {
+      name: '图片按次',
+      pricingBasis: 'unit',
+      quantityMeter: 'output_count',
+      ratesJson: '{"default":"0.25"}',
+      skuRuleSource: 'else => "default"',
+      longContextThresholdTokens: null,
+      reviewNote: null,
     },
-    basePrice: {
-      billingScheme: 'per_call',
-      billingCapabilitiesJson: '{}',
-      tiers: [{ skuKey: 'default', priceMicroUsd: 250_000 }],
-    },
-    capabilityIds: [],
   });
   assert.deepEqual(
-    updated.tiers.map((tier: any) => [tier.skuKey, tier.priceMicroUsd]),
+    updated.rates.map((tier: any) => [tier.skuKey, tier.priceMicroUsd]),
     [['default', 250_000]]
   );
 
   await assert.rejects(
-    modules.service.upsertModelAdminConfig({
+    modules.pricingProfiles.upsertPricingProfile({
       modelId: created.model.id,
-      model: {
-        modelId: created.model.modelId,
-        displayName: created.model.displayName,
-        vendorId: vendor.id,
-        categoryIds: [category.id],
+      form: {
+        name: '缺省档缺失',
+        pricingBasis: 'unit',
+        quantityMeter: 'output_count',
+        ratesJson: '{"premium":"0.1"}',
+        skuRuleSource: 'else => "premium"',
+        longContextThresholdTokens: null,
+        reviewNote: null,
       },
-      basePrice: {
-        billingScheme: 'per_call',
-        billingCapabilitiesJson: '{}',
-        tiers: [{ skuKey: 'premium', priceMicroUsd: 1 }],
-      },
-      capabilityIds: [],
     }),
     /default/
   );
 
   await assert.rejects(
-    modules.service.upsertModelAdminConfig({
+    modules.pricingProfiles.upsertPricingProfile({
       modelId: created.model.id,
-      model: {
-        modelId: created.model.modelId,
-        displayName: created.model.displayName,
-        vendorId: vendor.id,
-        categoryIds: [category.id],
+      form: {
+        name: '零价',
+        pricingBasis: 'unit',
+        quantityMeter: 'output_count',
+        ratesJson: '{"default":"0"}',
+        skuRuleSource: 'else => "default"',
+        longContextThresholdTokens: null,
+        reviewNote: null,
       },
-      basePrice: {
-        billingScheme: 'per_call',
-        billingCapabilitiesJson: '{}',
-        tiers: [{ skuKey: 'default', priceMicroUsd: 0 }],
-      },
-      capabilityIds: [],
     }),
-    /无效/
+    /大于 0/
+  );
+});
+
+test('定价档案按模型类型限制计费基准，且被售卖项引用时禁止删除', async () => {
+  const vendor = await createVendor('pricing-matrix-vendor');
+  const [llm, image, video, audio] = await Promise.all([
+    createModel('pricing-matrix-llm', vendor.id, 'llm'),
+    createModel('pricing-matrix-image', vendor.id, 'image'),
+    createModel('pricing-matrix-video', vendor.id, 'video'),
+    createModel('pricing-matrix-audio', vendor.id, 'audio'),
+  ]);
+
+  const unitForm = {
+    name: '按次',
+    pricingBasis: 'unit' as const,
+    quantityMeter: 'output_count' as const,
+    ratesJson: '{"default":"0.1"}',
+    skuRuleSource: 'else => "default"',
+    longContextThresholdTokens: null,
+    reviewNote: null,
+  };
+  await assert.rejects(
+    modules.pricingProfiles.upsertPricingProfile({
+      modelId: llm.id,
+      form: unitForm,
+    }),
+    /不支持 unit/
+  );
+  await assert.rejects(
+    modules.pricingProfiles.upsertPricingProfile({
+      modelId: image.id,
+      form: {
+        ...unitForm,
+        name: '图片按时长',
+        pricingBasis: 'duration',
+        quantityMeter: 'video_duration_ms',
+      },
+    }),
+    /不支持 duration/
+  );
+
+  const videoProfile = await modules.pricingProfiles.upsertPricingProfile({
+    modelId: video.id,
+    form: {
+      ...unitForm,
+      name: '视频按时长',
+      pricingBasis: 'duration',
+      quantityMeter: 'video_duration_ms',
+    },
+  });
+  const audioProfile = await modules.pricingProfiles.upsertPricingProfile({
+    modelId: audio.id,
+    form: { ...unitForm, name: '音频按次', quantityMeter: 'request_count' },
+  });
+  assert.equal(videoProfile.profile.pricingBasis, 'duration');
+  assert.equal(videoProfile.rates[0].unitSize, 1_000);
+  assert.equal(audioProfile.profile.pricingBasis, 'unit');
+
+  const status = await createStatus('pricing-profile-reference');
+  const group = await createGroup(
+    'pricing-profile-reference',
+    'pricing-profile-reference-upstream'
+  );
+  const listing = await modules.service.createListing({
+    modelId: video.id,
+    groupId: group.id,
+    newapiGroup: 'pricing-profile-reference-upstream',
+    pricingProfileId: videoProfile.profile.id,
+    statusId: status.id,
+    inputMicroUsd: 0,
+    outputMicroUsd: 0,
+  });
+
+  await assert.rejects(
+    modules.pricingProfiles.deletePricingProfile(
+      video.id,
+      videoProfile.profile.id
+    ),
+    /仍有 1 条/
+  );
+  await modules.service.deleteListing(listing.id);
+  await modules.pricingProfiles.deletePricingProfile(
+    video.id,
+    videoProfile.profile.id
+  );
+  assert.equal(
+    await modules.pricingProfiles.getPricingProfileConfig(
+      videoProfile.profile.id
+    ),
+    undefined
   );
 });
 

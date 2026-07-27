@@ -631,6 +631,78 @@ export const catalogModelPriceTier = table(
   ]
 );
 
+export const catalogModelPricingProfile = table(
+  'catalog_model_pricing_profile',
+  {
+    id: text('id').primaryKey(),
+    modelId: text('model_id')
+      .notNull()
+      .references(() => catalogModel.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    pricingBasis: text('pricing_basis').notNull(),
+    quantityMeter: text('quantity_meter'),
+    skuRuleSource: text('sku_rule_source'),
+    skuRuleAstJson: text('sku_rule_ast_json'),
+    compilerVersion: integer('compiler_version'),
+    ruleHash: text('rule_hash'),
+    longContextThresholdTokens: integer('long_context_threshold_tokens'),
+    reviewedBy: text('reviewed_by'),
+    reviewedAt: integer('reviewed_at', { mode: 'timestamp_ms' }),
+    reviewNote: text('review_note'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_catalog_model_pricing_profile_name').on(
+      table.modelId,
+      table.name
+    ),
+    index('idx_catalog_model_pricing_profile_model').on(table.modelId),
+    check(
+      'ck_catalog_model_pricing_profile_basis',
+      sql`${table.pricingBasis} IN ('token','unit','duration')`
+    ),
+  ]
+);
+
+export const catalogModelPricingRate = table(
+  'catalog_model_pricing_rate',
+  {
+    id: text('id').primaryKey(),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => catalogModelPricingProfile.id, {
+        onDelete: 'cascade',
+      }),
+    meterKey: text('meter_key').notNull(),
+    skuKey: text('sku_key').default('default').notNull(),
+    unitSize: integer('unit_size').notNull(),
+    priceMicroUsd: integer('price_micro_usd').notNull(),
+    note: text('note'),
+  },
+  (table) => [
+    uniqueIndex('uniq_catalog_model_pricing_rate').on(
+      table.profileId,
+      table.meterKey,
+      table.skuKey
+    ),
+    index('idx_catalog_model_pricing_rate_profile').on(table.profileId),
+    check(
+      'ck_catalog_model_pricing_rate_unit_size',
+      sql`${table.unitSize} > 0`
+    ),
+    check(
+      'ck_catalog_model_pricing_rate_nonnegative',
+      sql`${table.priceMicroUsd} >= 0`
+    ),
+  ]
+);
+
 export const catalogModelCapability = table(
   'catalog_model_capability',
   {
@@ -683,6 +755,9 @@ export const catalogModelListing = table(
       .references(() => catalogGroup.id, { onDelete: 'cascade' }),
     // 同一门户逻辑分组下，每个模型都可独立路由到不同的 New API 分组。
     newapiGroup: text('newapi_group').default('').notNull(),
+    pricingProfileId: text('pricing_profile_id').references(
+      () => catalogModelPricingProfile.id
+    ),
     statusId: text('status_id')
       .notNull()
       .references(() => catalogStatus.id),
@@ -1287,7 +1362,16 @@ export const modelPriceVersion = table(
     billingScheme: text('billing_scheme').notNull().default('token'),
     ratesJson: text('rates_json').notNull().default('{}'),
     tiersJson: text('tiers_json').notNull().default('{}'),
+    pricingSpecJson: text('pricing_spec_json').notNull().default('{}'),
+    pricingProfileId: text('pricing_profile_id'),
+    pricingProfileRuleHash: text('pricing_profile_rule_hash'),
     longContextThresholdTokens: integer('long_context_threshold_tokens'),
+    admissionLongContextThresholdTokens: integer(
+      'admission_long_context_threshold_tokens'
+    ),
+    allowLongContext: integer('allow_long_context', { mode: 'boolean' })
+      .default(false)
+      .notNull(),
     newapiRefInputMicroUsdPerM: integer('newapi_ref_input_micro_usd_per_m'),
     newapiRefOutputMicroUsdPerM: integer('newapi_ref_output_micro_usd_per_m'),
     newapiRefCachedInputMicroUsdPerM: integer(
@@ -1449,6 +1533,8 @@ export const requestLedger = table(
     outputTokens: integer('output_tokens'),
     reasoningTokens: integer('reasoning_tokens'),
     billingScheme: text('billing_scheme'),
+    pricingBasis: text('pricing_basis'),
+    quantityMeter: text('quantity_meter'),
     cacheWriteTokens: integer('cache_write_tokens'),
     imageInputTokens: integer('image_input_tokens'),
     cachedImageInputTokens: integer('cached_image_input_tokens'),

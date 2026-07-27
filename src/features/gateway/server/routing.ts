@@ -10,6 +10,11 @@ import {
 import { db } from '@/core/db';
 import type { RatesMap } from '@/features/gateway/lib/billing';
 import type { BillingScheme } from '@/features/gateway/lib/meters';
+import {
+  parsePricingSpec,
+  type PricingBasis,
+  type PricingSpec,
+} from '@/features/gateway/lib/pricing-spec';
 import { ensureCatalogRouteSnapshot } from '@/features/gateway/server/catalog-route-snapshot';
 
 export interface ResolvedRoute {
@@ -19,6 +24,8 @@ export interface ResolvedRoute {
   newapiModelId: string;
   priceVersionId: string;
   billingScheme: BillingScheme;
+  pricingBasis: PricingBasis;
+  pricingSpec: PricingSpec;
   rates: RatesMap;
   tiers: Record<string, number>;
   longContextThresholdTokens: number | null;
@@ -58,6 +65,14 @@ export async function resolveActiveRoute(
   );
   if (!snapshot) return null;
   const { route, price, publish } = snapshot;
+  const pricingSpec = parsePricingSpec(price.pricingSpecJson);
+  if (
+    pricingSpec.basis !== publish.pricingBasis ||
+    price.billingScheme !== publish.billingScheme
+  ) {
+    throw new Error('发布快照的计费方式不一致');
+  }
+  const billingScheme = price.billingScheme as BillingScheme;
 
   return {
     routeId: route.id,
@@ -65,12 +80,14 @@ export async function resolveActiveRoute(
     newapiGroup: route.newapiGroup,
     newapiModelId: route.newapiModelId,
     priceVersionId: price.id,
-    billingScheme: publish.billingScheme,
-    rates: parseIntegerMap(publish.ratesJson, '价格 rates_json') as RatesMap,
-    tiers: parseIntegerMap(publish.tiersJson, '价格 tiers_json'),
-    longContextThresholdTokens: publish.longContextThresholdTokens,
-    admissionLongContextThreshold: publish.admissionLongContextThreshold,
-    allowLongContext: publish.allowLongContext,
+    billingScheme,
+    pricingBasis: pricingSpec.basis,
+    pricingSpec,
+    rates: parseIntegerMap(price.ratesJson, '价格 rates_json') as RatesMap,
+    tiers: parseIntegerMap(price.tiersJson, '价格 tiers_json'),
+    longContextThresholdTokens: price.longContextThresholdTokens,
+    admissionLongContextThreshold: price.admissionLongContextThresholdTokens,
+    allowLongContext: price.allowLongContext,
     portalGroupId,
     portalModelId,
   };

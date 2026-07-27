@@ -2,6 +2,7 @@ import { type ElementType } from 'react';
 import {
   Activity,
   BadgeCheck,
+  BadgeDollarSign,
   BarChart3,
   BookOpenText,
   Bot,
@@ -47,6 +48,7 @@ import {
 const menuIcons: Record<string, ElementType> = {
   Activity,
   BadgeCheck,
+  BadgeDollarSign,
   BarChart3,
   BookOpenText,
   Bot,

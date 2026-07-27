@@ -23,7 +23,20 @@
     "categories": "分类",
     "contextWindow": "上下文窗口",
     "capabilities": "能力",
+    "pricingProfiles": "售卖定价档案",
+    "pricingProfile": "售卖定价档案",
+    "pricingProfileTip": "当前分组从该档案读取计费口径、价格和 SKU 规则；同一模型的不同分组可选择不同档案。",
     "billingScheme": "计费方式",
+    "pricingBasisTip": "{category} 类型仅允许选择其支持的计费口径。",
+    "quantityMeter": "计量来源",
+    "quantityMeterTip": "按次或按时计费时，从请求或上游响应中读取该计量值；图片按次固定使用实际输出图片数。",
+    "rates": "价格表（JSON）",
+    "ratesTip": "token 计费使用 meter 作为键；按次或按时使用 SKU 作为键。金额单位为美元。",
+    "skuRule": "SKU 选择规则",
+    "skuRuleTip": "使用受限规则 DSL，仅用于选择 SKU 或拒绝请求；不能修改数量、价格或最终扣费。",
+    "profileLongContextTip": "仅 token 档案使用；配置后可定义 input_long、output_long 等长上下文价格。",
+    "reviewNote": "审核备注",
+    "reviewedAt": "审核时间",
     "tokenScheme": "按用量（token）",
     "perCallScheme": "按次（per call）",
     "tokenPrices": "Meter 基准价（美元 / 1M）",
@@ -70,6 +83,7 @@
     "edit": "编辑",
     "capabilities": "能力",
     "listings": "分组折扣",
+    "pricingProfiles": "售卖定价",
     "delete": "删除"
   },
   "statusOptions": {
@@ -79,6 +93,18 @@
   "boolean": {
     "yes": "是",
     "no": "否"
+  },
+  "pricingBasis": {
+    "token": "按 Token",
+    "unit": "按次",
+    "duration": "按时长"
+  },
+  "quantityMeter": {
+    "none": "不适用",
+    "request_count": "请求次数",
+    "output_count": "实际输出数量",
+    "audio_duration_ms": "音频时长（毫秒）",
+    "video_duration_ms": "视频时长（毫秒）"
   },
   "errors": {
     "createFailed": "创建失败",
@@ -91,6 +117,8 @@
     "duplicateListing": "该模型在所选分组下已存在售卖项，请直接编辑已有的那条。",
     "duplicateSlug": "该标识已被占用，请换一个。",
     "duplicateModelId": "该模型 ID 已存在，请直接编辑已有的模型。",
+    "missingPricingProfile": "请选择属于当前模型的售卖定价档案。",
+    "duplicatePricingProfile": "该模型下已存在同名售卖定价档案。",
     "invalidBillingCapabilities": "计费能力声明格式无效",
     "invalidLongContextThreshold": "长上下文阈值必须是正整数",
     "invalidTiers": "按次价目表必须唯一且包含有效的 default 档",
@@ -317,7 +345,7 @@
     },
     "pricingSync": {
       "title": "成本守卫同步",
-      "description": "按每条分组折扣的 New API 分组映射刷新成本参照，绝不覆盖门户卖价；倒挂和变动仅告警。",
+      "description": "按每条分组折扣的 New API 分组映射刷新成本参照，绝不覆盖门户卖价；缺失或变动仅告警。",
       "sync": "同步成本参照",
       "syncing": "同步中",
       "drift": "查看成本告警",
@@ -375,6 +403,46 @@
       }
     }
   },
+  "pricingProfiles": {
+    "list": {
+      "title": "{model} 的售卖定价",
+      "crumb": "售卖定价",
+      "description": "计费口径、基础价格和 SKU 规则在档案中维护，再由各分组折扣选择。",
+      "notFound": "模型不存在",
+      "buttons": {
+        "new": "新增定价档案"
+      }
+    },
+    "new": {
+      "title": "新增售卖定价档案",
+      "crumb": "新增定价档案",
+      "notFound": "模型不存在",
+      "success": "售卖定价档案已创建",
+      "buttons": {
+        "submit": "创建"
+      }
+    },
+    "edit": {
+      "title": "编辑售卖定价档案",
+      "crumb": "编辑定价档案",
+      "notFound": "售卖定价档案不存在",
+      "success": "售卖定价档案已更新",
+      "buttons": {
+        "submit": "更新"
+      }
+    },
+    "delete": {
+      "title": "删除售卖定价档案",
+      "crumb": "删除定价档案",
+      "description": "确认删除 {name}？仍被分组折扣引用的档案不能删除。",
+      "notFound": "售卖定价档案不存在",
+      "success": "售卖定价档案已删除",
+      "buttons": {
+        "submit": "确认删除",
+        "cancel": "返回列表"
+      }
+    }
+  },
   "listings": {
     "list": {
       "title": "分组折扣",
@@ -416,7 +484,6 @@
   },
   "messages": {
     "priceHiddenAfterSave": "已保存。公开价已隐藏，需重新运行一次价格同步才会恢复展示。",
-    "costReviewAfterSave": "卖价继续生效，成本守卫已标记为待复核。",
     "capabilitiesEmptyWarning": "该模型未选择任何能力，不会在公开目录或建 Key 候选中展示。"
   }
 }

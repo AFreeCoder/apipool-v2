@@ -222,8 +222,8 @@ test('initCatalog seeds the required first catalog data', async () => {
     .from(catalogModelPrice)
     .where(eq(catalogModelPrice.modelId, model.id))
     .limit(1);
-  assert.equal(modelPrice?.pricingMode, 'manual_token');
-  assert.equal(modelPrice?.source, 'migration');
+  assert.equal(modelPrice?.pricingMode, 'cost_token');
+  assert.equal(modelPrice?.source, 'seed_cost');
   assert.equal(modelPrice?.baseInputMicroUsd, 150000);
   assert.equal(modelPrice?.baseOutputMicroUsd, 600000);
 

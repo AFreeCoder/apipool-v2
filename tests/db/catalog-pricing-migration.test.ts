@@ -4,10 +4,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createClient } from '@libsql/client';
 
-function id(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 async function applyMigrationFiles(
   client: ReturnType<typeof createClient>,
   predicate: (file: string) => boolean
@@ -23,148 +19,137 @@ async function applyMigrationFiles(
   }
 }
 
-async function listingCache(client: ReturnType<typeof createClient>) {
-  const rows = await client.execute(`
-    select
-      id,
-      model_id,
-      group_id,
-      input_micro_usd,
-      output_micro_usd,
-      image_input_micro_usd,
-      image_output_micro_usd
-    from catalog_model_listing
-    order by id
-  `);
-  return rows.rows.map((row) => ({ ...row }));
-}
-
-test('0008 migration plus backfill CLI apply preserves listing cache and reports conflicts', async () => {
-  const dbPath = join(process.cwd(), '.tmp', 'catalog-pricing-migration.db');
+test('0018 migration atomically converts token and image per-call sale prices into listing-selected profiles', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'catalog-pricing-v3-migration.db');
   await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
   await rm(dbPath, { force: true });
-
-  process.env.DATABASE_PROVIDER = 'sqlite';
-  process.env.DATABASE_URL = `file:${dbPath}`;
-  process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
-  process.env.DB_SINGLETON_ENABLED = 'false';
-
   const client = createClient({ url: `file:${dbPath}` });
-  await applyMigrationFiles(client, (file) => file < '0008_');
+  await applyMigrationFiles(client, (file) => file < '0018_');
 
-  const model = await client.execute(
-    "select id from catalog_model where model_id = 'gpt-4o-mini' limit 1"
+  const vendor = await client.execute(
+    `SELECT id FROM catalog_vendor ORDER BY id LIMIT 1`
   );
   const status = await client.execute(
-    "select id from catalog_status where slug = 'available' limit 1"
+    `SELECT id FROM catalog_status WHERE slug='available' LIMIT 1`
   );
-  const partnerGroupId = id('legacy-partner-group');
+  const official = await client.execute(
+    `SELECT id FROM catalog_group WHERE slug='official' LIMIT 1`
+  );
+  const textModel = await client.execute(
+    `SELECT id FROM catalog_model WHERE model_id='gpt-4o-mini' LIMIT 1`
+  );
+  assert.equal(textModel.rows.length, 1);
   await client.execute({
-    sql: `
-      insert into catalog_group
-        (id, slug, name, user_description, newapi_group, allow_create_key, sort_order, status)
-      values (?, ?, ?, ?, ?, 1, 11, 'active')
-    `,
-    args: [
-      partnerGroupId,
-      'legacy-partner-conflict',
-      'Legacy Partner Conflict',
-      'Legacy partner route.',
-      'legacy-partner-conflict',
-    ],
-  });
-  await client.execute({
-    sql: `
-      insert into catalog_model_listing
-        (id, model_id, group_id, status_id, input_micro_usd, output_micro_usd, smoke_tested, featured, sort_order)
-      values (?, ?, ?, ?, 90000, 180000, 1, 0, 12)
-    `,
-    args: [
-      id('legacy-listing'),
-      model.rows[0].id,
-      partnerGroupId,
-      status.rows[0].id,
-    ],
+    sql: `INSERT INTO catalog_model_price (
+      id, model_id, billing_scheme, pricing_mode, base_input_micro_usd,
+      base_output_micro_usd, reviewed_at
+    ) VALUES ('legacy-text-price', ?, 'token', 'manual_token', 150000, 600000, ?)`,
+    args: [textModel.rows[0].id, Date.now()],
   });
 
-  const beforeCache = await listingCache(client);
-  await applyMigrationFiles(client, (file) =>
-    file.startsWith('0008_model_catalog_pricing_policy')
-  );
-  // 当前运行时 schema 会读取 0012 新增的可空 catalog 列；本测试仍专注验证
-  // 0008 回填语义，因此只补齐这些无行为影响的列，不引入 0012 的新业务表或数据。
-  await client.executeMultiple(`
-    ALTER TABLE catalog_model ADD max_output_tokens integer;
-    ALTER TABLE catalog_model_price ADD base_cached_input_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_cache_write_5m_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_cache_write_1h_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD cache_price_note text;
-    ALTER TABLE catalog_model_price ADD billing_scheme text NOT NULL DEFAULT 'token';
-    ALTER TABLE catalog_model_price ADD base_cache_write_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_cached_image_input_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_web_search_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD long_context_threshold_tokens integer;
-    ALTER TABLE catalog_model_price ADD base_input_long_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_cached_input_long_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_cache_write_long_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD base_output_long_micro_usd integer;
-    ALTER TABLE catalog_model_price ADD billing_capabilities_json text;
+  await client.execute({
+    sql: `INSERT INTO catalog_model (
+      id, model_id, display_name, vendor_id, category
+    ) VALUES ('legacy-image-model', 'legacy-image', 'Legacy Image', ?, 'image')`,
+    args: [vendor.rows[0].id],
+  });
+  await client.execute(`
+    INSERT INTO catalog_model_price (
+      id, model_id, billing_scheme, pricing_mode, fixed_price_micro_usd,
+      fixed_price_unit, reviewed_at
+    ) VALUES (
+      'legacy-image-price', 'legacy-image-model', 'per_call', 'fixed_price',
+      40000, 'per_call', ${Date.now()}
+    )
   `);
+  await client.execute(`
+    INSERT INTO catalog_model_price_tier
+      (id, model_id, sku_key, price_micro_usd)
+    VALUES
+      ('legacy-image-default', 'legacy-image-model', 'default', 40000),
+      ('legacy-image-hd', 'legacy-image-model', 'quality=high;size=1024x1024', 80000)
+  `);
+  await client.execute({
+    sql: `INSERT INTO catalog_model_listing (
+      id, model_id, group_id, status_id, newapi_group,
+      input_micro_usd, output_micro_usd, sort_order
+    ) VALUES (
+      'legacy-image-listing', 'legacy-image-model', ?, ?, 'official',
+      0, 0, 20
+    )`,
+    args: [official.rows[0].id, status.rows[0].id],
+  });
 
-  const { parseCatalogPricingBackfillArgs, runCatalogPricingBackfill } =
-    await import('../../scripts/backfill-catalog-pricing');
-  assert.throws(
-    () => parseCatalogPricingBackfillArgs(['--mode=apply']),
-    /requires --yes/
+  const migrationDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  const migration = (await readdir(migrationDir)).find((file) =>
+    file.startsWith('0018_')
+  );
+  assert.ok(migration, '0018 迁移文件存在');
+  await client.executeMultiple(
+    await readFile(join(migrationDir, migration), 'utf8')
   );
 
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = () => undefined;
-  console.error = () => undefined;
-  let result: Awaited<ReturnType<typeof runCatalogPricingBackfill>>;
-  try {
-    result = await runCatalogPricingBackfill(['--mode=apply', '--yes']);
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
+  const profiles = await client.execute(`
+    SELECT model_id, pricing_basis, quantity_meter, sku_rule_ast_json, rule_hash
+    FROM catalog_model_pricing_profile
+    ORDER BY model_id
+  `);
+  assert.equal(profiles.rows.length, 2);
+  assert.deepEqual(profiles.rows[0], {
+    model_id: 'legacy-image-model',
+    pricing_basis: 'unit',
+    quantity_meter: 'output_count',
+    sku_rule_ast_json:
+      '{"version":1,"rules":[{"conditions":[{"field":"quality","operator":"missing"}],"output":{"type":"sku","template":"default"}},{"conditions":[{"field":"quality","operator":"eq","value":"auto"}],"output":{"type":"sku","template":"default"}},{"conditions":[{"field":"size","operator":"missing"}],"output":{"type":"sku","template":"default"}},{"conditions":[{"field":"size","operator":"eq","value":"auto"}],"output":{"type":"sku","template":"default"}}],"fallback":{"type":"sku","template":"quality=${quality};size=${size}"}}',
+    rule_hash:
+      '484c5ba37b638c11e514b984a3d1754f4a1f7bcda134ecdd53988d14d4f00592',
+  });
+  assert.equal(profiles.rows[1].model_id, textModel.rows[0].id);
+  assert.equal(profiles.rows[1].pricing_basis, 'token');
+  assert.equal(profiles.rows[1].quantity_meter, null);
+  assert.equal(profiles.rows[1].rule_hash, null);
 
-  assert.equal(result.target.databaseProvider, 'sqlite');
-  assert.equal(result.target.databaseUrl, `file:${dbPath}`);
-  assert.ok(result.report.created >= 1);
+  const rates = await client.execute(`
+    SELECT profile_id, meter_key, sku_key, unit_size, price_micro_usd
+    FROM catalog_model_pricing_rate
+    ORDER BY profile_id, meter_key, sku_key
+  `);
+  assert.equal(rates.rows.length, 4);
   assert.equal(
-    result.report.conflicts.some(
-      (conflict) => conflict.groupId === partnerGroupId
+    rates.rows.some(
+      (row) =>
+        row.profile_id === 'migrated-profile-legacy-image-model' &&
+        row.meter_key === 'output_count' &&
+        row.sku_key === 'quality=high;size=1024x1024' &&
+        row.unit_size === 1 &&
+        row.price_micro_usd === 80000
     ),
     true
   );
 
-  const prices = await client.execute(
-    'select model_id from catalog_model_price'
-  );
-  const modelsWithListings = await client.execute(`
-    select distinct catalog_model.id
-    from catalog_model
-    join catalog_model_listing on catalog_model_listing.model_id = catalog_model.id
+  const listings = await client.execute(`
+    SELECT model_id, pricing_profile_id, input_micro_usd, output_micro_usd
+    FROM catalog_model_listing
+    WHERE model_id IN ('legacy-image-model', '${String(textModel.rows[0].id)}')
+    ORDER BY model_id
   `);
-  assert.equal(prices.rows.length, modelsWithListings.rows.length);
+  assert.equal(listings.rows.length, 2);
+  assert.equal(
+    listings.rows.every(
+      (row) => row.pricing_profile_id === `migrated-profile-${row.model_id}`
+    ),
+    true
+  );
+  assert.equal(
+    listings.rows.find((row) => row.model_id === 'legacy-image-model')
+      ?.input_micro_usd,
+    0
+  );
 
-  const partnerListing = await client.execute({
-    sql: `
-      select price_drift_status
-      from catalog_model_listing
-      where group_id = ?
-    `,
-    args: [partnerGroupId],
-  });
-  assert.deepEqual(partnerListing.rows[0], {
-    price_drift_status: 'needs_live_check',
-  });
-
-  // 0008 的职责边界是宽表基价回填与 listing 缓存不变；最新版公开查询依赖
-  // 0014 才建立的 meter/tier 列，应只在完整迁移链测试中执行。
-  assert.deepEqual(await listingCache(client), beforeCache);
+  const integrity = await client.execute(`PRAGMA integrity_check`);
+  assert.equal(integrity.rows[0].integrity_check, 'ok');
+  const foreignKeys = await client.execute(`PRAGMA foreign_key_check`);
+  assert.equal(foreignKeys.rows.length, 0);
   client.close();
 });
 

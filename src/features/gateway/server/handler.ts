@@ -561,7 +561,7 @@ export async function handleGatewayRequest(
         normalized.flags.push('long_context_block_missed');
       }
 
-      if (route.billingScheme === 'per_call') {
+      if (route.pricingBasis !== 'token') {
         if (aborted || !clientCompleted) {
           await terminal(
             () =>

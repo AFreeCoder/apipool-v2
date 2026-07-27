@@ -219,13 +219,69 @@ const jsonBody = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value));
 
 function forwardRoute(overrides: Record<string, unknown> = {}) {
-  return {
+  const route = {
     billingScheme: 'token',
     rates: { input: 1_000_000, output: 2_000_000 },
     tiers: {},
     admissionLongContextThreshold: null,
     allowLongContext: false,
     ...overrides,
+  };
+  const perCall = route.billingScheme === 'per_call';
+  const rates = route.rates as Record<string, number>;
+  const tiers = route.tiers as Record<string, number>;
+  return {
+    ...route,
+    pricingBasis: perCall ? 'unit' : 'token',
+    pricingSpec: perCall
+      ? {
+          version: 1,
+          basis: 'unit',
+          quantityMeter: 'output_count',
+          rates: Object.entries(tiers).map(([skuKey, priceMicroUsd]) => ({
+            meterKey: 'output_count',
+            skuKey,
+            unitSize: 1,
+            priceMicroUsd,
+          })),
+          skuRule: {
+            version: 1,
+            rules: [
+              {
+                conditions: [{ field: 'quality', operator: 'missing' }],
+                output: { type: 'sku', template: 'default' },
+              },
+              {
+                conditions: [
+                  { field: 'quality', operator: 'eq', value: 'auto' },
+                ],
+                output: { type: 'sku', template: 'default' },
+              },
+              {
+                conditions: [{ field: 'size', operator: 'missing' }],
+                output: { type: 'sku', template: 'default' },
+              },
+              {
+                conditions: [{ field: 'size', operator: 'eq', value: 'auto' }],
+                output: { type: 'sku', template: 'default' },
+              },
+            ],
+            fallback: {
+              type: 'sku',
+              template: 'quality=${quality};size=${size}',
+            },
+          },
+        }
+      : {
+          version: 1,
+          basis: 'token',
+          rates: Object.entries(rates).map(([meterKey, priceMicroUsd]) => ({
+            meterKey,
+            skuKey: 'default',
+            unitSize: meterKey === 'web_search' ? 1 : 1_000_000,
+            priceMicroUsd,
+          })),
+        },
   };
 }
 
@@ -348,5 +404,81 @@ test('per_call SKU 准入：显式组合精确命中，缺省或 auto 走 defaul
     forwardRoute({ billingScheme: 'per_call', tiers })
   );
   assert.equal(rejected.ok, false);
-  assert.match(rejected.message, /质量\/尺寸组合未开放/);
+  assert.match(rejected.message, /SKU 参数组合未开放/);
+});
+
+test('音视频 SKU 准入可读取 format、voice 与 resolution 事实', () => {
+  const audioRoute = {
+    pricingBasis: 'duration',
+    rates: {},
+    admissionLongContextThreshold: null,
+    allowLongContext: false,
+    pricingSpec: {
+      version: 1,
+      basis: 'duration',
+      quantityMeter: 'audio_duration_ms',
+      rates: [
+        {
+          meterKey: 'audio_duration_ms',
+          skuKey: 'format=mp3;voice=alloy',
+          unitSize: 1_000,
+          priceMicroUsd: 2_000,
+        },
+      ],
+      skuRule: {
+        version: 1,
+        rules: [],
+        fallback: {
+          type: 'sku',
+          template: 'format=${format};voice=${voice}',
+        },
+      },
+    },
+  };
+  const audio = modules.admission.evaluateForwardAdmission(
+    jsonBody({
+      model: 'audio-model',
+      format: 'MP3',
+      voice: 'ALLOY',
+    }),
+    audioRoute
+  );
+  assert.equal(audio.ok, true);
+  assert.equal(audio.skuKey, 'format=mp3;voice=alloy');
+
+  const videoRoute = {
+    ...audioRoute,
+    pricingBasis: 'unit',
+    pricingSpec: {
+      version: 1,
+      basis: 'unit',
+      quantityMeter: 'request_count',
+      rates: [
+        {
+          meterKey: 'request_count',
+          skuKey: 'resolution=1080p;format=mp4',
+          unitSize: 1,
+          priceMicroUsd: 30_000,
+        },
+      ],
+      skuRule: {
+        version: 1,
+        rules: [],
+        fallback: {
+          type: 'sku',
+          template: 'resolution=${resolution};format=${format}',
+        },
+      },
+    },
+  };
+  const video = modules.admission.evaluateForwardAdmission(
+    jsonBody({
+      model: 'video-model',
+      resolution: '1080P',
+      format: 'MP4',
+    }),
+    videoRoute
+  );
+  assert.equal(video.ok, true);
+  assert.equal(video.skuKey, 'resolution=1080p;format=mp4');
 });

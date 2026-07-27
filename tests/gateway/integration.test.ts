@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import {
   gatewayRequest,
@@ -227,12 +227,18 @@ test('4 目录价格变化自动生成 v2，新请求锁 v2，旧账本仍按 v1
   await admission.captureRequestId('preq-inflight-v1', 'rid-inflight-v1');
   await modules
     .db()
-    .update(modules.schema.catalogModelPrice)
-    .set({ baseInputMicroUsd: 9_000_000, baseOutputMicroUsd: 9_000_000 })
+    .update(modules.schema.catalogModelPricingRate)
+    .set({ priceMicroUsd: 9_000_000 })
     .where(
-      eq(
-        modules.schema.catalogModelPrice.modelId,
-        `integration-model-pk-route-v2`
+      and(
+        eq(
+          modules.schema.catalogModelPricingRate.profileId,
+          fixture.pricingProfileId
+        ),
+        inArray(modules.schema.catalogModelPricingRate.meterKey, [
+          'input',
+          'output',
+        ])
       )
     );
   const current = await invoke(fixture);

@@ -43,9 +43,13 @@ function priceMatches(
     price?.billingScheme === config.billingScheme &&
     price.ratesJson === config.ratesJson &&
     price.tiersJson === config.tiersJson &&
+    price.pricingSpecJson === config.pricingSpecJson &&
+    price.pricingProfileId === config.pricingProfileId &&
+    price.pricingProfileRuleHash === config.pricingProfileRuleHash &&
     price.longContextThresholdTokens === config.longContextThresholdTokens &&
-    price.newapiRefRatesJson === config.newapiRefRatesJson &&
-    price.newapiRefTiersJson === config.newapiRefTiersJson
+    price.admissionLongContextThresholdTokens ===
+      config.admissionLongContextThreshold &&
+    price.allowLongContext === config.allowLongContext
   );
 }
 
@@ -223,11 +227,15 @@ export async function ensureCatalogRouteSnapshot(
           billingScheme: config.billingScheme,
           ratesJson: config.ratesJson,
           tiersJson: config.tiersJson,
+          pricingSpecJson: config.pricingSpecJson,
+          pricingProfileId: config.pricingProfileId,
+          pricingProfileRuleHash: config.pricingProfileRuleHash,
           longContextThresholdTokens: config.longContextThresholdTokens,
-          newapiRefRatesJson: config.newapiRefRatesJson,
-          newapiRefTiersJson: config.newapiRefTiersJson,
+          admissionLongContextThresholdTokens:
+            config.admissionLongContextThreshold,
+          allowLongContext: config.allowLongContext,
           refNewapiGroup: config.newapiGroup,
-          sourceNote: '由目录基础价与上架折扣自动生成',
+          sourceNote: '由分组选择的定价档案与上架折扣自动生成',
           publishedBy: SYSTEM_PUBLISHER,
         };
         const [insertedRoute] = await tx

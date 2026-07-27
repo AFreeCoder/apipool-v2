@@ -13,8 +13,8 @@ export interface CatalogRow {
   vendorName: string;
   category: string;
   capabilities: string[];
-  perCall: boolean;
-  tiers: { skuKey: string; price: string }[];
+  pricingBasis: 'token' | 'unit' | 'duration';
+  tiers: { skuKey: string; price: string; originalPrice: string | null }[];
   inputMain: string;
   inputOrig: string | null;
   outputMain: string;
@@ -167,7 +167,7 @@ export function ModelsCatalog({
                       {row.vendorName}
                     </td>
                     <td className="px-4 py-4 text-right align-top font-mono whitespace-nowrap">
-                      {row.perCall ? (
+                      {row.pricingBasis !== 'token' ? (
                         <div className="space-y-1 text-xs">
                           {row.tiers.map((tier) => (
                             <div key={tier.skuKey}>
@@ -175,6 +175,11 @@ export function ModelsCatalog({
                                 {tier.skuKey}
                               </div>
                               <div className="font-semibold">{tier.price}</div>
+                              {tier.originalPrice && (
+                                <div className="text-muted-foreground/70 line-through">
+                                  {tier.originalPrice}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>

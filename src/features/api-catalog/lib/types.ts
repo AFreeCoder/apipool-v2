@@ -1,3 +1,8 @@
+import type {
+  PricingBasis,
+  QuantityMeter,
+} from '@/features/gateway/lib/pricing-spec';
+
 import type { PricePresentation } from './pricing';
 
 export type PublicCatalogListingDto = {
@@ -9,8 +14,20 @@ export type PublicCatalogListingDto = {
   category: string;
   capabilities: string[];
   contextWindow: number | null;
-  billingScheme?: 'token' | 'per_call';
-  tiers?: { skuKey: string; priceMicroUsd: number; note?: string }[];
+  pricingBasis?: PricingBasis;
+  quantityMeter?: QuantityMeter;
+  /**
+   * 兼容旧客户端；新代码应读取 pricingBasis。
+   */
+  billingScheme?: 'token' | 'per_call' | 'duration';
+  tiers?: {
+    skuKey: string;
+    meterKey: string;
+    unitSize: number;
+    priceMicroUsd: number;
+    listPriceMicroUsd?: number;
+    note?: string;
+  }[];
   inputMicroUsd?: number;
   outputMicroUsd?: number;
   imageInputMicroUsd?: number;

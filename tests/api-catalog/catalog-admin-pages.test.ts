@@ -249,13 +249,17 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     listPage,
     /admin\/catalog\/models\/\$\{item\.id\}\/capabilities/
   );
+  assert.match(
+    listPage,
+    /admin\/catalog\/models\/\$\{item\.id\}\/pricing-profiles/
+  );
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/listings/);
   assert.match(listPage, /admin\/catalog\/models\/\$\{item\.id\}\/delete/);
   for (const field of [
     'vendorName',
     'categoryNames',
     'capabilityNames',
-    'price',
+    'pricingProfileCount',
   ]) {
     assert.match(listPage, new RegExp(`name:\\s*['"]${field}['"]`));
   }
@@ -274,7 +278,7 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     assert.doesNotMatch(source, callPattern('getGroups'));
     assert.doesNotMatch(source, callPattern('getStatuses'));
     assert.match(source, callPattern('upsertModelAdminConfig'));
-    assert.match(source, callPattern('parseModelPricingFormData'));
+    assert.doesNotMatch(source, callPattern('parseModelPricingFormData'));
     assert.match(source, /JSON\.parse\(.*categoryIds/);
     assert.match(source, /JSON\.parse\(.*capabilityIds/);
     assert.doesNotMatch(source, fieldPattern('contextWindow'));
@@ -299,10 +303,10 @@ test('catalog model pages expose admin catalog fields, candidate form, and listi
     'webSearchMicroUsd',
     'longContextThresholdTokens',
   ]) {
-    assert.match(modelForm, new RegExp(`name=["']${pricingField}["']`));
+    assert.doesNotMatch(modelForm, new RegExp(`name=["']${pricingField}["']`));
   }
-  assert.match(modelForm, /prefillReference/);
-  assert.match(modelForm, /setTiers/);
+  assert.doesNotMatch(modelForm, /prefillReference/);
+  assert.doesNotMatch(modelForm, /setTiers/);
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(newPage, /redirect_url:\s*['"]\/admin\/catalog\/models['"]/);
   assert.match(editPage, callPattern('getModelAdminConfig'));
@@ -403,6 +407,8 @@ test('catalog listing child pages expose per-model group discount CRUD without a
   assert.match(listPage, /name:\s*['"]groupSlug['"]/);
   assert.match(listPage, /name:\s*['"]groupName['"]/);
   assert.match(listPage, /name:\s*['"]newapiGroup['"]/);
+  assert.match(listPage, /name:\s*['"]pricingProfile['"]/);
+  assert.match(listPage, /name:\s*['"]pricingBasis['"]/);
   assert.match(listPage, /name:\s*['"]discountRate['"]/);
   for (const pricingColumn of [
     'basePrice',
@@ -435,12 +441,15 @@ test('catalog listing child pages expose per-model group discount CRUD without a
     assert.match(source, callPattern('getStatuses'));
     assert.match(source, typedFieldPattern('groupId', 'select'));
     assert.match(source, typedFieldPattern('newapiGroup', 'text'));
+    assert.match(source, typedFieldPattern('pricingProfileId', 'select'));
     assert.match(source, typedFieldPattern('statusId', 'select'));
     assert.match(source, typedFieldPattern('discountFold', 'number'));
     assert.match(source, typedFieldPattern('discountNote', 'text'));
     assert.match(source, typedFieldPattern('description', 'textarea'));
     assert.match(source, switchFieldPattern('allowLongContext'));
     assert.match(source, callPattern('assessPublishReadiness'));
+    assert.match(source, callPattern('getPricingProfileConfig'));
+    assert.match(source, callPattern('getPricingProfilesByModel'));
     assert.doesNotMatch(source, switchFieldPattern('smokeTested'));
     assert.doesNotMatch(source, /fields\.smokeTested/);
     for (const hiddenField of [
@@ -455,12 +464,9 @@ test('catalog listing child pages expose per-model group discount CRUD without a
     assert.match(source, /revalidateCatalog\s*\(/);
   }
   assert.match(newPage, callPattern('createListing'));
-  assert.match(newPage, /baseInputMicroUsd/);
-  assert.match(newPage, /defaultListing/);
-  assert.match(newPage, /missingBasePriceMessage/);
-  assert.match(newPage, /t\(['"]errors\.missingBasePrice['"]\)/);
-  assert.match(newPage, callPattern('requiredBasePrice'));
-  assert.doesNotMatch(newPage, /\?\?\s*0/);
+  assert.match(newPage, /pricingProfile\.profile\.modelId !== model\.id/);
+  assert.match(newPage, /pricingProfileId/);
+  assert.doesNotMatch(newPage, /baseInputMicroUsd|requiredBasePrice/);
   assert.match(
     newPage,
     /redirect_url:\s*`\/admin\/catalog\/models\/\$\{model\.id\}\/listings`/
@@ -697,13 +703,20 @@ test('creating a duplicate listing surfaces a translated message, not a raw cons
   }
 });
 
-test('editing model price warns that the cost guard needs review without hiding sale price', async () => {
+test('模型元数据与分组售卖保存不触发成本守卫状态', async () => {
   const { readFile } = await import('node:fs/promises');
 
   const editPage =
     'src/app/[locale]/(admin)/admin/catalog/models/[id]/edit/page.tsx';
   const source = await readFile(editPage, 'utf8');
-  assert.match(source, /messages\.costReviewAfterSave/, editPage);
+  const listingPage =
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx';
+  assert.doesNotMatch(source, /costReviewAfterSave|priceDriftStatus/, editPage);
+  assert.doesNotMatch(
+    await readFile(listingPage, 'utf8'),
+    /costReviewAfterSave/,
+    listingPage
+  );
 
   for (const locale of ['en', 'zh']) {
     const messages = JSON.parse(
@@ -712,7 +725,7 @@ test('editing model price warns that the cost guard needs review without hiding 
         'utf8'
       )
     );
-    assert.ok(messages.messages?.costReviewAfterSave, locale);
+    assert.equal(messages.messages?.costReviewAfterSave, undefined, locale);
   }
 });
 

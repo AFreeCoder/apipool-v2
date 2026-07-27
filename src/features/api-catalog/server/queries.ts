@@ -10,17 +10,18 @@ import {
   catalogModel,
   catalogModelCapability,
   catalogModelListing,
-  catalogModelPrice,
-  catalogModelPriceTier,
+  catalogModelPricingProfile,
+  catalogModelPricingRate,
   catalogStatus,
   catalogVendor,
 } from '@/config/db/schema';
 import { db } from '@/core/db';
-import {
-  resolveEffectiveCatalogPrice,
-  scaleMicroUsdByBps,
-} from '@/features/api-catalog/lib/pricing';
+import { scaleMicroUsdByBps } from '@/features/api-catalog/lib/pricing';
 import { assessPublishReadiness } from '@/features/api-catalog/server/publish-readiness';
+import type {
+  PricingBasis,
+  QuantityMeter,
+} from '@/features/gateway/lib/pricing-spec';
 
 import type { FilterDimensions, ListingRow } from '../lib/types';
 
@@ -44,25 +45,12 @@ type ListingBaseRow = {
   groupSlug: string;
   category: string;
   contextWindow: number | null;
-  inputMicroUsd: number;
-  outputMicroUsd: number;
-  imageInputMicroUsd: number | null;
-  imageOutputMicroUsd: number | null;
-  listInputMicroUsd: number | null;
-  listOutputMicroUsd: number | null;
   discountRateBps: number | null;
   discountNote: string | null;
   description: string | null;
-  priceDriftStatus: string;
-  baseInputMicroUsd: number | null;
-  baseOutputMicroUsd: number | null;
-  baseCachedInputMicroUsd: number | null;
-  baseCacheWrite5mMicroUsd: number | null;
-  baseCacheWrite1hMicroUsd: number | null;
-  baseImageInputMicroUsd: number | null;
-  baseImageOutputMicroUsd: number | null;
-  billingScheme: string;
-  endpointTypesJson: string | null;
+  pricingProfileId: string | null;
+  pricingBasis: string | null;
+  quantityMeter: string | null;
   statusSlug: string;
   statusName: string;
 };
@@ -174,25 +162,12 @@ async function queryListingRows({
       groupSlug: catalogGroup.slug,
       category: catalogModel.category,
       contextWindow: catalogModel.contextWindow,
-      inputMicroUsd: catalogModelListing.inputMicroUsd,
-      outputMicroUsd: catalogModelListing.outputMicroUsd,
-      imageInputMicroUsd: catalogModelListing.imageInputMicroUsd,
-      imageOutputMicroUsd: catalogModelListing.imageOutputMicroUsd,
-      listInputMicroUsd: catalogModelListing.listInputMicroUsd,
-      listOutputMicroUsd: catalogModelListing.listOutputMicroUsd,
       discountRateBps: catalogModelListing.discountRateBps,
       discountNote: catalogModelListing.discountNote,
       description: catalogModelListing.description,
-      priceDriftStatus: catalogModelListing.priceDriftStatus,
-      baseInputMicroUsd: catalogModelPrice.baseInputMicroUsd,
-      baseOutputMicroUsd: catalogModelPrice.baseOutputMicroUsd,
-      baseCachedInputMicroUsd: catalogModelPrice.baseCachedInputMicroUsd,
-      baseCacheWrite5mMicroUsd: catalogModelPrice.baseCacheWrite5mMicroUsd,
-      baseCacheWrite1hMicroUsd: catalogModelPrice.baseCacheWrite1hMicroUsd,
-      baseImageInputMicroUsd: catalogModelPrice.baseImageInputMicroUsd,
-      baseImageOutputMicroUsd: catalogModelPrice.baseImageOutputMicroUsd,
-      billingScheme: catalogModelPrice.billingScheme,
-      endpointTypesJson: catalogModelPrice.sourceSupportedEndpointTypes,
+      pricingProfileId: catalogModelListing.pricingProfileId,
+      pricingBasis: catalogModelPricingProfile.pricingBasis,
+      quantityMeter: catalogModelPricingProfile.quantityMeter,
       statusSlug: catalogStatus.slug,
       statusName: catalogStatus.name,
     })
@@ -201,7 +176,10 @@ async function queryListingRows({
     .innerJoin(catalogVendor, eq(catalogModel.vendorId, catalogVendor.id))
     .innerJoin(catalogCategory, eq(catalogModel.category, catalogCategory.slug))
     .innerJoin(catalogGroup, eq(catalogModelListing.groupId, catalogGroup.id))
-    .leftJoin(catalogModelPrice, eq(catalogModelPrice.modelId, catalogModel.id))
+    .leftJoin(
+      catalogModelPricingProfile,
+      eq(catalogModelListing.pricingProfileId, catalogModelPricingProfile.id)
+    )
     .innerJoin(
       catalogStatus,
       eq(catalogModelListing.statusId, catalogStatus.id)
@@ -210,7 +188,7 @@ async function queryListingRows({
     .orderBy(asc(catalogModelListing.sortOrder));
 }
 
-// 路由可用性只取决于模型目录中的分组映射、基准价和售卖状态。
+// 路由可用性只取决于模型目录中的分组映射、所选售卖定价档案和售卖状态。
 // model_route/model_price_version 是请求审计快照，不再是第二套人工配置。
 export async function isListingCallable(
   portalGroupId: string,
@@ -250,41 +228,56 @@ async function getCapabilitiesByModelPk(modelPks: string[]) {
   return capabilitiesByModelPk;
 }
 
-async function getTiersByModelPk(modelPks: string[]) {
-  if (modelPks.length === 0) {
-    return new Map<
-      string,
-      { skuKey: string; priceMicroUsd: number; note: string | null }[]
-    >();
+type PublicProfileRate = {
+  profileId: string;
+  meterKey: string;
+  skuKey: string;
+  unitSize: number;
+  priceMicroUsd: number;
+  note: string | null;
+};
+
+async function getRatesByProfileId(profileIds: string[]) {
+  if (profileIds.length === 0) {
+    return new Map<string, PublicProfileRate[]>();
   }
   const rows = await db()
     .select({
-      modelPk: catalogModelPriceTier.modelId,
-      skuKey: catalogModelPriceTier.skuKey,
-      priceMicroUsd: catalogModelPriceTier.priceMicroUsd,
-      note: catalogModelPriceTier.note,
+      profileId: catalogModelPricingRate.profileId,
+      meterKey: catalogModelPricingRate.meterKey,
+      skuKey: catalogModelPricingRate.skuKey,
+      unitSize: catalogModelPricingRate.unitSize,
+      priceMicroUsd: catalogModelPricingRate.priceMicroUsd,
+      note: catalogModelPricingRate.note,
     })
-    .from(catalogModelPriceTier)
-    .where(inArray(catalogModelPriceTier.modelId, modelPks))
-    .orderBy(asc(catalogModelPriceTier.skuKey));
+    .from(catalogModelPricingRate)
+    .where(inArray(catalogModelPricingRate.profileId, profileIds))
+    .orderBy(
+      asc(catalogModelPricingRate.meterKey),
+      asc(catalogModelPricingRate.skuKey)
+    );
 
-  const tiersByModelPk = new Map<
-    string,
-    { skuKey: string; priceMicroUsd: number; note: string | null }[]
-  >();
+  const ratesByProfileId = new Map<string, PublicProfileRate[]>();
   for (const row of rows) {
-    const tiers = tiersByModelPk.get(row.modelPk) ?? [];
-    tiers.push(row);
-    tiersByModelPk.set(row.modelPk, tiers);
+    const rates = ratesByProfileId.get(row.profileId) ?? [];
+    rates.push(row);
+    ratesByProfileId.set(row.profileId, rates);
   }
-  return tiersByModelPk;
+  return ratesByProfileId;
 }
 
 async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
   const modelPks = [...new Set(rows.map((row) => row.modelPk))];
-  const [capabilitiesByModelPk, tiersByModelPk] = await Promise.all([
+  const profileIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.pricingProfileId ? [row.pricingProfileId] : []
+      )
+    ),
+  ];
+  const [capabilitiesByModelPk, ratesByProfileId] = await Promise.all([
     getCapabilitiesByModelPk(modelPks),
-    getTiersByModelPk(modelPks),
+    getRatesByProfileId(profileIds),
   ]);
 
   return (
@@ -294,75 +287,64 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
           row.groupId,
           row.modelId
         );
-        let endpointTypes: string[] = [];
-        try {
-          const parsed = JSON.parse(row.endpointTypesJson ?? '[]');
-          if (Array.isArray(parsed)) {
-            endpointTypes = parsed.filter(
-              (value): value is string => typeof value === 'string'
-            );
-          }
-        } catch {
-          // 公开目录对旧数据保守处理：未知端点继续要求 input/output 双价。
-        }
-        const onlyEmbeddings =
-          endpointTypes.length > 0 &&
-          endpointTypes.every((value) =>
-            value.toLowerCase().includes('embedding')
-          );
-        const effective = resolveEffectiveCatalogPrice({
-          baseInputMicroUsd: row.baseInputMicroUsd,
-          baseOutputMicroUsd: row.baseOutputMicroUsd,
-          baseImageInputMicroUsd: row.baseImageInputMicroUsd,
-          baseImageOutputMicroUsd: row.baseImageOutputMicroUsd,
-          discountRateBps: row.discountRateBps ?? 10_000,
-          priceDriftStatus: row.priceDriftStatus,
-          listInputMicroUsd: row.listInputMicroUsd,
-          listOutputMicroUsd: row.listOutputMicroUsd,
-          discountNote: row.discountNote,
-          requiresOutputPrice: !onlyEmbeddings,
-        });
+        const pricingBasis = row.pricingBasis as PricingBasis | null;
+        const quantityMeter = row.quantityMeter as QuantityMeter | null;
         const discountRateBps = row.discountRateBps ?? 10_000;
-        const perCallTiers = (tiersByModelPk.get(row.modelPk) ?? []).flatMap(
-          (tier) => {
-            const priceMicroUsd = scaleMicroUsdByBps(
-              tier.priceMicroUsd,
-              discountRateBps
-            );
-            return priceMicroUsd !== null && priceMicroUsd > 0
-              ? [
-                  {
-                    skuKey: tier.skuKey,
-                    priceMicroUsd,
-                    ...(tier.note ? { note: tier.note } : {}),
-                  },
-                ]
-              : [];
-          }
-        );
-        const perCallConfirmed =
-          row.billingScheme === 'per_call' &&
-          ['matched', 'ok', 'cost_alert', 'cost_changed'].includes(
-            row.priceDriftStatus || 'unknown'
-          ) &&
-          perCallTiers.some((tier) => tier.skuKey === 'default');
-        const publicConfirmed =
-          row.billingScheme === 'per_call'
-            ? perCallConfirmed
-            : effective.publicConfirmed;
-        const pricePresentation =
-          row.billingScheme === 'per_call'
-            ? {
-                showPrice: perCallConfirmed,
-                showStrikethrough: false,
-                ...(perCallConfirmed && discountRateBps !== 10_000
-                  ? { discountBps: discountRateBps }
-                  : {}),
-                ...(perCallConfirmed && row.discountNote
-                  ? { note: row.discountNote }
-                  : {}),
-              }
-            : effective.pricePresentation;
+        const baseRates = row.pricingProfileId
+          ? (ratesByProfileId.get(row.pricingProfileId) ?? [])
+          : [];
+        const effectiveRates = baseRates.flatMap((rate) => {
+          const priceMicroUsd = scaleMicroUsdByBps(
+            rate.priceMicroUsd,
+            discountRateBps
+          );
+          return priceMicroUsd !== null && priceMicroUsd > 0
+            ? [{ ...rate, priceMicroUsd }]
+            : [];
+        });
+        const findRate = (meterKey: string) =>
+          effectiveRates.find(
+            (rate) => rate.meterKey === meterKey && rate.skuKey === 'default'
+          )?.priceMicroUsd;
+        const findBaseRate = (meterKey: string) =>
+          baseRates.find(
+            (rate) => rate.meterKey === meterKey && rate.skuKey === 'default'
+          )?.priceMicroUsd;
+        const nonTokenRates =
+          pricingBasis && pricingBasis !== 'token'
+            ? effectiveRates.map((rate) => {
+                const base = baseRates.find(
+                  (candidate) =>
+                    candidate.meterKey === rate.meterKey &&
+                    candidate.skuKey === rate.skuKey
+                );
+                return {
+                  skuKey: rate.skuKey,
+                  meterKey: rate.meterKey,
+                  unitSize: rate.unitSize,
+                  priceMicroUsd: rate.priceMicroUsd,
+                  ...(base ? { listPriceMicroUsd: base.priceMicroUsd } : {}),
+                  ...(rate.note ? { note: rate.note } : {}),
+                };
+              })
+            : [];
+        const publicConfirmed = readiness.ready;
+        const billingScheme =
+          pricingBasis === 'unit'
+            ? ('per_call' as const)
+            : pricingBasis === 'duration'
+              ? ('duration' as const)
+              : ('token' as const);
+        const pricePresentation = {
+          showPrice: publicConfirmed,
+          showStrikethrough: publicConfirmed && discountRateBps !== 10_000,
+          ...(publicConfirmed && discountRateBps !== 10_000
+            ? { discountBps: discountRateBps }
+            : {}),
+          ...(publicConfirmed && row.discountNote
+            ? { note: row.discountNote }
+            : {}),
+        };
 
         return {
           modelId: row.modelId,
@@ -373,29 +355,41 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
           category: row.category,
           capabilities: capabilitiesByModelPk.get(row.modelPk) ?? [],
           contextWindow: row.contextWindow,
-          billingScheme:
-            row.billingScheme === 'per_call'
-              ? ('per_call' as const)
-              : ('token' as const),
-          tiers: perCallConfirmed ? perCallTiers : undefined,
-          inputMicroUsd: publicConfirmed
-            ? (effective.effectiveInputMicroUsd ?? undefined)
-            : undefined,
-          outputMicroUsd: publicConfirmed
-            ? (effective.effectiveOutputMicroUsd ?? undefined)
-            : undefined,
-          imageInputMicroUsd: publicConfirmed
-            ? (effective.effectiveImageInputMicroUsd ?? undefined)
-            : undefined,
-          imageOutputMicroUsd: publicConfirmed
-            ? (effective.effectiveImageOutputMicroUsd ?? undefined)
-            : undefined,
-          listInputMicroUsd: publicConfirmed
-            ? (effective.listInputMicroUsd ?? undefined)
-            : undefined,
-          listOutputMicroUsd: publicConfirmed
-            ? (effective.listOutputMicroUsd ?? undefined)
-            : undefined,
+          pricingBasis: pricingBasis ?? undefined,
+          quantityMeter: quantityMeter ?? undefined,
+          billingScheme,
+          tiers:
+            publicConfirmed && pricingBasis !== 'token'
+              ? nonTokenRates
+              : undefined,
+          inputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('input')
+              : undefined,
+          outputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('output')
+              : undefined,
+          imageInputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('image_input')
+              : undefined,
+          imageOutputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('image_output')
+              : undefined,
+          listInputMicroUsd:
+            publicConfirmed &&
+            pricingBasis === 'token' &&
+            discountRateBps !== 10_000
+              ? findBaseRate('input')
+              : undefined,
+          listOutputMicroUsd:
+            publicConfirmed &&
+            pricingBasis === 'token' &&
+            discountRateBps !== 10_000
+              ? findBaseRate('output')
+              : undefined,
           discountRateBps:
             publicConfirmed && row.discountRateBps !== null
               ? row.discountRateBps
@@ -407,18 +401,22 @@ async function mapListingRows(rows: ListingBaseRow[]): Promise<ListingRow[]> {
           statusSlug: row.statusSlug,
           statusName: row.statusName,
           isCallable: readiness.ready,
-          effectiveInputMicroUsd: publicConfirmed
-            ? (effective.effectiveInputMicroUsd ?? undefined)
-            : undefined,
-          effectiveOutputMicroUsd: publicConfirmed
-            ? (effective.effectiveOutputMicroUsd ?? undefined)
-            : undefined,
-          effectiveImageInputMicroUsd: publicConfirmed
-            ? (effective.effectiveImageInputMicroUsd ?? undefined)
-            : undefined,
-          effectiveImageOutputMicroUsd: publicConfirmed
-            ? (effective.effectiveImageOutputMicroUsd ?? undefined)
-            : undefined,
+          effectiveInputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('input')
+              : undefined,
+          effectiveOutputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('output')
+              : undefined,
+          effectiveImageInputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('image_input')
+              : undefined,
+          effectiveImageOutputMicroUsd:
+            publicConfirmed && pricingBasis === 'token'
+              ? findRate('image_output')
+              : undefined,
           pricePresentation,
         };
       })

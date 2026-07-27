@@ -10,11 +10,12 @@ import {
   getCallableListingsByGroupUncached,
   getCallableModelIdsByGroupUncached,
 } from '@/features/api-catalog/server/queries';
-import {
-  computeTokenChargeMicroUsd,
-  type RatesMap,
-} from '@/features/gateway/lib/billing';
 import type { MeterQuantities } from '@/features/gateway/lib/meters';
+import {
+  computePricingCharge,
+  parsePricingSpec,
+  type PricingSpec,
+} from '@/features/gateway/lib/pricing-spec';
 import { createNewApiClient } from '@/features/newapi-bridge/server/client';
 import {
   createPortalApiKey,
@@ -204,21 +205,23 @@ export function buildSmokePriceReconciliationReport({
   model,
   groupSlug,
   usage,
-  price,
+  pricingSpec,
   actualChargedMicroUsd,
   toleranceMicroUsd,
 }: {
   model: string;
   groupSlug: string;
   usage: MeterQuantities;
-  price: RatesMap;
+  pricingSpec: PricingSpec;
   actualChargedMicroUsd: number | null;
   toleranceMicroUsd: number;
 }): SmokePriceReconciliationReport {
   const expectedMicroUsd = Number(
-    computeTokenChargeMicroUsd(usage, price, {
+    computePricingCharge(pricingSpec, {
+      meters: usage,
       webSearchCount: 0,
-      webSearchPriceMicroUsd: price.web_search ?? null,
+      skuKey: null,
+      quantity: null,
     }).charged
   );
   const deltaMicroUsd =
@@ -624,7 +627,7 @@ export async function main() {
           cached_image_input: usage.cachedImageInputTokens ?? 0,
           image_output: usage.imageOutputTokens ?? 0,
         },
-        price: JSON.parse(price.ratesJson) as RatesMap,
+        pricingSpec: parsePricingSpec(price.pricingSpecJson),
         actualChargedMicroUsd: usage.chargedMicroUsd,
         toleranceMicroUsd: priceReconciliation.toleranceMicroUsd,
       });

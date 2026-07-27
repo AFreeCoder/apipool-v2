@@ -9,11 +9,14 @@ import {
 import {
   getGroups,
   getListingsByModel,
-  getModelAdminConfig,
   getModelById,
   getStatuses,
   Listing,
 } from '@/features/api-catalog/server/catalog-service';
+import {
+  getPricingProfileConfig,
+  getPricingProfilesByModel,
+} from '@/features/api-catalog/server/pricing-profile-service';
 import {
   getLatestCostReferences,
   type CostReference,
@@ -28,6 +31,8 @@ type ListingRow = Listing & {
   groupSlug: string;
   groupName: string;
   statusName: string;
+  pricingProfile: string;
+  pricingBasis: string;
   discountRate: string;
   basePrice: string;
   effectivePrice: string;
@@ -74,14 +79,22 @@ export default async function AdminCatalogModelListingsPage({
     return <Empty message={t('listings.list.notFound')} />;
   }
 
-  const [groups, statuses, listings, config, costReferences] =
+  const [groups, statuses, listings, pricingProfiles, costReferences] =
     await Promise.all([
       getGroups(),
       getStatuses(),
       getListingsByModel(model.id),
-      getModelAdminConfig(model.id),
+      getPricingProfilesByModel(model.id),
       getLatestCostReferences(),
     ]);
+  const profileConfigs = await Promise.all(
+    pricingProfiles.map((profile) => getPricingProfileConfig(profile.id))
+  );
+  const profileById = new Map(
+    profileConfigs.flatMap((config) =>
+      config ? [[config.profile.id, config] as const] : []
+    )
+  );
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const statusNames = new Map(
     statuses.map((status) => [status.id, status.name])
@@ -95,21 +108,36 @@ export default async function AdminCatalogModelListingsPage({
           fold: formatDecimal(bps / 1000),
           percent: formatDecimal(bps / 100),
         });
-  const basePrice = config?.basePrice;
-  const defaultTier = config?.tiers.find((tier) => tier.skuKey === 'default');
   const rows: ListingRow[] = listings.map((listing) => {
     const group = groupById.get(listing.groupId);
     const discountBps = listing.discountRateBps ?? 10_000;
-    const isPerCall = basePrice?.billingScheme === 'per_call';
-    const baseInput = isPerCall
-      ? defaultTier?.priceMicroUsd
-      : basePrice?.baseInputMicroUsd;
-    const baseOutput = isPerCall ? null : basePrice?.baseOutputMicroUsd;
+    const profile = listing.pricingProfileId
+      ? profileById.get(listing.pricingProfileId)
+      : undefined;
+    const defaultRate = profile?.rates.find(
+      (rate) => rate.skuKey === 'default'
+    );
+    const inputRate = profile?.rates.find((rate) => rate.meterKey === 'input');
+    const outputRate = profile?.rates.find(
+      (rate) => rate.meterKey === 'output'
+    );
+    const baseInput =
+      profile?.profile.pricingBasis === 'token'
+        ? inputRate?.priceMicroUsd
+        : defaultRate?.priceMicroUsd;
+    const baseOutput =
+      profile?.profile.pricingBasis === 'token'
+        ? outputRate?.priceMicroUsd
+        : null;
     return {
       ...listing,
       groupSlug: group?.slug ?? listing.groupId,
       groupName: group?.name ?? listing.groupId,
       statusName: statusNames.get(listing.statusId) ?? listing.statusId,
+      pricingProfile: profile?.profile.name ?? '',
+      pricingBasis: profile
+        ? t(`pricingBasis.${profile.profile.pricingBasis}` as any)
+        : '',
       discountRate: renderDiscount(listing.discountRateBps),
       basePrice: formatPricePair(baseInput, baseOutput),
       effectivePrice: formatPricePair(
@@ -143,6 +171,8 @@ export default async function AdminCatalogModelListingsPage({
         type: 'copy',
       },
       { name: 'statusName', title: t('fields.status'), type: 'label' },
+      { name: 'pricingProfile', title: t('fields.pricingProfile') },
+      { name: 'pricingBasis', title: t('fields.billingScheme') },
       { name: 'basePrice', title: t('fields.basePrice') },
       { name: 'discountRate', title: t('fields.discountRate') },
       { name: 'effectivePrice', title: t('fields.effectivePrice') },

@@ -17,7 +17,7 @@ const IDs = {
   model: 'snapshot-model-pk',
   modelId: 'snapshot-model',
   listing: 'snapshot-listing',
-  price: 'snapshot-price',
+  profile: 'snapshot-profile',
 };
 
 async function setupDb() {
@@ -82,37 +82,55 @@ async function setupDb() {
     modelId: IDs.modelId,
     displayName: '快照测试模型',
     vendorId: IDs.vendor,
-    category: IDs.category,
+    category: 'llm',
   });
   await modules.db().insert(schema.catalogModelCapability).values({
     id: 'snapshot-model-capability',
     modelId: IDs.model,
     capabilityId: IDs.capability,
   });
+  await modules
+    .db()
+    .insert(schema.catalogModelPricingProfile)
+    .values({
+      id: IDs.profile,
+      modelId: IDs.model,
+      name: '快照售卖价',
+      pricingBasis: 'token',
+      reviewedAt: new Date('2026-07-20T00:00:00Z'),
+    });
+  await modules
+    .db()
+    .insert(schema.catalogModelPricingRate)
+    .values([
+      {
+        id: 'snapshot-rate-input',
+        profileId: IDs.profile,
+        meterKey: 'input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 1_000_000,
+      },
+      {
+        id: 'snapshot-rate-output',
+        profileId: IDs.profile,
+        meterKey: 'output',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 2_000_000,
+      },
+    ]);
   await modules.db().insert(schema.catalogModelListing).values({
     id: IDs.listing,
     modelId: IDs.model,
     groupId: IDs.group,
     newapiGroup: 'official',
+    pricingProfileId: IDs.profile,
     statusId: IDs.status,
     inputMicroUsd: 1_000_000,
     outputMicroUsd: 2_000_000,
     discountRateBps: 9_000,
   });
-  await modules
-    .db()
-    .insert(schema.catalogModelPrice)
-    .values({
-      id: IDs.price,
-      modelId: IDs.model,
-      billingScheme: 'token',
-      sourceSupportedEndpointTypes: JSON.stringify(['responses']),
-      baseInputMicroUsd: 1_000_000,
-      baseOutputMicroUsd: 2_000_000,
-      billingCapabilitiesJson: '{}',
-      syncStatus: 'manual',
-      reviewedAt: new Date('2026-07-20T00:00:00Z'),
-    });
 }
 
 async function assertConsumers(expected: boolean) {
@@ -147,28 +165,24 @@ test('发布判定、目录 callable 与网关快照对同一完备集给出一�
 
   await modules
     .db()
-    .update(modules.schema.catalogModelPrice)
-    .set({ baseOutputMicroUsd: null })
-    .where(eq(modules.schema.catalogModelPrice.id, IDs.price));
+    .delete(modules.schema.catalogModelPricingRate)
+    .where(
+      eq(modules.schema.catalogModelPricingRate.id, 'snapshot-rate-output')
+    );
   await assertConsumers(false);
 
+  await modules.db().insert(modules.schema.catalogModelPricingRate).values({
+    id: 'snapshot-rate-output-restored',
+    profileId: IDs.profile,
+    meterKey: 'output',
+    skuKey: 'default',
+    unitSize: 1_000_000,
+    priceMicroUsd: 2_000_000,
+  });
   await modules
     .db()
-    .update(modules.schema.catalogModelPrice)
-    .set({
-      baseOutputMicroUsd: 2_000_000,
-      billingCapabilitiesJson: '{invalid',
-    })
-    .where(eq(modules.schema.catalogModelPrice.id, IDs.price));
-  await assertConsumers(false);
-
-  await modules
-    .db()
-    .update(modules.schema.catalogModelPrice)
-    .set({
-      billingScheme: 'per_call',
-      billingCapabilitiesJson: '{}',
-    })
-    .where(eq(modules.schema.catalogModelPrice.id, IDs.price));
+    .update(modules.schema.catalogModelPricingProfile)
+    .set({ pricingBasis: 'duration', quantityMeter: 'audio_duration_ms' })
+    .where(eq(modules.schema.catalogModelPricingProfile.id, IDs.profile));
   await assertConsumers(false);
 });
