@@ -41,7 +41,6 @@ export default async function CatalogModelListingEditPage({
 
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
-  const missingNewapiGroupMessage = t('errors.missingNewapiGroup');
   const missingPricingProfileMessage = t('errors.missingPricingProfile');
   const updateFailedMessage = t('errors.updateFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
@@ -94,7 +93,6 @@ export default async function CatalogModelListingEditPage({
         name: 'newapiGroup',
         type: 'text',
         title: t('fields.newapiGroup'),
-        validation: { required: true },
         tip: t('fields.newapiGroupTip'),
       },
       {
@@ -173,13 +171,9 @@ export default async function CatalogModelListingEditPage({
           return { status: 'error' as const, message: missingRecordMessage };
         }
 
-        const newapiGroup = (data.get('newapiGroup') as string | null)?.trim();
-        if (!newapiGroup) {
-          return {
-            status: 'error' as const,
-            message: missingNewapiGroupMessage,
-          };
-        }
+        // 允许清空错误映射并立即 fail closed；后续就绪检查会保留记录，
+        // 同时阻止其进入网关路由。
+        const newapiGroup = String(data.get('newapiGroup') ?? '').trim();
         const pricingProfileId = String(
           data.get('pricingProfileId') ?? ''
         ).trim();

@@ -43,7 +43,6 @@ export default async function CatalogModelListingNewPage({
   const t = await getTranslations('admin.catalog');
   const missingRecordMessage = t('errors.missingRecord');
   const missingPricingProfileMessage = t('errors.missingPricingProfile');
-  const missingNewapiGroupMessage = t('errors.missingNewapiGroup');
   const createFailedMessage = t('errors.createFailed');
   const invalidPriceMessage = t('errors.invalidPrice');
   const duplicateListingMessage = t('errors.duplicateListing');
@@ -93,7 +92,6 @@ export default async function CatalogModelListingNewPage({
         name: 'newapiGroup',
         type: 'text',
         title: t('fields.newapiGroup'),
-        validation: { required: true },
         tip: t('fields.newapiGroupTip'),
       },
       {
@@ -182,13 +180,9 @@ export default async function CatalogModelListingNewPage({
           };
         }
 
-        const newapiGroup = (data.get('newapiGroup') as string | null)?.trim();
-        if (!newapiGroup) {
-          return {
-            status: 'error' as const,
-            message: missingNewapiGroupMessage,
-          };
-        }
+        // 空映射是显式的 fail-closed 状态：记录可以保存，但发布就绪检查
+        // 会阻止它进入网关路由。这样管理员也能主动下线错误的上游映射。
+        const newapiGroup = String(data.get('newapiGroup') ?? '').trim();
 
         let newListing: NewListing;
         try {

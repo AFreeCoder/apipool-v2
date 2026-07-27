@@ -681,6 +681,25 @@ test('listing forms omit the manual smoke-tested switch', async () => {
   }
 });
 
+test('listing forms allow an empty New API mapping as an explicit fail-closed state', async () => {
+  const { readFile } = await import('node:fs/promises');
+
+  for (const page of [
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/new/page.tsx',
+    'src/app/[locale]/(admin)/admin/catalog/models/[id]/listings/[listingId]/edit/page.tsx',
+  ]) {
+    const source = await readFile(page, 'utf8');
+    assert.match(
+      source,
+      /String\(data\.get\('newapiGroup'\) \?\? ''\)\.trim\(\)/
+    );
+    assert.doesNotMatch(
+      source,
+      /name: 'newapiGroup',[\s\S]*?validation: \{ required: true \}[\s\S]*?tip: t\('fields\.newapiGroupTip'\)/
+    );
+  }
+});
+
 test('creating a duplicate listing surfaces a translated message, not a raw constraint error', async () => {
   const { readFile } = await import('node:fs/promises');
   const page = await readFile(

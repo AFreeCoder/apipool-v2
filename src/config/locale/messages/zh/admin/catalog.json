@@ -12,7 +12,7 @@
     "isPublicVisible": "前台可见",
     "userDescription": "用户可见说明",
     "newapiGroup": "目标 New API 分组",
-    "newapiGroupTip": "仅作用于当前“门户分组 + 模型 ID”；同一门户分组下的其他模型可映射到不同的 New API 分组。",
+    "newapiGroupTip": "仅作用于当前“门户分组 + 模型 ID”；留空会使该售卖项不可发布，可用于主动下线错误映射。",
     "allowCreateKey": "允许创建 Key",
     "modelId": "模型 ID",
     "displayName": "模型名称",

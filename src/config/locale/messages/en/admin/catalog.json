@@ -12,7 +12,7 @@
     "isPublicVisible": "Publicly Visible",
     "userDescription": "User Description",
     "newapiGroup": "Target New API Group",
-    "newapiGroupTip": "Applies only to this portal group and model ID. Other models in the same portal group may target different New API groups.",
+    "newapiGroupTip": "Applies only to this portal group and model ID. Leave it blank to keep this listing unpublished and fail closed.",
     "allowCreateKey": "Allow Key Creation",
     "modelId": "Model ID",
     "displayName": "Model Name",
