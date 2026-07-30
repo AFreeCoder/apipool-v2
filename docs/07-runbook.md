@@ -124,7 +124,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 已备份、已换镜像的半成品状态。
 
 - 只在 caddy 缺失时才 `apt install`，避免每次部署顺带升级版本。
-- `/etc/caddy/Caddyfile` 是共享根入口，只包含或保留
+- `/etc/caddy/Caddyfile` 是共享根入口，启用
+  `auto_https ignore_loaded_certs` 并保留
   `import /etc/caddy/sites-enabled/*.caddy`；v2 只管理
   `/etc/caddy/sites-enabled/apipool-v2.caddy`。legacy 服务应写自己的
   `apipool-legacy.caddy`，v2 发布不会删除或覆盖它。

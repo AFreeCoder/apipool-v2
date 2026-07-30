@@ -506,6 +506,11 @@ test(
         rootConfig.split(/\r?\n/).includes(`import ${sitesDir}/*.caddy`),
         'shared root must import all service fragments'
       );
+      assert.match(
+        rootConfig,
+        /^\s*auto_https\s+ignore_loaded_certs\s*$/m,
+        'shared root must keep exact-host certificate automation enabled'
+      );
       assert.doesNotMatch(rootConfig, /app\.apipool\.dev/);
       assert.equal(readFileSync(legacyFile, 'utf8'), legacyConfig);
       assert.match(readFileSync(v2File, 'utf8'), /app\.apipool\.dev/);

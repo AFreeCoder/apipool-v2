@@ -50,8 +50,10 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   这些限制用于隔离异常，不代表常态占用；迁移前实测三者合计约 `295MiB`。
 - 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
   **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + `reload`**
-  。共享根文件 `/etc/caddy/Caddyfile` 只负责
-  `import /etc/caddy/sites-enabled/*.caddy`；v2 只原子更新自己的
+  。共享根文件 `/etc/caddy/Caddyfile` 启用
+  `auto_https ignore_loaded_certs` 并负责
+  `import /etc/caddy/sites-enabled/*.caddy`；这样其他服务的 Origin wildcard
+  不会阻止 DNS-only 域名继续管理公开证书。v2 只原子更新自己的
   `/etc/caddy/sites-enabled/apipool-v2.caddy`，不会覆盖 legacy 或其他服务分片。
   更新前会把现有所有分片复制到候选树做一次完整 `caddy validate`，通过后才替换并
   reload；上一份 v2 分片保存在 `apipool-v2.caddy.bak`。

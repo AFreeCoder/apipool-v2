@@ -199,6 +199,7 @@ CADDY_ROOT_FILE="${APIPOOL_CADDY_ROOT_FILE:-/etc/caddy/Caddyfile}"
 CADDY_SITES_DIR="${APIPOOL_CADDY_SITES_DIR:-/etc/caddy/sites-enabled}"
 CADDY_FRAGMENT_FILE="$CADDY_SITES_DIR/apipool-v2.caddy"
 CADDY_IMPORT_LINE="import $CADDY_SITES_DIR/*.caddy"
+CADDY_AUTO_HTTPS_LINE="auto_https ignore_loaded_certs"
 
 if ! command -v flock >/dev/null 2>&1; then
   apt-get update
@@ -258,7 +259,28 @@ caddy fmt --overwrite "$STAGED_FRAGMENT_FILE"
 root_mode="initialize"
 if [ -f "$CADDY_ROOT_FILE" ]; then
   if grep -Fqx "$CADDY_IMPORT_LINE" "$CADDY_ROOT_FILE"; then
-    root_mode="preserve"
+    if grep -Eq '^[[:space:]]*auto_https[[:space:]]+ignore_loaded_certs[[:space:]]*$' \
+      "$CADDY_ROOT_FILE"; then
+      root_mode="preserve"
+    elif awk -v import_line="$CADDY_IMPORT_LINE" '
+      /^[[:space:]]*($|#)/ { next }
+      $0 == import_line { imports++; next }
+      { unexpected = 1 }
+      END { exit !(imports == 1 && unexpected == 0) }
+    ' "$CADDY_ROOT_FILE"; then
+      # 早期共享根文件只有 import。补上 ignore_loaded_certs，保证 legacy
+      # Cloudflare Origin wildcard 不会阻止 api2 等精确域名继续自动续证。
+      root_mode="upgrade-shared-root"
+    else
+      cat >&2 <<MSG
+configure-caddy.sh: shared root Caddyfile lacks the required Automatic HTTPS policy:
+  {
+    $CADDY_AUTO_HTTPS_LINE
+  }
+Refusing to rewrite a shared root that contains other unmanaged directives.
+MSG
+      exit 78
+    fi
   else
     # 旧版 configure-caddy.sh 独占根文件，且只会生成这三个顶层站点。仅在能
     # 明确识别该历史形态时自动迁移；任何其他根配置都 fail-closed，防止误删别的服务。
@@ -289,6 +311,19 @@ MSG
   fi
 fi
 
+write_shared_root() {
+  destination="$1"
+  import_line="$2"
+  cat >"$destination" <<EOF
+{
+	$CADDY_AUTO_HTTPS_LINE
+}
+
+# Shared Caddy entrypoint. Service-owned configs live in sites-enabled.
+$import_line
+EOF
+}
+
 if [ "$root_mode" = "preserve" ]; then
   # 将 live import 临时改指向候选目录，保留根文件中的全局选项和其他共享指令。
   awk -v live="$CADDY_IMPORT_LINE" -v staged="import $STAGED_SITES_DIR/*.caddy" '
@@ -296,10 +331,7 @@ if [ "$root_mode" = "preserve" ]; then
     { print }
   ' "$CADDY_ROOT_FILE" >"$STAGED_ROOT_FILE"
 else
-  {
-    echo "# Shared Caddy entrypoint. Service-owned configs live in sites-enabled."
-    echo "import $STAGED_SITES_DIR/*.caddy"
-  } >"$STAGED_ROOT_FILE"
+  write_shared_root "$STAGED_ROOT_FILE" "import $STAGED_SITES_DIR/*.caddy"
 fi
 
 caddy fmt --overwrite "$STAGED_ROOT_FILE"
@@ -329,10 +361,7 @@ if [ "$root_mode" != "preserve" ]; then
     cp -a "$CADDY_ROOT_FILE" "$CADDY_ROOT_FILE.bak"
   fi
   live_root="$STAGING_DIR/live-Caddyfile"
-  {
-    echo "# Shared Caddy entrypoint. Service-owned configs live in sites-enabled."
-    echo "$CADDY_IMPORT_LINE"
-  } >"$live_root"
+  write_shared_root "$live_root" "$CADDY_IMPORT_LINE"
   caddy fmt --overwrite "$live_root"
   atomic_install "$live_root" "$CADDY_ROOT_FILE"
 fi
