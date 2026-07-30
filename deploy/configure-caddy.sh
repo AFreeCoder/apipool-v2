@@ -192,6 +192,29 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 77
 fi
 
+# 所有会修改共享 Caddy 配置树的服务都必须使用同一把锁。legacy APIPool
+# 后续写入自己的 fragment 时也复用该默认路径，避免两个部署同时 validate/reload。
+CADDY_LOCK_FILE="${APIPOOL_CADDY_LOCK_FILE:-/run/apipool-caddy.lock}"
+CADDY_ROOT_FILE="${APIPOOL_CADDY_ROOT_FILE:-/etc/caddy/Caddyfile}"
+CADDY_SITES_DIR="${APIPOOL_CADDY_SITES_DIR:-/etc/caddy/sites-enabled}"
+CADDY_FRAGMENT_FILE="$CADDY_SITES_DIR/apipool-v2.caddy"
+CADDY_IMPORT_LINE="import $CADDY_SITES_DIR/*.caddy"
+
+if ! command -v flock >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y util-linux
+fi
+
+lock_dir="$(dirname -- "$CADDY_LOCK_FILE")"
+if [ ! -d "$lock_dir" ]; then
+  install -d -m 0755 "$lock_dir"
+fi
+exec 8>"$CADDY_LOCK_FILE"
+if ! flock -n 8; then
+  echo "configure-caddy.sh: another Caddy configuration update holds $CADDY_LOCK_FILE" >&2
+  exit 75
+fi
+
 # 只在 caddy 缺失时安装。deploy.sh 每次部署都会重新应用配置，
 # 若无条件跑 apt install，会在部署中途把 caddy 升级到新版本。
 if ! command -v caddy >/dev/null 2>&1; then
@@ -199,22 +222,120 @@ if ! command -v caddy >/dev/null 2>&1; then
   apt-get install -y caddy
 fi
 
-# 先在临时文件上校验，通过后才原子替换。
-# 若直接写 /etc/caddy/Caddyfile 再 validate，validate 失败时脚本退出（set -e），
-# 磁盘上却已留下一份坏配置——此后任何 reload / 重启都会让 Caddy 起不来，全站不可达。
-STAGED_CADDYFILE="$(mktemp)"
-trap 'rm -f "$STAGED_CADDYFILE"' EXIT
+# 根 Caddyfile 只作为共享入口；各服务只能原子更新自己的 fragment。
+# validate 使用一棵完整的候选配置树（包含现有 legacy 等 fragment），通过后才写入
+# live 目录，避免单独验证 v2 片段却在组合配置中产生域名冲突。
+STAGING_DIR="$(mktemp -d)"
+LIVE_TMP=""
+cleanup() {
+  if [ -n "$LIVE_TMP" ]; then
+    rm -f -- "$LIVE_TMP"
+  fi
+  if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
+    rm -rf -- "$STAGING_DIR"
+  fi
+}
+trap cleanup EXIT
 
-printf '%s\n' "$CADDYFILE" >"$STAGED_CADDYFILE"
-caddy fmt --overwrite "$STAGED_CADDYFILE"
-caddy validate --config "$STAGED_CADDYFILE" --adapter caddyfile
+STAGED_SITES_DIR="$STAGING_DIR/sites-enabled"
+STAGED_FRAGMENT_FILE="$STAGED_SITES_DIR/apipool-v2.caddy"
+STAGED_ROOT_FILE="$STAGING_DIR/Caddyfile"
+install -d -m 0755 "$STAGED_SITES_DIR"
 
-# 保留上一份配置，便于人工回滚
-if [ -f /etc/caddy/Caddyfile ]; then
-  cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+if [ -d "$CADDY_SITES_DIR" ]; then
+  for existing_fragment in "$CADDY_SITES_DIR"/*.caddy; do
+    if [ ! -e "$existing_fragment" ] && [ ! -L "$existing_fragment" ]; then
+      continue
+    fi
+    [ "$existing_fragment" = "$CADDY_FRAGMENT_FILE" ] && continue
+    cp -a "$existing_fragment" "$STAGED_SITES_DIR/"
+  done
 fi
 
-install -m 0644 "$STAGED_CADDYFILE" /etc/caddy/Caddyfile
+printf '%s\n' "$CADDYFILE" >"$STAGED_FRAGMENT_FILE"
+caddy fmt --overwrite "$STAGED_FRAGMENT_FILE"
+
+root_mode="initialize"
+if [ -f "$CADDY_ROOT_FILE" ]; then
+  if grep -Fqx "$CADDY_IMPORT_LINE" "$CADDY_ROOT_FILE"; then
+    root_mode="preserve"
+  else
+    # 旧版 configure-caddy.sh 独占根文件，且只会生成这三个顶层站点。仅在能
+    # 明确识别该历史形态时自动迁移；任何其他根配置都 fail-closed，防止误删别的服务。
+    formatted_existing_root="$STAGING_DIR/existing-root.caddy"
+    install -m 0644 "$CADDY_ROOT_FILE" "$formatted_existing_root"
+    caddy fmt --overwrite "$formatted_existing_root"
+    if awk \
+      -v portal="$PORTAL_DOMAIN {" \
+      -v api="$API_DOMAIN {" \
+      -v newapi="$NEWAPI_DOMAIN {" '
+        /^[[:space:]]*($|#)/ { next }
+        /^[[:space:]]/ { next }
+        $0 == portal || $0 == api || $0 == newapi { sites++; next }
+        $0 == "}" { closes++; next }
+        { unexpected = 1 }
+        END { exit !(sites == 3 && closes == 3 && unexpected == 0) }
+      ' "$formatted_existing_root"; then
+      root_mode="migrate-v2-monolith"
+    else
+      cat >&2 <<MSG
+configure-caddy.sh: refusing to overwrite unmanaged root Caddyfile: $CADDY_ROOT_FILE
+Move existing service blocks into $CADDY_SITES_DIR/*.caddy and make the root file contain:
+  $CADDY_IMPORT_LINE
+Then rerun this command.
+MSG
+      exit 78
+    fi
+  fi
+fi
+
+if [ "$root_mode" = "preserve" ]; then
+  # 将 live import 临时改指向候选目录，保留根文件中的全局选项和其他共享指令。
+  awk -v live="$CADDY_IMPORT_LINE" -v staged="import $STAGED_SITES_DIR/*.caddy" '
+    $0 == live { print staged; next }
+    { print }
+  ' "$CADDY_ROOT_FILE" >"$STAGED_ROOT_FILE"
+else
+  {
+    echo "# Shared Caddy entrypoint. Service-owned configs live in sites-enabled."
+    echo "import $STAGED_SITES_DIR/*.caddy"
+  } >"$STAGED_ROOT_FILE"
+fi
+
+caddy fmt --overwrite "$STAGED_ROOT_FILE"
+caddy validate --config "$STAGED_ROOT_FILE" --adapter caddyfile
+
+install -d -m 0755 "$(dirname -- "$CADDY_ROOT_FILE")" "$CADDY_SITES_DIR"
+
+atomic_install() {
+  source_file="$1"
+  target_file="$2"
+  target_dir="$(dirname -- "$target_file")"
+  target_name="$(basename -- "$target_file")"
+  LIVE_TMP="$(mktemp "$target_dir/.${target_name}.tmp.XXXXXX")"
+  install -m 0644 "$source_file" "$LIVE_TMP"
+  mv -f -- "$LIVE_TMP" "$target_file"
+  LIVE_TMP=""
+}
+
+# 只备份和替换 v2 自己的 fragment；legacy 以及其他服务 fragment 不会被触碰。
+if [ -f "$CADDY_FRAGMENT_FILE" ]; then
+  cp -a "$CADDY_FRAGMENT_FILE" "$CADDY_FRAGMENT_FILE.bak"
+fi
+atomic_install "$STAGED_FRAGMENT_FILE" "$CADDY_FRAGMENT_FILE"
+
+if [ "$root_mode" != "preserve" ]; then
+  if [ -f "$CADDY_ROOT_FILE" ]; then
+    cp -a "$CADDY_ROOT_FILE" "$CADDY_ROOT_FILE.bak"
+  fi
+  live_root="$STAGING_DIR/live-Caddyfile"
+  {
+    echo "# Shared Caddy entrypoint. Service-owned configs live in sites-enabled."
+    echo "$CADDY_IMPORT_LINE"
+  } >"$live_root"
+  caddy fmt --overwrite "$live_root"
+  atomic_install "$live_root" "$CADDY_ROOT_FILE"
+fi
 
 systemctl enable --now caddy
 systemctl reload caddy

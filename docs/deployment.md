@@ -45,9 +45,19 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
 - 持久化数据：
   - `data/portal/`：门户 SQLite 数据
   - `data/new-api/`：New API SQLite 数据
+- 8GiB 共机资源边界：门户 `1GiB`、New API `512MiB`、metadata filter
+  `256MiB`；对应 mem+swap 上限分别为 `1280MiB`、`768MiB`、`384MiB`。
+  这些限制用于隔离异常，不代表常态占用；迁移前实测三者合计约 `295MiB`。
 - 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
   **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + `reload`**
-  （该步骤会覆盖 `/etc/caddy/Caddyfile`，旧配置备份到 `Caddyfile.bak`）。
+  。共享根文件 `/etc/caddy/Caddyfile` 只负责
+  `import /etc/caddy/sites-enabled/*.caddy`；v2 只原子更新自己的
+  `/etc/caddy/sites-enabled/apipool-v2.caddy`，不会覆盖 legacy 或其他服务分片。
+  更新前会把现有所有分片复制到候选树做一次完整 `caddy validate`，通过后才替换并
+  reload；上一份 v2 分片保存在 `apipool-v2.caddy.bak`。
+- 所有服务的 Caddy 配置写入器必须共用 `/run/apipool-caddy.lock`。首次从旧版 v2
+  三站点单体根配置升级时脚本会备份根文件并迁移到共享入口；若根文件不是可识别的旧版
+  v2 配置且尚未使用共享 import，脚本退出 78，不覆盖未知配置。
 - `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`，并按实际 TCP 对端只接受
   `deploy/cloudflare-ips.txt` 中的 Cloudflare 官方代理网段，其他来源返回 403。
 - `api2.apipool.dev` 是 DNS-only 临时 New API 数据面，所有 `/v1*` 路径
@@ -201,6 +211,7 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
 - `deploy/configure-caddy.sh`
+- `deploy/rollback-caddy.sh`
 - `deploy/go-live.sh`
 - `deploy/lib.sh`
 - `deploy/cloudflare-ips.txt`
@@ -252,7 +263,12 @@ ssh apipool_vps 'tar -tzf "$(ls -t /opt/apipool-v2/backups/pre-deploy-*.tar.gz |
 ssh apipool_vps 'cd /opt/apipool-v2 && printf "IMAGE_TAG=<previous-sha-tag>\nDEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)\n" > release.env && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml pull && docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml up -d --remove-orphans'
 ```
 
-- Caddy 配置回滚：`ssh apipool_vps 'cp -a /etc/caddy/Caddyfile.bak /etc/caddy/Caddyfile && caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy'`。
+- Caddy v2 分片回滚：
+  `ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/rollback-caddy.sh'`。脚本在共享锁内把
+  `apipool-v2.caddy.bak` 与全部现有分片组装成候选树，完整 validate 通过后才原子替换
+  live 分片并 reload；当前 live 版本另存为 `apipool-v2.caddy.pre-rollback`。
+  `Caddyfile.bak` 只用于首次把旧版 v2 单体根配置迁移为共享入口时的人工恢复，不要用它
+  覆盖已承载 legacy 分片的当前共享入口。
 - Runner 部署入口回滚：在公网 SSH 尚未关闭的过渡窗口内，将 workflow 恢复为上一版
   SSH deploy job；停止 Runner 服务不会影响当前容器运行。
 - Runner 工具链回滚：恢复 `/usr/local/sbin/apipool-runner-deploy` 与

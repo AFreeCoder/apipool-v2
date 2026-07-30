@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+
+const hasCaddy =
+  spawnSync('caddy', ['version'], { encoding: 'utf8' }).status === 0;
 
 test('docker image workflow builds production-configured immutable images', async () => {
   const workflow = await readFile(
@@ -113,6 +123,18 @@ test('production compose pulls a selected GHCR image tag', async () => {
   assert.doesNotMatch(compose, /^\s*build:/m);
   assert.match(compose, /127\.0\.0\.1:3000:3000/);
   assert.match(compose, /127\.0\.0\.1:3001:3000/);
+  assert.match(
+    compose,
+    /apipool-v2:[\s\S]*?mem_limit: 1g[\s\S]*?memswap_limit: 1280m/
+  );
+  assert.match(
+    compose,
+    /newapi-metadata-filter:[\s\S]*?mem_limit: 256m[\s\S]*?memswap_limit: 384m/
+  );
+  assert.match(
+    compose,
+    /new-api:[\s\S]*?mem_limit: 512m[\s\S]*?memswap_limit: 768m/
+  );
 });
 
 test('deploy script backs up before pulling and deploying', async () => {
@@ -387,29 +409,176 @@ test('re-applying the Caddy config does not reinstall caddy on every deploy', as
   assert.match(script, /command -v caddy/);
 });
 
-test('the Caddy config is validated before it replaces the live file', async () => {
+test('the complete Caddy tree is validated before the v2 fragment is replaced atomically', async () => {
   const script = await readFile('deploy/configure-caddy.sh', 'utf8');
 
-  // 先写 /etc/caddy/Caddyfile 再 validate 的话，validate 失败会在磁盘上留下
-  // 一份坏配置（set -e 直接退出），之后任何 reload / 重启都会让 Caddy 起不来。
+  // 必须先在包含其他服务 fragment 的候选树上验证，不能只校验 v2 单片。
   assert.doesNotMatch(script, /printf[^\n]*>\/etc\/caddy\/Caddyfile/);
-  assert.match(script, /caddy validate --config "\$STAGED_CADDYFILE"/);
+  assert.match(
+    script,
+    /caddy validate --config "\$STAGED_ROOT_FILE" --adapter caddyfile/
+  );
 
   const validateAt = script.indexOf(
-    'caddy validate --config "$STAGED_CADDYFILE"'
+    'caddy validate --config "$STAGED_ROOT_FILE"'
   );
   const installAt = script.indexOf(
-    'install -m 0644 "$STAGED_CADDYFILE" /etc/caddy/Caddyfile'
+    'atomic_install "$STAGED_FRAGMENT_FILE" "$CADDY_FRAGMENT_FILE"'
   );
   assert.notEqual(
     installAt,
     -1,
-    'the staged file must be installed atomically'
+    'the staged v2 fragment must be installed atomically'
   );
   assert.ok(validateAt < installAt, 'validation must precede installation');
 
-  // 保留上一份配置以便人工回滚
-  assert.match(script, /Caddyfile\.bak/);
+  assert.match(script, /mv -f -- "\$LIVE_TMP" "\$target_file"/);
+  assert.match(script, /CADDY_FRAGMENT_FILE\.bak/);
+  assert.match(script, /CADDY_ROOT_FILE\.bak/);
+});
+
+test(
+  'v2 Caddy publish migrates its old root, preserves legacy, and rejects unmanaged roots',
+  { skip: !hasCaddy },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), 'apipool-caddy-shared-'));
+    const fakeBin = join(dir, 'bin');
+    const sitesDir = join(dir, 'sites-enabled');
+    const rootFile = join(dir, 'Caddyfile');
+    const lockFile = join(dir, 'apipool-caddy.lock');
+    const envFile = join(dir, '.env.deploy');
+    const legacyFile = join(sitesDir, 'apipool-legacy.caddy');
+    const v2File = join(sitesDir, 'apipool-v2.caddy');
+    const legacyConfig =
+      'legacy.example.test {\n\trespond "legacy remains" 200\n}\n';
+
+    function writeExecutable(name: string, body: string) {
+      const path = join(fakeBin, name);
+      writeFileSync(path, body, 'utf8');
+      chmodSync(path, 0o755);
+    }
+
+    try {
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(sitesDir, { recursive: true });
+      writeFileSync(envFile, 'APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true\n');
+      writeFileSync(legacyFile, legacyConfig, 'utf8');
+      const oldMonolith = printCaddyConfig({
+        APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
+        APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
+        APIPOOL_NEWAPI_ALLOWED_IPS: '',
+        APIPOOL_NEWAPI_ALLOW_UNPROTECTED: 'true',
+      });
+      assert.equal(oldMonolith.status, 0, oldMonolith.stderr);
+      writeFileSync(rootFile, oldMonolith.stdout, 'utf8');
+      writeExecutable(
+        'id',
+        '#!/bin/sh\nif [ "${1:-}" = "-u" ]; then echo 0; exit 0; fi\nexec /usr/bin/id "$@"\n'
+      );
+      // macOS 测试机没有 Linux util-linux flock；锁语义由静态断言覆盖，
+      // 这里仅让脚本级共存测试通过同一调用边界。
+      writeExecutable('flock', '#!/bin/sh\nexit 0\n');
+      writeExecutable('systemctl', '#!/bin/sh\nexit 0\n');
+
+      const env = {
+        ...process.env,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        APIPOOL_DEPLOY_ENV_FILE: envFile,
+        APIPOOL_CADDY_ROOT_FILE: rootFile,
+        APIPOOL_CADDY_SITES_DIR: sitesDir,
+        APIPOOL_CADDY_LOCK_FILE: lockFile,
+        APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
+        APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
+        APIPOOL_NEWAPI_ALLOWED_IPS: '',
+        APIPOOL_NEWAPI_ALLOW_UNPROTECTED: '',
+      };
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const result = spawnSync('bash', ['deploy/configure-caddy.sh'], {
+          env,
+          encoding: 'utf8',
+        });
+        assert.equal(result.status, 0, `attempt ${attempt}: ${result.stderr}`);
+      }
+
+      const rootConfig = readFileSync(rootFile, 'utf8');
+      assert.ok(
+        rootConfig.split(/\r?\n/).includes(`import ${sitesDir}/*.caddy`),
+        'shared root must import all service fragments'
+      );
+      assert.doesNotMatch(rootConfig, /app\.apipool\.dev/);
+      assert.equal(readFileSync(legacyFile, 'utf8'), legacyConfig);
+      assert.match(readFileSync(v2File, 'utf8'), /app\.apipool\.dev/);
+      assert.match(
+        readFileSync(`${rootFile}.bak`, 'utf8'),
+        /app\.apipool\.dev/
+      );
+
+      const validate = spawnSync(
+        'caddy',
+        ['validate', '--config', rootFile, '--adapter', 'caddyfile'],
+        { encoding: 'utf8' }
+      );
+      assert.equal(validate.status, 0, validate.stderr);
+
+      const v2BeforeBadRollback = readFileSync(v2File, 'utf8');
+      writeFileSync(
+        `${v2File}.bak`,
+        'broken.example.test {\n\tdefinitely_not_a_caddy_directive\n}\n'
+      );
+      const rejectedRollback = spawnSync('bash', ['deploy/rollback-caddy.sh'], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.notEqual(rejectedRollback.status, 0);
+      assert.equal(readFileSync(v2File, 'utf8'), v2BeforeBadRollback);
+      assert.equal(readFileSync(legacyFile, 'utf8'), legacyConfig);
+
+      writeFileSync(`${v2File}.bak`, oldMonolith.stdout, 'utf8');
+      const acceptedRollback = spawnSync('bash', ['deploy/rollback-caddy.sh'], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.equal(acceptedRollback.status, 0, acceptedRollback.stderr);
+      assert.equal(
+        readFileSync(`${v2File}.pre-rollback`, 'utf8'),
+        v2BeforeBadRollback
+      );
+      assert.equal(readFileSync(legacyFile, 'utf8'), legacyConfig);
+
+      const unmanagedRoot =
+        'unmanaged.example.test {\n\trespond "do not overwrite" 200\n}\n';
+      const v2BeforeRejectedPublish = readFileSync(v2File, 'utf8');
+      writeFileSync(rootFile, unmanagedRoot, 'utf8');
+      const rejected = spawnSync('bash', ['deploy/configure-caddy.sh'], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.equal(rejected.status, 78, rejected.stderr);
+      assert.match(rejected.stderr, /refusing to overwrite unmanaged root/);
+      assert.equal(readFileSync(rootFile, 'utf8'), unmanagedRoot);
+      assert.equal(readFileSync(v2File, 'utf8'), v2BeforeRejectedPublish);
+      assert.equal(readFileSync(legacyFile, 'utf8'), legacyConfig);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+);
+
+test('Caddy config writers share a cross-service flock', async () => {
+  const script = await readFile('deploy/configure-caddy.sh', 'utf8');
+  const rollback = await readFile('deploy/rollback-caddy.sh', 'utf8');
+  const bootstrap = await readFile('deploy/server-bootstrap.sh', 'utf8');
+
+  assert.match(script, /APIPOOL_CADDY_LOCK_FILE:-\/run\/apipool-caddy\.lock/);
+  assert.match(script, /flock -n 8/);
+  assert.match(rollback, /APIPOOL_CADDY_LOCK_FILE:-\/run\/apipool-caddy\.lock/);
+  assert.match(rollback, /flock -n 8/);
+  assert.ok(
+    rollback.indexOf('caddy validate --config "$STAGED_ROOT_FILE"') <
+      rollback.indexOf('mv -f -- "$LIVE_TMP" "$CADDY_FRAGMENT_FILE"')
+  );
+  assert.match(bootstrap, /util-linux/);
 });
 
 test('the fail-closed guard can be explicitly opted out, but stays closed by default', async () => {
@@ -531,6 +700,7 @@ test('production runner deploy wrapper validates immutable inputs and keeps root
   assert.match(toolingInstaller, /部署件中不允许出现符号链接/);
   assert.match(toolingInstaller, /deploy\/go-live\.sh/);
   assert.match(toolingInstaller, /deploy\/live-smoke\.sh/);
+  assert.match(toolingInstaller, /deploy\/rollback-caddy\.sh/);
   assert.match(toolingInstaller, /deploy\/lib\.sh/);
   assert.match(toolingInstaller, /tooling-.*tar\.gz/);
   assert.match(toolingInstaller, /install -D -o root -g root/);

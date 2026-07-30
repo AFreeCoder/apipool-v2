@@ -77,7 +77,7 @@ fi
 # 中止；放到后面则会留下已备份、已换镜像的半成品状态。
 #
 # 没有这一步，运维在 .env.deploy 里配好 Basic Auth 也不会生效——
-# /etc/caddy/Caddyfile 会一直停留在最初 server-bootstrap 生成的那份。
+# /etc/caddy/sites-enabled/apipool-v2.caddy 会一直停留在上次发布生成的版本。
 echo "[deploy] applying Caddy configuration"
 APIPOOL_DEPLOY_ENV_FILE="$APP_DIR/$ENV_FILE" ./deploy/configure-caddy.sh
 

@@ -17,6 +17,7 @@ for required in \
   deploy/deploy.sh \
   deploy/backup.sh \
   deploy/configure-caddy.sh \
+  deploy/rollback-caddy.sh \
   deploy/go-live.sh \
   deploy/live-smoke.sh \
   deploy/lib.sh \

@@ -4,6 +4,9 @@
 services:
   apipool-v2:
     image: ${APIPOOL_PORTAL_IMAGE:-ghcr.io/afreecoder/apipool-v2}:${IMAGE_TAG:?IMAGE_TAG is required}
+    # 与 legacy APIPool 共用 8GiB 宿主机，阻止空闲门户异常占满全机内存。
+    mem_limit: 1g
+    memswap_limit: 1280m
     environment:
       DATABASE_PROVIDER: ${DATABASE_PROVIDER}
       DATABASE_URL: ${DATABASE_URL}
@@ -43,10 +46,14 @@ services:
 
   newapi-metadata-filter:
     image: ${NEWAPI_METADATA_FILTER_IMAGE:-ghcr.io/afreecoder/apipool-v2-newapi-metadata-filter}:${IMAGE_TAG:?IMAGE_TAG is required}
+    mem_limit: 256m
+    memswap_limit: 384m
     restart: unless-stopped
 
   new-api:
     image: ${NEWAPI_IMAGE:-calciumion/new-api:latest}
+    mem_limit: 512m
+    memswap_limit: 768m
     ports:
       - '127.0.0.1:3001:3000'
     volumes:

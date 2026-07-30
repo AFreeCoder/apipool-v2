@@ -114,12 +114,28 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://api2.apipool.dev/api/status  #
 curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          # 200/401 取决于运营守卫，但必须经 Cloudflare
 ```
 
-预跑生成的配置（无需 root，不改系统）：`bash deploy/configure-caddy.sh --print-config`。
+预跑生成 v2 服务分片（无需 root，不改系统）：
+`bash deploy/configure-caddy.sh --print-config`。
 
-**Caddy 配置何时生效**：`deploy/deploy.sh` 在每次部署开始时（备份与拉镜像**之前**）重新生成并 `caddy validate` 配置，然后 `systemctl reload caddy`。因此在 `.env.deploy` 里改动保护变量后，**下一次部署即生效**，无需手工操作。放在最前面是为了让 fail-closed（退出 78）成为零副作用中止，而不是留下半成品状态。
+**Caddy 配置何时生效**：`deploy/deploy.sh` 在每次部署开始时（备份与拉镜像**之前**）
+重新生成 v2 分片，把现有全部服务分片放入候选树做完整 `caddy validate`，原子替换后
+`systemctl reload caddy`。因此在 `.env.deploy` 里改动保护变量后，**下一次部署即生效**，
+无需手工操作。放在最前面是为了让 fail-closed（退出 78）成为零副作用中止，而不是留下
+已备份、已换镜像的半成品状态。
 
 - 只在 caddy 缺失时才 `apt install`，避免每次部署顺带升级版本。
-- **该步骤会覆盖 `/etc/caddy/Caddyfile`**。任何手工改动都会丢失，请改到 `configure-caddy.sh` 里。
+- `/etc/caddy/Caddyfile` 是共享根入口，只包含或保留
+  `import /etc/caddy/sites-enabled/*.caddy`；v2 只管理
+  `/etc/caddy/sites-enabled/apipool-v2.caddy`。legacy 服务应写自己的
+  `apipool-legacy.caddy`，v2 发布不会删除或覆盖它。
+- 所有会写 Caddy 配置的部署脚本必须共用 `/run/apipool-caddy.lock`，完整
+  validate 和 reload 也必须在锁内完成。
+- 首次升级时，可识别的旧版 v2 三站点单体根配置会先备份到 `Caddyfile.bak` 再迁移；
+  无法确认归属的根配置会退出 78。此时先把原有服务块人工拆到
+  `/etc/caddy/sites-enabled/*.caddy` 并建立上述共享 import，不得强行覆盖。
+- 回滚上一份 v2 分片使用 `cd /opt/apipool-v2 && ./deploy/rollback-caddy.sh`；该入口同样
+  先对包含 legacy 分片的完整候选树 validate，再原子替换，禁止直接把 `.bak` 复制到
+  live 路径。
 - 想立即生效而不等下次部署：在 VPS 上执行
   `cd /opt/apipool-v2 && APIPOOL_DEPLOY_ENV_FILE=/opt/apipool-v2/.env.deploy ./deploy/configure-caddy.sh`。
 
@@ -307,6 +323,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
     ├── install-production-tooling.sh
     ├── lib.sh
     ├── live-smoke.sh
+    ├── rollback-caddy.sh
     ├── server-bootstrap.sh
     ├── setup-smoke-users.sh
     └── systemd/
@@ -328,7 +345,8 @@ ssh apipool_vps '/root/apipool-tooling-candidate/deploy/install-production-tooli
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 ```
 
-`server-bootstrap.sh` 同时安装 Caddy 并生成反代配置：
+`server-bootstrap.sh` 同时安装 Caddy、`util-linux`（提供共享 `flock`），初始化共享
+根入口，并生成 `/etc/caddy/sites-enabled/apipool-v2.caddy` 反代分片：
 
 - `app.apipool.dev` → 门户 `127.0.0.1:3000`
 - `api2.apipool.dev` → New API 用户 API `127.0.0.1:3001`

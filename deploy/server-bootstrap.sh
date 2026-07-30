@@ -10,7 +10,7 @@ fi
 
 install_docker_ce() {
   apt-get update
-  apt-get install -y ca-certificates curl gnupg sqlite3
+  apt-get install -y ca-certificates curl gnupg sqlite3 util-linux
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
@@ -37,7 +37,7 @@ if ! dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -q "install ok in
 else
   apt-get update
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  apt-get install -y sqlite3
+  apt-get install -y sqlite3 util-linux
   systemctl enable --now docker
 fi
 
