@@ -49,7 +49,7 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   `256MiB`；对应 mem+swap 上限分别为 `1280MiB`、`768MiB`、`384MiB`。
   这些限制用于隔离异常，不代表常态占用；迁移前实测三者合计约 `295MiB`。
 - 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
-  **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + `reload`**
+  **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + 应用配置**
   。共享根文件 `/etc/caddy/Caddyfile` 只负责
   `import /etc/caddy/sites-enabled/*.caddy`。legacy 与 v2 都使用各自的精确
   公网证书名称，按 Caddy 默认行为自动签发和续期。禁止使用
@@ -57,7 +57,9 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   否则会让不属于目标机入口的域名重复发起公网 ACME。v2 只原子更新自己的
   `/etc/caddy/sites-enabled/apipool-v2.caddy`，不会覆盖 legacy 或其他服务分片。
   更新前会把现有所有分片复制到候选树做一次完整 `caddy validate`，通过后才替换并
-  reload；上一份 v2 分片保存在 `apipool-v2.caddy.bak`。
+  应用；上一份 v2 分片保存在 `apipool-v2.caddy.bak`。
+- 目标机当前 Caddy `2.6.2` 已复现 reload 返回成功后进程 panic；脚本仅对该精确
+  版本使用受控 restart，并确认服务保持 active。其他版本继续使用无中断 reload。
 - 所有服务的 Caddy 配置写入器必须共用 `/run/apipool-caddy.lock`。首次从旧版 v2
   三站点单体根配置升级时脚本会备份根文件并迁移到共享入口；若根文件不是可识别的旧版
   v2 配置且尚未使用共享 import，脚本退出 78，不覆盖未知配置。

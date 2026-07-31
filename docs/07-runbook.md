@@ -119,9 +119,9 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 
 **Caddy 配置何时生效**：`deploy/deploy.sh` 在每次部署开始时（备份与拉镜像**之前**）
 重新生成 v2 分片，把现有全部服务分片放入候选树做完整 `caddy validate`，原子替换后
-`systemctl reload caddy`。因此在 `.env.deploy` 里改动保护变量后，**下一次部署即生效**，
-无需手工操作。放在最前面是为了让 fail-closed（退出 78）成为零副作用中止，而不是留下
-已备份、已换镜像的半成品状态。
+应用配置。因此在 `.env.deploy` 里改动保护变量后，**下一次部署即生效**，无需手工操作。
+放在最前面是为了让 fail-closed（退出 78）成为零副作用中止，而不是留下已备份、已换
+镜像的半成品状态。
 
 - 只在 caddy 缺失时才 `apt install`，避免每次部署顺带升级版本。
 - `/etc/caddy/Caddyfile` 是共享根入口，只保留
@@ -131,7 +131,9 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
   `/etc/caddy/sites-enabled/apipool-v2.caddy`。legacy 服务应写自己的
   `apipool-legacy.caddy`，v2 发布不会删除或覆盖它。
 - 所有会写 Caddy 配置的部署脚本必须共用 `/run/apipool-caddy.lock`，完整
-  validate 和 reload 也必须在锁内完成。
+  validate 和配置应用也必须在锁内完成。
+- 目标机 Caddy `2.6.2` 已复现 reload 返回成功后进程 panic；配置脚本对这个精确
+  版本使用受控 restart 并检查 active，其他版本继续使用无中断 reload。
 - 首次升级时，可识别的旧版 v2 三站点单体根配置会先备份到 `Caddyfile.bak` 再迁移；
   无法确认归属的根配置会退出 78。此时先把原有服务块人工拆到
   `/etc/caddy/sites-enabled/*.caddy` 并建立上述共享 import，不得强行覆盖。

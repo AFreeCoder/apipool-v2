@@ -407,6 +407,10 @@ test('re-applying the Caddy config does not reinstall caddy on every deploy', as
 
   // 每次部署跑 `apt-get install -y caddy` 会在部署中途升级 caddy 版本
   assert.match(script, /command -v caddy/);
+  assert.match(script, /caddy_version=.*caddy version/);
+  assert.match(script, /"\$caddy_version" = "2\.6\.2"/);
+  assert.match(script, /systemctl restart caddy/);
+  assert.match(script, /systemctl is-active --quiet caddy/);
 });
 
 test('the complete Caddy tree is validated before the v2 fragment is replaced atomically', async () => {

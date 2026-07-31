@@ -386,4 +386,16 @@ if [ "$root_mode" != "preserve" ]; then
 fi
 
 systemctl enable --now caddy
-systemctl reload caddy
+caddy_version="$(caddy version | head -n 1)"
+if [ "$caddy_version" = "2.6.2" ]; then
+  # 目标机该版本在 systemctl reload 后已稳定复现 context cancel panic。
+  # 精确版本使用受控 restart，避免 reload 返回成功后代理进程异步退出。
+  echo "configure-caddy.sh: Caddy 2.6.2 uses controlled restart"
+  systemctl restart caddy
+else
+  systemctl reload caddy
+fi
+if ! systemctl is-active --quiet caddy; then
+  echo "configure-caddy.sh: Caddy did not remain active after applying config" >&2
+  exit 70
+fi
