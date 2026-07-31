@@ -487,7 +487,7 @@ probe_public_candidate() {
   local path="$2"
   local expected="$3"
   local transport="${4:-tcp}"
-  local headers="$RUN_DIR/public-${host}.headers"
+  local headers="$RUN_DIR/public-${host}-${transport}.headers"
   local code=""
   local -a curl_transport=()
   if [ "$transport" = "http3" ]; then
@@ -504,23 +504,64 @@ probe_public_candidate() {
 verify_external_candidate_paths() {
   local http_code=""
   local deadline=$((SECONDS + APIPOOL_CADDY_EXTERNAL_GATE_TIMEOUT_SECONDS))
+  local apipool_tcp_seen=0
+  local app_tcp_seen=0
+  local qingyun_tcp_seen=0
+  local api2_tcp_seen=0
+  local newapi_tcp_seen=0
+  local api2_http3_seen=0
+  local api2_redirect_seen=0
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if probe_public_candidate apipool.dev /health 200 \
-      && probe_public_candidate app.apipool.dev / 200 \
-      && probe_public_candidate api.apipool.dev /health 200 \
-      && probe_public_candidate api2.apipool.dev /v1/models 401 \
-      && probe_public_candidate newapi.apipool.dev / 200 \
+    # 中转层和 Cloudflare 会保留各自的上游连接池；不同入口命中候选的时刻不保证
+    # 落在同一次串行探测内。窗口内逐项锁存真实候选标记，仍要求所有入口都通过。
+    if [ "$apipool_tcp_seen" -eq 0 ] \
+      && probe_public_candidate apipool.dev /health 200; then
+      apipool_tcp_seen=1
+    fi
+    if [ "$app_tcp_seen" -eq 0 ] \
+      && probe_public_candidate app.apipool.dev / 200; then
+      app_tcp_seen=1
+    fi
+    if [ "$qingyun_tcp_seen" -eq 0 ] \
+      && probe_public_candidate api.apipool.dev /health 200; then
+      qingyun_tcp_seen=1
+    fi
+    if [ "$api2_tcp_seen" -eq 0 ] \
+      && probe_public_candidate api2.apipool.dev /v1/models 401; then
+      api2_tcp_seen=1
+    fi
+    if [ "$newapi_tcp_seen" -eq 0 ] \
+      && probe_public_candidate newapi.apipool.dev / 200; then
+      newapi_tcp_seen=1
+    fi
+    if [ "$api2_http3_seen" -eq 0 ] \
       && probe_public_candidate api2.apipool.dev /v1/models 401 http3; then
-      http_code="$(curl --silent --show-error --max-time 8 \
-        --output /dev/null --write-out '%{http_code}' http://api2.apipool.dev/)"
-      if [ "$http_code" = "308" ]; then
-        echo "[caddy-upgrade] Cloudflare, qingyun, direct TCP/HTTP, and direct HTTP/3 reached candidate"
-        return 0
+      api2_http3_seen=1
+    fi
+    if [ "$api2_redirect_seen" -eq 0 ]; then
+      if http_code="$(curl --silent --show-error --max-time 8 \
+        --output /dev/null --write-out '%{http_code}' http://api2.apipool.dev/)" \
+        && [ "$http_code" = "308" ]; then
+        api2_redirect_seen=1
       fi
+    fi
+
+    if [ "$apipool_tcp_seen" -eq 1 ] \
+      && [ "$app_tcp_seen" -eq 1 ] \
+      && [ "$qingyun_tcp_seen" -eq 1 ] \
+      && [ "$api2_tcp_seen" -eq 1 ] \
+      && [ "$newapi_tcp_seen" -eq 1 ] \
+      && [ "$api2_http3_seen" -eq 1 ] \
+      && [ "$api2_redirect_seen" -eq 1 ]; then
+      systemctl is-active --quiet "$CANDIDATE_UNIT"
+      verify_candidate_routes
+      echo "[caddy-upgrade] Cloudflare, qingyun, direct TCP/HTTP, and direct HTTP/3 reached candidate"
+      return 0
     fi
     sleep 1
   done
-  echo "[caddy-upgrade] real external entrypoint gate did not reach candidate" >&2
+  printf '%s\n' \
+    "[caddy-upgrade] real external entrypoint gate did not reach candidate: apipool_tcp=$apipool_tcp_seen app_tcp=$app_tcp_seen qingyun_tcp=$qingyun_tcp_seen api2_tcp=$api2_tcp_seen newapi_tcp=$newapi_tcp_seen api2_http3=$api2_http3_seen api2_redirect=$api2_redirect_seen" >&2
   return 70
 }
 

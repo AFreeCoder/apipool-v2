@@ -666,6 +666,11 @@ test('Caddy runtime upgrade is pinned, drain-aware, and rollback-safe', async ()
   assert.match(upgrade, />Alt-Svc/);
   assert.match(upgrade, /verify_external_candidate_paths/);
   assert.match(upgrade, /--http3-only/);
+  assert.match(upgrade, /public-\$\{host\}-\$\{transport\}\.headers/);
+  assert.match(upgrade, /local qingyun_tcp_seen=0/);
+  assert.match(upgrade, /local api2_http3_seen=0/);
+  assert.match(upgrade, /\[ "\$qingyun_tcp_seen" -eq 1 \]/);
+  assert.match(upgrade, /\[ "\$api2_http3_seen" -eq 1 \]/);
   assert.match(upgrade, /verify_no_recent_websocket_upgrades/);
   assert.match(upgrade, /glob\.glob\(stem \+ "-\*\.log\.gz"\)/);
   assert.match(upgrade, /websocket history does not cover the required window/);
