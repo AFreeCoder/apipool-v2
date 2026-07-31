@@ -74,6 +74,8 @@ fi
 
 verify_root_owned_tooling() {
   local path=""
+  local relative_path=""
+  local workspace_path=""
   local owner=""
   local mode=""
   for path in "$APP_DIR" "$APP_DIR/deploy"; do
@@ -94,6 +96,8 @@ verify_root_owned_tooling() {
     "$APP_DIR/deploy/deploy.sh" \
     "$APP_DIR/deploy/backup.sh" \
     "$APP_DIR/deploy/configure-caddy.sh" \
+    "$APP_DIR/deploy/caddy-runtime.env" \
+    "$APP_DIR/deploy/caddy-runtime-lib.sh" \
     "$APP_DIR/deploy/cloudflare-ips.txt"; do
     if [ ! -f "$path" ] || [ "$(realpath -e "$path")" != "$path" ]; then
       echo "runner-deploy: missing or unsafe fixed deploy file: $path" >&2
@@ -105,7 +109,19 @@ verify_root_owned_tooling() {
       echo "runner-deploy: fixed deploy file must be root-owned and not group/world-writable: $path" >&2
       exit 77
     fi
+
+    relative_path="${path#"$APP_DIR/"}"
+    workspace_path="$workspace/$relative_path"
+    if [ ! -f "$workspace_path" ] || ! cmp -s "$workspace_path" "$path"; then
+      echo "runner-deploy: fixed tooling does not match checkout: $relative_path" >&2
+      exit 77
+    fi
   done
+
+  if ! cmp -s "$workspace/deploy/runner-deploy.sh" /usr/local/sbin/apipool-runner-deploy; then
+    echo "runner-deploy: installed wrapper does not match checkout" >&2
+    exit 77
+  fi
 
   path="$APP_DIR/.env.deploy"
   if [ ! -f "$path" ] || [ "$(realpath -e "$path")" != "$path" ]; then

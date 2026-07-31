@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,6 +16,12 @@ import test from 'node:test';
 
 const hasCaddy =
   spawnSync('caddy', ['version'], { encoding: 'utf8' }).status === 0;
+const discoveredCaddyPath = spawnSync('which', ['caddy'], {
+  encoding: 'utf8',
+}).stdout.trim();
+const caddyPath = discoveredCaddyPath
+  ? realpathSync(discoveredCaddyPath)
+  : discoveredCaddyPath;
 
 test('docker image workflow builds production-configured immutable images', async () => {
   const workflow = await readFile(
@@ -34,6 +41,11 @@ test('docker image workflow builds production-configured immutable images', asyn
   );
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL:\s*gpt-5\.4-mini/);
   assert.match(workflow, /deploy-production:/);
+  assert.match(workflow, /verify-deployment-contract:/);
+  assert.match(
+    workflow,
+    /needs:\s*\[build-and-push, verify-deployment-contract\]/
+  );
   assert.match(workflow, /IMAGE_TAG:\s*sha-\$\{\{\s*github\.sha\s*\}\}/);
   assert.match(
     workflow,
@@ -287,7 +299,7 @@ test('Caddy guards the New API operator surface with basic auth', async () => {
   assert.equal(status, 0);
 
   const newapiBlock = stdout.split('newapi.apipool.dev {')[1];
-  assert.match(newapiBlock, /basicauth/);
+  assert.match(newapiBlock, /basic_auth/);
   assert.match(newapiBlock, /ops \$2a\$14\$hashplaceholder/);
 });
 
@@ -402,15 +414,13 @@ test('deploy regenerates the Caddy config so operator protections actually take 
   assert.match(deploy, /APIPOOL_DEPLOY_ENV_FILE=/);
 });
 
-test('re-applying the Caddy config does not reinstall caddy on every deploy', async () => {
+test('application deploys require the pinned managed Caddy runtime', async () => {
   const script = await readFile('deploy/configure-caddy.sh', 'utf8');
 
-  // 每次部署跑 `apt-get install -y caddy` 会在部署中途升级 caddy 版本
-  assert.match(script, /command -v caddy/);
-  assert.match(script, /caddy_version=.*caddy version/);
-  assert.match(script, /"\$caddy_version" = "2\.6\.2"/);
-  assert.match(script, /systemctl restart caddy/);
-  assert.match(script, /systemctl is-active --quiet caddy/);
+  assert.match(script, /verify_caddy_binary "\$APIPOOL_CADDY_BIN"/);
+  assert.doesNotMatch(script, /apt-get install -y caddy/);
+  assert.doesNotMatch(script, /systemctl restart caddy/);
+  assert.match(script, /reload_caddy_safely "\$CADDY_ROOT_FILE"/);
   assert.match(
     script,
     /cmp -s "\$STAGED_FRAGMENT_FILE" "\$CADDY_FRAGMENT_FILE"/
@@ -425,11 +435,11 @@ test('the complete Caddy tree is validated before the v2 fragment is replaced at
   assert.doesNotMatch(script, /printf[^\n]*>\/etc\/caddy\/Caddyfile/);
   assert.match(
     script,
-    /caddy validate --config "\$STAGED_ROOT_FILE" --adapter caddyfile/
+    /"\$APIPOOL_CADDY_BIN" validate --config "\$STAGED_ROOT_FILE" --adapter caddyfile/
   );
 
   const validateAt = script.indexOf(
-    'caddy validate --config "$STAGED_ROOT_FILE"'
+    '"$APIPOOL_CADDY_BIN" validate --config "$STAGED_ROOT_FILE"'
   );
   const installAt = script.indexOf(
     'atomic_install "$STAGED_FRAGMENT_FILE" "$CADDY_FRAGMENT_FILE"'
@@ -496,6 +506,9 @@ test(
         APIPOOL_CADDY_ROOT_FILE: rootFile,
         APIPOOL_CADDY_SITES_DIR: sitesDir,
         APIPOOL_CADDY_LOCK_FILE: lockFile,
+        APIPOOL_CADDY_BIN_OVERRIDE: caddyPath,
+        APIPOOL_CADDY_TEST_MODE: 'true',
+        APIPOOL_CADDY_RELOAD_STABILITY_SECONDS_OVERRIDE: '0',
         APIPOOL_NEWAPI_BASIC_AUTH_USER: '',
         APIPOOL_NEWAPI_BASIC_AUTH_HASH: '',
         APIPOOL_NEWAPI_ALLOWED_IPS: '',
@@ -612,10 +625,75 @@ test('Caddy config writers share a cross-service flock', async () => {
   assert.match(rollback, /APIPOOL_CADDY_LOCK_FILE:-\/run\/apipool-caddy\.lock/);
   assert.match(rollback, /flock -n 8/);
   assert.ok(
-    rollback.indexOf('caddy validate --config "$STAGED_ROOT_FILE"') <
-      rollback.indexOf('mv -f -- "$LIVE_TMP" "$CADDY_FRAGMENT_FILE"')
+    rollback.indexOf(
+      '"$APIPOOL_CADDY_BIN" validate --config "$STAGED_ROOT_FILE"'
+    ) < rollback.indexOf('mv -f -- "$LIVE_TMP" "$CADDY_FRAGMENT_FILE"')
   );
   assert.match(bootstrap, /util-linux/);
+});
+
+test('Caddy runtime upgrade is pinned, drain-aware, and rollback-safe', async () => {
+  const runtime = await readFile('deploy/caddy-runtime.env', 'utf8');
+  const build = await readFile('deploy/build-caddy-runtime.sh', 'utf8');
+  const upgrade = await readFile('deploy/upgrade-caddy-runtime.sh', 'utf8');
+  const dropIn = await readFile('deploy/systemd/caddy-apipool.conf', 'utf8');
+
+  assert.match(runtime, /APIPOOL_CADDY_VERSION="v2\.11\.4"/);
+  assert.match(runtime, /APIPOOL_CADDY_GO_VERSION="go1\.26\.5"/);
+  assert.match(runtime, /APIPOOL_CADDY_SOURCE_SHA256="[0-9a-f]{64}"/);
+  assert.match(runtime, /APIPOOL_CADDY_GO_SHA256="[0-9a-f]{64}"/);
+  assert.match(runtime, /APIPOOL_CADDY_BINARY_SHA256="[0-9a-f]{64}"/);
+  assert.match(runtime, /APIPOOL_CADDY_GRACE_PERIOD="15m"/);
+  assert.match(runtime, /APIPOOL_CADDY_STREAM_CLOSE_DELAY="15m"/);
+  assert.match(
+    runtime,
+    /APIPOOL_CADDY_RUNTIME_CONTRACT="apipool-caddy-runtime-v1"/
+  );
+  assert.match(build, /-mod=vendor/);
+  assert.match(build, /GOTOOLCHAIN=local/);
+  assert.match(build, /non-reproducible output/);
+
+  assert.match(upgrade, /--preflight \| --candidate-test \| --apply/);
+  assert.match(upgrade, /ct status dnat tcp dport/);
+  assert.match(upgrade, /tcp dport 80 counter redirect/);
+  assert.match(upgrade, /tcp dport 443 counter redirect/);
+  assert.match(upgrade, /udp dport 443 counter redirect/);
+  assert.match(upgrade, /ensure_legacy_stream_close_delay/);
+  assert.match(upgrade, /reload --force --address/);
+  assert.match(upgrade, /config is unchanged/);
+  assert.match(upgrade, /persist_config off/);
+  assert.match(upgrade, /XDG_CONFIG_HOME=/);
+  assert.match(upgrade, />Alt-Svc/);
+  assert.match(upgrade, /verify_external_candidate_paths/);
+  assert.match(upgrade, /--http3-only/);
+  assert.match(upgrade, /verify_no_recent_websocket_upgrades/);
+  assert.match(upgrade, /glob\.glob\(stem \+ "-\*\.log\.gz"\)/);
+  assert.match(upgrade, /websocket history does not cover the required window/);
+  assert.match(upgrade, /verify_legacy_writer_contract/);
+  assert.match(upgrade, /assert_production_autosave_unchanged/);
+  assert.match(upgrade, /trap - EXIT ERR INT TERM/);
+  assert.match(upgrade, /could not remove the cutover NAT table/);
+  assert.match(upgrade, /rollback could not restart caddy; candidate remains/);
+  assert.match(upgrade, /runners remain paused/);
+  assert.doesNotMatch(upgrade, /apt-get install|dpkg -i/);
+  assert.ok(
+    upgrade.indexOf('LIVE_FILES_CHANGED=1') <
+      upgrade.indexOf('atomic_install "$TARGET_STAGE_DIR/apipool-v2.caddy"'),
+    'partial live-file installs must remain rollback-eligible'
+  );
+  assert.ok(
+    upgrade.lastIndexOf('COMMITTED=1') <
+      upgrade.lastIndexOf('if ! stop_candidate'),
+    'candidate cleanup failure must not roll back a healthy managed runtime'
+  );
+
+  assert.match(
+    dropIn,
+    /ExecStart=\/usr\/local\/lib\/apipool-caddy\/caddy-2\.11\.4-go1\.26\.5/
+  );
+  assert.match(dropIn, /TimeoutStopSec=16min/);
+  assert.match(dropIn, /Restart=on-failure/);
+  assert.match(dropIn, /RestartPreventExitStatus=1/);
 });
 
 test('the fail-closed guard can be explicitly opted out, but stays closed by default', async () => {

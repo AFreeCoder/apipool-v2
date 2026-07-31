@@ -48,9 +48,12 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
 - 8GiB 共机资源边界：门户 `1GiB`、New API `512MiB`、metadata filter
   `256MiB`；对应 mem+swap 上限分别为 `1280MiB`、`768MiB`、`384MiB`。
   这些限制用于隔离异常，不代表常态占用；迁移前实测三者合计约 `295MiB`。
-- 反向代理：Caddy，配置由 `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh`
-  **每次部署都会在备份与拉镜像之前重新生成 + `caddy validate` + 应用配置**
-  。共享根文件 `/etc/caddy/Caddyfile` 只负责
+- 反向代理：受管 Caddy `2.11.4`（Go `1.26.5`），版本、构建输入和二进制哈希由
+  `deploy/caddy-runtime.env` 钉住。运行时与升级脚本的事实源在仓库，服务器只安装
+  root-owned 副本；GitHub 应用发布不能自行安装或升级宿主机运行时。配置由
+  `deploy/configure-caddy.sh` 生成，`deploy/deploy.sh` **每次部署都会在备份与拉镜像
+  之前重新生成 + 全树 validate + 安全 reload**。共享根文件
+  `/etc/caddy/Caddyfile` 只负责 `grace_period 15m` 与
   `import /etc/caddy/sites-enabled/*.caddy`。legacy 与 v2 都使用各自的精确
   公网证书名称，按 Caddy 默认行为自动签发和续期。禁止使用
   `auto_https ignore_loaded_certs`，也禁止加载会覆盖 v2 子域的 Origin wildcard，
@@ -58,9 +61,17 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   `/etc/caddy/sites-enabled/apipool-v2.caddy`，不会覆盖 legacy 或其他服务分片。
   更新前会把现有所有分片复制到候选树做一次完整 `caddy validate`，通过后才替换并
   应用；上一份 v2 分片保存在 `apipool-v2.caddy.bak`。
-- 共享根与 v2 分片均无变化时直接短路，不 reload/restart Caddy。
-- 目标机当前 Caddy `2.6.2` 已复现 reload 返回成功后进程 panic；脚本仅对该精确
-  版本使用受控 restart，并确认服务保持 active。其他版本继续使用无中断 reload。
+- 共享根与 v2 分片均无变化时直接短路，不 reload Caddy。变更 reload 后必须确认
+  MainPID 不变、进程持续 active、journal 无 panic/退出签名。
+- 所有反代配置使用 `stream_close_delay 15m`，systemd 使用
+  `TimeoutStopSec=16min` 与 `Restart=on-failure`。宿主机运行时升级必须走
+  `deploy/upgrade-caddy-runtime.sh` 的候选实例 + nftables 新连接透明切流流程，禁止
+  直接安装 `.deb` 或 `systemctl restart caddy`。
+- `--apply` 前必须先安装同一批次的 legacy root-owned 写入器，并通过
+  `/opt/sub2api/deploy/caddy-runtime-contract` 的显式契约门禁；生产 workflow
+  必须等待 deployment-contract 测试通过。候选实例使用独立 HOME/XDG 与 autosave，
+  真实切流须同时验证 Cloudflare、轻云、DNS-only TCP/HTTP3，且不得在 `Alt-Svc`
+  宣告内部端口。
 - 所有服务的 Caddy 配置写入器必须共用 `/run/apipool-caddy.lock`。首次从旧版 v2
   三站点单体根配置升级时脚本会备份根文件并迁移到共享入口；若根文件不是可识别的旧版
   v2 配置且尚未使用共享 import，脚本退出 78，不覆盖未知配置。
@@ -137,16 +148,14 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
 `IMAGE_TAG` 与 `deploy/deploy.sh`，然后重新预览，再决定是否需要人工清理或重同步
 NewAPI 元信息。
 
-## DNS Phase
+## DNS 与入口现状
 
-当前处于老站排空期：
-
-- `app.apipool.dev`、`newapi.apipool.dev` 保持 Cloudflare proxied，并指向 v2 VPS。
-- `api2.apipool.dev` 指向 v2 VPS 且使用 DNS-only，临时直连 New API，避免
-  长耗时图片请求受 Cloudflare HTTP 代理超时限制；该记录会公开 VPS IP。
-- `apipool.dev` 和 `api.apipool.dev` 保持指向老站；不要在排空期发布中改到 v2。
-- final cutover 才把 `apipool.dev` 回收给 v2 营销站、把 `api.apipool.dev` 回收给
-  门户正式 API；`api2.apipool.dev` 在临时测试用户迁移后下线。
+- `apipool.dev`、`app.apipool.dev`、`newapi.apipool.dev` 经 Cloudflare 到
+  `apipool_vps`。
+- `api.apipool.dev` 先到轻云互联，再转发到 `apipool_vps` 的 legacy 服务。
+- `api2.apipool.dev` 为 DNS-only，直接到 `apipool_vps` 的 New API 数据面。
+- DigitalOcean 上的 legacy 容器已停止，数据库已落后，不得再接生产流量或作为
+  Caddy 升级回退源；仅 biz 服务按迁移决定保留。
 
 ## Pre-Deploy Checks
 
@@ -217,6 +226,11 @@ docker compose --env-file deploy/env.production.example --env-file <release-env>
 - `docker-compose.prod.yml`
 - `deploy/deploy.sh`
 - `deploy/configure-caddy.sh`
+- `deploy/caddy-runtime.env`
+- `deploy/caddy-runtime-lib.sh`
+- `deploy/build-caddy-runtime.sh`
+- `deploy/upgrade-caddy-runtime.sh`
+- `deploy/systemd/caddy-apipool.conf`
 - `deploy/rollback-caddy.sh`
 - `deploy/go-live.sh`
 - `deploy/lib.sh`

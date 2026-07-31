@@ -105,6 +105,18 @@ test(
       true,
       'fallback 管理路径应保留认证 handler'
     );
+
+    const newapiRoute = adapted.apps.http.servers.srv0.routes.find(
+      (route: { match?: { host?: string[] }[] }) =>
+        route.match?.some((matcher) =>
+          matcher.host?.includes('newapi.apipool.dev')
+        )
+    );
+    const serializedNewapi = JSON.stringify(newapiRoute);
+    const originDenyAt = serializedNewapi.indexOf('"status_code":403');
+    const proxyAt = serializedNewapi.indexOf('"handler":"reverse_proxy"');
+    assert.ok(originDenyAt >= 0, 'newapi 路由必须包含源站 403 拒绝规则');
+    assert.ok(proxyAt > originDenyAt, '源站拒绝规则必须先于 reverse_proxy');
   }
 );
 
@@ -134,10 +146,12 @@ test(
   }
 );
 
-test('CI 固定安装 Caddy，缺二进制不会被 skip 掩盖', async () => {
+test('CI 构建并使用精确钉住的 Caddy，缺二进制不会被 skip 掩盖', async () => {
   const workflow = await import('node:fs/promises').then(({ readFile }) =>
     readFile('.github/workflows/mvp-verify.yaml', 'utf8')
   );
-  assert.match(workflow, /apt-get install -y caddy/);
+  assert.match(workflow, /deploy\/build-caddy-runtime\.sh/);
+  assert.match(workflow, /GITHUB_PATH/);
+  assert.doesNotMatch(workflow, /apt-get install -y caddy/);
   assert.match(workflow, /caddy version/);
 });

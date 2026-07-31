@@ -73,5 +73,5 @@ systemctl enable --now apipool-v2-backup.timer
 
 docker --version
 docker compose version
-[ -x /usr/bin/caddy ] && caddy version
+[ -x /usr/local/bin/caddy ] && /usr/local/bin/caddy version
 systemctl list-timers apipool-v2-backup.timer --no-pager

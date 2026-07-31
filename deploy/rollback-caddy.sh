@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/caddy-runtime-lib.sh
+. "$SCRIPT_DIR/caddy-runtime-lib.sh"
+
 # 仅回滚 APIPool v2 自己的 Caddy fragment。候选配置会连同 legacy/其他服务
 # fragments 一起完整 validate，通过后才原子替换 live 文件。
 CADDY_LOCK_FILE="${APIPOOL_CADDY_LOCK_FILE:-/run/apipool-caddy.lock}"
@@ -15,12 +19,13 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 77
 fi
 
-for required_command in caddy flock; do
+for required_command in flock; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     echo "rollback-caddy.sh: missing required command: $required_command" >&2
     exit 69
   fi
 done
+verify_caddy_binary "$APIPOOL_CADDY_BIN"
 
 lock_dir="$(dirname -- "$CADDY_LOCK_FILE")"
 if [ ! -d "$lock_dir" ]; then
@@ -71,15 +76,15 @@ for existing_fragment in "$CADDY_SITES_DIR"/*.caddy; do
 done
 
 install -m 0644 "$CADDY_BACKUP_FILE" "$STAGED_FRAGMENT_FILE"
-caddy fmt --overwrite "$STAGED_FRAGMENT_FILE"
+"$APIPOOL_CADDY_BIN" fmt --overwrite "$STAGED_FRAGMENT_FILE"
 
 # 保留根文件中的全局选项和其他共享指令，只让 import 指向候选 fragments。
 awk -v live="$CADDY_IMPORT_LINE" -v staged="import $STAGED_SITES_DIR/*.caddy" '
   $0 == live { print staged; next }
   { print }
 ' "$CADDY_ROOT_FILE" >"$STAGED_ROOT_FILE"
-caddy fmt --overwrite "$STAGED_ROOT_FILE"
-caddy validate --config "$STAGED_ROOT_FILE" --adapter caddyfile
+"$APIPOOL_CADDY_BIN" fmt --overwrite "$STAGED_ROOT_FILE"
+"$APIPOOL_CADDY_BIN" validate --config "$STAGED_ROOT_FILE" --adapter caddyfile
 
 # validate 通过后再保留当前 live 版本，并在同目录原子替换。不要改写 .bak，
 # 它是本次回滚的输入；.pre-rollback 可用于撤销一次误回滚。
@@ -91,5 +96,14 @@ install -m 0644 "$STAGED_FRAGMENT_FILE" "$LIVE_TMP"
 mv -f -- "$LIVE_TMP" "$CADDY_FRAGMENT_FILE"
 LIVE_TMP=""
 
-systemctl reload caddy
+if ! reload_caddy_safely "$CADDY_ROOT_FILE"; then
+  # reload 失败时运行进程仍持有旧配置；把磁盘 fragment 恢复为同一版本，
+  # 避免下一次服务启动意外加载未生效的回滚内容。
+  LIVE_TMP="$(mktemp "$CADDY_SITES_DIR/.apipool-v2.caddy.restore.XXXXXX")"
+  install -m 0644 "$CADDY_FRAGMENT_FILE.pre-rollback" "$LIVE_TMP"
+  mv -f -- "$LIVE_TMP" "$CADDY_FRAGMENT_FILE"
+  LIVE_TMP=""
+  echo "rollback-caddy.sh: reload failed; restored the pre-rollback fragment" >&2
+  exit 70
+fi
 echo "rollback-caddy.sh: restored $CADDY_BACKUP_FILE after full-tree validation"

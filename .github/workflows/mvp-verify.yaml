@@ -32,10 +32,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: go test ./...
         working-directory: services/newapi-metadata-filter
-      - name: Install Caddy for routing fixture validation
+      - name: Build pinned Caddy runtime for routing fixture validation
         run: |
-          sudo apt-get update
-          sudo apt-get install -y caddy
+          deploy/build-caddy-runtime.sh "$RUNNER_TEMP/caddy"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/caddy" version
+      - name: Verify pinned Caddy is active in PATH
+        run: |
           caddy version
       - run: pnpm exec tsc --noEmit --pretty false
       - run: pnpm test

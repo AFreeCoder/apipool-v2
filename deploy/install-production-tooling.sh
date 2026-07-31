@@ -17,11 +17,17 @@ for required in \
   deploy/deploy.sh \
   deploy/backup.sh \
   deploy/configure-caddy.sh \
+  deploy/build-caddy-runtime.sh \
+  deploy/caddy-runtime.env \
+  deploy/caddy-runtime-lib.sh \
+  deploy/upgrade-caddy-runtime.sh \
   deploy/rollback-caddy.sh \
   deploy/go-live.sh \
   deploy/live-smoke.sh \
   deploy/lib.sh \
-  deploy/cloudflare-ips.txt; do
+  deploy/cloudflare-ips.txt \
+  deploy/runner-deploy.sh \
+  deploy/systemd/caddy-apipool.conf; do
   if [ ! -f "$SOURCE_ROOT/$required" ]; then
     echo "install-production-tooling.sh: 缺少源文件：$required" >&2
     exit 66
@@ -38,8 +44,13 @@ install -d -o root -g root -m 0755 "$APP_DIR" "$APP_DIR/deploy"
 install -d -o root -g root -m 0700 "$APP_DIR/backups"
 
 if [ -f "$APP_DIR/docker-compose.prod.yml" ] && [ -d "$APP_DIR/deploy" ]; then
-  backup="$APP_DIR/backups/tooling-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup="$APP_DIR/backups/tooling-$timestamp.tar.gz"
   tar -C "$APP_DIR" -czf "$backup" docker-compose.prod.yml deploy
+  if [ -f /usr/local/sbin/apipool-runner-deploy ]; then
+    install -o root -g root -m 0600 /usr/local/sbin/apipool-runner-deploy \
+      "$APP_DIR/backups/apipool-runner-deploy-$timestamp"
+  fi
   chown root:root "$backup"
   chmod 0600 "$backup"
   echo "[tooling] 旧工具链备份：$backup"
@@ -62,5 +73,8 @@ done < <(
     ! -name '.DS_Store' \
     -print0
 )
+
+install -o root -g root -m 0755 \
+  "$SOURCE_ROOT/deploy/runner-deploy.sh" /usr/local/sbin/apipool-runner-deploy
 
 echo "[tooling] 已安装 root-owned 生产部署工具链"

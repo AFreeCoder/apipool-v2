@@ -123,8 +123,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
 放在最前面是为了让 fail-closed（退出 78）成为零副作用中止，而不是留下已备份、已换
 镜像的半成品状态。
 
-- 只在 caddy 缺失时才 `apt install`，避免每次部署顺带升级版本。
-- `/etc/caddy/Caddyfile` 是共享根入口，只保留
+- Caddy 是共享宿主机运行时，仅由 APIPool_v2 的 owner 经 SSH 显式升级。版本、
+  Go 工具链、源码输入与最终二进制 SHA-256 统一钉在
+  `deploy/caddy-runtime.env`；应用部署既不执行 `apt install caddy`，也不从 PATH
+  猜测二进制，运行时不匹配会在修改配置前 fail-closed。
+- `/etc/caddy/Caddyfile` 是共享根入口，只保留受管的 `grace_period 15m` 和
   `import /etc/caddy/sites-enabled/*.caddy`；不要配置
   `auto_https ignore_loaded_certs`，也不要在 legacy 分片加载覆盖 v2 子域的
   Origin wildcard；所有站点由 Caddy 按精确域名管理公网证书。v2 只管理
@@ -132,9 +135,15 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
   `apipool-legacy.caddy`，v2 发布不会删除或覆盖它。
 - 所有会写 Caddy 配置的部署脚本必须共用 `/run/apipool-caddy.lock`，完整
   validate 和配置应用也必须在锁内完成。
-- 候选配置与线上配置一致时直接短路，不 reload/restart Caddy。
-- 目标机 Caddy `2.6.2` 已复现 reload 返回成功后进程 panic；配置脚本对这个精确
-  版本使用受控 restart 并检查 active，其他版本继续使用无中断 reload。
+- 候选配置与线上配置一致时直接短路，不 reload Caddy。配置变更统一先用钉住的
+  二进制做全树 validate，再 reload，并检查 MainPID 未变化、进程持续 active 且
+  journal 中没有 panic/进程退出签名。
+- 生产运行时为 Caddy `2.11.4`（Go `1.26.5`）。所有反代显式设置
+  `stream_close_delay 15m`；systemd drop-in 设置 `TimeoutStopSec=16min`、
+  `Restart=on-failure`、`RestartPreventExitStatus=1`。这三层分别保护配置 reload
+  时的流连接、进程优雅排空和意外崩溃恢复。
+- `newapi.apipool.dev` 的 Cloudflare 源站拒绝规则必须位于显式 `route` 内并先于
+  `/v1` 与 fallback proxy；不能依赖 Caddy 对顶层指令的自动排序。
 - 首次升级时，可识别的旧版 v2 三站点单体根配置会先备份到 `Caddyfile.bak` 再迁移；
   无法确认归属的根配置会退出 78。此时先把原有服务块人工拆到
   `/etc/caddy/sites-enabled/*.caddy` 并建立上述共享 import，不得强行覆盖。
@@ -143,6 +152,42 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
   live 路径。
 - 想立即生效而不等下次部署：在 VPS 上执行
   `cd /opt/apipool-v2 && APIPOOL_DEPLOY_ENV_FILE=/opt/apipool-v2/.env.deploy ./deploy/configure-caddy.sh`。
+
+### 2.1 Caddy 运行时升级（仅 owner SSH）
+
+升级不能用 `.deb` 或 `apt upgrade`：包脚本会自行重启服务，无法保证现有长请求排空。
+使用仓库内受管流程：
+
+```bash
+sudo ./deploy/build-caddy-runtime.sh /root/caddy-2.11.4-go1.26.5
+sudo ./deploy/upgrade-caddy-runtime.sh --preflight /root/caddy-2.11.4-go1.26.5
+sudo ./deploy/upgrade-caddy-runtime.sh --candidate-test /root/caddy-2.11.4-go1.26.5
+sudo ./deploy/upgrade-caddy-runtime.sh --apply /root/caddy-2.11.4-go1.26.5
+```
+
+`--candidate-test` 会在隔离端口启动候选实例，验证四个入口，并在真实长流存活期间用
+`--force` reload，再执行第二次 reload；候选使用独立 HOME/XDG、关闭配置持久化，且
+不得改变正式 autosave。该模式不接公网流量，也不修改正式运行时。通过后，`--apply`
+才会暂停三套生产 Runner
+（不停止应用容器），获取三套部署锁，备份 Caddy
+配置、证书状态、unit 和 nftables，然后启动独立端口、独立存储与独立日志的候选
+Caddy。候选通过 TLS、路由和源站 ACL 探针后，nftables 只把**新连接**透明转发到
+候选；脚本必须分别从真实公网路径看到 Cloudflare 三域、轻云中转、DNS-only TCP 与
+HTTP/3 的候选标记，并合并当前与压缩轮转日志，确认最近 24 小时（若当前 Caddy
+进程不足 24 小时，则从本次启动起）没有 WebSocket upgrade，才允许旧进程优雅
+排空。候选对外只宣告 `Alt-Svc :443`，不能泄漏内部 18443。正式实例完成本地探针与
+一次强制 reload 后，新连接回到 80/443，候选继续优雅排空已有连接再退出。
+
+正式升级前，必须先从两个已提交且已推送的精确 feature commit 安装 root-owned 工具链：
+先安装 APIPool_v2 owner 工具链，再安装 legacy 工具链，并确认
+`/opt/sub2api/deploy/caddy-runtime-contract` 为
+`apipool-caddy-runtime-v1`。旧 legacy 写入器未升级时 `--apply` 会 fail-closed；否则
+下一次 legacy 发布可能撤销 `stream_close_delay`。两个仓库的生产 deploy job 也必须
+显式依赖各自的 deployment-contract 测试，不能仅依赖并行的独立 CI workflow。
+
+任一步失败都会优先把新连接切回仍可用的旧实例并恢复配置、CLI、drop-in 和 apt hold
+状态。若旧实例本身无法恢复，候选会保留接流、Runner 保持暂停，且 `/run/apipool-caddy-upgrade`
+中的恢复材料不会清理；不得手工停止候选或删除 nftables 规则，应先恢复正式实例。
 
 ## 3. 部署验收顺序（不可跳步，后步通过不能替代前步失败）
 
@@ -321,6 +366,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
 ├── backups/                 # 备份归档，chmod 700
 └── deploy/
     ├── backup.sh
+    ├── build-caddy-runtime.sh
+    ├── caddy-runtime.env
+    ├── caddy-runtime-lib.sh
     ├── configure-caddy.sh
     ├── configure-ingress-firewall.sh
     ├── deploy.sh
@@ -331,6 +379,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
     ├── rollback-caddy.sh
     ├── server-bootstrap.sh
     ├── setup-smoke-users.sh
+    ├── upgrade-caddy-runtime.sh
     └── systemd/
 ```
 
@@ -350,8 +399,9 @@ ssh apipool_vps '/root/apipool-tooling-candidate/deploy/install-production-tooli
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/server-bootstrap.sh'
 ```
 
-`server-bootstrap.sh` 同时安装 Caddy、`util-linux`（提供共享 `flock`），初始化共享
-根入口，并生成 `/etc/caddy/sites-enabled/apipool-v2.caddy` 反代分片：
+`server-bootstrap.sh` 安装 `util-linux`（提供共享 `flock`），并要求上述受管 Caddy
+运行时已经显式安装；它随后初始化共享根入口并生成
+`/etc/caddy/sites-enabled/apipool-v2.caddy` 反代分片：
 
 - `app.apipool.dev` → 门户 `127.0.0.1:3000`
 - `api2.apipool.dev` → New API 用户 API `127.0.0.1:3001`

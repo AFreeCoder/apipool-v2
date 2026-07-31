@@ -16,6 +16,47 @@ env:
   NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: gpt-5.4-mini
 
 jobs:
+  verify-deployment-contract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - name: Verify deployment scripts
+        run: |
+          bash -n \
+            deploy/build-caddy-runtime.sh \
+            deploy/caddy-runtime-lib.sh \
+            deploy/configure-caddy.sh \
+            deploy/install-production-tooling.sh \
+            deploy/rollback-caddy.sh \
+            deploy/runner-deploy.sh \
+            deploy/server-bootstrap.sh \
+            deploy/upgrade-caddy-runtime.sh
+      - name: Build pinned Caddy runtime
+        run: |
+          deploy/build-caddy-runtime.sh "$RUNNER_TEMP/caddy"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Verify deployment and Caddy contracts
+        env:
+          NODE_OPTIONS: --conditions react-server
+        run: |
+          pnpm exec tsx --test \
+            tests/deploy/caddy-adapt.test.ts \
+            tests/deploy/deploy-automation.test.ts
+
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -77,7 +118,7 @@ jobs:
 
   deploy-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-and-push
+    needs: [build-and-push, verify-deployment-contract]
     runs-on: [self-hosted, linux, x64, apipool-prod-deploy]
     timeout-minutes: 20
     concurrency:

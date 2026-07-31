@@ -7,6 +7,8 @@ if [ "${1:-}" = "--print-config" ]; then
 fi
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/caddy-runtime-lib.sh
+. "$SCRIPT_DIR/caddy-runtime-lib.sh"
 
 # New API 运营面保护变量存放在 .env.deploy。**绝不 source 它**：
 #   - bcrypt 哈希含 `$`，`HASH=$2a$14$xxx` 经 shell 参数展开后变成 `a4`，
@@ -82,6 +84,9 @@ CLOUDFLARE_IPS="$(awk '
 cloudflare_guard="	@not_cloudflare not remote_ip $CLOUDFLARE_IPS
 	respond @not_cloudflare \"forbidden\" 403
 "
+cloudflare_guard_in_route="		@not_cloudflare not remote_ip $CLOUDFLARE_IPS
+		respond @not_cloudflare \"forbidden\" 403
+"
 
 # New API 运营面保护（docs/07-runbook.md 第 2 节）：Basic Auth 与 IP 白名单
 # 至少配一项，否则拒绝生成配置——绝不产出裸奔的管理面 vhost。
@@ -132,24 +137,28 @@ if [ "$has_ip_allowlist" -eq 1 ]; then
 "
 fi
 if [ "$has_basic_auth" -eq 1 ]; then
-  # 生产当前 Caddy 2.6.2 使用 basicauth；新版本仍保留该兼容指令。
-  newapi_guards_indented+="		basicauth {
-			$NEWAPI_BASIC_AUTH_USER $NEWAPI_BASIC_AUTH_HASH
-		}
+  newapi_guards_indented+="			basic_auth {
+				$NEWAPI_BASIC_AUTH_USER $NEWAPI_BASIC_AUTH_HASH
+			}
 "
 fi
 
 # New API 仅保留受保护的运营面；公开 /v1 永久 404，防止绕过门户钱包计费。
-newapi_fallback_inner="		reverse_proxy $NEWAPI_UPSTREAM"
+newapi_fallback_inner="			reverse_proxy $NEWAPI_UPSTREAM {
+				stream_close_delay $APIPOOL_CADDY_STREAM_CLOSE_DELAY
+			}"
 if [ -n "$newapi_guards_indented" ]; then
   # printf 显式制造分隔换行；不能依赖命令替换会吞掉的变量尾换行。
-  newapi_fallback_inner="$(printf '%s\n%s' "$newapi_guards_indented" "		reverse_proxy $NEWAPI_UPSTREAM")"
+  newapi_fallback_inner="$(printf '%s\n%s' "$newapi_guards_indented" "$newapi_fallback_inner")"
 fi
-newapi_site_body="	handle /v1* {
-		respond \"not found\" 404
-	}
-	handle {
+newapi_site_body="	route {
+$cloudflare_guard_in_route
+		handle /v1* {
+			respond \"not found\" 404
+		}
+		handle {
 $newapi_fallback_inner
+		}
 	}"
 
 # api2 是临时 DNS-only New API 数据面：所有 /v1* 路径均原样转发给
@@ -159,14 +168,18 @@ read -r -d '' CADDYFILE <<EOF || true
 $PORTAL_DOMAIN {
 	encode zstd gzip
 $cloudflare_guard
-	reverse_proxy $PORTAL_UPSTREAM
+	reverse_proxy $PORTAL_UPSTREAM {
+		stream_close_delay $APIPOOL_CADDY_STREAM_CLOSE_DELAY
+	}
 }
 
 $API_DOMAIN {
 	encode zstd gzip
 
 	handle /v1* {
-		reverse_proxy $NEWAPI_UPSTREAM
+		reverse_proxy $NEWAPI_UPSTREAM {
+			stream_close_delay $APIPOOL_CADDY_STREAM_CLOSE_DELAY
+		}
 	}
 
 	handle {
@@ -177,7 +190,6 @@ $API_DOMAIN {
 $NEWAPI_DOMAIN {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"
-$cloudflare_guard
 $newapi_site_body
 }
 EOF
@@ -216,12 +228,9 @@ if ! flock -n 8; then
   exit 75
 fi
 
-# 只在 caddy 缺失时安装。deploy.sh 每次部署都会重新应用配置，
-# 若无条件跑 apt install，会在部署中途把 caddy 升级到新版本。
-if ! command -v caddy >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y caddy
-fi
+# Caddy 是共享宿主机运行时，只能由 APIPool_v2 的显式升级流程安装。
+# 应用发布不得 apt install 或隐式切换二进制；版本/构建/模块任一不符即中止。
+verify_caddy_binary "$APIPOOL_CADDY_BIN"
 
 # 根 Caddyfile 只作为共享入口；各服务只能原子更新自己的 fragment。
 # validate 使用一棵完整的候选配置树（包含现有 legacy 等 fragment），通过后才写入
@@ -254,12 +263,32 @@ if [ -d "$CADDY_SITES_DIR" ]; then
 fi
 
 printf '%s\n' "$CADDYFILE" >"$STAGED_FRAGMENT_FILE"
-caddy fmt --overwrite "$STAGED_FRAGMENT_FILE"
+"$APIPOOL_CADDY_BIN" fmt --overwrite "$STAGED_FRAGMENT_FILE"
 
 root_mode="initialize"
 if [ -f "$CADDY_ROOT_FILE" ]; then
   if grep -Fqx "$CADDY_IMPORT_LINE" "$CADDY_ROOT_FILE"; then
-    if grep -Eq '^[[:space:]]*auto_https[[:space:]]+ignore_loaded_certs[[:space:]]*$' \
+    if awk -v import_line="$CADDY_IMPORT_LINE" -v grace="$APIPOOL_CADDY_GRACE_PERIOD" '
+      /^[[:space:]]*($|#)/ { next }
+      $0 == "{" { opens++; next }
+      $1 == "grace_period" && $2 == grace && NF == 2 { policies++; next }
+      $0 == "}" { closes++; next }
+      $0 == import_line { imports++; next }
+      { unexpected = 1 }
+      END {
+        exit !(opens == 1 && closes == 1 && policies == 1 &&
+          imports == 1 && unexpected == 0)
+      }
+    ' "$CADDY_ROOT_FILE"; then
+      root_mode="preserve"
+    elif awk -v import_line="$CADDY_IMPORT_LINE" '
+      /^[[:space:]]*($|#)/ { next }
+      $0 == import_line { imports++; next }
+      { unexpected = 1 }
+      END { exit !(imports == 1 && unexpected == 0) }
+    ' "$CADDY_ROOT_FILE"; then
+      root_mode="add-managed-options"
+    elif grep -Eq '^[[:space:]]*auto_https[[:space:]]+ignore_loaded_certs[[:space:]]*$' \
       "$CADDY_ROOT_FILE"; then
       if awk -v import_line="$CADDY_IMPORT_LINE" '
         /^[[:space:]]*($|#)/ { next }
@@ -278,7 +307,7 @@ if [ -f "$CADDY_ROOT_FILE" ]; then
       ' "$CADDY_ROOT_FILE"; then
         # ignore_loaded_certs 的含义是“即使手工证书已加载也继续自动申请证书”。
         # 这是早期共享根配置的反向策略：会让 legacy Origin Certificate
-        # 触发无意义的公网 ACME 重试。仅对这个可精确识别的旧形态做一次迁移。
+        # 触发无意义的公网 ACME 重试。迁移时同时写入受管 grace_period。
         root_mode="remove-ignore-loaded-certs"
       else
         cat >&2 <<MSG
@@ -288,13 +317,6 @@ alongside unmanaged directives. Refusing to rewrite it automatically.
 MSG
         exit 78
       fi
-    elif awk -v import_line="$CADDY_IMPORT_LINE" '
-      /^[[:space:]]*($|#)/ { next }
-      $0 == import_line { imports++; next }
-      { unexpected = 1 }
-      END { exit !(imports == 1 && unexpected == 0) }
-    ' "$CADDY_ROOT_FILE"; then
-      root_mode="preserve"
     else
       cat >&2 <<MSG
 configure-caddy.sh: shared root Caddyfile contains unmanaged directives.
@@ -309,7 +331,7 @@ MSG
     # 明确识别该历史形态时自动迁移；任何其他根配置都 fail-closed，防止误删别的服务。
     formatted_existing_root="$STAGING_DIR/existing-root.caddy"
     install -m 0644 "$CADDY_ROOT_FILE" "$formatted_existing_root"
-    caddy fmt --overwrite "$formatted_existing_root"
+    "$APIPOOL_CADDY_BIN" fmt --overwrite "$formatted_existing_root"
     if awk \
       -v portal="$PORTAL_DOMAIN {" \
       -v api="$API_DOMAIN {" \
@@ -334,15 +356,6 @@ MSG
   fi
 fi
 
-write_shared_root() {
-  destination="$1"
-  import_line="$2"
-  cat >"$destination" <<EOF
-# Shared Caddy entrypoint. Service-owned configs live in sites-enabled.
-$import_line
-EOF
-}
-
 if [ "$root_mode" = "preserve" ]; then
   # 将 live import 临时改指向候选目录，保留根文件中的全局选项和其他共享指令。
   awk -v live="$CADDY_IMPORT_LINE" -v staged="import $STAGED_SITES_DIR/*.caddy" '
@@ -350,11 +363,11 @@ if [ "$root_mode" = "preserve" ]; then
     { print }
   ' "$CADDY_ROOT_FILE" >"$STAGED_ROOT_FILE"
 else
-  write_shared_root "$STAGED_ROOT_FILE" "import $STAGED_SITES_DIR/*.caddy"
+  write_managed_caddy_root "$STAGED_ROOT_FILE" "import $STAGED_SITES_DIR/*.caddy"
 fi
 
-caddy fmt --overwrite "$STAGED_ROOT_FILE"
-caddy validate --config "$STAGED_ROOT_FILE" --adapter caddyfile
+"$APIPOOL_CADDY_BIN" fmt --overwrite "$STAGED_ROOT_FILE"
+"$APIPOOL_CADDY_BIN" validate --config "$STAGED_ROOT_FILE" --adapter caddyfile
 
 fragment_changed=1
 if [ -f "$CADDY_FRAGMENT_FILE" ] \
@@ -363,10 +376,7 @@ if [ -f "$CADDY_FRAGMENT_FILE" ] \
 fi
 if [ "$root_mode" = "preserve" ] && [ "$fragment_changed" -eq 0 ]; then
   systemctl enable --now caddy
-  if ! systemctl is-active --quiet caddy; then
-    echo "configure-caddy.sh: Caddy is not active" >&2
-    exit 70
-  fi
+  verify_active_caddy_runtime
   echo "configure-caddy.sh: shared root and v2 fragment already match; skipping reload/restart"
   exit 0
 fi
@@ -395,22 +405,10 @@ if [ "$root_mode" != "preserve" ]; then
     cp -a "$CADDY_ROOT_FILE" "$CADDY_ROOT_FILE.bak"
   fi
   live_root="$STAGING_DIR/live-Caddyfile"
-  write_shared_root "$live_root" "$CADDY_IMPORT_LINE"
-  caddy fmt --overwrite "$live_root"
+  write_managed_caddy_root "$live_root" "$CADDY_IMPORT_LINE"
+  "$APIPOOL_CADDY_BIN" fmt --overwrite "$live_root"
   atomic_install "$live_root" "$CADDY_ROOT_FILE"
 fi
 
 systemctl enable --now caddy
-caddy_version="$(caddy version | head -n 1)"
-if [ "$caddy_version" = "2.6.2" ]; then
-  # 目标机该版本在 systemctl reload 后已稳定复现 context cancel panic。
-  # 精确版本使用受控 restart，避免 reload 返回成功后代理进程异步退出。
-  echo "configure-caddy.sh: Caddy 2.6.2 uses controlled restart"
-  systemctl restart caddy
-else
-  systemctl reload caddy
-fi
-if ! systemctl is-active --quiet caddy; then
-  echo "configure-caddy.sh: Caddy did not remain active after applying config" >&2
-  exit 70
-fi
+reload_caddy_safely "$CADDY_ROOT_FILE"
