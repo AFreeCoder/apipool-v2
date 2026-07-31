@@ -356,6 +356,21 @@ fi
 caddy fmt --overwrite "$STAGED_ROOT_FILE"
 caddy validate --config "$STAGED_ROOT_FILE" --adapter caddyfile
 
+fragment_changed=1
+if [ -f "$CADDY_FRAGMENT_FILE" ] \
+  && cmp -s "$STAGED_FRAGMENT_FILE" "$CADDY_FRAGMENT_FILE"; then
+  fragment_changed=0
+fi
+if [ "$root_mode" = "preserve" ] && [ "$fragment_changed" -eq 0 ]; then
+  systemctl enable --now caddy
+  if ! systemctl is-active --quiet caddy; then
+    echo "configure-caddy.sh: Caddy is not active" >&2
+    exit 70
+  fi
+  echo "configure-caddy.sh: shared root and v2 fragment already match; skipping reload/restart"
+  exit 0
+fi
+
 install -d -m 0755 "$(dirname -- "$CADDY_ROOT_FILE")" "$CADDY_SITES_DIR"
 
 atomic_install() {

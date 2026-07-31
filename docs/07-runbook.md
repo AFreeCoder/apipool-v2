@@ -132,6 +132,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://newapi.apipool.dev/          #
   `apipool-legacy.caddy`，v2 发布不会删除或覆盖它。
 - 所有会写 Caddy 配置的部署脚本必须共用 `/run/apipool-caddy.lock`，完整
   validate 和配置应用也必须在锁内完成。
+- 候选配置与线上配置一致时直接短路，不 reload/restart Caddy。
 - 目标机 Caddy `2.6.2` 已复现 reload 返回成功后进程 panic；配置脚本对这个精确
   版本使用受控 restart 并检查 active，其他版本继续使用无中断 reload。
 - 首次升级时，可识别的旧版 v2 三站点单体根配置会先备份到 `Caddyfile.bak` 再迁移；

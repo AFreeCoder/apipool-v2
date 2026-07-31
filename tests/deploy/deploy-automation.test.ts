@@ -411,6 +411,11 @@ test('re-applying the Caddy config does not reinstall caddy on every deploy', as
   assert.match(script, /"\$caddy_version" = "2\.6\.2"/);
   assert.match(script, /systemctl restart caddy/);
   assert.match(script, /systemctl is-active --quiet caddy/);
+  assert.match(
+    script,
+    /cmp -s "\$STAGED_FRAGMENT_FILE" "\$CADDY_FRAGMENT_FILE"/
+  );
+  assert.match(script, /skipping reload\/restart/);
 });
 
 test('the complete Caddy tree is validated before the v2 fragment is replaced atomically', async () => {

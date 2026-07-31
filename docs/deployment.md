@@ -58,6 +58,7 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   `/etc/caddy/sites-enabled/apipool-v2.caddy`，不会覆盖 legacy 或其他服务分片。
   更新前会把现有所有分片复制到候选树做一次完整 `caddy validate`，通过后才替换并
   应用；上一份 v2 分片保存在 `apipool-v2.caddy.bak`。
+- 共享根与 v2 分片均无变化时直接短路，不 reload/restart Caddy。
 - 目标机当前 Caddy `2.6.2` 已复现 reload 返回成功后进程 panic；脚本仅对该精确
   版本使用受控 restart，并确认服务保持 active。其他版本继续使用无中断 reload。
 - 所有服务的 Caddy 配置写入器必须共用 `/run/apipool-caddy.lock`。首次从旧版 v2
