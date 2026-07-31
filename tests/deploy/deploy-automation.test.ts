@@ -506,10 +506,10 @@ test(
         rootConfig.split(/\r?\n/).includes(`import ${sitesDir}/*.caddy`),
         'shared root must import all service fragments'
       );
-      assert.match(
+      assert.doesNotMatch(
         rootConfig,
         /^\s*auto_https\s+ignore_loaded_certs\s*$/m,
-        'shared root must keep exact-host certificate automation enabled'
+        'manual legacy certificates must not trigger duplicate ACME automation'
       );
       assert.doesNotMatch(rootConfig, /app\.apipool\.dev/);
       assert.equal(readFileSync(legacyFile, 'utf8'), legacyConfig);
@@ -525,6 +525,29 @@ test(
         { encoding: 'utf8' }
       );
       assert.equal(validate.status, 0, validate.stderr);
+
+      writeFileSync(
+        rootFile,
+        `{\n\tauto_https ignore_loaded_certs\n}\n\nimport ${sitesDir}/*.caddy\n`,
+        'utf8'
+      );
+      const repairedLegacyPolicy = spawnSync(
+        'bash',
+        ['deploy/configure-caddy.sh'],
+        {
+          env,
+          encoding: 'utf8',
+        }
+      );
+      assert.equal(repairedLegacyPolicy.status, 0, repairedLegacyPolicy.stderr);
+      assert.doesNotMatch(
+        readFileSync(rootFile, 'utf8'),
+        /^\s*auto_https\s+ignore_loaded_certs\s*$/m
+      );
+      assert.match(
+        readFileSync(`${rootFile}.bak`, 'utf8'),
+        /^\s*auto_https\s+ignore_loaded_certs\s*$/m
+      );
 
       const v2BeforeBadRollback = readFileSync(v2File, 'utf8');
       writeFileSync(

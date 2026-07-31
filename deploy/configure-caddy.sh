@@ -199,7 +199,7 @@ CADDY_ROOT_FILE="${APIPOOL_CADDY_ROOT_FILE:-/etc/caddy/Caddyfile}"
 CADDY_SITES_DIR="${APIPOOL_CADDY_SITES_DIR:-/etc/caddy/sites-enabled}"
 CADDY_FRAGMENT_FILE="$CADDY_SITES_DIR/apipool-v2.caddy"
 CADDY_IMPORT_LINE="import $CADDY_SITES_DIR/*.caddy"
-CADDY_AUTO_HTTPS_LINE="auto_https ignore_loaded_certs"
+CADDY_FORBIDDEN_AUTO_HTTPS_LINE="auto_https ignore_loaded_certs"
 
 if ! command -v flock >/dev/null 2>&1; then
   apt-get update
@@ -261,23 +261,46 @@ if [ -f "$CADDY_ROOT_FILE" ]; then
   if grep -Fqx "$CADDY_IMPORT_LINE" "$CADDY_ROOT_FILE"; then
     if grep -Eq '^[[:space:]]*auto_https[[:space:]]+ignore_loaded_certs[[:space:]]*$' \
       "$CADDY_ROOT_FILE"; then
-      root_mode="preserve"
+      if awk -v import_line="$CADDY_IMPORT_LINE" '
+        /^[[:space:]]*($|#)/ { next }
+        $0 == import_line { imports++; next }
+        /^[[:space:]]*\{[[:space:]]*$/ { opens++; next }
+        /^[[:space:]]*\}[[:space:]]*$/ { closes++; next }
+        /^[[:space:]]*auto_https[[:space:]]+ignore_loaded_certs[[:space:]]*$/ {
+          policies++
+          next
+        }
+        { unexpected = 1 }
+        END {
+          exit !(imports == 1 && opens == 1 && closes == 1 &&
+            policies == 1 && unexpected == 0)
+        }
+      ' "$CADDY_ROOT_FILE"; then
+        # ignore_loaded_certs 的含义是“即使手工证书已加载也继续自动申请证书”。
+        # 这是早期共享根配置的反向策略：会让 legacy Origin Certificate
+        # 触发无意义的公网 ACME 重试。仅对这个可精确识别的旧形态做一次迁移。
+        root_mode="remove-ignore-loaded-certs"
+      else
+        cat >&2 <<MSG
+configure-caddy.sh: shared root contains
+  $CADDY_FORBIDDEN_AUTO_HTTPS_LINE
+alongside unmanaged directives. Refusing to rewrite it automatically.
+MSG
+        exit 78
+      fi
     elif awk -v import_line="$CADDY_IMPORT_LINE" '
       /^[[:space:]]*($|#)/ { next }
       $0 == import_line { imports++; next }
       { unexpected = 1 }
       END { exit !(imports == 1 && unexpected == 0) }
     ' "$CADDY_ROOT_FILE"; then
-      # 早期共享根文件只有 import。补上 ignore_loaded_certs，保证 legacy
-      # Cloudflare Origin wildcard 不会阻止 api2 等精确域名继续自动续证。
-      root_mode="upgrade-shared-root"
+      root_mode="preserve"
     else
       cat >&2 <<MSG
-configure-caddy.sh: shared root Caddyfile lacks the required Automatic HTTPS policy:
-  {
-    $CADDY_AUTO_HTTPS_LINE
-  }
-Refusing to rewrite a shared root that contains other unmanaged directives.
+configure-caddy.sh: shared root Caddyfile contains unmanaged directives.
+Expected only:
+  $CADDY_IMPORT_LINE
+Refusing to rewrite the shared root automatically.
 MSG
       exit 78
     fi
@@ -315,10 +338,6 @@ write_shared_root() {
   destination="$1"
   import_line="$2"
   cat >"$destination" <<EOF
-{
-	$CADDY_AUTO_HTTPS_LINE
-}
-
 # Shared Caddy entrypoint. Service-owned configs live in sites-enabled.
 $import_line
 EOF
