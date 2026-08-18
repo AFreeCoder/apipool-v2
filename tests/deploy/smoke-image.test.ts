@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import {
   IMAGE_UAT_CASES,
+  submitWithCredentialRetry,
   validateObjectStorageImageUrl,
 } from '../../scripts/smoke-image';
 
@@ -78,4 +79,26 @@ test('生产镜像内置但不会自动执行图片 UAT bundle', async () => {
   assert.match(dockerfile, /smoke-image-runner\.ts/);
   assert.match(dockerfile, /smoke-image\.cjs/);
   assert.doesNotMatch(dockerfile, /CMD .*smoke-image/);
+});
+
+test('图片 UAT 在新 Key 凭据准备期间有界重试 503', async () => {
+  const originalDelay = process.env.APIPOOL_SMOKE_IMAGE_SUBMIT_DELAY_MS;
+  process.env.APIPOOL_SMOKE_IMAGE_SUBMIT_DELAY_MS = '0';
+  let calls = 0;
+
+  try {
+    const result = await submitWithCredentialRetry(async () => {
+      calls += 1;
+      return new Response('', { status: calls === 1 ? 503 : 202 });
+    }, 'credential-retry');
+
+    assert.equal(result.response.status, 202);
+    assert.equal(calls, 2);
+  } finally {
+    if (originalDelay === undefined) {
+      delete process.env.APIPOOL_SMOKE_IMAGE_SUBMIT_DELAY_MS;
+    } else {
+      process.env.APIPOOL_SMOKE_IMAGE_SUBMIT_DELAY_MS = originalDelay;
+    }
+  }
 });
