@@ -147,6 +147,18 @@ test('production compose pulls a selected GHCR image tag', async () => {
     compose,
     /new-api:[\s\S]*?mem_limit: 512m[\s\S]*?memswap_limit: 768m/
   );
+  for (const requiredImageTaskEnv of [
+    'IMAGE_TASK_PUBLIC_BASE_URL',
+    'IMAGE_TASK_R2_ENDPOINT',
+    'IMAGE_TASK_R2_ACCESS_KEY_ID',
+    'IMAGE_TASK_R2_SECRET_ACCESS_KEY',
+    'IMAGE_TASK_R2_BUCKET',
+    'APIMART_IMAGE_WEBHOOK_SECRET',
+  ]) {
+    assert.ok(
+      compose.includes(`${requiredImageTaskEnv}: \${${requiredImageTaskEnv}:?`)
+    );
+  }
 });
 
 test('deploy script backs up before pulling and deploying', async () => {

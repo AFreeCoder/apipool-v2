@@ -103,6 +103,37 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function submitWithCredentialRetry(
+  makeRequest: () => Promise<Response>,
+  caseId: string
+) {
+  const attempts = Number(
+    process.env.APIPOOL_SMOKE_IMAGE_SUBMIT_ATTEMPTS ?? '10'
+  );
+  const delayMs = Number(
+    process.env.APIPOOL_SMOKE_IMAGE_SUBMIT_DELAY_MS ?? '1000'
+  );
+  invariant(
+    Number.isInteger(attempts) && attempts > 0,
+    'submit attempts must be a positive integer'
+  );
+  invariant(
+    Number.isFinite(delayMs) && delayMs >= 0,
+    'submit delay must be non-negative'
+  );
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = await makeRequest();
+    const text = await response.text();
+    if (response.status !== 503 || attempt === attempts) {
+      return { response, text };
+    }
+    await sleep(delayMs);
+  }
+
+  throw new Error(`image UAT invariant failed: ${caseId} submit retry failed`);
+}
+
 export function validateObjectStorageImageUrl(raw: string, now = Date.now()) {
   const url = new URL(raw);
   invariant(url.protocol === 'https:', 'result URL must use HTTPS');
@@ -217,23 +248,26 @@ async function submitGeneration(input: {
   quality?: 'low' | 'high';
   n: number;
 }) {
-  const response = await fetch(`${input.baseUrl}/images/generations`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${input.apiKey}`,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      prompt: input.prompt,
-      size: '1:1',
-      resolution: input.resolution,
-      ...(input.quality ? { quality: input.quality } : {}),
-      n: input.n,
-    }),
-  });
-  const text = await response.text();
+  const { response, text } = await submitWithCredentialRetry(
+    () =>
+      fetch(`${input.baseUrl}/images/generations`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${input.apiKey}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          prompt: input.prompt,
+          size: '1:1',
+          resolution: input.resolution,
+          ...(input.quality ? { quality: input.quality } : {}),
+          n: input.n,
+        }),
+      }),
+    input.caseId
+  );
   invariant(
     response.status === 202,
     `${input.caseId} submit returned ${response.status}: ${text.slice(0, 300)}`
@@ -258,33 +292,34 @@ async function submitEdit(input: {
   apiKey: string;
   source: ImageArtifact;
 }) {
-  const form = new FormData();
-  form.append('model', MODEL);
-  form.append(
-    'prompt',
-    'Keep the composition, but change the circle to emerald green.'
-  );
-  form.append('size', '1:1');
-  form.append('resolution', '4k');
-  form.append('n', '1');
   const sourceBytes = input.source.bytes.buffer.slice(
     input.source.bytes.byteOffset,
     input.source.bytes.byteOffset + input.source.bytes.byteLength
   ) as ArrayBuffer;
-  form.append(
-    'image',
-    new Blob([sourceBytes], { type: input.source.contentType }),
-    'uat-source-image'
-  );
-  const response = await fetch(`${input.baseUrl}/images/edits`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${input.apiKey}`,
-      accept: 'application/json',
-    },
-    body: form,
-  });
-  const text = await response.text();
+  const { response, text } = await submitWithCredentialRetry(() => {
+    const form = new FormData();
+    form.append('model', MODEL);
+    form.append(
+      'prompt',
+      'Keep the composition, but change the circle to emerald green.'
+    );
+    form.append('size', '1:1');
+    form.append('resolution', '4k');
+    form.append('n', '1');
+    form.append(
+      'image',
+      new Blob([sourceBytes], { type: input.source.contentType }),
+      'uat-source-image'
+    );
+    return fetch(`${input.baseUrl}/images/edits`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${input.apiKey}`,
+        accept: 'application/json',
+      },
+      body: form,
+    });
+  }, 'codex-edit-4k');
   invariant(
     response.status === 202,
     `codex-edit-4k submit returned ${response.status}: ${text.slice(0, 300)}`
