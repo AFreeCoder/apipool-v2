@@ -318,7 +318,18 @@ printf 'TIMESTAMP=fixture\\nIMAGE_TAG=%s\\n' "$tag" >"$APIPOOL_DEPLOY_DIR/.live-
 `
   );
   await executable(join(fixture.dir, 'bin/chown'), '#!/bin/sh\nexit 0\n');
-  await executable(join(fixture.dir, 'bin/curl'), '#!/bin/sh\nexit 0\n');
+  await executable(
+    join(fixture.dir, 'bin/curl'),
+    `#!/bin/sh
+url=""
+for arg in "$@"; do url="$arg"; done
+if [ -n "${'${MOCK_CURL_FAIL_URL:-}'}" ] && [ "$url" = "$MOCK_CURL_FAIL_URL" ]; then
+  exit 7
+fi
+exit 0
+`
+  );
+  await executable(join(fixture.dir, 'bin/sleep'), '#!/bin/sh\nexit 0\n');
   await executable(
     join(fixture.dir, 'bin/docker'),
     `#!/bin/sh
@@ -335,7 +346,11 @@ exit 0
   return fixture;
 }
 
-function runDeploy(fixture: { dir: string; log: string }, smokeExit = '0') {
+function runDeploy(
+  fixture: { dir: string; log: string },
+  smokeExit = '0',
+  env: Record<string, string> = {}
+) {
   return spawnSync('bash', [join(fixture.dir, 'deploy/deploy.sh'), 'sha-new'], {
     env: {
       ...process.env,
@@ -344,10 +359,26 @@ function runDeploy(fixture: { dir: string; log: string }, smokeExit = '0') {
       APIPOOL_DEPLOY_LOCK: join(fixture.dir, 'deploy.lock'),
       MOCK_CALL_LOG: fixture.log,
       MOCK_SMOKE_EXIT: smokeExit,
+      ...env,
     },
     encoding: 'utf8',
   });
 }
+
+test('portal 最终健康探针失败时发布回滚并返回失败', async () => {
+  const fixture = await makeDeployFixture('false');
+  const result = runDeploy(fixture, '0', {
+    MOCK_CURL_FAIL_URL: 'http://127.0.0.1:3000/',
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /healthcheck failed for sha-new/);
+  assert.match(result.stderr, /rolling back container image to sha-current/);
+  assert.match(
+    await readFile(join(fixture.dir, 'release.env'), 'utf8'),
+    /^IMAGE_TAG=sha-current$/m
+  );
+});
 
 test('checkout 已开放的常规发布在 pull 前冻结，充值 smoke 失败时保持冻结', async () => {
   const fixture = await makeDeployFixture('true');

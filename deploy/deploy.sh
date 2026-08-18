@@ -117,7 +117,7 @@ healthcheck() {
     fi
     sleep 2
   done
-  curl -fsS http://127.0.0.1:3001/api/status >/dev/null
+  curl -fsS http://127.0.0.1:3001/api/status >/dev/null || return 1
 
   echo "[deploy] waiting for portal"
   for _ in $(seq 1 60); do
@@ -126,13 +126,13 @@ healthcheck() {
     fi
     sleep 2
   done
-  curl -fsS http://127.0.0.1:3000/ >/dev/null
+  curl -fsS http://127.0.0.1:3000/ >/dev/null || return 1
 
   if [ -n "${APIPOOL_PUBLIC_PORTAL_URL:-}" ]; then
-    curl -fsS "$APIPOOL_PUBLIC_PORTAL_URL" >/dev/null
+    curl -fsS "$APIPOOL_PUBLIC_PORTAL_URL" >/dev/null || return 1
   fi
   if [ -n "${APIPOOL_PUBLIC_NEWAPI_STATUS_URL:-}" ]; then
-    curl -fsS "$APIPOOL_PUBLIC_NEWAPI_STATUS_URL" >/dev/null
+    curl -fsS "$APIPOOL_PUBLIC_NEWAPI_STATUS_URL" >/dev/null || return 1
   fi
 }
 
