@@ -94,6 +94,10 @@
 
 图片 `unit` 固定使用实际响应 `output_count`，避免请求参数与实际交付不一致。
 
+按时长档案的数据约束和计费器继续保留，但本期不增加音频/视频端点、时长提取器或线上
+验收模型。接入首个真实模型时再补充对应端点适配，并以可信内容时长完成端到端验收；
+上游处理墙钟时间不得复用为内容时长。
+
 ## SKU DSL
 
 规则采用行式受限 DSL：
@@ -131,6 +135,146 @@ DSL 不包含循环、函数调用、算术或动态属性访问，因此保存�
 
 SKU DSL 只在准入阶段选择 SKU。结算从响应/usage 读取可信数量，再以价格快照计算金额。
 
+## 异步图片任务
+
+### 公共 API 契约
+
+对任务型图片模型统一使用 APIPool 异步任务，不在一次 HTTP 请求中等待 APIMart 终态：
+
+- `POST /v1/images/generations`：完成准入、锁定路由与价格快照并提交 New API，返回
+  `202 Accepted`、APIPool 任务 ID 和 `Location: /v1/tasks/{task_id}`。
+- `GET /v1/tasks/{task_id}`：校验原用户和原 API Key 的所有权后，返回 APIPool 数据库中
+  的最新状态。该请求不直接查询 New API，避免用户轮询频率放大到上游。
+- 后台 worker 按有界退避轮询 New API 任务接口；用户不轮询时，任务仍会推进、搬运、结算
+  并收敛到终态。
+- `completed` 响应使用 OpenAI 图片结果习惯的 `data[].url`，但 URL 必须属于 APIPool
+  对象存储域名；官方组可以同时返回规范化 `usage`，EXT 组不伪造 token usage。
+
+提交响应示例：
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "submitted",
+  "model": "gpt-image-2",
+  "created_at": 1787068800
+}
+```
+
+完成响应示例：
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "completed",
+  "model": "gpt-image-2",
+  "data": [
+    {
+      "url": "https://assets.apipool.dev/generated/images/imgtask_01.../0.png"
+    }
+  ]
+}
+```
+
+APIPool 只暴露自己的任务 ID；New API task ID 和 APIMart task ID 作为内部关联证据，不进入
+面向用户的主键空间。
+
+### 状态机
+
+```text
+submitted -> processing -> materializing -> completed
+    |             |              |
+    +-------------+--------------+-> failed_unbilled
+                  +---------------> meter_pending
+```
+
+- `submitted`：New API 已确认接收并返回任务 ID。
+- `processing`：上游仍在处理。
+- `materializing`：上游成功，APIPool 正在校验并搬运图片。
+- `meter_pending`：图片已经搬运，但 Token usage 缺失或矛盾，等待补偿或人工处置；不向用户
+  暴露最终图片、不结算。
+- `completed`：全部图片已可从对象存储读取，且客户账本已经按提交时快照完成唯一结算。
+- `failed_unbilled`：上游失败、终态无图片或对象存储经过补偿仍失败；用户不扣费。
+
+提交超时且没有可信 task ID 时保持未知状态，不盲目重提；价格、listing 或渠道的后续变化
+不得改变在途任务保存的路由和价格快照。
+
+### 持久化
+
+新增 `gateway_task`，本期只允许 `task_type = image_generation`：
+
+- `id`：对外暴露的高熵 APIPool task ID。
+- `request_ledger_id`：唯一关联原请求账本；路由、分组和价格继续以账本快照为准。
+- `user_id`、`portal_key_id`：任务查询所有权。
+- `status`、`newapi_task_id`、`provider_task_id`、`next_poll_at`、`poll_attempts`、
+  `last_error` 和各状态时间戳。
+- `terminal_evidence_json`：脱敏后的终态状态、usage 和结果摘要，不保存上游凭据。
+
+新增 `gateway_task_output`：
+
+- `(task_id, output_index)` 唯一，保证重复搬运幂等。
+- 保存对象存储 provider、bucket、object key、content type、字节数、搬运状态和错误。
+- object key 固定为 `generated/images/{task_id}/{output_index}.{ext}`；重试先查对象是否已存在，
+  不重复创建不同对象。
+
+`request_ledger` 增加任务关联和异步状态所需索引；已有
+`uniq_wallet_ledger_request_charge` 继续作为最多扣一次的最终约束。
+
+### New API 与上游查询
+
+New API 复用已有 `RelayTask / RelayTaskFetch` 框架增加 APIMart 图片适配：
+
+1. 提交时完成 `gpt-image-2` 到分组对应 provider model 的映射并保存渠道。
+2. 查询时始终使用提交时渠道，不重新分配。
+3. 把 APIMart `submitted / processing / completed / failed` 和终态 `usage / result.images`
+   归一成稳定任务结果。
+4. New API 校验自己的 token / 用户所有权；APIPool 再校验门户用户和 API Key，形成两层
+   任务隔离。
+
+APIPool worker 是 New API 查询接口的唯一常规调用方。worker 使用串行调度、任务 claim
+租约和有界退避，多个实例或重复调度不能并发推进同一个任务终态。
+
+## 对象存储交付
+
+### 搬运顺序
+
+上游 `completed` 后按以下顺序处理：
+
+1. 校验终态、usage 和图片列表，拒绝空结果、重复索引和超出请求上限的结果。
+2. 从受信任的 HTTPS 来源流式读取图片，校验每次跳转、Content-Type 和最大字节数。
+3. 以确定性 object key 写入 R2，并逐个确认对象可读取。
+4. 全部对象就绪后，按实际可交付对象数生成 `output_count`。
+5. 在一个数据库事务内写入最终 meter、钱包扣费和 `completed` 状态。
+
+外部对象写入无法与数据库事务原子提交，因此允许出现未被账本引用的孤儿对象，但不能
+出现“账本已扣费、对象尚不可读”。确定性 key 和存在性检查保证补偿重试不会重复上传；
+孤儿对象后续按独立清理策略处理。
+
+### URL 与安全边界
+
+- 本期使用 Cloudflare R2，要求配置 HTTPS `r2_domain` 作为公开交付域名。R2 S3 API endpoint
+  不是用户 URL，未配置公开域名时 listing 不得进入 ready。
+- 返回直接对象 URL，object key 含高熵 task ID；不返回 APIMart 的临时 URL。
+- 当前 `R2Provider.downloadAndUpload()` 会把整个响应读入内存，不能直接用于 4K 多图任务；
+  实现时必须增加有单图和进程级上限的流式搬运路径。
+- 远程下载不能接受任意 URL：APIMart 适配首版只允许预期图片域名，并拒绝私网、回环、
+  link-local、云元数据地址和越权重定向，防止 SSRF。
+- 搬运失败保持 `materializing` 并重试；超过补偿边界进入 `failed_unbilled`，不回退为上游
+  临时链接，也不做部分交付或部分计费。
+
+## 图片结算时点
+
+- 官方组：对象全部就绪且终态 usage 合法后，按提交时 Token 价格快照结算。
+- Codex 特惠组：对象全部就绪后，按对象数和提交时 resolution SKU 结算；请求 `n` 只用于
+  准入上限，不是最终数量。
+- APIMart official 仅返回未按文本/图片拆分的缓存总数，本期公共零售价不提供缓存 token
+  优惠；文本和图片输入都按各自普通输入价结算，不猜测缓存模态分摊。
+- New API / APIMart 金额只作为成本参照；APIPool 钱包账本是客户账单唯一事实源。
+- 任务 `completed`、输出 manifest 和钱包扣费在同一数据库事务中落定；重复 worker、重复
+  查询或迟到终态不能产生第二笔扣费。
+
 ## 发布与失效
 
 发布就绪要求：
@@ -157,3 +301,8 @@ SKU DSL 只在准入阶段选择 SKU。结算从响应/usage 读取可信数量�
 - 新快照字段为空的旧活动快照会在第一次请求时自动退役并重新发布。
 
 转换后没有双读：售卖代码只认新档案；旧表只供独立成本同步保留。
+
+## 变更记录
+
+- 2026-08-18：根据 Issue #4 的确认，补充 APIPool 异步图片任务、New API 轮询、R2
+  搬运、对象存储 URL 交付和完成后结算设计；本期不验收按时长真实模型链路。
