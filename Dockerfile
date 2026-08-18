@@ -37,6 +37,13 @@ RUN node_modules/.bin/esbuild deploy/migrate.src.mjs \
       --external:@libsql/client \
       --outfile=deploy/migrate.cjs
 
+# Idempotent catalog initialization runs after schema migrations so production
+# releases can add missing models/listings without overwriting operator changes.
+RUN node_modules/.bin/esbuild scripts/init-catalog.ts \
+      --bundle --platform=node --format=esm --conditions=react-server \
+      --external:@libsql/client \
+      --outfile=deploy/catalog-init.mjs
+
 # VPS-only live smoke runner. GitHub Actions deliberately avoids production
 # secrets; deploy/live-smoke.sh runs this bundle with server-local env.
 RUN node_modules/.bin/esbuild scripts/smoke-mvp-runner.ts \
@@ -71,6 +78,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Migration assets (entrypoint runs them only for sqlite/turso providers)
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/deploy/catalog-init.mjs ./catalog-init.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-mvp.cjs ./smoke-mvp.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-gateway.cjs ./smoke-gateway.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-recharge.cjs ./smoke-recharge.cjs

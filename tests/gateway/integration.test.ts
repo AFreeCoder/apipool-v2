@@ -150,10 +150,23 @@ async function seedCodexListingForSameImageModel(
     });
   const skuRule = {
     version: 1,
-    rules: [],
+    rules: [
+      {
+        conditions: [{ field: 'resolution', operator: 'missing' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'resolution', operator: 'eq', value: 'auto' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'resolution', operator: 'eq', value: '1k' }],
+        output: { type: 'sku', template: 'default' },
+      },
+    ],
     fallback: {
       type: 'sku',
-      template: 'quality=${quality};size=${size}',
+      template: 'resolution=${resolution}',
     },
   };
   await modules
@@ -165,7 +178,8 @@ async function seedCodexListingForSameImageModel(
       name: 'Codex 特惠按次价',
       pricingBasis: 'unit',
       quantityMeter: 'output_count',
-      skuRuleSource: 'else => "quality=${quality};size=${size}"',
+      skuRuleSource:
+        'when resolution is missing => "default"\nwhen resolution == "auto" => "default"\nwhen resolution == "1k" => "default"\nelse => "resolution=${resolution}"',
       skuRuleAstJson: JSON.stringify(skuRule),
       compilerVersion: 1,
       reviewedAt: new Date('2026-08-18T00:00:00Z'),
@@ -180,15 +194,23 @@ async function seedCodexListingForSameImageModel(
         meterKey: 'output_count',
         skuKey: 'default',
         unitSize: 1,
-        priceMicroUsd: 30_000,
+        priceMicroUsd: 8_500,
       },
       {
-        id: 'integration-pricing-rate-gpt-image-2-codex-high-portrait',
+        id: 'integration-pricing-rate-gpt-image-2-codex-2k',
         profileId,
         meterKey: 'output_count',
-        skuKey: 'quality=high;size=1024x1536',
+        skuKey: 'resolution=2k',
         unitSize: 1,
-        priceMicroUsd: 25_000,
+        priceMicroUsd: 14_000,
+      },
+      {
+        id: 'integration-pricing-rate-gpt-image-2-codex-4k',
+        profileId,
+        meterKey: 'output_count',
+        skuKey: 'resolution=4k',
+        unitSize: 1,
+        priceMicroUsd: 21_000,
       },
     ]);
   await modules.db().insert(modules.schema.catalogModelListing).values({
@@ -1330,6 +1352,7 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
       prompt: 'two cats',
       quality: 'high',
       size: '1024x1536',
+      resolution: '2k',
       n: 2,
     })
   );
@@ -1370,9 +1393,9 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
   assert.equal(codexTaskRow.status, 'completed');
   assert.equal(codexLedger.newapiGroup, 'codex特惠');
   assert.equal(codexLedger.pricingBasis, 'unit');
-  assert.equal(codexLedger.skuKey, 'quality=high;size=1024x1536');
+  assert.equal(codexLedger.skuKey, 'resolution=2k');
   assert.equal(codexLedger.unitCount, 2);
-  assert.equal(codexLedger.chargedMicroUsd, 50_000);
+  assert.equal(codexLedger.chargedMicroUsd, 28_000);
 
   const query = await modules.handler.handleGatewayRequest(
     new Request(`http://portal.test/v1/tasks/${codexTask.id}`, {
@@ -1405,6 +1428,7 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
   editForm.append('prompt', 'turn the cat blue');
   editForm.append('quality', 'high');
   editForm.append('size', '1024x1536');
+  editForm.append('resolution', '4k');
   editForm.append(
     'image',
     new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], {
@@ -1458,6 +1482,7 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
     .where(eq(modules.schema.requestLedger.id, editTaskRow.requestLedgerId));
   assert.equal(editTaskRow.status, 'completed');
   assert.equal(editLedger.endpoint, 'images_edits');
+  assert.equal(editLedger.skuKey, 'resolution=4k');
   assert.equal(editLedger.unitCount, 1);
-  assert.equal(editLedger.chargedMicroUsd, 25_000);
+  assert.equal(editLedger.chargedMicroUsd, 21_000);
 });

@@ -20,6 +20,8 @@ fi
 if [ "${DATABASE_PROVIDER}" = "sqlite" ] || [ "${DATABASE_PROVIDER}" = "turso" ]; then
   echo "[entrypoint] applying SQLite migrations to ${DATABASE_URL}"
   node migrate.cjs
+  echo "[entrypoint] initializing missing catalog records"
+  node catalog-init.mjs
 fi
 
 exec node server.js
