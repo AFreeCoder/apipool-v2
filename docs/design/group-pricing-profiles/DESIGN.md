@@ -144,6 +144,9 @@ SKU DSL 只在准入阶段选择 SKU。结算从响应/usage 读取可信数量�
 - `POST /v1/images/generations`：完成准入、锁定路由与价格快照后，内部调用 New API
   `POST /v1/images/async/generations`，返回 `202 Accepted`、APIPool 任务 ID 和
   `Location: /v1/tasks/{task_id}`。
+- `POST /v1/images/edits`：保留 multipart 正文字节和 Content-Type，同样内部提交到 New API
+  的 APIMart 异步图片适配器并返回 APIPool 任务 ID；JSON `image` / `images` / `image_urls`
+  图生图也可直接走 generations。
 - `GET /v1/tasks/{task_id}`：校验原用户和原 API Key 的所有权后，返回 APIPool 数据库中
   的最新状态。常规轮询不查询 APIMart；后台 worker 按有界退避查询 New API
   `GET /v1/tasks/{newapi_task_id}`，用户不轮询时任务仍会推进和结算。

@@ -1580,6 +1580,63 @@ export const requestLedger = table(
   ]
 );
 
+export const gatewayTask = table(
+  'gateway_task',
+  {
+    id: text('id').primaryKey(),
+    taskType: text('task_type').notNull().default('image_generation'),
+    requestLedgerId: text('request_ledger_id')
+      .notNull()
+      .references(() => requestLedger.id),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id),
+    portalKeyId: text('portal_key_id')
+      .notNull()
+      .references(() => portalApiKey.id),
+    status: text('status').notNull().default('submitted'),
+    newapiTaskId: text('newapi_task_id'),
+    providerTaskId: text('provider_task_id'),
+    nextPollAt: integer('next_poll_at', { mode: 'timestamp_ms' }),
+    pollAttempts: integer('poll_attempts').notNull().default(0),
+    lastError: text('last_error'),
+    leaseOwner: text('lease_owner'),
+    leaseExpiresAt: integer('lease_expires_at', { mode: 'timestamp_ms' }),
+    terminalEvidenceJson: text('terminal_evidence_json'),
+    resultCacheJson: text('result_cache_json'),
+    resultUrlExpiresAt: integer('result_url_expires_at', {
+      mode: 'timestamp_ms',
+    }),
+    submittedAt: integer('submitted_at', { mode: 'timestamp_ms' }),
+    processingAt: integer('processing_at', { mode: 'timestamp_ms' }),
+    meterPendingAt: integer('meter_pending_at', { mode: 'timestamp_ms' }),
+    completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+    failedAt: integer('failed_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_gateway_task_request').on(table.requestLedgerId),
+    uniqueIndex('uniq_gateway_task_newapi_task').on(table.newapiTaskId),
+    index('idx_gateway_task_due').on(table.status, table.nextPollAt),
+    index('idx_gateway_task_owner').on(
+      table.userId,
+      table.portalKeyId,
+      table.createdAt
+    ),
+    check('ck_gateway_task_type', sql`${table.taskType} = 'image_generation'`),
+    check(
+      'ck_gateway_task_status',
+      sql`${table.status} IN ('submission_unknown','submitted','processing','meter_pending','completed','failed_unbilled')`
+    ),
+  ]
+);
+
 export const portalAdminAuditLog = table(
   'portal_admin_audit_log',
   {

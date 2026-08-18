@@ -4,6 +4,7 @@ import { and, eq, isNull, lt, or } from 'drizzle-orm';
 
 import {
   gatewayJobLock,
+  gatewayTask,
   modelPriceVersion,
   newApiUserBinding,
   reconcileOrphanObservation,
@@ -260,6 +261,18 @@ async function processUsageLog(
     return;
   }
   if (row.status === 'open' || row.status === 'pending_backfill') {
+    const [asyncTask] = await db()
+      .select({ id: gatewayTask.id })
+      .from(gatewayTask)
+      .where(eq(gatewayTask.requestLedgerId, row.id))
+      .limit(1);
+    if (asyncTask) {
+      await db()
+        .update(requestLedger)
+        .set({ ...telemetry, updatedAt: new Date() })
+        .where(eq(requestLedger.id, row.id));
+      return;
+    }
     const waived = await markFailedUnbilled(row.id, {
       errorCode: 'usage_missing_waived',
       billingScheme: row.billingScheme === 'per_call' ? 'per_call' : 'token',

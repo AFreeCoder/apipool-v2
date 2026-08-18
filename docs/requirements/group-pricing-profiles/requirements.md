@@ -31,6 +31,9 @@
 
 - 对采用任务协议的图片模型，APIPool 公共 API 采用异步契约：提交返回 APIPool 自己的
   任务 ID，用户通过任务查询接口读取状态和结果。
+- `POST /v1/images/generations` 的 JSON 文生图/URL 图生图，以及
+  `POST /v1/images/edits` 的 multipart 图生图统一进入异步任务；原始请求参数和文件字节由
+  APIPool 原样转发给 New API 的 APIMart 图片任务适配器。
 - 用户查询只读取 APIPool 已持久化的任务状态，不把每次用户轮询直接放大为一次上游
   查询 APIMart；APIPool 后台负责持续查询 New API 并补偿中断任务。
 - 上游成功后，必须先由 New API 把所有图片搬运到平台控制的 R2，再向 APIPool 返回完成态。

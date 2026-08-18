@@ -31,6 +31,12 @@ import {
 import { authenticateGatewayRequest } from './auth';
 import { ensureRuntimeCredential, markCredentialInvalid } from './credentials';
 import { forwardToUpstream } from './forward';
+import {
+  getOwnedImageTaskResponse,
+  imageTaskSubmitResponse,
+  registerAcceptedImageTask,
+  registerUnknownImageSubmission,
+} from './image-tasks';
 import { buildModelsResponse } from './models-endpoint';
 import { resolveActiveRoute } from './routing';
 import { settleByLedgerId } from './settlement';
@@ -164,6 +170,9 @@ type HandlerDeps = {
   markInvalid: typeof markCredentialInvalid;
   forward: typeof forwardToUpstream;
   buildModels: typeof buildModelsResponse;
+  getImageTask: typeof getOwnedImageTaskResponse;
+  registerImageTask: typeof registerAcceptedImageTask;
+  registerUnknownImageTask: typeof registerUnknownImageSubmission;
   terminalRetryDelaysMs: number[];
 };
 
@@ -179,6 +188,9 @@ const defaultDeps: HandlerDeps = {
   markInvalid: markCredentialInvalid,
   forward: forwardToUpstream,
   buildModels: buildModelsResponse,
+  getImageTask: getOwnedImageTaskResponse,
+  registerImageTask: registerAcceptedImageTask,
+  registerUnknownImageTask: registerUnknownImageSubmission,
   terminalRetryDelaysMs: DEFAULT_TERMINAL_RETRY_DELAYS_MS,
 };
 
@@ -211,6 +223,34 @@ export async function handleGatewayRequest(
     return gatewayError('openai', 'unknown_endpoint', 404, portalRequestId);
   }
   const protocol = endpoint.protocol;
+
+  if (endpoint.key === 'tasks') {
+    try {
+      const auth = await deps.authenticate(
+        req.headers,
+        protocol,
+        portalRequestId,
+        { requireSpendableWallet: false }
+      );
+      if (!auth.ok) return auth.response;
+      const response = await deps.getImageTask({
+        taskId: pathSegments[1],
+        userId: auth.key.userId,
+        portalKeyId: auth.key.id,
+        portalRequestId,
+      });
+      return (
+        response ??
+        gatewayError(protocol, 'task_not_found', 404, portalRequestId)
+      );
+    } catch (error) {
+      console.error('[gateway] task query failed', {
+        portalRequestId,
+        error: String(error),
+      });
+      return gatewayError(protocol, 'internal_error', 500, portalRequestId);
+    }
+  }
 
   if (endpoint.key === 'models') {
     try {
@@ -389,6 +429,11 @@ export async function handleGatewayRequest(
         )
       );
     }
+    const usesAsyncImageTask =
+      (endpoint.key === 'images_generations' ||
+        endpoint.key === 'images_edits') &&
+      config.asyncImageModels.has(requestedModel);
+    const portalTaskId = usesAsyncImageTask ? `imgtask_${getUuidV7()}` : null;
 
     const credential = await deps.ensureCredential(
       auth.key.userId,
@@ -427,6 +472,7 @@ export async function handleGatewayRequest(
         priceVersionId: route.priceVersionId,
         endpoint: endpoint.key,
         isStream: requestIsStream,
+        skuKey: forwardAdmission.skuKey,
       },
       riskLimit
     );
@@ -444,13 +490,44 @@ export async function handleGatewayRequest(
     admittedLedgerId = portalRequestId;
 
     const outcome = await deps.forward({
-      endpoint,
+      endpoint: usesAsyncImageTask
+        ? { ...endpoint, upstreamPath: '/v1/images/async/generations' }
+        : endpoint,
       rawBody: bodyResult.body,
       headers: buildUpstreamHeaders(req.headers, credential.runtimeKey),
       isStream: requestIsStream,
       clientSignal: upstreamController.signal,
     });
     if (outcome.kind === 'no_response') {
+      if (usesAsyncImageTask && portalTaskId) {
+        const persisted = await terminal(
+          async () => {
+            await deps.registerUnknownImageTask({
+              taskId: portalTaskId,
+              ledgerId: portalRequestId,
+              userId: auth.key.userId,
+              portalKeyId: auth.key.id,
+              error: `submission_${outcome.stage}_unknown`,
+            });
+            return true;
+          },
+          false,
+          'async_submission_unknown'
+        );
+        if (persisted) {
+          return early(
+            imageTaskSubmitResponse({
+              taskId: portalTaskId,
+              model: requestedModel,
+              status: 'submission_unknown',
+              portalRequestId,
+            })
+          );
+        }
+        return early(
+          gatewayError(protocol, 'internal_error', 500, portalRequestId)
+        );
+      }
       await terminal(
         () =>
           deps.markFailed(portalRequestId, {
@@ -465,6 +542,101 @@ export async function handleGatewayRequest(
     }
 
     const upstream = outcome.upstream;
+    if (usesAsyncImageTask && portalTaskId) {
+      if (upstream.status === 401 || upstream.status === 403) {
+        await deps.markInvalid(
+          credential.credentialId,
+          `upstream_${upstream.status}`
+        );
+      }
+      if (!upstream.ok) {
+        await terminal(
+          () =>
+            deps.markFailed(portalRequestId, {
+              httpStatus: upstream.status,
+              errorCode: 'upstream_error',
+            }),
+          false,
+          'async_submit_failed'
+        );
+        await upstream.body?.cancel().catch(() => {});
+        return early(
+          gatewayError(protocol, 'upstream_error', 502, portalRequestId)
+        );
+      }
+      let submitted: unknown;
+      try {
+        submitted = await upstream.json();
+      } catch {
+        submitted = null;
+      }
+      const submittedRecord =
+        submitted && typeof submitted === 'object'
+          ? (submitted as Record<string, unknown>)
+          : null;
+      const newapiTaskId =
+        typeof submittedRecord?.id === 'string'
+          ? submittedRecord.id.trim()
+          : '';
+      if (!newapiTaskId || !outcome.newapiRequestId) {
+        const persisted = await terminal(
+          async () => {
+            await deps.registerUnknownImageTask({
+              taskId: portalTaskId,
+              ledgerId: portalRequestId,
+              userId: auth.key.userId,
+              portalKeyId: auth.key.id,
+              error: !newapiTaskId
+                ? 'submission_task_id_missing'
+                : 'submission_request_id_missing',
+            });
+            return true;
+          },
+          false,
+          'async_submission_invalid'
+        );
+        if (!persisted) {
+          return early(
+            gatewayError(protocol, 'internal_error', 500, portalRequestId)
+          );
+        }
+        return early(
+          imageTaskSubmitResponse({
+            taskId: portalTaskId,
+            model: requestedModel,
+            status: 'submission_unknown',
+            portalRequestId,
+          })
+        );
+      }
+      const registered = await terminal(
+        async () => {
+          await deps.registerImageTask({
+            taskId: portalTaskId,
+            ledgerId: portalRequestId,
+            userId: auth.key.userId,
+            portalKeyId: auth.key.id,
+            newapiTaskId,
+            newapiRequestId: outcome.newapiRequestId!,
+          });
+          return true;
+        },
+        false,
+        'async_task_register'
+      );
+      if (!registered) {
+        return early(
+          gatewayError(protocol, 'internal_error', 500, portalRequestId)
+        );
+      }
+      return early(
+        imageTaskSubmitResponse({
+          taskId: portalTaskId,
+          model: requestedModel,
+          portalRequestId,
+        })
+      );
+    }
     const captured = outcome.newapiRequestId
       ? await terminal(
           () => deps.capture(portalRequestId, outcome.newapiRequestId!),

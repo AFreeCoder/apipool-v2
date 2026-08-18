@@ -4,7 +4,7 @@ import test from 'node:test';
 import { resolveEndpoint } from '@/features/gateway/lib/endpoints';
 import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
 
-test('端点白名单：文本、images 与 models 七端点命中，其余 null', () => {
+test('端点白名单：文本、images、tasks 与 models 命中，其余 null', () => {
   assert.equal(
     resolveEndpoint('POST', ['chat', 'completions'])?.key,
     'chat_completions'
@@ -25,6 +25,9 @@ test('端点白名单：文本、images 与 models 七端点命中，其余 null
     'images'
   );
   assert.equal(resolveEndpoint('GET', ['models'])?.billable, false);
+  assert.equal(resolveEndpoint('GET', ['tasks', 'imgtask_1'])?.key, 'tasks');
+  assert.equal(resolveEndpoint('POST', ['tasks', 'imgtask_1']), null);
+  assert.equal(resolveEndpoint('GET', ['tasks']), null);
   assert.equal(resolveEndpoint('GET', ['chat', 'completions']), null);
   assert.equal(resolveEndpoint('POST', ['completions']), null);
   assert.equal(resolveEndpoint('POST', ['audio', 'speech']), null);

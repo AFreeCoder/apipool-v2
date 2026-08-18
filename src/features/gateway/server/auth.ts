@@ -45,7 +45,8 @@ export type GatewayAuthResult =
 export async function authenticateGatewayRequest(
   headers: Headers,
   protocol: GatewayProtocol,
-  portalRequestId: string
+  portalRequestId: string,
+  options: { requireSpendableWallet?: boolean } = {}
 ): Promise<GatewayAuthResult> {
   const deny = (
     code: Parameters<typeof gatewayErrorResponse>[1],
@@ -85,8 +86,10 @@ export async function authenticateGatewayRequest(
     .from(walletAccount)
     .where(eq(walletAccount.userId, key.userId))
     .limit(1);
-  if (wallet.frozenAt) return deny('account_frozen', 403);
-  if (wallet.balanceMicroUsd <= 0) return deny('insufficient_quota', 429);
+  if (options.requireSpendableWallet !== false) {
+    if (wallet.frozenAt) return deny('account_frozen', 403);
+    if (wallet.balanceMicroUsd <= 0) return deny('insufficient_quota', 429);
+  }
 
   const cutoff = new Date(Date.now() - LAST_USED_WRITE_INTERVAL_MS);
   void (async () => {

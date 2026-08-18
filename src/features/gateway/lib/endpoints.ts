@@ -5,6 +5,7 @@ export type GatewayEndpointKey =
   | 'embeddings'
   | 'images_generations'
   | 'images_edits'
+  | 'tasks'
   | 'models';
 
 export type GatewayProtocol = 'openai' | 'anthropic';
@@ -99,6 +100,23 @@ export function resolveEndpoint(
 ): GatewayEndpoint | null {
   const path = `/v1/${pathSegments.join('/')}`;
   const verb = method.toUpperCase();
+  if (
+    verb === 'GET' &&
+    pathSegments.length === 2 &&
+    pathSegments[0] === 'tasks' &&
+    pathSegments[1]
+  ) {
+    return {
+      key: 'tasks',
+      method: 'GET',
+      upstreamPath: '/v1/tasks/:task_id',
+      protocol: 'openai',
+      billable: false,
+      requestFormat: 'none',
+      responseMode: 'none',
+      timeoutProfile: 'default',
+    };
+  }
   return (
     GATEWAY_ENDPOINTS.find(
       (endpoint) => endpoint.method === verb && endpoint.upstreamPath === path
