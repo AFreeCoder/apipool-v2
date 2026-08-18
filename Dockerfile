@@ -54,6 +54,10 @@ RUN node_modules/.bin/esbuild scripts/smoke-gateway-runner.ts \
       --bundle --platform=node --format=cjs --conditions=react-server \
       --external:@libsql/client \
       --outfile=deploy/smoke-gateway.cjs
+RUN node_modules/.bin/esbuild scripts/smoke-image-runner.ts \
+      --bundle --platform=node --format=cjs --conditions=react-server \
+      --external:@libsql/client \
+      --outfile=deploy/smoke-image.cjs
 RUN node_modules/.bin/esbuild scripts/smoke-recharge-runner.ts \
       --bundle --platform=node --format=cjs --conditions=react-server \
       --external:@libsql/client \
@@ -81,6 +85,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/deploy/migrate.cjs ./migrate.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/catalog-init.mjs ./catalog-init.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-mvp.cjs ./smoke-mvp.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-gateway.cjs ./smoke-gateway.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-image.cjs ./smoke-image.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/smoke-recharge.cjs ./smoke-recharge.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/deploy/runtime-pool-maintenance.cjs ./runtime-pool-maintenance.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/src/config/db/migrations_sqlite ./migrations_sqlite
