@@ -41,6 +41,7 @@ RUN node_modules/.bin/esbuild deploy/migrate.src.mjs \
 # releases can add missing models/listings without overwriting operator changes.
 RUN node_modules/.bin/esbuild scripts/init-catalog.ts \
       --bundle --platform=node --format=esm --conditions=react-server \
+      --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
       --external:@libsql/client \
       --outfile=deploy/catalog-init.mjs
 
