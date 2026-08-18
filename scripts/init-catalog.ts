@@ -5,6 +5,7 @@
  *   npx tsx scripts/init-catalog.ts
  */
 
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -24,6 +25,10 @@ import type {
   catalogVendor as catalogVendorTable,
 } from '@/config/db/schema';
 import { db } from '@/core/db';
+import {
+  compileSkuRule,
+  SKU_RULE_COMPILER_VERSION,
+} from '@/features/api-catalog/lib/sku-rule';
 import { getUuid } from '@/shared/lib/hash';
 
 type CatalogSchemaTables = {
@@ -102,6 +107,14 @@ const groups = [
     sortOrder: 10,
     status: 'active',
   },
+  {
+    slug: 'codex-discount',
+    name: 'codex特惠',
+    userDescription: 'Codex reverse-channel discount route.',
+    allowCreateKey: true,
+    sortOrder: 20,
+    status: 'active',
+  },
 ];
 
 const models = [
@@ -112,11 +125,19 @@ const models = [
     contextWindow: 128000,
     category: 'llm',
   },
+  {
+    modelId: 'gpt-image-2',
+    displayName: 'gpt-image-2',
+    vendorSlug: 'openai',
+    contextWindow: null,
+    category: 'image',
+  },
 ];
 
 const modelCapabilities = [
   { modelId: 'gpt-4o-mini', capabilitySlug: 'text' },
   { modelId: 'gpt-4o-mini', capabilitySlug: 'vision' },
+  { modelId: 'gpt-image-2', capabilitySlug: 'vision' },
 ];
 
 const listings = [
@@ -128,7 +149,32 @@ const listings = [
     pricingProfileName: '默认售卖价',
     sortOrder: 10,
   },
+  {
+    modelId: 'gpt-image-2',
+    groupSlug: 'official',
+    newapiGroup: 'official',
+    statusSlug: 'available',
+    pricingProfileName: '官方 Token 售卖价',
+    sortOrder: 20,
+  },
+  {
+    modelId: 'gpt-image-2',
+    groupSlug: 'codex-discount',
+    newapiGroup: 'codex特惠',
+    statusSlug: 'available',
+    pricingProfileName: 'Codex 特惠按张价',
+    sortOrder: 10,
+  },
 ];
+
+const gptImageCodexSkuRuleSource =
+  'when resolution is missing => "default"\nwhen resolution == "auto" => "default"\nwhen resolution == "1k" => "default"\nelse => "resolution=${resolution}"';
+const gptImageCodexSkuRule = compileSkuRule(gptImageCodexSkuRuleSource, {
+  allowedFields: ['quality', 'size', 'resolution'],
+});
+const gptImageCodexRuleHash = createHash('sha256')
+  .update(JSON.stringify(gptImageCodexSkuRule))
+  .digest('hex');
 
 const pricingProfiles = [
   {
@@ -136,6 +182,10 @@ const pricingProfiles = [
     name: '默认售卖价',
     pricingBasis: 'token',
     quantityMeter: null,
+    skuRuleSource: null,
+    skuRuleAstJson: null,
+    compilerVersion: null,
+    ruleHash: null,
     rates: [
       {
         meterKey: 'input',
@@ -148,6 +198,78 @@ const pricingProfiles = [
         skuKey: 'default',
         unitSize: 1_000_000,
         priceMicroUsd: 600000,
+      },
+    ],
+  },
+  {
+    modelId: 'gpt-image-2',
+    name: '官方 Token 售卖价',
+    pricingBasis: 'token',
+    quantityMeter: null,
+    skuRuleSource: null,
+    skuRuleAstJson: null,
+    compilerVersion: null,
+    ruleHash: null,
+    rates: [
+      {
+        meterKey: 'input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 5_000_000,
+      },
+      {
+        meterKey: 'cached_input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 5_000_000,
+      },
+      {
+        meterKey: 'image_input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 8_000_000,
+      },
+      {
+        meterKey: 'cached_image_input',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 8_000_000,
+      },
+      {
+        meterKey: 'image_output',
+        skuKey: 'default',
+        unitSize: 1_000_000,
+        priceMicroUsd: 30_000_000,
+      },
+    ],
+  },
+  {
+    modelId: 'gpt-image-2',
+    name: 'Codex 特惠按张价',
+    pricingBasis: 'unit',
+    quantityMeter: 'output_count',
+    skuRuleSource: gptImageCodexSkuRuleSource,
+    skuRuleAstJson: JSON.stringify(gptImageCodexSkuRule),
+    compilerVersion: SKU_RULE_COMPILER_VERSION,
+    ruleHash: gptImageCodexRuleHash,
+    rates: [
+      {
+        meterKey: 'output_count',
+        skuKey: 'default',
+        unitSize: 1,
+        priceMicroUsd: 8_500,
+      },
+      {
+        meterKey: 'output_count',
+        skuKey: 'resolution=2k',
+        unitSize: 1,
+        priceMicroUsd: 14_000,
+      },
+      {
+        meterKey: 'output_count',
+        skuKey: 'resolution=4k',
+        unitSize: 1,
+        priceMicroUsd: 21_000,
       },
     ],
   },
@@ -409,6 +531,10 @@ export async function initCatalog() {
           name: profile.name,
           pricingBasis: profile.pricingBasis,
           quantityMeter: profile.quantityMeter,
+          skuRuleSource: profile.skuRuleSource,
+          skuRuleAstJson: profile.skuRuleAstJson,
+          compilerVersion: profile.compilerVersion,
+          ruleHash: profile.ruleHash,
           reviewedAt: new Date(),
           reviewNote: '初始化脚本写入的已确认售卖定价。',
         }))

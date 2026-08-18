@@ -8,6 +8,7 @@ const FIELD_LIMITS: Record<string, number> = {
   prompt: 1024 * 1024,
   quality: 128,
   size: 128,
+  resolution: 128,
   n: 32,
   stream: 8,
 };
@@ -16,6 +17,7 @@ export type ImageMultipartFields = {
   model: string;
   quality: string | null;
   size: string | null;
+  resolution: string | null;
   n: number | null;
   promptBytes: number;
   stream: boolean;
@@ -186,16 +188,21 @@ export function extractImageMultipartRequest(
   const model = decodeText(modelBytes);
   const hasQuality = values.has('quality');
   const hasSize = values.has('size');
+  const hasResolution = values.has('resolution');
   const hasN = values.has('n');
   const hasStream = values.has('stream');
   const quality = hasQuality ? decodeText(values.get('quality')!) : null;
   const size = hasSize ? decodeText(values.get('size')!) : null;
+  const resolution = hasResolution
+    ? decodeText(values.get('resolution')!)
+    : null;
   const nRaw = hasN ? decodeText(values.get('n')!) : null;
   const streamRaw = hasStream ? decodeText(values.get('stream')!) : null;
   if (
     model === null ||
     (quality === null && hasQuality) ||
     (size === null && hasSize) ||
+    (resolution === null && hasResolution) ||
     (nRaw === null && hasN) ||
     (streamRaw === null && hasStream)
   ) {
@@ -220,6 +227,7 @@ export function extractImageMultipartRequest(
     model,
     quality,
     size,
+    resolution,
     n,
     promptBytes: values.get('prompt')?.byteLength ?? 0,
     stream: streamRaw === 'true',
@@ -233,6 +241,7 @@ export function extractImageMultipartRequest(
       hasServerTool: false,
       quality,
       size,
+      resolution,
     },
   };
 }

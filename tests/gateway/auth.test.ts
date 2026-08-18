@@ -180,6 +180,14 @@ test('鉴权链 429 insufficient_quota：余额为零', async () => {
   assert.equal(result.response.status, 429);
   const body = await result.response.json();
   assert.equal(body.error.type, 'insufficient_quota');
+
+  const taskQuery = await modules.auth.authenticateGatewayRequest(
+    new Headers({ 'x-api-key': 'sk-ap-zero' }),
+    'openai',
+    'preq-auth-zero-task-query',
+    { requireSpendableWallet: false }
+  );
+  assert.equal(taskQuery.ok, true, '余额归零后仍可查询已提交任务');
 });
 
 test('鉴权通过返回 key/wallet，并按 60 秒节流回写 last_used_at', async () => {

@@ -137,6 +137,12 @@ export function startGatewayJobs(): void {
       });
       if (!lock.hasLock()) return;
 
+      await runWorker('image_task_worker', async () => {
+        const { runImageTaskWorkerOnce } = await import('./image-tasks');
+        return runImageTaskWorkerOnce;
+      });
+      if (!lock.hasLock()) return;
+
       await runWorker('usage_worker', async () => {
         const module = await loadGatewayWorker('backfill');
         return module.runUsageWorkerOnce;

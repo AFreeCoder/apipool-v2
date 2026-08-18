@@ -7,6 +7,7 @@ export type GatewayErrorCode =
   | 'insufficient_quota'
   | 'concurrency_limit_exceeded'
   | 'model_not_found'
+  | 'task_not_found'
   | 'unknown_endpoint'
   | 'request_too_large'
   | 'request_timeout'
@@ -23,6 +24,7 @@ const DEFAULT_MESSAGES: Record<GatewayErrorCode, string> = {
   concurrency_limit_exceeded: 'Too many in-flight requests. Retry shortly.',
   model_not_found:
     'The requested model does not exist or is not available for this key.',
+  task_not_found: 'The requested task does not exist.',
   unknown_endpoint: 'Unknown endpoint.',
   request_too_large: 'Request body exceeds the size limit.',
   request_timeout: 'Request body timed out.',
@@ -37,6 +39,7 @@ const OPENAI_TYPE: Partial<Record<GatewayErrorCode, string>> = {
   insufficient_quota: 'insufficient_quota',
   concurrency_limit_exceeded: 'rate_limit_error',
   model_not_found: 'invalid_request_error',
+  task_not_found: 'invalid_request_error',
   unknown_endpoint: 'invalid_request_error',
   request_too_large: 'invalid_request_error',
   request_timeout: 'invalid_request_error',

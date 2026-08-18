@@ -601,9 +601,16 @@ test('getPublicListings applies vendor, group, capability, and status filters', 
   const imageListings = await modules.queries.getPublicListingsUncached({
     category: 'image',
   });
-  assert.deepEqual(
-    imageListings.map((listing: { modelId: string }) => listing.modelId),
-    ['query-image-category']
+  assert.ok(
+    imageListings.some(
+      (listing: { modelId: string }) =>
+        listing.modelId === 'query-image-category'
+    )
+  );
+  assert.ok(
+    imageListings.every(
+      (listing: { category: string }) => listing.category === 'image'
+    )
   );
 });
 
@@ -805,6 +812,7 @@ test('getFilterDimensions returns all active admin-configured dimensions in sort
       'empty-key-group',
       'unmapped-group',
       'missing-remote-group',
+      'codex-discount',
       'read-only-route',
       'capability-only-group',
       'cross-hidden-group',
@@ -850,6 +858,7 @@ test('getGroupsForKeyCreation returns active key-capable groups regardless of li
     'empty-key-group',
     'unmapped-group',
     'missing-remote-group',
+    'codex-discount',
     'capability-only-group',
     'cross-hidden-group',
   ]);

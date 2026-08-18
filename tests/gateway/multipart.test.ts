@@ -26,6 +26,7 @@ test('multipart 任意字段顺序：只提取白名单文本，忽略图片二�
   form.append('n', '2');
   form.append('model', 'gpt-image-2');
   form.append('size', '1024x1024');
+  form.append('resolution', '2k');
   const encoded = await encodedForm(form);
 
   const result = extractImageMultipartRequest(
@@ -38,6 +39,7 @@ test('multipart 任意字段顺序：只提取白名单文本，忽略图片二�
     model: 'gpt-image-2',
     quality: 'high',
     size: '1024x1024',
+    resolution: '2k',
     n: 2,
     promptBytes: new TextEncoder().encode('把背景改成纯白').byteLength,
     stream: false,
@@ -49,7 +51,8 @@ test('multipart 任意字段顺序：只提取白名单文本，忽略图片二�
       new TextEncoder().encode('把背景改成纯白').byteLength +
       '2'.length +
       'gpt-image-2'.length +
-      '1024x1024'.length
+      '1024x1024'.length +
+      '2k'.length
   );
 });
 

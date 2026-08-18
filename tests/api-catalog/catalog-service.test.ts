@@ -654,9 +654,10 @@ test('图片按次定价档案保存受限 DSL，并原子替换旧费率', asyn
       name: '图片按次',
       pricingBasis: 'unit',
       quantityMeter: 'output_count',
-      ratesJson: '{"default":"0.3","quality=low;size=1024x1024":"0.015"}',
+      ratesJson:
+        '{"default":"0.3","quality=low;size=1024x1024":"0.015","resolution=4k":"0.021"}',
       skuRuleSource:
-        'when quality is missing => "default"\nwhen size is missing => "default"\nelse => "quality=${quality};size=${size}"',
+        'when resolution == "4k" => "resolution=${resolution}"\nwhen quality is missing => "default"\nwhen size is missing => "default"\nelse => "quality=${quality};size=${size}"',
       longContextThresholdTokens: null,
       reviewNote: '测试',
     },
@@ -669,6 +670,7 @@ test('图片按次定价档案保存受限 DSL，并原子替换旧费率', asyn
     [
       ['default', 300_000],
       ['quality=low;size=1024x1024', 15_000],
+      ['resolution=4k', 21_000],
     ]
   );
 

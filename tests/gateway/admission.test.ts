@@ -482,3 +482,39 @@ test('音视频 SKU 准入可读取 format、voice 与 resolution 事实', () =>
   assert.equal(video.ok, true);
   assert.equal(video.skuKey, 'resolution=1080p;format=mp4');
 });
+
+test('图片 SKU 准入可按 resolution 选择按张价格', () => {
+  const route = {
+    pricingBasis: 'unit',
+    rates: {},
+    admissionLongContextThreshold: null,
+    allowLongContext: false,
+    pricingSpec: {
+      version: 1,
+      basis: 'unit',
+      quantityMeter: 'output_count',
+      rates: [
+        {
+          meterKey: 'output_count',
+          skuKey: 'resolution=4k',
+          unitSize: 1,
+          priceMicroUsd: 21_000,
+        },
+      ],
+      skuRule: {
+        version: 1,
+        rules: [],
+        fallback: {
+          type: 'sku',
+          template: 'resolution=${resolution}',
+        },
+      },
+    },
+  };
+  const decision = modules.admission.evaluateForwardAdmission(
+    jsonBody({ model: 'gpt-image-2', resolution: '4K' }),
+    route
+  );
+  assert.equal(decision.ok, true);
+  assert.equal(decision.skuKey, 'resolution=4k');
+});

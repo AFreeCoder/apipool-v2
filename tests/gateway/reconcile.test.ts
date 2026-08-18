@@ -466,6 +466,42 @@ test('open 命中日志只做对照，门户请求仍按缺 usage 免单', async
   assert.equal(charges.length, 0);
 });
 
+test('异步图片任务 open 命中提交日志时保持在途，不被对账 worker 提前免单', async () => {
+  const ledger = await seedLedger('open-image-task');
+  await modules.db().insert(modules.schema.portalApiKey).values({
+    id: 'key-open-image-task',
+    userId: ledger.userId,
+    groupId: 'reconcile-group',
+    keyHash: 'hash-open-image-task',
+    keyPrefix: 'sk-ap-…task',
+    name: 'async image task key',
+  });
+  await modules
+    .db()
+    .insert(modules.schema.gatewayTask)
+    .values({
+      id: 'imgtask-reconcile-open',
+      requestLedgerId: ledger.id,
+      userId: ledger.userId,
+      portalKeyId: 'key-open-image-task',
+      status: 'processing',
+      newapiTaskId: 'task-reconcile-open',
+      nextPollAt: new Date(BASE_NOW + 5000),
+    });
+  const result = await run([logFor(ledger, { quota: 1234 })]);
+  assert.equal(result.settledByLog, 0);
+  const row = await ledgerRow(ledger.id);
+  assert.equal(row.status, 'open');
+  assert.equal(row.newapiQuota, 1234);
+  assert.equal(row.reconcileStatus, 'pending');
+  const charges = await modules
+    .db()
+    .select()
+    .from(modules.schema.walletLedger)
+    .where(eq(modules.schema.walletLedger.requestLedgerId, ledger.id));
+  assert.equal(charges.length, 0);
+});
+
 test('缺 usage 免单与响应结算竞态时保留 settled，并按日志完成对账', async () => {
   const ledger = await seedLedger('waiver-settlement-race');
   const result = await run([logFor(ledger)], {

@@ -26,6 +26,7 @@ export interface AdmissionInput {
   priceVersionId: string;
   endpoint: GatewayEndpointKey;
   isStream: boolean;
+  skuKey?: string | null;
 }
 
 const ESTIMATED_CHARS_PER_TOKEN = 2.5;
@@ -148,14 +149,15 @@ export async function admitRequest(
     INSERT INTO request_ledger (
       id, user_id, portal_key_id, portal_group_id, portal_model_id,
       newapi_group, newapi_model_id, credential_id, route_version,
-      price_version_id, endpoint, is_stream, status, created_at, updated_at
+      price_version_id, endpoint, is_stream, sku_key, status, created_at,
+      updated_at
     )
     SELECT
       ${input.id}, ${input.userId}, ${input.portalKeyId},
       ${input.portalGroupId}, ${input.portalModelId}, ${input.newapiGroup},
       ${input.newapiModelId}, ${input.credentialId}, ${input.routeVersion},
       ${input.priceVersionId}, ${input.endpoint}, ${input.isStream ? 1 : 0},
-      'open', ${now}, ${now}
+      ${input.skuKey ?? null}, 'open', ${now}, ${now}
     WHERE (
       SELECT COUNT(*) FROM request_ledger
       WHERE user_id = ${input.userId}

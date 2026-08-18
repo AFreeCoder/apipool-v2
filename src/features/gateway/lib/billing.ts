@@ -20,6 +20,7 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
     'total_tokens',
     'prompt_tokens_details',
     'completion_tokens_details',
+    'output_tokens_details',
     'cache_creation_input_tokens',
     'server_tool_use',
   ]),
@@ -50,6 +51,7 @@ const MAPPED_KEYS: Record<string, Set<string>> = {
     'completion_tokens',
     'prompt_tokens_details',
     'completion_tokens_details',
+    'output_tokens_details',
   ]),
   images_edits: new Set([
     'input_tokens',

@@ -34,10 +34,14 @@ async function setupDb() {
   const schema = await import('@/config/db/schema');
   const { db } = await import('@/core/db');
   const { initCatalog } = await import('../../scripts/init-catalog');
+  const publishReadiness = await import(
+    '@/features/api-catalog/server/publish-readiness'
+  );
 
   modules = {
     db,
     initCatalog,
+    publishReadiness,
     schema,
   };
 }
@@ -255,6 +259,55 @@ test('initCatalog seeds the required first catalog data', async () => {
   assert.equal(listing?.statusId, available.id);
   assert.equal(listing?.smokeTested, true);
   assert.equal(listing?.sortOrder, 10);
+});
+
+test('initCatalog 为 gpt-image-2 初始化分组隔离的 token 与按张定价', async () => {
+  await modules.initCatalog();
+
+  const { catalogGroup } = modules.schema;
+  const official = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'official'
+  );
+  const codex = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'codex-discount'
+  );
+  assert.ok(official);
+  assert.ok(codex);
+
+  const officialReadiness =
+    await modules.publishReadiness.assessPublishReadiness(
+      official.id,
+      'gpt-image-2'
+    );
+  assert.equal(officialReadiness.ready, true);
+  if (!officialReadiness.ready) return;
+  assert.equal(officialReadiness.snapshot.newapiGroup, 'official');
+  assert.equal(officialReadiness.snapshot.pricingBasis, 'token');
+  assert.deepEqual(JSON.parse(officialReadiness.snapshot.ratesJson), {
+    cached_image_input: 8_000_000,
+    cached_input: 5_000_000,
+    image_input: 8_000_000,
+    image_output: 30_000_000,
+    input: 5_000_000,
+  });
+
+  const codexReadiness = await modules.publishReadiness.assessPublishReadiness(
+    codex.id,
+    'gpt-image-2'
+  );
+  assert.equal(codexReadiness.ready, true);
+  if (!codexReadiness.ready) return;
+  assert.equal(codexReadiness.snapshot.newapiGroup, 'codex特惠');
+  assert.equal(codexReadiness.snapshot.pricingBasis, 'unit');
+  assert.deepEqual(JSON.parse(codexReadiness.snapshot.tiersJson), {
+    default: 8_500,
+    'resolution=2k': 14_000,
+    'resolution=4k': 21_000,
+  });
 });
 
 test('initCatalog 不会为已有售卖项推断模型级映射', async () => {

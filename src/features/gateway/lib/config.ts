@@ -55,6 +55,12 @@ export function gatewayConfig() {
     runtimePoolTargetUsd,
     runtimePoolLowWatermarkUsd,
     jobsEnabled: process.env.GATEWAY_JOBS_ENABLED !== 'false',
+    asyncImageModels: new Set(
+      (process.env.GATEWAY_ASYNC_IMAGE_MODELS ?? 'gpt-image-2')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    ),
   };
 }
 

@@ -36,7 +36,9 @@ export async function startMockNewApi() {
     const requestBody = requestBuffer.toString('utf8');
     if (scenario === 'normal') {
       const streaming = /"stream"\s*:\s*true/.test(requestBody);
-      if (req.url?.endsWith('/v1/messages')) {
+      if (req.url === '/v1/images/async/generations') {
+        scenario = 'image-async-submitted';
+      } else if (req.url?.endsWith('/v1/messages')) {
         scenario = streaming ? 'messages' : 'messages-json';
       } else if (req.url?.endsWith('/v1/chat/completions') && streaming) {
         scenario = 'chat-stream';
@@ -50,6 +52,19 @@ export async function startMockNewApi() {
     }
     res.setHeader('x-oneapi-request-id', requestId);
     res.setHeader('server', 'mock-newapi-internal');
+
+    if (scenario === 'image-async-submitted') {
+      res.writeHead(202, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: `task-${requestId}`,
+          object: 'task',
+          status: 'submitted',
+          created: Math.floor(Date.now() / 1000),
+        })
+      );
+      return;
+    }
 
     if (scenario === 'close') {
       req.socket.destroy();
@@ -238,6 +253,7 @@ export async function setupGatewayIntegrationDb(baseUrl: string) {
   const crypto = await import('@/features/newapi-bridge/server/crypto');
   const handler = await import('@/features/gateway/server/handler');
   const settlement = await import('@/features/gateway/server/settlement');
+  const imageTasks = await import('@/features/gateway/server/image-tasks');
   const wallet = await import('@/features/wallet/server/ledger');
   const credentials = await import('@/features/gateway/server/credentials');
   const routing = await import('@/features/gateway/server/routing');
@@ -247,6 +263,7 @@ export async function setupGatewayIntegrationDb(baseUrl: string) {
     crypto,
     db,
     handler,
+    imageTasks,
     routing,
     schema,
     settlement,
@@ -294,6 +311,7 @@ export async function seedGatewayFixture(
     modelId?: string;
     email?: string;
     billingScheme?: 'token' | 'per_call';
+    category?: 'llm' | 'image';
     tiers?: Record<string, number>;
     price?: Partial<{
       input: number;
@@ -301,6 +319,8 @@ export async function seedGatewayFixture(
       write5m: number;
       write1h: number;
       output: number;
+      imageInput: number;
+      imageOutput: number;
     }>;
   } = {}
 ) {
@@ -396,7 +416,8 @@ export async function seedGatewayFixture(
       modelId,
       displayName: modelId,
       vendorId: 'integration-vendor',
-      category: billingScheme === 'per_call' ? 'image' : 'llm',
+      category:
+        options.category ?? (billingScheme === 'per_call' ? 'image' : 'llm'),
     });
   await modules
     .db()
@@ -445,6 +466,18 @@ export async function seedGatewayFixture(
       meterKey: 'output',
       priceMicroUsd: options.price?.output ?? 2_000_000,
     },
+    ...(options.category === 'image'
+      ? [
+          {
+            meterKey: 'image_input',
+            priceMicroUsd: options.price?.imageInput ?? 3_000_000,
+          },
+          {
+            meterKey: 'image_output',
+            priceMicroUsd: options.price?.imageOutput ?? 4_000_000,
+          },
+        ]
+      : []),
   ];
   await modules
     .db()
@@ -494,8 +527,12 @@ export async function seedGatewayFixture(
       baseCacheWrite5mMicroUsd: options.price?.write5m ?? 1_250_000,
       baseCacheWrite1hMicroUsd: options.price?.write1h ?? 2_000_000,
       baseOutputMicroUsd: options.price?.output ?? 2_000_000,
+      baseImageInputMicroUsd: options.price?.imageInput,
+      baseImageOutputMicroUsd: options.price?.imageOutput,
       sourceSupportedEndpointTypes: JSON.stringify(
-        billingScheme === 'per_call' ? ['images'] : ['messages']
+        options.category === 'image' || billingScheme === 'per_call'
+          ? ['images']
+          : ['messages']
       ),
       billingCapabilitiesJson: JSON.stringify(
         billingScheme === 'per_call'

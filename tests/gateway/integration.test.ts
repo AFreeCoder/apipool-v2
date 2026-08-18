@@ -113,6 +113,149 @@ function seedImageFixture(suffix: string) {
   });
 }
 
+async function seedCodexListingForSameImageModel(
+  official: Awaited<ReturnType<typeof seedGatewayFixture>>
+) {
+  const groupId = 'integration-group-gpt-image-2-codex';
+  const keyId = 'integration-key-gpt-image-2-codex';
+  const plainKey = 'sk-ap-integration-gpt-image-2-codex';
+  const profileId = 'integration-pricing-profile-gpt-image-2-codex';
+  const newapiGroup = 'codex特惠';
+  const runtimeKey = 'sk-upstream-gpt-image-2-codex';
+  const [model] = await modules
+    .db()
+    .select()
+    .from(modules.schema.catalogModel)
+    .where(eq(modules.schema.catalogModel.modelId, official.modelId))
+    .limit(1);
+  assert.ok(model);
+  await modules.db().insert(modules.schema.catalogGroup).values({
+    id: groupId,
+    slug: groupId,
+    name: groupId,
+    newapiGroup,
+    newapiGroupRatioBps: 10_000,
+    pricingSyncStatus: 'synced',
+  });
+  await modules
+    .db()
+    .insert(modules.schema.portalApiKey)
+    .values({
+      id: keyId,
+      userId: official.userId,
+      groupId,
+      keyHash: modules.auth.hashPortalKey(plainKey),
+      keyPrefix: `sk-ap-…${plainKey.slice(-4)}`,
+      name: 'Codex 特惠 Key',
+    });
+  const skuRule = {
+    version: 1,
+    rules: [
+      {
+        conditions: [{ field: 'resolution', operator: 'missing' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'resolution', operator: 'eq', value: 'auto' }],
+        output: { type: 'sku', template: 'default' },
+      },
+      {
+        conditions: [{ field: 'resolution', operator: 'eq', value: '1k' }],
+        output: { type: 'sku', template: 'default' },
+      },
+    ],
+    fallback: {
+      type: 'sku',
+      template: 'resolution=${resolution}',
+    },
+  };
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingProfile)
+    .values({
+      id: profileId,
+      modelId: model.id,
+      name: 'Codex 特惠按次价',
+      pricingBasis: 'unit',
+      quantityMeter: 'output_count',
+      skuRuleSource:
+        'when resolution is missing => "default"\nwhen resolution == "auto" => "default"\nwhen resolution == "1k" => "default"\nelse => "resolution=${resolution}"',
+      skuRuleAstJson: JSON.stringify(skuRule),
+      compilerVersion: 1,
+      reviewedAt: new Date('2026-08-18T00:00:00Z'),
+    });
+  await modules
+    .db()
+    .insert(modules.schema.catalogModelPricingRate)
+    .values([
+      {
+        id: 'integration-pricing-rate-gpt-image-2-codex-default',
+        profileId,
+        meterKey: 'output_count',
+        skuKey: 'default',
+        unitSize: 1,
+        priceMicroUsd: 8_500,
+      },
+      {
+        id: 'integration-pricing-rate-gpt-image-2-codex-2k',
+        profileId,
+        meterKey: 'output_count',
+        skuKey: 'resolution=2k',
+        unitSize: 1,
+        priceMicroUsd: 14_000,
+      },
+      {
+        id: 'integration-pricing-rate-gpt-image-2-codex-4k',
+        profileId,
+        meterKey: 'output_count',
+        skuKey: 'resolution=4k',
+        unitSize: 1,
+        priceMicroUsd: 21_000,
+      },
+    ]);
+  await modules.db().insert(modules.schema.catalogModelListing).values({
+    id: 'integration-listing-gpt-image-2-codex',
+    modelId: model.id,
+    groupId,
+    newapiGroup,
+    pricingProfileId: profileId,
+    statusId: 'integration-callable',
+    inputMicroUsd: 0,
+    outputMicroUsd: 0,
+    priceDriftStatus: 'ok',
+  });
+  await modules
+    .db()
+    .insert(modules.schema.runtimeCredential)
+    .values({
+      id: 'integration-credential-gpt-image-2-codex',
+      portalUserId: official.userId,
+      newapiGroup,
+      newapiUserId: 'integration-remote-user-gpt-image-2',
+      remoteName: modules.credentials.buildRuntimeCredentialName(
+        official.userId,
+        newapiGroup
+      ),
+      newapiTokenId: 'integration-token-gpt-image-2-codex',
+      tokenEnc: modules.crypto.encryptCredential(runtimeKey),
+      keyMasked: `sk-…${runtimeKey.slice(-4)}`,
+      status: 'active',
+    });
+  const route = await modules.routing.resolveActiveRoute(
+    groupId,
+    official.modelId
+  );
+  assert.ok(route);
+  return {
+    ...official,
+    groupId,
+    keyId,
+    plainKey,
+    runtimeKey,
+    priceVersionId: route.priceVersionId,
+  };
+}
+
 test.before(async () => {
   mock = await startMockNewApi();
   const setup = await setupGatewayIntegrationDb(mock.baseUrl);
@@ -1083,4 +1226,263 @@ test('37 images 响应无法解析张数：进入失败复核路径且不扣费'
     .from(modules.schema.walletLedger)
     .where(eq(modules.schema.walletLedger.requestLedgerId, ledger.id));
   assert.equal(charges.length, 0);
+});
+
+test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图片数异步结算', async () => {
+  const official = await seedGatewayFixture(modules, 'gpt-image-2-official', {
+    modelId: 'gpt-image-2',
+    newapiGroup: 'official',
+    billingScheme: 'token',
+    category: 'image',
+    price: {
+      input: 1_000_000,
+      output: 2_000_000,
+      imageInput: 3_000_000,
+      imageOutput: 4_000_000,
+    },
+  });
+  const codex = await seedCodexListingForSameImageModel(official);
+
+  const officialSubmit = await invoke(
+    official,
+    'normal',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: official.modelId,
+      prompt: 'a white cat',
+      quality: 'high',
+      size: '1024x1024',
+    })
+  );
+  assert.equal(officialSubmit.status, 202);
+  const officialTask = JSON.parse(await officialSubmit.text());
+  assert.equal(officialTask.status, 'submitted');
+  assert.equal(mock.requests.at(-1)?.url, '/v1/images/async/generations');
+
+  await modules.imageTasks.runImageTaskWorkerOnce({
+    holderId: 'official-meter-pending',
+    fetchTask: async (task: any) => ({
+      ok: true,
+      snapshot: {
+        id: task.newapiTaskId,
+        status: 'completed',
+        result_expires_at: Math.floor(Date.now() / 1000) + 86_400,
+        result: {
+          images: [
+            {
+              url: ['https://r2.test/official.png?signature=one'],
+              expires_at: Math.floor(Date.now() / 1000) + 3600,
+            },
+          ],
+        },
+      },
+    }),
+  });
+  let [officialTaskRow] = await modules
+    .db()
+    .select()
+    .from(modules.schema.gatewayTask)
+    .where(eq(modules.schema.gatewayTask.id, officialTask.id));
+  assert.equal(officialTaskRow.status, 'meter_pending');
+  assert.equal((await latestLedger(official.userId)).status, 'open');
+
+  await modules
+    .db()
+    .update(modules.schema.gatewayTask)
+    .set({ nextPollAt: new Date(0) })
+    .where(eq(modules.schema.gatewayTask.id, officialTask.id));
+  await modules.imageTasks.runImageTaskWorkerOnce({
+    holderId: 'official-complete',
+    fetchTask: async (task: any) => ({
+      ok: true,
+      snapshot: {
+        id: task.newapiTaskId,
+        status: 'completed',
+        result_expires_at: Math.floor(Date.now() / 1000) + 86_400,
+        result: {
+          images: [
+            {
+              url: ['https://r2.test/official.png?signature=two'],
+              expires_at: Math.floor(Date.now() / 1000) + 3600,
+            },
+          ],
+        },
+        usage: {
+          input_tokens: 1500,
+          input_tokens_details: {
+            cached_tokens: 200,
+            text_tokens: 1000,
+            image_tokens: 500,
+          },
+          output_tokens: 2000,
+          output_tokens_details: { image_tokens: 2000, text_tokens: 0 },
+          total_tokens: 3500,
+        },
+      },
+    }),
+  });
+  [officialTaskRow] = await modules
+    .db()
+    .select()
+    .from(modules.schema.gatewayTask)
+    .where(eq(modules.schema.gatewayTask.id, officialTask.id));
+  assert.equal(officialTaskRow.status, 'completed');
+  const [officialLedger] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(
+      eq(modules.schema.requestLedger.id, officialTaskRow.requestLedgerId)
+    );
+  assert.equal(officialLedger.pricingBasis, 'token');
+  assert.equal(officialLedger.uncachedInputTokens, 1000);
+  assert.equal(officialLedger.imageInputTokens, 500);
+  assert.equal(officialLedger.imageOutputTokens, 2000);
+  assert.equal(officialLedger.cachedReadTokens, 0, '不拆分的缓存量不折价');
+  assert.equal(officialLedger.status, 'settled');
+
+  const codexSubmit = await invoke(
+    codex,
+    'normal',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: codex.modelId,
+      prompt: 'two cats',
+      quality: 'high',
+      size: '1024x1536',
+      resolution: '2k',
+      n: 2,
+    })
+  );
+  assert.equal(codexSubmit.status, 202);
+  const codexTask = JSON.parse(await codexSubmit.text());
+  await modules.imageTasks.runImageTaskWorkerOnce({
+    holderId: 'codex-complete',
+    fetchTask: async (task: any) => ({
+      ok: true,
+      snapshot: {
+        id: task.newapiTaskId,
+        status: 'completed',
+        result_expires_at: Math.floor(Date.now() / 1000) + 86_400,
+        result: {
+          images: [
+            {
+              url: [
+                'https://r2.test/codex-1.png?signature=one',
+                'https://r2.test/codex-2.png?signature=one',
+              ],
+              expires_at: Math.floor(Date.now() / 1000) + 3600,
+            },
+          ],
+        },
+      },
+    }),
+  });
+  const [codexTaskRow] = await modules
+    .db()
+    .select()
+    .from(modules.schema.gatewayTask)
+    .where(eq(modules.schema.gatewayTask.id, codexTask.id));
+  const [codexLedger] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, codexTaskRow.requestLedgerId));
+  assert.equal(codexTaskRow.status, 'completed');
+  assert.equal(codexLedger.newapiGroup, 'codex特惠');
+  assert.equal(codexLedger.pricingBasis, 'unit');
+  assert.equal(codexLedger.skuKey, 'resolution=2k');
+  assert.equal(codexLedger.unitCount, 2);
+  assert.equal(codexLedger.chargedMicroUsd, 28_000);
+
+  const query = await modules.handler.handleGatewayRequest(
+    new Request(`http://portal.test/v1/tasks/${codexTask.id}`, {
+      headers: { authorization: `Bearer ${codex.plainKey}` },
+    }),
+    ['tasks', codexTask.id]
+  );
+  assert.equal(query.status, 200);
+  const queried = await query.json();
+  assert.equal(queried.status, 'completed');
+  assert.equal(queried.data.length, 2);
+  assert.equal(queried.usage, undefined);
+
+  const crossKey = await modules.handler.handleGatewayRequest(
+    new Request(`http://portal.test/v1/tasks/${codexTask.id}`, {
+      headers: { authorization: `Bearer ${official.plainKey}` },
+    }),
+    ['tasks', codexTask.id]
+  );
+  assert.equal(crossKey.status, 404, '同一用户不同 API Key 也不能串读任务');
+  const charges = await modules
+    .db()
+    .select()
+    .from(modules.schema.walletLedger)
+    .where(eq(modules.schema.walletLedger.requestLedgerId, codexLedger.id));
+  assert.equal(charges.length, 1);
+
+  const editForm = new FormData();
+  editForm.append('model', codex.modelId);
+  editForm.append('prompt', 'turn the cat blue');
+  editForm.append('quality', 'high');
+  editForm.append('size', '1024x1536');
+  editForm.append('resolution', '4k');
+  editForm.append(
+    'image',
+    new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], {
+      type: 'image/png',
+    }),
+    'input.png'
+  );
+  const editSubmit = await modules.handler.handleGatewayRequest(
+    new Request('http://portal.test/v1/images/edits', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${codex.plainKey}` },
+      body: editForm,
+    }),
+    ['images', 'edits']
+  );
+  assert.equal(editSubmit.status, 202);
+  const editTask = await editSubmit.json();
+  assert.equal(mock.requests.at(-1)?.url, '/v1/images/async/generations');
+  assert.match(
+    String(mock.requests.at(-1)?.headers['content-type']),
+    /^multipart\/form-data; boundary=/
+  );
+  await modules.imageTasks.runImageTaskWorkerOnce({
+    holderId: 'codex-edit-complete',
+    fetchTask: async (task: any) => ({
+      ok: true,
+      snapshot: {
+        id: task.newapiTaskId,
+        status: 'completed',
+        result_expires_at: Math.floor(Date.now() / 1000) + 86_400,
+        result: {
+          images: [
+            {
+              url: ['https://r2.test/codex-edit.png?signature=one'],
+              expires_at: Math.floor(Date.now() / 1000) + 3600,
+            },
+          ],
+        },
+      },
+    }),
+  });
+  const [editTaskRow] = await modules
+    .db()
+    .select()
+    .from(modules.schema.gatewayTask)
+    .where(eq(modules.schema.gatewayTask.id, editTask.id));
+  const [editLedger] = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.id, editTaskRow.requestLedgerId));
+  assert.equal(editTaskRow.status, 'completed');
+  assert.equal(editLedger.endpoint, 'images_edits');
+  assert.equal(editLedger.skuKey, 'resolution=4k');
+  assert.equal(editLedger.unitCount, 1);
+  assert.equal(editLedger.chargedMicroUsd, 21_000);
 });

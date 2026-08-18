@@ -71,7 +71,7 @@ const CATEGORY_BASIS: Record<string, readonly PricingBasis[]> = {
 };
 
 const SKU_FACTS: Record<string, readonly string[]> = {
-  image: ['quality', 'size'],
+  image: ['quality', 'size', 'resolution'],
   video: ['resolution', 'format'],
   audio: ['format', 'voice'],
 };

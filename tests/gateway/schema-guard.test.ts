@@ -223,3 +223,47 @@ test('迁移 0013 将价格版本 map 化、等价迁移旧价并补齐账本 me
   assert.equal(foreignKeys.rows.length, 0);
   client.close();
 });
+
+test('迁移 0019 增加异步图片任务、所有权与调度索引', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'gateway-task-schema-guard.db');
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true });
+  await rm(dbPath, { force: true });
+  const client = createClient({ url: `file:${dbPath}` });
+  const dir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  const files = (await readdir(dir))
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    await client.executeMultiple(await readFile(join(dir, file), 'utf8'));
+  }
+  const columns = (
+    await client.execute(`PRAGMA table_info(gateway_task)`)
+  ).rows.map((row: any) => String(row.name));
+  for (const column of [
+    'request_ledger_id',
+    'user_id',
+    'portal_key_id',
+    'newapi_task_id',
+    'next_poll_at',
+    'lease_expires_at',
+    'terminal_evidence_json',
+    'result_cache_json',
+    'result_url_expires_at',
+  ]) {
+    assert.ok(columns.includes(column), `gateway_task 含 ${column}`);
+  }
+  const indexes = (
+    await client.execute(`PRAGMA index_list(gateway_task)`)
+  ).rows.map((row: any) => String(row.name));
+  for (const index of [
+    'uniq_gateway_task_request',
+    'uniq_gateway_task_newapi_task',
+    'idx_gateway_task_due',
+    'idx_gateway_task_owner',
+  ]) {
+    assert.ok(indexes.includes(index), `gateway_task 含索引 ${index}`);
+  }
+  const integrity = await client.execute(`PRAGMA integrity_check`);
+  assert.equal(integrity.rows[0].integrity_check, 'ok');
+  client.close();
+});

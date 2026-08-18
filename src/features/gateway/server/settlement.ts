@@ -32,6 +32,10 @@ export interface SettlementUsage {
 
 export type SettleResult = 'settled' | 'already_finalized' | 'not_found';
 
+export interface SettlementOptions {
+  onSettled?: (tx: any) => Promise<void>;
+}
+
 class SettleConflict extends Error {}
 
 const LEDGER_METER_COLUMNS = {
@@ -83,7 +87,8 @@ function serializeRawUsage(rawUsage: unknown): string {
 
 export async function settleByLedgerId(
   ledgerId: string,
-  usage: SettlementUsage
+  usage: SettlementUsage,
+  options: SettlementOptions = {}
 ): Promise<SettleResult> {
   const [ledger] = await db()
     .select()
@@ -91,12 +96,13 @@ export async function settleByLedgerId(
     .where(eq(requestLedger.id, ledgerId))
     .limit(1);
   if (!ledger) return 'not_found';
-  return settleRow(ledger, usage);
+  return settleRow(ledger, usage, options);
 }
 
 export async function settleByNewapiRequestId(
   newapiRequestId: string,
-  usage: SettlementUsage
+  usage: SettlementUsage,
+  options: SettlementOptions = {}
 ): Promise<SettleResult> {
   const [ledger] = await db()
     .select()
@@ -104,12 +110,13 @@ export async function settleByNewapiRequestId(
     .where(eq(requestLedger.newapiRequestId, newapiRequestId))
     .limit(1);
   if (!ledger) return 'not_found';
-  return settleRow(ledger, usage);
+  return settleRow(ledger, usage, options);
 }
 
 async function settleRow(
   ledger: any,
-  usage: SettlementUsage
+  usage: SettlementUsage,
+  options: SettlementOptions
 ): Promise<SettleResult> {
   if (ledger.status === 'settled' || ledger.status === 'failed_unbilled') {
     return 'already_finalized';
@@ -210,6 +217,7 @@ async function settleRow(
             sql`${walletAccount.balanceMicroUsd} < ${-freezeThreshold}`
           )
         );
+      await options.onSettled?.(tx);
       return 'settled' as const;
     });
   } catch (error) {
