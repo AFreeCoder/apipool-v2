@@ -6,7 +6,7 @@ description: 几分钟内创建 Key、充值并发出第一个 API 调用。
 ## Base URL
 
 ```text
-https://api2.apipool.dev
+https://app.apipool.dev
 ```
 
 一个协议中立的 endpoint、一个 Key 调用所有模型。具体请求路径由你选择的 SDK 或
@@ -39,7 +39,7 @@ Authorization: Bearer $APIPOOL_API_KEY
 ## curl
 
 ```bash
-APIPOOL_ENDPOINT="https://api2.apipool.dev"
+APIPOOL_ENDPOINT="https://app.apipool.dev"
 
 curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
@@ -52,7 +52,7 @@ curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
 ```ts
 import OpenAI from 'openai';
 
-const APIPOOL_ENDPOINT = 'https://api2.apipool.dev';
+const APIPOOL_ENDPOINT = 'https://app.apipool.dev';
 
 const client = new OpenAI({
   baseURL: `${APIPOOL_ENDPOINT}/v1`,
@@ -73,7 +73,7 @@ console.log(completion.choices[0].message.content);
 import os
 from openai import OpenAI
 
-APIPOOL_ENDPOINT = "https://api2.apipool.dev"
+APIPOOL_ENDPOINT = "https://app.apipool.dev"
 
 client = OpenAI(
     base_url=f"{APIPOOL_ENDPOINT}/v1",
@@ -91,7 +91,7 @@ print(completion.choices[0].message.content)
 ## 原生 HTTP（fetch）
 
 ```ts
-const APIPOOL_ENDPOINT = 'https://api2.apipool.dev';
+const APIPOOL_ENDPOINT = 'https://app.apipool.dev';
 
 const response = await fetch(`${APIPOOL_ENDPOINT}/v1/chat/completions`, {
   method: 'POST',
@@ -113,7 +113,7 @@ console.log(await response.json());
 Claude 系列模型也可以用 Anthropic 原生 Messages API 调用——同一 Base URL、同一 Key：
 
 ```bash
-APIPOOL_ENDPOINT="https://api2.apipool.dev"
+APIPOOL_ENDPOINT="https://app.apipool.dev"
 
 curl "$APIPOOL_ENDPOINT/v1/messages" \
   -H "x-api-key: $APIPOOL_API_KEY" \
@@ -126,7 +126,7 @@ curl "$APIPOOL_ENDPOINT/v1/messages" \
   }'
 ```
 
-Anthropic 官方 SDK 将 `baseURL` 设为 `https://api2.apipool.dev`、`apiKey` 设为你的
+Anthropic 官方 SDK 将 `baseURL` 设为 `https://app.apipool.dev`、`apiKey` 设为你的
 APIPool Key 即可使用。
 
 ## Embeddings 与 Images

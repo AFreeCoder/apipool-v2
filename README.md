@@ -97,8 +97,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/setup-smoke-users.sh --apply'
 ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 ```
 
-The temporary `https://api2.apipool.dev` endpoint forwards all `/v1*` paths
-directly to New API and therefore uses New API native keys, not portal keys.
-Portal gateway acceptance runs against the internal gateway until
-`api.apipool.dev` is reclaimed as the formal portal API. During the legacy drain
-period, `apipool.dev` and `api.apipool.dev` stay on the old service.
+The public portal API endpoint is `https://app.apipool.dev`; protocol-specific
+clients append paths such as `/v1`. The separate `https://api2.apipool.dev`
+endpoint forwards `/v1*` directly to New API and therefore accepts New API
+native keys, not portal keys. Portal-to-New API traffic stays on the internal
+`NEWAPI_BASE_URL`. During the legacy drain period, `apipool.dev` and
+`api.apipool.dev` stay on the old service.

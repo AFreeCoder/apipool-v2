@@ -9,7 +9,8 @@
 - 发布分支：`main`
 - 生产环境：腾讯云 VPS，部署目录 `/opt/apipool-v2`
 - 生产门户：`https://app.apipool.dev`
-- 生产 API Endpoint：`https://api2.apipool.dev`
+- 生产门户 API Endpoint：`https://app.apipool.dev`
+- New API 原生数据面：`https://api2.apipool.dev`
 - New API 管理面：`https://newapi.apipool.dev`，仅运营访问
 - 远端 SSH：使用本机 SSH config 中的 `apipool_vps` 别名
 
@@ -75,13 +76,14 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
 - 所有服务的 Caddy 配置写入器必须共用 `/run/apipool-caddy.lock`。首次从旧版 v2
   三站点单体根配置升级时脚本会备份根文件并迁移到共享入口；若根文件不是可识别的旧版
   v2 配置且尚未使用共享 import，脚本退出 78，不覆盖未知配置。
-- `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`，并按实际 TCP 对端只接受
+- `app.apipool.dev` 始终指向门户 `127.0.0.1:3000`，同时承载站点与门户 `/v1*`
+  API，并按实际 TCP 对端只接受
   `deploy/cloudflare-ips.txt` 中的 Cloudflare 官方代理网段，其他来源返回 403。
-- `api2.apipool.dev` 是 DNS-only 临时 New API 数据面，所有 `/v1*` 路径
+- `api2.apipool.dev` 是 DNS-only New API 原生数据面，所有 `/v1*` 路径
   均直接代理到 `127.0.0.1:3001`，避开 Cloudflare 超时和门户网关
   端点白名单；非 `/v1*` 路径固定返回 404，不暴露 New API 管理面。
-- 临时直连期间必须保持 `APIPOOL_CHECKOUT_ENABLED=false`，不得执行
-  `go-live open-checkout`；该公网数据面不经过门户钱包。
+- `api2` 使用 New API 原生 Key，与门户 Key、门户钱包和 checkout 相互独立；
+  它不是门户公开 Endpoint。
 - `newapi.apipool.dev/v1*` 固定返回 404，禁止绕过门户鉴权和钱包计费直连
   New API。
 
@@ -323,6 +325,7 @@ ssh apipool_vps 'df -h /opt/apipool-v2 && free -h && docker system df'
 
 ```bash
 curl -fsS https://app.apipool.dev/ >/dev/null
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://app.apipool.dev/v1/models)" = "401"
 
 # newapi 运营面：
 #   - 若配了 Basic Auth / IP 白名单：无凭据应 401/403
@@ -333,13 +336,15 @@ curl -sS -o /dev/null -w 'newapi /api/status -> %{http_code}\n' https://newapi.a
 # api2 只放行 /v1*：管理接口路径必须 404
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/api/status)" = "404"
 
-APIPOOL_API_ENDPOINT=https://api2.apipool.dev
-test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$APIPOOL_API_ENDPOINT/v1/models")" = "401"
+NEWAPI_NATIVE_ENDPOINT=https://api2.apipool.dev
+test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$NEWAPI_NATIVE_ENDPOINT/v1/models")" = "401"
 ```
 
-`https://api2.apipool.dev` 是临时 New API 直连 endpoint；无 API key 访问
+`https://app.apipool.dev` 是门户公开 API Endpoint；无门户 Key 访问
+`/v1/models` 应返回门户认证错误。`https://api2.apipool.dev` 是 New API 原生
+直连 endpoint；无 API key 访问
 OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性使用临时用户的
-New API 原生 Key 做外部 smoke；`deploy/live-smoke.sh --gateway` 只验证门户内部网关。
+New API 原生 Key 做外部 smoke；`deploy/live-smoke.sh --gateway` 验证门户内部网关。
 `api.apipool.dev` 在老站排空期继续服务老用户，
 cutover 后再回收给 v2。
 
@@ -354,6 +359,7 @@ cutover 后再回收给 v2。
 - `docker compose ps` 显示 `apipool-v2`、`new-api` 运行中，且 `newapi-metadata-filter` 为 `healthy`。
 - `http://127.0.0.1:3001/api/status` 和 `http://127.0.0.1:3000/` 通过。
 - 外部 `https://app.apipool.dev/` 通过。
+- 外部 `https://app.apipool.dev/v1/models` 无门户 Key 返回 401，且响应具有门户网关请求 ID。
 - 外部 `https://newapi.apipool.dev/`：配了 operator guard 时应 401/403；当前生产设
   `APIPOOL_NEWAPI_ALLOW_UNPROTECTED=true`，经 Cloudflare 预期 200，但绕过 Cloudflare
   的源站直连必须返回 403。

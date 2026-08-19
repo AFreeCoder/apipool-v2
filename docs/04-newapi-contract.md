@@ -12,16 +12,16 @@
 
 ## 2. 环境变量
 
-| 变量                                    | 说明                                                                                                                                                                                                                          |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEWAPI_INTEGRATION_ENABLED`            | 桥接总开关，非 `false` 即启用                                                                                                                                                                                                 |
-| `NEWAPI_BASE_URL`                       | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器                                                                                                                                                      |
-| `NEWAPI_ADMIN_TOKEN`                    | 管理员系统访问令牌（server-only）                                                                                                                                                                                             |
-| `NEWAPI_ADMIN_USER_ID`                  | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要）                                                                                                                                                                    |
-| `NEWAPI_QUOTA_PER_UNIT`                 | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000`                                                                                                                          |
-| `NEWAPI_RUNTIME_POOL_TARGET_USD`        | 与门户钱包解耦的内部运行池补充目标，正整数美元，默认 `1000`                                                                                                                                                                   |
-| `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD` | 内部运行池低水位阈值，正整数美元，默认 `100`，必须小于目标                                                                                                                                                                    |
-| `NEXT_PUBLIC_APIPOOL_API_BASE_URL`      | 排空期客户 API endpoint，`https://api2.apipool.dev`；协议路径（如 OpenAI-compatible `/v1/chat/completions`）由调用方按具体 provider 协议附加。cutover 后 `https://api.apipool.dev` 回收为正牌 endpoint，`api2` 永久保留为别名 |
+| 变量                                    | 说明                                                                                                                                                                                                      |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEWAPI_INTEGRATION_ENABLED`            | 桥接总开关，非 `false` 即启用                                                                                                                                                                             |
+| `NEWAPI_BASE_URL`                       | New API 内部服务地址（如 `http://newapi-internal:3000`），不暴露给浏览器                                                                                                                                  |
+| `NEWAPI_ADMIN_TOKEN`                    | 管理员系统访问令牌（server-only）                                                                                                                                                                         |
+| `NEWAPI_ADMIN_USER_ID`                  | 管理员在 New API 中的用户 ID（`New-Api-User` header 需要）                                                                                                                                                |
+| `NEWAPI_QUOTA_PER_UNIT`                 | quota 整数与 1 美元的换算系数，默认 `500000` ✅实测：`GET /api/status` 返回 `quota_per_unit: 500000`                                                                                                      |
+| `NEWAPI_RUNTIME_POOL_TARGET_USD`        | 与门户钱包解耦的内部运行池补充目标，正整数美元，默认 `1000`                                                                                                                                               |
+| `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD` | 内部运行池低水位阈值，正整数美元，默认 `100`，必须小于目标                                                                                                                                                |
+| `NEXT_PUBLIC_APIPOOL_API_BASE_URL`      | 门户客户 API endpoint，`https://app.apipool.dev`；协议路径（如 OpenAI-compatible `/v1/chat/completions`）由调用方按具体 provider 协议附加。`api2.apipool.dev` 是独立的 New API 原生数据面，不用于门户 Key |
 
 ## 3. 认证模型
 

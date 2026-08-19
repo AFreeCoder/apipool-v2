@@ -17,14 +17,14 @@
 
 排空期 v2 只接管新增用户入口，不接管老站契约域名：
 
-- `app.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，承载站点、登录、控制台、支付回调和 OAuth 回调。
-- `api2.apipool.dev`：DNS only（灰云），直接指向 v2 VPS，临时把全部
-  `/v1*` 请求转发到 New API，供单一测试用户使用原生 Key，绕开
-  Cloudflare HTTP 请求时长上限。
+- `app.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，承载站点、登录、控制台、支付/OAuth 回调和门户 `/v1*` API。
+- `api2.apipool.dev`：DNS only（灰云），直接指向 v2 VPS，把全部 `/v1*`
+  请求转发到 New API，供 New API 原生 Key 使用，绕开 Cloudflare HTTP
+  请求时长上限；它不是门户 API 的过渡域名。
 - `newapi.apipool.dev`：Cloudflare 代理（橙云），指向 v2 VPS，仅运营访问，继续 noindex。
 - `apipool.dev`：排空期继续指向老站，保留品牌与 SEO；cutover 后回收给 v2 营销站。
-- `api.apipool.dev`：排空期继续指向老站；老用户改用旧站新的迁移域名后，
-  回收给门户正式 API。`api2.apipool.dev` 仅保留到单一临时测试用户迁移完成。
+- `api.apipool.dev`：排空期继续指向老站；其未来回收方案另行执行。
+  `api2.apipool.dev` 的 New API 原生数据面不参与门户 Endpoint 切换，未来处置另行决策。
 
 Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool.dev` 或 `api.apipool.dev` 提前切到 v2 的操作，都会打断老用户或制造迁移风险。
 
@@ -45,8 +45,8 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - `NEWAPI_RUNTIME_POOL_TARGET_USD`（内部运行池补充目标，默认 `1000`）
 - `NEWAPI_RUNTIME_POOL_LOW_WATERMARK_USD`（低水位阈值，默认 `100`，必须小于目标）
 - `APIPOOL_KEY_CREATION_ENABLED=true`
-- `NEXT_PUBLIC_APIPOOL_API_BASE_URL`（不含协议路径；门户正式上线时设为
-  `https://api.apipool.dev`。临时直连 `api2` 使用 New API 原生 Key，不作为门户
+- `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://app.apipool.dev`（不含协议路径；
+  调用方按协议追加 `/v1` 等路径。`api2` 使用 New API 原生 Key，不作为门户
   Key 的公开 endpoint）
 - `APIPOOL_CREDENTIALS_SECRET`（AES-256-GCM 凭据加密密钥；与 `AUTH_SECRET` 同样被 entrypoint fail-fast 校验非空 ≥16 字符）
 - 集成开启时（默认开），`NEWAPI_ADMIN_TOKEN` / `NEWAPI_ADMIN_USER_ID` 必填，否则 entrypoint 拒绝启动（避免绑定/建 Key 拖到用户操作时才失败）
@@ -200,9 +200,10 @@ HTTP/3 的候选标记。各入口允许在同一个 180 秒窗口内先后完�
 5. **门户构建**：`pnpm install --frozen-lockfile && pnpm test && pnpm lint && pnpm build`。
 6. **充值冒烟**：冒烟账号最小金额真实支付 → 订单 paid → wallet recharge 入账且 credit 不新增 → 控制台余额一致；不得再以 New API quota 作为门户余额。
 7. **建 Key 冒烟**：创建真实 Key，确认明文只展示一次。
-8. **调用冒烟**：门户 Key 通过容器内网网关调用发布模型；临时公网
-   `https://api2.apipool.dev` 另用 New API 原生 Key 验证真实 `/v1/models`、
-   图片等实际端点可调用。
+8. **调用冒烟**：门户 Key 通过容器内网网关调用发布模型；公网
+   `https://app.apipool.dev/v1/models` 无 Key 请求应返回门户 401 与
+   `x-apipool-request-id`。`https://api2.apipool.dev` 另用 New API 原生 Key
+   验证真实 `/v1/models`、图片等实际端点可调用，两套 Key 与账本不得混用。
 9. **禁用拒绝冒烟**：禁用同一 Key，再调用收到拒绝。
 10. **webhook 重放检查**：渠道后台重发最近一条 webhook，确认不重复入账/加额。
 
@@ -348,7 +349,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && docker compose --env-file .env.deploy --e
 - tag：`sha-<完整 commit>`、分支名、tag 名；默认分支额外推 `latest`
 - 构建期生产参数：
   - `NEXT_PUBLIC_APP_URL=https://app.apipool.dev`
-  - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://api2.apipool.dev`
+  - `NEXT_PUBLIC_APIPOOL_API_BASE_URL=https://app.apipool.dev`
   - `NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL=gpt-5.4-mini`
 
 生产部署必须使用 `sha-<commit>` 这类不可变 tag。`latest` 只用于人工排查，不作为正式发布输入。
@@ -510,17 +511,21 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 
 ## 6. 最终态上线 runbook
 
-> **临时直连期间暂停本节**：`api2.apipool.dev/v1*` 当前绕过门户钱包
-> 直连 New API，必须保持 `APIPOOL_CHECKOUT_ENABLED=false`，不执行
-> `go-live verify` 或 `go-live open-checkout`。本节在 `api.apipool.dev` 切到门户正式
-> 数据面并完成全链路验收后恢复执行。
+> **本任务不改变 checkout/go-live 暂停状态**：门户公开 API 固定使用
+> `app.apipool.dev/v1*`，`api2.apipool.dev/v1*` 则是使用 New API 原生 Key 的
+> 独立数据面，二者不存在切换关系。现有 `live-smoke.sh` 仍通过容器内网验证门户
+> 网关，`go-live.sh` 也尚未把公网 `app` 长请求和异步图片调用纳入硬门禁；在后续
+> 独立任务补齐并验收前，保持 `APIPOOL_CHECKOUT_ENABLED=false`，不执行
+> `go-live verify` 或 `go-live open-checkout`。
 
 本次首次上线基于“线上没有真实用户和真实流量”的事实，直接部署最终态，不维护渐进切流
 状态。真实客户开始使用后，不得继续套用“无流量”前提：
 
 - 充值始终写钱包账本并停写 credit；
 - Dashboard 与公开 API 始终读取钱包和请求账本；
-- `api2.apipool.dev/v1*` 当前临时全量直连 New API；该域名不作为门户正式数据面；
+- `app.apipool.dev/v1*` 始终进入门户网关；
+- `api2.apipool.dev/v1*` 全量直连 New API；该域名不作为门户数据面，也不存在
+  从 `api2` 切换到 `app` 的步骤；
 - `newapi.apipool.dev/v1*` 始终返回 404；
 - 仅 `APIPOOL_CHECKOUT_ENABLED` 控制是否允许创建支付订单。
 
@@ -563,9 +568,10 @@ RESTORE_EVIDENCE=/opt/apipool-v2/evidence/restore-drill-YYYYMMDD.md
 `go-live.sh` 只验证证据文件存在、可读且非空，并在人工确认时回显路径；操作员必须先
 审阅内容真实性，不能用占位文件代替恢复演练。
 
-固定路由的独立期待值始终是 401 / 404 / 404：
+固定路由的独立期待值始终是门户 401、New API 401、404、404：
 
 ```bash
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://app.apipool.dev/v1/models)" = 401
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/v1/models)" = 401
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://newapi.apipool.dev/v1/models)" = 404
 test "$(curl -sS -o /dev/null -w '%{http_code}' https://api2.apipool.dev/api/status)" = 404

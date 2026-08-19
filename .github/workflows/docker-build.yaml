@@ -12,7 +12,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   METADATA_FILTER_IMAGE: ghcr.io/afreecoder/apipool-v2-newapi-metadata-filter
   NEXT_PUBLIC_APP_URL: https://app.apipool.dev
-  NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://api2.apipool.dev
+  NEXT_PUBLIC_APIPOOL_API_BASE_URL: https://app.apipool.dev
   NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL: gpt-5.4-mini
 
 jobs:

@@ -6,7 +6,7 @@ description: Create a key, add credit, and make your first API call in minutes.
 ## Base URL
 
 ```text
-https://api2.apipool.dev
+https://app.apipool.dev
 ```
 
 One provider-neutral endpoint and one key for every model. Add the protocol path
@@ -41,7 +41,7 @@ once after creation — the list shows a masked value afterward.
 ## curl
 
 ```bash
-APIPOOL_ENDPOINT="https://api2.apipool.dev"
+APIPOOL_ENDPOINT="https://app.apipool.dev"
 
 curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
@@ -54,7 +54,7 @@ curl "$APIPOOL_ENDPOINT/v1/chat/completions" \
 ```ts
 import OpenAI from 'openai';
 
-const APIPOOL_ENDPOINT = 'https://api2.apipool.dev';
+const APIPOOL_ENDPOINT = 'https://app.apipool.dev';
 
 const client = new OpenAI({
   baseURL: `${APIPOOL_ENDPOINT}/v1`,
@@ -75,7 +75,7 @@ console.log(completion.choices[0].message.content);
 import os
 from openai import OpenAI
 
-APIPOOL_ENDPOINT = "https://api2.apipool.dev"
+APIPOOL_ENDPOINT = "https://app.apipool.dev"
 
 client = OpenAI(
     base_url=f"{APIPOOL_ENDPOINT}/v1",
@@ -93,7 +93,7 @@ print(completion.choices[0].message.content)
 ## Plain HTTP (fetch)
 
 ```ts
-const APIPOOL_ENDPOINT = 'https://api2.apipool.dev';
+const APIPOOL_ENDPOINT = 'https://app.apipool.dev';
 
 const response = await fetch(`${APIPOOL_ENDPOINT}/v1/chat/completions`, {
   method: 'POST',
@@ -116,7 +116,7 @@ Claude models can also be called with Anthropic's native Messages API — same
 base URL, same key:
 
 ```bash
-APIPOOL_ENDPOINT="https://api2.apipool.dev"
+APIPOOL_ENDPOINT="https://app.apipool.dev"
 
 curl "$APIPOOL_ENDPOINT/v1/messages" \
   -H "x-api-key: $APIPOOL_API_KEY" \
@@ -130,7 +130,7 @@ curl "$APIPOOL_ENDPOINT/v1/messages" \
 ```
 
 The official Anthropic SDKs work by setting `baseURL` to
-`https://api2.apipool.dev` and `apiKey` to your APIPool key.
+`https://app.apipool.dev` and `apiKey` to your APIPool key.
 
 ## Embeddings and Images
 

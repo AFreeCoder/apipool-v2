@@ -140,7 +140,7 @@ test('quickstart curl is only generated for available models', () => {
   assert.match(availableCurl, /gpt-4o-mini/);
   assert.match(
     availableCurl,
-    /https:\/\/api2\.apipool\.dev\/v1\/chat\/completions/
+    /https:\/\/app\.apipool\.dev\/v1\/chat\/completions/
   );
   assert.equal(getCallableModelQuickstartCurl(comingSoon), null);
 });

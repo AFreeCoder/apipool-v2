@@ -36,10 +36,10 @@ APIPool v2 定位为多模型 API 门户和商业控制台，而不是统一运�
 
 默认域名：
 
-- 排空期用户 API Endpoint：`https://api2.apipool.dev`；OpenAI 兼容路径、Anthropic 原生路径等由具体协议附加。
-- 排空期门户站：`https://app.apipool.dev`
+- 当前门户站与用户 API Endpoint：`https://app.apipool.dev`；OpenAI 兼容路径、Anthropic 原生路径等由具体协议附加。
 - 品牌根域：`https://apipool.dev` 在老站排空期继续归老站保温 SEO，cutover 后回收给 v2 营销站。
-- 正牌 API 域：`https://api.apipool.dev` 在老站排空期继续服务老用户，cutover 后回收给 v2；`api2.apipool.dev` 永久保留为别名。
+- 正牌 API 域：`https://api.apipool.dev` 在老站排空期继续服务老用户，cutover 后回收给 v2。
+- New API 原生数据面：`api2.apipool.dev`，仅使用 New API 原生 Key，不是门户 API Endpoint。
 - New API 管理后台：`newapi.apipool.dev`，仅运营人员访问
 
 ## 4. 商业账本边界

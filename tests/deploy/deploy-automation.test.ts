@@ -37,7 +37,7 @@ test('docker image workflow builds production-configured immutable images', asyn
   assert.match(workflow, /NEXT_PUBLIC_APP_URL:\s*https:\/\/app\.apipool\.dev/);
   assert.match(
     workflow,
-    /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/api2\.apipool\.dev$/m
+    /NEXT_PUBLIC_APIPOOL_API_BASE_URL:\s*https:\/\/app\.apipool\.dev$/m
   );
   assert.match(workflow, /NEXT_PUBLIC_APIPOOL_DEFAULT_MODEL:\s*gpt-5\.4-mini/);
   assert.match(workflow, /deploy-production:/);

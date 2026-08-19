@@ -3,6 +3,7 @@
 > 文档类型：需求（requirements）
 > Feature：domain-migration
 > 日期：2026-06-30
+> 变更记录：2026-08-18，Issue #10 确认 `app` 同时承载门户站与门户 API，`api2` 保持为独立 New API 原生数据面。
 
 ## 1. 背景
 
@@ -31,18 +32,18 @@
 |---|---|---|
 | `apipool.dev`（根） | 排空期归老站（保 SEO）→ 末期回收给 v2 营销 | cutover |
 | `api.apipool.dev`（API 正牌） | 排空期归老站（老用户契约线）→ 末期回收给 v2 端点 | cutover |
-| `app.apipool.dev` | v2：站点 + 登录 + 支付 | **现在，永久不动** |
-| `api2.apipool.dev` | v2：API 端点（过渡）→ 末期降为永久别名 | **现在，永不下线** |
+| `app.apipool.dev` | v2：站点 + 登录 + 支付 + 门户 API | **现在，永久不动** |
+| `api2.apipool.dev` | New API 原生数据面，与门户 Key/钱包隔离 | **现在；后续处置另行决策** |
 
 要点：
-- `app.` / `api2.` 让 v2 **立即独立起跑**，不必等老站让位。
+- `app.` 让 v2 **立即独立起跑**，不必等老站让位；门户用户始终使用该域名。
 - OAuth / 支付回调固定在 `app.apipool.dev`，**配一次永不变**（含 Stripe，主域名非必需）。
-- `api.apipool.dev` 末期回收为正牌端点，`api2.apipool.dev` **永久保留为别名**，确保过渡期写死 api2 的新用户永不断裂。
+- `api2.apipool.dev` 只接受 New API 原生 Key，不作为门户 API 的过渡域名或别名。
 
 ## 5. 详细需求（带验收标准）
 
 **R1 新站承接**
-- v2 在 `app.apipool.dev` + `api2.apipool.dev` 独立上线运行。
+- v2 在 `app.apipool.dev` 独立上线站点、控制台和门户 API；New API 原生数据面继续由 `api2.apipool.dev` 独立承载。
 - 验收：新用户可在 v2 完成注册 / 登录 / 充值 / 调用 API。
 
 **R2 老用户连续性（对应 C1）**
@@ -66,20 +67,20 @@
 - 验收：公告含截止日与余额政策；到期有兜底处理流程，不留无限长尾。
 
 **R7 域名回收（对应 C2 / C3）**
-- 老站排空 / 到截止日后停服；`apipool.dev` 根 → v2 营销，`api.apipool.dev` → v2 端点，`api2` 保留别名。
-- 验收：cutover 后 `apipool.dev` 打开 v2、`api.apipool.dev` 正常服务 v2、api2 老用户不断；回收前已留足公告期。
+- 老站排空 / 到截止日后停服；`apipool.dev` 根 → v2 营销，`api.apipool.dev` → v2 端点；`api2` 的 New API 原生数据面不随门户域名回收自动改变。
+- 验收：cutover 后 `apipool.dev` 打开 v2、`api.apipool.dev` 正常服务 v2；回收前已留足公告期。
 
 ## 6. 执行计划概述（简）
 
-1. **新站起跑**：v2 上线 `app.apipool.dev` + `api2.apipool.dev`，开始承接全部新用户。
+1. **新站起跑**：v2 在 `app.apipool.dev` 上线站点、控制台和门户 API，开始承接全部新用户。
 2. **老站关闸**：停注册（立即）→ 缓冲公告 → 停充值；挂迁移公告 + 激励 + 截止日。
-3. **排空回收**：老站余额耗尽 / 到截止日后停服，把 `apipool.dev` 根与 `api.apipool.dev` 指向 v2（`api2` 留作永久别名）。
+3. **排空回收**：老站余额耗尽 / 到截止日后停服，把 `apipool.dev` 根与 `api.apipool.dev` 指向 v2；`api2` 的 New API 原生数据面后续处置另行决策。
 
 ## 7. 成功判定
 
 - 新增用户 100% 进入 v2。
 - 迁移全程无老用户服务中断、无「跑路」舆情。
-- cutover 后 `apipool.dev` / `api.apipool.dev` 正常服务 v2，SEO 排名无显著下滑，老 api2 用户无断裂。
+- cutover 后 `apipool.dev` / `api.apipool.dev` 正常服务 v2，SEO 排名无显著下滑。
 
 ## 8. 待确认事项
 
