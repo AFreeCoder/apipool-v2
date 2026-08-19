@@ -10,7 +10,7 @@ import { useAppContext } from '@/shared/contexts/app';
 import { UserNav } from '@/shared/types/blocks/common';
 
 /**
- * Header auth cluster: at most two controls, per docs/test/ui-review P0-1.
+ * Header auth cluster: keep the navigation quiet and follow docs/05-design-system.md.
  *
  * - Signed out:  [sign in (ghost)] [get started (outline)]
  * - Signed in:   [console (outline)] [avatar] — console hidden while already
