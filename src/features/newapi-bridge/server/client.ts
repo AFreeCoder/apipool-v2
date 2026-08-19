@@ -44,6 +44,18 @@ export class NewApiBridgeError extends Error {
   }
 }
 
+function mapUsernameValidationError(error: unknown) {
+  const message = String((error as any)?.message || '');
+  if (/\bmax\b/i.test(message) && /username|display/i.test(message)) {
+    return new NewApiBridgeError({
+      code: 'newapi_username_too_long',
+      message,
+      status: (error as any)?.status,
+    });
+  }
+  return error;
+}
+
 export class NewApiQuotaAdjustmentReconciliationError extends NewApiBridgeError {
   changeId: string;
   reconciliationRequired = true;
@@ -1231,14 +1243,18 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
       const existing = await findUserByUsername(input.username);
       const isExistingRemoteUser = Boolean(existing);
       if (!existing) {
-        await request('/api/user/', {
-          method: 'POST',
-          body: {
-            username: input.username,
-            password: input.password,
-            display_name: input.displayName || input.username,
-          },
-        });
+        try {
+          await request('/api/user/', {
+            method: 'POST',
+            body: {
+              username: input.username,
+              password: input.password,
+              display_name: input.displayName || input.username,
+            },
+          });
+        } catch (error) {
+          throw mapUsernameValidationError(error);
+        }
       }
 
       const found = existing ?? (await findUserByUsername(input.username));
@@ -1395,16 +1411,8 @@ export function createNewApiClient(options: NewApiClientOptions = {}) {
             remark: input.remark ?? remote.remark,
           },
         });
-      } catch (error: any) {
-        const message = String(error?.message || '');
-        if (/\bmax\b/i.test(message) && /username|display/i.test(message)) {
-          throw new NewApiBridgeError({
-            code: 'newapi_username_too_long',
-            message,
-            status: error?.status,
-          });
-        }
-        throw error;
+      } catch (error) {
+        throw mapUsernameValidationError(error);
       }
 
       const confirmed = requireRemoteUserProfile(

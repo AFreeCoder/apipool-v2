@@ -48,10 +48,8 @@ set -a
 . "$ENV_FILE"
 set +a
 
-SMOKE_PORTAL_EMAIL="smoke.portal@apipool.local"
-SMOKE_OPERATOR_EMAIL="smoke.operator@apipool.local"
-SMOKE_PORTAL_NAME="APIPool Smoke Portal"
-SMOKE_OPERATOR_NAME="APIPool Smoke Operator"
+SMOKE_EMAIL="smo@apipool.local"
+SMOKE_NAME="APIPool Smoke User"
 
 validate_email() {
   case "$1" in
@@ -115,15 +113,8 @@ set_env_value() {
   rm -f "$tmp"
 }
 
-validate_email "$SMOKE_PORTAL_EMAIL"
-validate_email "$SMOKE_OPERATOR_EMAIL"
-validate_text "$SMOKE_PORTAL_NAME"
-validate_text "$SMOKE_OPERATOR_NAME"
-
-if [ "$SMOKE_PORTAL_EMAIL" = "$SMOKE_OPERATOR_EMAIL" ]; then
-  echo "[setup-smoke-users] portal and operator smoke emails must be different" >&2
-  exit 65
-fi
+validate_email "$SMOKE_EMAIL"
+validate_text "$SMOKE_NAME"
 
 operator_role_ready="$(
   sqlite3 "$PORTAL_DB" "
@@ -142,13 +133,10 @@ if [ "$operator_role_ready" != "1" ]; then
   exit 78
 fi
 
-current_portal_id="$(lookup_user_id "$SMOKE_PORTAL_EMAIL")"
-current_operator_id="$(lookup_user_id "$SMOKE_OPERATOR_EMAIL")"
+current_user_id="$(lookup_user_id "$SMOKE_EMAIL")"
 
-echo "[setup-smoke-users] portal email: $SMOKE_PORTAL_EMAIL"
-echo "[setup-smoke-users] operator email: $SMOKE_OPERATOR_EMAIL"
-echo "[setup-smoke-users] existing portal user: ${current_portal_id:-none}"
-echo "[setup-smoke-users] existing operator user: ${current_operator_id:-none}"
+echo "[setup-smoke-users] smoke email: $SMOKE_EMAIL"
+echo "[setup-smoke-users] existing smoke user: ${current_user_id:-none}"
 
 if [ "$APPLY" != true ]; then
   echo "[setup-smoke-users] dry-run only; re-run with --apply to write portal DB and .env.deploy"
@@ -162,9 +150,8 @@ else
   exit 66
 fi
 
-portal_id="${current_portal_id:-$(new_uuid)}"
-operator_id="${current_operator_id:-$(new_uuid)}"
-operator_user_role_id="$(new_uuid)"
+user_id="${current_user_id:-$(new_uuid)}"
+user_role_id="$(new_uuid)"
 now_ms="$(date +%s)000"
 
 sqlite3 "$PORTAL_DB" <<SQL
@@ -174,9 +161,9 @@ INSERT INTO user (
   id, name, email, email_verified, created_at, updated_at, utm_source, ip, locale
 )
 SELECT
-  $(sql_value "$portal_id"),
-  $(sql_value "$SMOKE_PORTAL_NAME"),
-  $(sql_value "$SMOKE_PORTAL_EMAIL"),
+  $(sql_value "$user_id"),
+  $(sql_value "$SMOKE_NAME"),
+  $(sql_value "$SMOKE_EMAIL"),
   1,
   $now_ms,
   $now_ms,
@@ -184,50 +171,26 @@ SELECT
   '',
   ''
 WHERE NOT EXISTS (
-  SELECT 1 FROM user WHERE email = $(sql_value "$SMOKE_PORTAL_EMAIL")
+  SELECT 1 FROM user WHERE email = $(sql_value "$SMOKE_EMAIL")
 );
 
 UPDATE user
-SET name = $(sql_value "$SMOKE_PORTAL_NAME"),
+SET name = $(sql_value "$SMOKE_NAME"),
     email_verified = 1,
     updated_at = $now_ms,
     utm_source = 'smoke'
-WHERE email = $(sql_value "$SMOKE_PORTAL_EMAIL");
-
-INSERT INTO user (
-  id, name, email, email_verified, created_at, updated_at, utm_source, ip, locale
-)
-SELECT
-  $(sql_value "$operator_id"),
-  $(sql_value "$SMOKE_OPERATOR_NAME"),
-  $(sql_value "$SMOKE_OPERATOR_EMAIL"),
-  1,
-  $now_ms,
-  $now_ms,
-  'smoke',
-  '',
-  ''
-WHERE NOT EXISTS (
-  SELECT 1 FROM user WHERE email = $(sql_value "$SMOKE_OPERATOR_EMAIL")
-);
-
-UPDATE user
-SET name = $(sql_value "$SMOKE_OPERATOR_NAME"),
-    email_verified = 1,
-    updated_at = $now_ms,
-    utm_source = 'smoke'
-WHERE email = $(sql_value "$SMOKE_OPERATOR_EMAIL");
+WHERE email = $(sql_value "$SMOKE_EMAIL");
 
 INSERT INTO user_role (id, user_id, role_id, created_at, updated_at, expires_at)
 SELECT
-  $(sql_value "$operator_user_role_id"),
+  $(sql_value "$user_role_id"),
   u.id,
   'role_operator',
   $now_ms,
   $now_ms,
   NULL
 FROM user u
-WHERE u.email = $(sql_value "$SMOKE_OPERATOR_EMAIL")
+WHERE u.email = $(sql_value "$SMOKE_EMAIL")
   AND NOT EXISTS (
     SELECT 1 FROM user_role ur
     WHERE ur.user_id = u.id
@@ -238,14 +201,12 @@ WHERE u.email = $(sql_value "$SMOKE_OPERATOR_EMAIL")
 COMMIT;
 SQL
 
-portal_id="$(lookup_user_id "$SMOKE_PORTAL_EMAIL")"
-operator_id="$(lookup_user_id "$SMOKE_OPERATOR_EMAIL")"
+user_id="$(lookup_user_id "$SMOKE_EMAIL")"
 
-set_env_value APIPOOL_SMOKE_PORTAL_EMAIL "$SMOKE_PORTAL_EMAIL"
-set_env_value APIPOOL_SMOKE_OPERATOR_EMAIL "$SMOKE_OPERATOR_EMAIL"
-set_env_value APIPOOL_SMOKE_PORTAL_USER_ID "$portal_id"
-set_env_value APIPOOL_SMOKE_OPERATOR_USER_ID "$operator_id"
+set_env_value APIPOOL_SMOKE_PORTAL_EMAIL "$SMOKE_EMAIL"
+set_env_value APIPOOL_SMOKE_OPERATOR_EMAIL "$SMOKE_EMAIL"
+set_env_value APIPOOL_SMOKE_PORTAL_USER_ID "$user_id"
+set_env_value APIPOOL_SMOKE_OPERATOR_USER_ID "$user_id"
 
 echo "[setup-smoke-users] wrote smoke user ids to $APP_DIR/$ENV_FILE"
-echo "[setup-smoke-users] portal user id: $portal_id"
-echo "[setup-smoke-users] operator user id: $operator_id"
+echo "[setup-smoke-users] smoke user id: $user_id"

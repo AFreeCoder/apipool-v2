@@ -62,7 +62,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 
 - 生产 live smoke 只在 VPS 本地运行：这些变量保留在 `/opt/apipool-v2/.env.deploy`，不要放进 GitHub Actions secrets。
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
-- `APIPOOL_SMOKE_PORTAL_EMAIL=smoke.portal@apipool.local` / `APIPOOL_SMOKE_OPERATOR_EMAIL=smoke.operator@apipool.local`（固定值；`deploy/setup-smoke-users.sh --apply` 创建/复用专用 service identity，live smoke 会拒绝其它邮箱）
+- `APIPOOL_SMOKE_PORTAL_EMAIL=smo@apipool.local` / `APIPOOL_SMOKE_OPERATOR_EMAIL=smo@apipool.local`（固定为同一账户；`deploy/setup-smoke-users.sh --apply` 创建/复用唯一 service identity，live smoke 会拒绝其它邮箱）
 - `APIPOOL_SMOKE_GROUP_SLUG`（可选；默认 `official`，可指定实际售卖分组如 `discount-1`）
 - `APIPOOL_SMOKE_MODEL`（可选；设置时必须在 `APIPOOL_SMOKE_GROUP_SLUG` 对应分组中可调用；不设置时使用该分组的默认或首个可调用模型）
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
@@ -268,7 +268,7 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 
 价格对账先确认本次调用对应模型和冒烟分组存在 confirmed effective price，再从本地 `request_ledger` 读取已结算的标准用量桶，并按该请求绑定的不可变 `model_price_version` 重算 `expectedMicroUsd`，与钱包实际写入的 `chargedMicroUsd` 核对 `actual/delta/tolerance`。缺少已结算请求、New API request ID、价格快照或实际扣费时脚本必须失败；失败不能发布。该读取不会再写旧的用量快照；若恰好与网关结算发生瞬时 `SQLITE_BUSY`/`SQLITE_LOCKED`，读账本和禁用临时 key 会按用量轮询参数做有界重试，其他数据库错误仍立即失败。
 
-`deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再按固定邮箱创建/复用两个不可登录的 production service identity：普通 smoke portal user 固定为 `smoke.portal@apipool.local`，带 `role_operator` 的 smoke operator 固定为 `smoke.operator@apipool.local`，并把邮箱与 user id 写回 `.env.deploy`。两者必须分离，以验证“被调额用户”和“执行调额的权限主体”不是同一身份；live smoke 会同时校验环境变量和数据库中的实际邮箱，避免误用真实用户造成记录污染。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
+`deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再按固定邮箱创建/复用唯一的 production service identity `smo@apipool.local`，授予 `role_operator`，并把 portal/operator 两组邮箱与 user id 写回 `.env.deploy`；两组变量有意指向同一账户。live smoke 会同时校验环境变量和数据库中的实际邮箱，避免误用真实用户造成记录污染。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
 
 `deploy/live-smoke.sh` 使用当前 `release.env` 中的门户镜像启动一次性容器，不依赖服务器源码。该脚本会创建冒烟分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 
