@@ -63,6 +63,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - 生产 live smoke 只在 VPS 本地运行：这些变量保留在 `/opt/apipool-v2/.env.deploy`，不要放进 GitHub Actions secrets。
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
 - `APIPOOL_SMOKE_PORTAL_EMAIL=smo@apipool.local` / `APIPOOL_SMOKE_OPERATOR_EMAIL=smo@apipool.local`（固定为同一账户；`deploy/setup-smoke-users.sh --apply` 创建/复用唯一 service identity，live smoke 会拒绝其它邮箱）
+- 对应 New API 用户的 `username` 必须精确为 `smo@apipool.local`；不得截断、使用 hash/别名或另建第二个测试用户。
 - `APIPOOL_SMOKE_GROUP_SLUG`（可选；默认 `official`，可指定实际售卖分组如 `discount`）
 - `APIPOOL_SMOKE_MODEL`（可选；设置时必须在 `APIPOOL_SMOKE_GROUP_SLUG` 对应分组中可调用；不设置时使用该分组的默认或首个可调用模型）
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
@@ -244,7 +245,7 @@ npm run catalog:init
 
 冒烟分组默认是 `official`，也可以通过 `APIPOOL_SMOKE_GROUP_SLUG` 指向实际售卖分组。门户分组只是 Key 所绑定的逻辑分组；该分组下被调用模型对应的每条“分组折扣”都必须单独维护 `newapiGroup`，并与 New API 侧真实可调用 group 对齐。售卖项映射为空会被发布门禁拒绝，不能依赖 New API 默认分组。New API 侧也必须启用映射后的分组：`GroupRatio` 包含该 group，相关 channel 的 group 包含该 group，并通过 New API 后台保存渠道或重建 abilities 使选路表生效。实际请求选中模型后，网关再按该售卖项的 `newapiGroup` 创建或复用运行时凭证；同一门户逻辑分组下的不同模型可以使用不同的 New API 分组。
 
-冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定，后者必须拥有 `admin.apipool.quota.adjust` 权限。冒烟调额写入本地钱包，不修改 New API quota。`APIPOOL_SMOKE_MODEL` 设置时必须指向当前冒烟分组中可调用的模型；不设置时使用该分组中的默认或首个可调用模型。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
+冒烟用户由 `APIPOOL_SMOKE_PORTAL_USER_ID` 指定，调额操作人由 `APIPOOL_SMOKE_OPERATOR_USER_ID` 指定；两个 ID 必须相同，且该账户必须拥有 `admin.apipool.quota.adjust` 权限。冒烟调额写入本地钱包，不修改 New API quota。`APIPOOL_SMOKE_MODEL` 设置时必须指向当前冒烟分组中可调用的模型；不设置时使用该分组中的默认或首个可调用模型。`APIPOOL_SMOKE_QUOTA_USD` 控制本次冒烟加额，默认 `1`。
 
 普通本地验证允许缺少 live smoke 必需配置时跳过：
 
@@ -268,7 +269,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 
 价格对账先确认本次调用对应模型和冒烟分组存在 confirmed effective price，再从本地 `request_ledger` 读取已结算的标准用量桶，并按该请求绑定的不可变 `model_price_version` 重算 `expectedMicroUsd`，与钱包实际写入的 `chargedMicroUsd` 核对 `actual/delta/tolerance`。缺少已结算请求、New API request ID、价格快照或实际扣费时脚本必须失败；失败不能发布。该读取不会再写旧的用量快照；若恰好与网关结算发生瞬时 `SQLITE_BUSY`/`SQLITE_LOCKED`，读账本和禁用临时 key 会按用量轮询参数做有界重试，其他数据库错误仍立即失败。
 
-`deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再按固定邮箱创建/复用唯一的 production service identity `smo@apipool.local`，授予 `role_operator`，并把 portal/operator 两组邮箱与 user id 写回 `.env.deploy`；两组变量有意指向同一账户。live smoke 会同时校验环境变量和数据库中的实际邮箱，避免误用真实用户造成记录污染。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
+`deploy/setup-smoke-users.sh --apply` 会先做 `pre-smoke-users` 备份，再按固定邮箱创建/复用唯一的 production service identity `smo@apipool.local`，授予 `role_operator`，并把 portal/operator 两组邮箱与 user id 写回 `.env.deploy`；两组变量有意指向同一账户。对应 New API 用户的 `username` 必须与邮箱完全一致。后续所有生产冒烟只复用这一身份，禁止临时创建第二个测试账户。live smoke 会同时校验环境变量和数据库中的实际邮箱，避免误用真实用户造成记录污染。该脚本默认 dry-run，必须显式传 `--apply` 才写库。
+
+历史测试身份不物理删除用户、账本或审计记录，但必须撤销会话、认证账户、角色、Portal Key、New API token、运行时凭证和绑定等全部有效权限；不得重新启用或继续用于测试。需要重建固定身份时仍复用 `smo@apipool.local`，内部 user ID 由脚本解析并写回环境变量，不在文档中固化。
 
 `deploy/live-smoke.sh` 使用当前 `release.env` 中的门户镜像启动一次性容器，不依赖服务器源码。该脚本会创建冒烟分组绑定的 API Key、执行一次模型调用、等待用量和 token split 可见、禁用 Key 并确认禁用后调用被拒。成功路径会留下一个已禁用的 smoke Key；如需完全清理，可在 `/dashboard/api-keys` 或后台按该用户删除该 Key。失败路径会尝试先禁用已创建的 Key，并在输出中记录 cleanup 状态。
 
@@ -500,7 +503,8 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 ## 4. 告警最低配置
 
 - webhook 处理失败（5xx 或入账异常）→ 告警。
-- `request_ledger` 行停留 `open`/`pending_backfill` 超过 10 分钟 → 告警。
+- `request_ledger` 行停留 `open` 超过硬超时加 10 分钟，或历史 `pending_backfill` 超过 10 分钟
+  仍未被 worker 收束为免单终态 → 告警。
 - 运行时凭证桥接连续 `unauthorized`/`timeout` → 告警。
 
 ## 5. 回滚顺序（保留用户资产与审计）
@@ -560,11 +564,11 @@ curl -fsS http://127.0.0.1:3001/api/status >/dev/null
 
 ## 6. 最终态上线 runbook
 
-> **本任务不改变 checkout/go-live 暂停状态**：门户公开 API 固定使用
+> **当前 checkout/go-live 保持暂停**：门户公开 API 固定使用
 > `app.apipool.dev/v1*`，`api2.apipool.dev/v1*` 则是使用 New API 原生 Key 的
 > 独立数据面，二者不存在切换关系。现有 `live-smoke.sh` 仍通过容器内网验证门户
-> 网关，`go-live.sh` 也尚未把公网 `app` 长请求和异步图片调用纳入硬门禁；在后续
-> 独立任务补齐并验收前，保持 `APIPOOL_CHECKOUT_ENABLED=false`，不执行
+> 网关，`go-live.sh` 也尚未把公网 `app` 长请求和异步图片调用纳入硬门禁；这些门禁
+> 补齐并验收前，保持 `APIPOOL_CHECKOUT_ENABLED=false`，不执行
 > `go-live verify` 或 `go-live open-checkout`。
 
 本次首次上线基于“线上没有真实用户和真实流量”的事实，直接部署最终态，不维护渐进切流
@@ -750,21 +754,25 @@ FROM wallet_account a LEFT JOIN wallet_ledger l ON l.user_id=a.user_id
 GROUP BY a.user_id,a.balance_micro_usd
 HAVING a.balance_micro_usd<>COALESCE(SUM(l.signed_amount_micro_usd),0);"
 
-# 对账差异、waived 量与回填积压。
+# 对账差异、waived 量与历史 pending 收束状态。
 sqlite3 -header -column "$PORTAL_DB" "
 SELECT reconcile_status,count(*) AS n FROM request_ledger GROUP BY reconcile_status ORDER BY n DESC;
 SELECT status,count(*) AS n FROM request_ledger
 WHERE status IN ('failed_unbilled','pending_backfill','open') GROUP BY status;
 SELECT count(*) AS orphan_open FROM reconcile_orphan_observation WHERE resolved_at IS NULL;
-SELECT count(*) AS backfill_over_10m FROM request_ledger
+SELECT count(*) AS legacy_pending_over_10m FROM request_ledger
 WHERE status='pending_backfill' AND created_at < (unixepoch()*1000-600000);
+SELECT id,updated_at,billing_flags_json FROM request_ledger
+WHERE billing_flags_json IS NOT NULL AND billing_flags_json<>'[]'
+  AND updated_at >= (unixepoch()*1000-900000)
+ORDER BY updated_at DESC LIMIT 100;
 SELECT count(*) AS frozen_wallets FROM wallet_account WHERE frozen_at IS NOT NULL;"
 
 # 最小日志告警集；只使用代码中真实存在的关键字。有输出就登记时间窗、
 # 用户/请求 ID（脱敏）和处置。
 docker compose --env-file .env.deploy --env-file release.env \
   -f docker-compose.prod.yml logs --since 15m apipool-v2 2>&1 | \
-  grep -E 'terminal write failed|unmapped_usage_dimension|request id not persisted|finalize pipeline error|request handler failed|duplicate newapi_request_id|route_price_group_mismatch|runtime credential (adoption mismatch|retirement failed|worker failed)|\[backfill\] exhausted, manual queue|out_of_scope_consumption|admin logs unavailable|reconcile_slice_overflow|waived_by_failure_high|wallet_invariant_broken|\[jobs\] tick failed' || true
+  grep -E 'terminal write failed|\[gateway\] billing_flags|request id not persisted|token usage missing, waived|finalize pipeline error|request handler failed|duplicate newapi_request_id|runtime credential (adoption mismatch|retirement failed|worker failed)|out_of_scope_consumption|admin logs unavailable|reconcile_slice_overflow|waived_by_failure_high|wallet_invariant_broken|\[jobs\] tick failed' || true
 ```
 
 关键字处置归类：
@@ -774,17 +782,21 @@ docker compose --env-file .env.deploy --env-file release.env \
   request ID 核对 `request_ledger`，不得仅靠重放请求修复。
 - `runtime credential ... failed` / `adoption mismatch`：运行凭证创建或退役异常，检查
   本地 credential/retirement 状态与远端同名 token，禁用用户不得手工改回 pending。
-- `[backfill] exhausted, manual queue`、`reconcile_slice_overflow`、
-  `admin logs unavailable`：回填或对账能力降级，结合上方积压 SQL 判断是否停止放量。
+- `reconcile_slice_overflow`、`admin logs unavailable`：对账观测能力降级，结合孤儿数量、
+  未收束 `open`/历史 `pending_backfill` 和时间窗覆盖判断是否停止放量。
 - `wallet_invariant_broken`、`waived_by_failure_high`、`out_of_scope_consumption`、
-  `route_price_group_mismatch`：资金或路由一致性告警，保持/进入 maintenance 后调查。
+  `duplicate newapi_request_id`：资金、归因或幂等一致性告警，保持/进入 maintenance 后调查。
 
-`unmapped_usage_dimension` 是协议演进信号：保持已知桶结算，立即查同时间窗的
-`amount_mismatch`，确认上游新增维度后扩展 usage 白名单和 fixture，再用带审计理由的
-`manual_adjustment` 补历史差额；不得把未知桶静默映射为零或整笔免单。持续检查
-`reconcile_slice_overflow`，10 分钟/片、50 页/片、12 片/轮不足时再按真实积压调参。
+`[gateway] billing_flags` 是归一化阶段的协议演进信号；上方
+`billing_flags_json` 查询是最终 flags 的完整监控面，也能发现只在计价阶段追加、不会出现在
+该日志中的 `unpriced:*`。`unmapped:*`、`unmapped_struct:*`、`invalid_numeric:*` 和
+`unpriced:*` 都只跳过对应的不可靠部分，已知且有价的 meter 继续结算。查询返回任何新行都按
+告警处置；确认新增维度后扩展 usage 白名单、定价档案和 fixture。修复只作用于新请求，
+不根据迟到日志或新规则自动追收历史差额。持续检查 `reconcile_slice_overflow`，当前切片边界
+不足时再按真实积压调参。
 
-72 小时无未解释差异、钱包不变量破坏或回填积压后，先只读导出旧 binding 清单：
+72 小时无未解释差异、钱包不变量破坏、异常豁免增长或未收束的 `open`/历史
+`pending_backfill` 后，先只读导出旧 binding 清单：
 
 ```bash
 sqlite3 -header -column "$PORTAL_DB" "
@@ -794,4 +806,5 @@ FROM newapi_key_binding WHERE status<>'deleted' ORDER BY portal_user_id,newapi_k
 
 按 `newapi_key_id` 在 New API 运营面逐个 disabled/deleted，回读远端状态并保存审计证据；
 不得通过 SQL 删除本地 binding 或 token。全部作废后再次确认 api2 三探测仍为 401/404/404，
-该收尾步骤延后到临时测试用户迁移完成；此前不得作废其 New API 原生 Key。
+清理范围只包含旧 `newapi_key_binding`，不得作废唯一冒烟身份当前由 `runtime_credential`
+引用的活动 token，也不得为旧临时测试身份保留例外访问权。

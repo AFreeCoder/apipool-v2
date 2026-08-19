@@ -1,4 +1,4 @@
-// 计费词表唯一事实源（DESIGN §5.1）：账本、价格和用量归一化共用。
+// 计费词表唯一事实源（docs/design/group-pricing-profiles/DESIGN.md#meter-词表与归一化）：账本、价格和用量归一化共用。
 export const TOKEN_METER_KEYS = [
   'input',
   'cached_input',

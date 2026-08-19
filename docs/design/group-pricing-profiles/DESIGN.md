@@ -82,6 +82,66 @@
 快照同时保存档案 ID、规则 hash、长上下文准入阈值和是否开放长上下文。历史请求始终按
 自己的快照重算，不读取当前档案或 listing。
 
+## Meter 词表与归一化
+
+### 规范 meter
+
+Token 定价、账本和 usage 归一化共用以下词表：
+
+| meter                | 语义                               |
+| -------------------- | ---------------------------------- |
+| `input`              | 非缓存文本输入                     |
+| `cached_input`       | 缓存文本输入                       |
+| `cache_write`        | 无 TTL 细分的缓存写入              |
+| `cache_write_5m`     | 5 分钟缓存写入                     |
+| `cache_write_1h`     | 1 小时缓存写入                     |
+| `output`             | 文本输出；reasoning 包含在此价格内 |
+| `image_input`        | 非缓存图片输入                     |
+| `cached_image_input` | 缓存图片输入                       |
+| `image_output`       | 图片输出 Token                     |
+| `input_long`         | 长上下文档非缓存文本输入           |
+| `cached_input_long`  | 长上下文档缓存文本输入             |
+| `cache_write_long`   | 长上下文档无 TTL 细分的缓存写入    |
+| `output_long`        | 长上下文档文本输出                 |
+| `web_search`         | 服务端报告的成功网页搜索次数       |
+
+按次或按时长档案使用 `request_count`、`output_count`、`audio_duration_ms` 或
+`video_duration_ms` 作为数量 meter，不与 Token meter 混用。
+
+### 端点映射
+
+所有数量必须是安全非负整数。端点适配器按下表生成互不重叠的 meter：
+
+| 端点                       | 精确映射                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat Completions           | `cached_input = prompt_tokens_details.cached_tokens`；`cache_write = max(prompt_tokens_details.cache_write_tokens, prompt_tokens_details.cache_creation_tokens ?? cache_creation_input_tokens)`；`input = max(0, prompt_tokens - cached_input - cache_write)`；`output = completion_tokens`                                                 |
+| Responses                  | `cached_input = input_tokens_details.cached_tokens`；`cache_write = input_tokens_details.cache_write_tokens`；`input = max(0, input_tokens - cached_input - cache_write)`；`output = output_tokens`                                                                                                                                         |
+| Messages                   | `input = input_tokens`；`cached_input = cache_read_input_tokens`；存在 `cache_creation.ephemeral_5m_input_tokens` 时写入 `cache_write_5m`，否则聚合 `cache_creation_input_tokens` 写入 5m；`cache_write_1h = cache_creation.ephemeral_1h_input_tokens`；`output = output_tokens`。细分值与聚合值并存但不相等时写 `cache_write_sum_mismatch` |
+| Embeddings                 | `input = prompt_tokens`                                                                                                                                                                                                                                                                                                                     |
+| Images Generations / Edits | 详情取 `input_tokens_details ?? prompt_tokens_details`；`input = max(0, text_tokens - cached_text_tokens)`；`image_input = max(0, image_tokens - cached_image_tokens)`；两个缓存值分别进入 `cached_input`、`cached_image_input`；`image_output = output_tokens ?? completion_tokens`                                                        |
+
+`server_tool_use.web_search_requests` 映射为 `web_search` 数量。reasoning token 另存审计列，
+不建立独立 meter，避免与 `output` 重复计费。
+
+价格快照带有效长上下文阈值且输入总量达到阈值时，`input`、`cached_input`、
+`cache_write`、`output` 分别替换为对应 `*_long` meter；其它 meter 保持不变。输入总量为
+`input + cached_input + cache_write + cache_write_5m + cache_write_1h`。
+
+### 未知和无价维度
+
+- 已知字段出现负数、非安全整数等非法数量时，该字段按 0 处理并写
+  `invalid_numeric:<path>`。
+- 未映射的非零顶层数字写 `unmapped:<key>`；未映射的对象或数组写
+  `unmapped_struct:<key>`。系统继续按已经可靠映射且有价格的 meter 结算。
+- 已映射但价格快照没有费率的非零 meter 不进入金额求和，并写
+  `unpriced:<meter>`。这部分用量为零计费，不能猜价或静默映射到其它 meter。
+- 所有最终 flags 都写入 `request_ledger.billing_flags_json`。归一化阶段产生的
+  `invalid_numeric:*`、`unmapped:*`、`unmapped_struct:*` 等会同时输出
+  `[gateway] billing_flags`；计价阶段追加的 `unpriced:*` 通过账本 flags 监控查询发现并告警。
+  修复适配器或价格后只影响新请求；不得根据迟到日志或新规则自动追收历史差额。
+- 整份 Token usage 缺失或不完整与“单个未知/无价维度”不同：前者整笔
+  `usage_missing_waived`，后者只跳过不可靠的部分。
+
 ## 分类约束
 
 | 模型分类    | Token | 按次 `unit` | 按时长 `duration` |
@@ -134,6 +194,20 @@ DSL 不包含循环、函数调用、算术或动态属性访问，因此保存�
 - 数量、单价和中间值均校验安全整数，金额计算使用 `BigInt`。
 
 SKU DSL 只在准入阶段选择 SKU。结算从响应/usage 读取可信数量，再以价格快照计算金额。
+
+### 计费证据与异常
+
+- Token usage 必须先归一化为互不重叠的 meter；OpenAI cached 子集从总输入扣除，Anthropic
+  独立缓存桶直接映射，reasoning 只记录并归入输出价格。
+- 长上下文阈值、开关和长档费率都编译进不可变价格快照。准入上下文另存的阈值和开关只用于
+  关闭态拦截与 `long_context_block_missed` 检测，不参与结算选价。
+- token 制响应缺少可靠 usage 时直接零计费，写 `usage_missing_waived` 并告警；New API 日志
+  只用于 reconcile 观测，不得回写 usage 后补扣客户。
+- 按次请求必须使用响应中实际成功交付的 `output_count`；请求参数 `n` 只用于准入上限。
+- multipart 请求最多整体缓冲 25 MiB，只读取模型与 SKU 白名单文本字段；文件内容不解码、
+  不记录，响应仍保持流式处理。
+- 请求终态、唯一钱包扣费流水和物化余额在同一事务提交；重复响应、worker 或对账处理不得
+  产生第二笔扣费。
 
 ## 异步图片任务
 
@@ -229,16 +303,15 @@ submitted -> processing -> completed
 
 ### New API 与上游查询
 
-生产 New API `81877e7c` 已经具备 APIMart 图片任务适配：
+New API 图片任务适配需要满足以下契约：
 
 - 标准 `POST /v1/images/generations` 会内部轮询最多 5 分钟并返回 R2 产物的 base64，兼容
   同步 OpenAI 调用，但会超过 APIPool 默认 3 分钟图片首字节超时，因此本期不使用。
 - `POST /v1/images/async/generations` 返回 `202 + task_id`；`GET /v1/tasks/{task_id}` 返回
   持久化状态，并在完成后从 R2 新签发结果 URL。
 - New API 后台轮询和 APIMart webhook 都能推进任务；只有结果图片全部写入 R2 后任务才成功。
-- New API 已保存终态 usage，但当前统一任务响应没有返回 usage。本期 New API 的必要代码
-  改动是把已校验的 usage 加入 `UnifiedTaskResponse`，供 APIPool 官方组准确结算；EXT 根据
-  `result.images` 实际数量结算。
+- 统一任务响应必须返回已校验的终态 usage，供 APIPool 官方组准确结算；EXT 根据
+  `result.images` 实际数量结算，不伪造 Token usage。
 
 APIPool worker 使用串行调度、任务 claim 租约和有界退避，多个实例或重复调度不能并发
 结算同一个任务。New API 校验自己的 token / 用户所有权；APIPool 再校验门户用户和 API
@@ -294,21 +367,5 @@ Key，形成两层任务隔离。
 目录变化后，请求热路径比较当前配置与活动快照；发生变化就退役旧快照并原子发布新版本。
 上游成本参照不在比较项中，因此成本同步不会触发售卖快照变化。
 
-## 迁移
-
-新增表和外键后执行一次性转换：
-
-- 每条旧 `catalog_model_price` 生成一个“默认售卖价”档案。
-- `token` 宽表字段转换为 meter 费率。
-- `per_call` tiers 转换为 `unit` 费率；图片使用 `output_count`，其他分类使用
-  `request_count`。
-- 旧按次配置编译成与当前 `quality/size` 行为等价的规则。
-- 每条 listing 选择所属模型的默认档案。
-- 新快照字段为空的旧活动快照会在第一次请求时自动退役并重新发布。
-
-转换后没有双读：售卖代码只认新档案；旧表只供独立成本同步保留。
-
-## 变更记录
-
-- 2026-08-18：根据 Issue #4 的确认，补充 APIPool 异步图片任务、New API 轮询、复用
-  New API R2 签名 URL 交付和完成后结算设计；本期不验收按时长真实模型链路。
+旧售价字段和 New API 成本参照字段仅为 schema 兼容或成本观测保留；售卖发布与结算只读取
+定价档案和不可变 `pricing_spec_json`，不存在双读。

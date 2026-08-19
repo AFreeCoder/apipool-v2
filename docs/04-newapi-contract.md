@@ -2,13 +2,14 @@
 
 > 本文档替换旧版 04-newapi-bridge-contract.md。旧版端点矩阵（`/api/admin/users`、`/api/admin/keys` 等）是虚构接口，开源 New API（QuantumNous/new-api）并不存在；本版按真实接口重写。
 >
-> **Spike 已完成（2026-06-12）**：以下内容已在本地 Docker 实例 `calciumion/new-api:latest`（`v1.0.0-rc.10`）逐项实测验证，✅ 标注实测结论。换版本部署时按第 10 节清单复测。
+> **兼容性基线（2026-06-12）**：以下内容已在本地 Docker 实例 `calciumion/new-api:latest`（`v1.0.0-rc.10`）逐项验证，✅ 标注已确认结论。更换 New API 版本时按第 10 节清单复测。
 
 ## 1. 边界规则（沿用，不变）
 
 - 门户永不从浏览器调用 New API；所有调用 server-only，从当前 `portalUserId` 出发。
 - 浏览器永不接收 `newapiUserId`、`newapiKeyId`、access token、admin token 或内部域名。
 - 用户可见文案不出现 "New API" 或任何后台痕迹（守护测试：`tests/public-content/locale-copy.test.ts`）。
+- New API `username` 必须等于门户规范化邮箱（`trim().toLowerCase()`），不得截断、哈希或改写为技术别名。邮箱长度超出上游能力时应修复 New API 兼容性，门户不得用另一个用户名绕过。
 
 ## 2. 环境变量
 
@@ -43,6 +44,7 @@ New-Api-User: <该令牌所属用户的 ID>
 
 ```
 1. 管理员 POST /api/user/  body {username, password, display_name}
+   → username 使用门户规范化邮箱，display_name 默认使用同值
    → 仅返回 {success:true}，不返回用户 ID
 2. 管理员 GET /api/user/search?keyword=<username>
    → 反查取得 newapiUserId（创建接口不返回 ID，必须反查）
@@ -131,7 +133,7 @@ New-Api-User: <该令牌所属用户的 ID>
 
 门户 Key、钱包与网关管理操作写入 `portal_admin_audit_log`；内部运行池首次供应与人工补充也写入该表，action 分别为 `newapi.runtime_pool.provision` 与 `newapi.runtime_pool.replenish`，只记录前后 quota、水位和目标，不记录凭据。仍需调用 New API 的用户供应、运行时凭证和旧版 Key 清理写入 `new_api_bridge_audit_log`。两类日志均保留操作者、目标、状态与幂等信息，凭据字段一律脱敏。
 
-## 10. Spike 验证清单（✅2026-06-12 已对 v1.0.0-rc.10 完成；换版本部署时复测）
+## 10. 版本兼容复测清单（✅2026-06-12 已对 v1.0.0-rc.10 完成；换版本部署时复测）
 
 - [x] `POST /api/user/` 创建用户的必填字段与响应——**不返回 user id**，需 `GET /api/user/search?keyword=` 反查
 - [x] 用户 access token 获取方式——`GET /api/user/token` 为**重新生成**语义，旧 token 失效；返回 32 字符
