@@ -63,7 +63,7 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - 生产 live smoke 只在 VPS 本地运行：这些变量保留在 `/opt/apipool-v2/.env.deploy`，不要放进 GitHub Actions secrets。
 - `APIPOOL_SMOKE_PORTAL_USER_ID` / `APIPOOL_SMOKE_OPERATOR_USER_ID`
 - `APIPOOL_SMOKE_PORTAL_EMAIL=smo@apipool.local` / `APIPOOL_SMOKE_OPERATOR_EMAIL=smo@apipool.local`（固定为同一账户；`deploy/setup-smoke-users.sh --apply` 创建/复用唯一 service identity，live smoke 会拒绝其它邮箱）
-- `APIPOOL_SMOKE_GROUP_SLUG`（可选；默认 `official`，可指定实际售卖分组如 `discount-1`）
+- `APIPOOL_SMOKE_GROUP_SLUG`（可选；默认 `official`，可指定实际售卖分组如 `discount`）
 - `APIPOOL_SMOKE_MODEL`（可选；设置时必须在 `APIPOOL_SMOKE_GROUP_SLUG` 对应分组中可调用；不设置时使用该分组的默认或首个可调用模型）
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
 - `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
@@ -452,6 +452,10 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/deploy.sh sha-<commit>'
 5. 验证 `http://127.0.0.1:3001/api/status` 与 `http://127.0.0.1:3000/`。
 6. 健康检查失败时尝试回滚到上一次 `IMAGE_TAG`；数据库不自动回滚，需根据备份人工恢复。
 
+如果本次发布首次完成 `codex-discount` → `discount` 数据迁移，健康检查
+失败时 `deploy.sh` 会以 78 退出并拒绝仅回滚旧镜像，避免旧镜像重建
+`codex-discount`。此时必须按 §5 把 pre-deploy 数据与上一镜像成对恢复。
+
 ### 主机入站防火墙
 
 先在腾讯云防火墙放行 owner 确认的 SSH CIDR 到 TCP `22222`，再应用主机层规则。不要把当前临时出口 IP 自动当成长期白名单：
@@ -506,6 +510,51 @@ daily 备份包含 `data/`、`.env.deploy`、`release.env`、compose 文件和 d
 3. 门户回滚到上一个稳定部署。
 4. 不删除已有门户 Key、运行时凭证、钱包/请求账本或订单。
 5. 保留钱包调额记录与管理审计日志用于对账；窗口期内的 paid 订单按 06 文档对账流程补记本地钱包充值，禁止通过 New API quota 补偿门户余额。
+
+### 5.1 分组合并首次发布的成对回滚例外
+
+首次包含 Issue #12 分组合并的发布会原位重命名 `codex-discount`，并删除
+`discount-1` 的已授权终态历史数据。该窗口禁止只回滚镜像；否则旧镜像会用
+旧 seed 重建新 ID 的 `codex-discount` 和 listing。发布前必须保留当次
+pre-deploy 归档路径与 SHA-256，并确认其同时包含 Portal 与 New API SQLite：
+
+```bash
+cd /opt/apipool-v2
+archive="$(ls -t backups/pre-deploy-*.tar.gz | head -1)"
+test -n "$archive"
+sha256sum "$archive"
+tar -tzf "$archive" | grep -E '^\./data/(portal/portal\.db|new-api/one-api\.db)$'
+restore_dir="$(mktemp -d /opt/apipool-v2/backups/group-restore.XXXXXX)"
+tar -xzf "$archive" -C "$restore_dir"
+test "$(sqlite3 "$restore_dir/data/portal/portal.db" 'pragma integrity_check;')" = ok
+test "$(sqlite3 "$restore_dir/data/new-api/one-api.db" 'pragma integrity_check;')" = ok
+```
+
+若需回滚，先停服并把当前数据目录可恢复地移入 `backups/`，再同时恢复两个数据目录和
+备份中的上一 `release.env`：
+
+```bash
+cd /opt/apipool-v2
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml down
+mv data/portal "backups/failed-portal-$stamp"
+mv data/new-api "backups/failed-new-api-$stamp"
+mkdir -p data/portal data/new-api
+cp -a "$restore_dir/data/portal/." data/portal/
+cp -a "$restore_dir/data/new-api/." data/new-api/
+chown -R 1001:1001 data/portal
+cp "$restore_dir/config/release.env" release.env
+chmod 600 release.env
+docker compose --env-file .env.deploy --env-file release.env -f docker-compose.prod.yml up -d --remove-orphans
+test "$(sqlite3 data/portal/portal.db 'pragma integrity_check;')" = ok
+test "$(sqlite3 data/new-api/one-api.db 'pragma integrity_check;')" = ok
+curl -fsS http://127.0.0.1:3000/ >/dev/null
+curl -fsS http://127.0.0.1:3001/api/status >/dev/null
+```
+
+当次迁移仅例外删除 `discount-1` 对应的终态 `request_ledger`/`gateway_task`。
+`wallet_ledger` 仍保持 append-only，其 `request_ledger_id` 作为快照值不改写，因此在该例外
+中可能指向已删除的请求；其它发布仍遵循上述“不删除请求账本”的通用规则。
 
 运行时凭证创建或停用失败时保留 `runtime_credential`/`credential_retirement` 状态与审计证据，先核对 New API 同名 token 再人工补偿；门户 Key 与运行时凭证未一致前，不得把凭证状态标记为可用。
 

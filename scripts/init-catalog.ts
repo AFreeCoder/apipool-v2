@@ -23,6 +23,12 @@ import type {
   catalogModel as catalogModelTable,
   catalogStatus as catalogStatusTable,
   catalogVendor as catalogVendorTable,
+  gatewayTask as gatewayTaskTable,
+  modelPriceVersion as modelPriceVersionTable,
+  modelRoute as modelRouteTable,
+  newApiKeyBinding as newApiKeyBindingTable,
+  portalApiKey as portalApiKeyTable,
+  requestLedger as requestLedgerTable,
 } from '@/config/db/schema';
 import { db } from '@/core/db';
 import {
@@ -43,6 +49,12 @@ type CatalogSchemaTables = {
   catalogModelPricingProfile: typeof catalogModelPricingProfileTable;
   catalogModelPricingRate: typeof catalogModelPricingRateTable;
   catalogModelListing: typeof catalogModelListingTable;
+  gatewayTask: typeof gatewayTaskTable;
+  modelPriceVersion: typeof modelPriceVersionTable;
+  modelRoute: typeof modelRouteTable;
+  newApiKeyBinding: typeof newApiKeyBindingTable;
+  portalApiKey: typeof portalApiKeyTable;
+  requestLedger: typeof requestLedgerTable;
 };
 
 type CatalogVendorRow = typeof catalogVendorTable.$inferSelect;
@@ -98,19 +110,27 @@ const statuses = [
   },
 ];
 
+const LEGACY_DISCOUNT_GROUP_SLUG = 'codex-discount';
+const DISCOUNT_GROUP_SLUG = 'discount';
+const RETIRED_DISCOUNT_GROUP_SLUG = 'discount-1';
+const OFFICIAL_GROUP_NAME = '官方分组';
+const OFFICIAL_GROUP_DESCRIPTION = '官方稳定线路，适合生产使用。';
+const DISCOUNT_GROUP_NAME = '特惠分组';
+const DISCOUNT_GROUP_DESCRIPTION = '特惠模型线路，每个模型独立映射上游分组。';
+
 const groups = [
   {
     slug: 'official',
-    name: 'Official',
-    userDescription: 'Default verified model route for production usage.',
+    name: OFFICIAL_GROUP_NAME,
+    userDescription: OFFICIAL_GROUP_DESCRIPTION,
     allowCreateKey: true,
     sortOrder: 10,
     status: 'active',
   },
   {
-    slug: 'codex-discount',
-    name: 'codex特惠',
-    userDescription: 'Codex reverse-channel discount route.',
+    slug: DISCOUNT_GROUP_SLUG,
+    name: DISCOUNT_GROUP_NAME,
+    userDescription: DISCOUNT_GROUP_DESCRIPTION,
     allowCreateKey: true,
     sortOrder: 20,
     status: 'active',
@@ -159,7 +179,7 @@ const listings = [
   },
   {
     modelId: 'gpt-image-2',
-    groupSlug: 'codex-discount',
+    groupSlug: DISCOUNT_GROUP_SLUG,
     newapiGroup: 'codex特惠',
     statusSlug: 'available',
     pricingProfileName: 'Codex 特惠按张价',
@@ -301,6 +321,284 @@ async function loadSchemaTables(): Promise<CatalogSchemaTables> {
   )) as unknown as CatalogSchemaTables;
 }
 
+type GroupConsolidationTables = Pick<
+  CatalogSchemaTables,
+  | 'catalogGroup'
+  | 'catalogModelListing'
+  | 'gatewayTask'
+  | 'modelPriceVersion'
+  | 'modelRoute'
+  | 'newApiKeyBinding'
+  | 'portalApiKey'
+  | 'requestLedger'
+>;
+
+type GroupConsolidationPlan = {
+  legacyDiscount: CatalogGroupRow;
+  official?: CatalogGroupRow;
+  retiredDiscount?: CatalogGroupRow;
+  legacyKeys: Array<{ id: string; portalUserId: string; status: string }>;
+  portalKeyIds: string[];
+  requestIds: string[];
+  relatedTaskIds: string[];
+};
+
+type DeleteLegacyPortalKey = (
+  portalUserId: string,
+  keyId: string
+) => Promise<void>;
+
+async function loadGroupConsolidationPlan(
+  executor: any,
+  tables: GroupConsolidationTables,
+  requireRemoteDeletion: boolean
+): Promise<GroupConsolidationPlan | null> {
+  const {
+    catalogGroup,
+    gatewayTask,
+    newApiKeyBinding,
+    portalApiKey,
+    requestLedger,
+  } = tables;
+
+  const existingGroups = (await executor
+    .select()
+    .from(catalogGroup)
+    .where(
+      inArray(catalogGroup.slug, [
+        'official',
+        LEGACY_DISCOUNT_GROUP_SLUG,
+        DISCOUNT_GROUP_SLUG,
+        RETIRED_DISCOUNT_GROUP_SLUG,
+      ])
+    )) as CatalogGroupRow[];
+  const legacyDiscount = existingGroups.find(
+    (group) => group.slug === LEGACY_DISCOUNT_GROUP_SLUG
+  );
+  if (!legacyDiscount) return null;
+
+  const discount = existingGroups.find(
+    (group) => group.slug === DISCOUNT_GROUP_SLUG
+  );
+  const official = existingGroups.find((group) => group.slug === 'official');
+  if (discount && legacyDiscount.id !== discount.id) {
+    throw new Error(
+      'catalog group consolidation requires manual review: codex-discount and discount both exist'
+    );
+  }
+
+  const retiredDiscount = existingGroups.find(
+    (group) => group.slug === RETIRED_DISCOUNT_GROUP_SLUG
+  );
+  if (!retiredDiscount) {
+    return {
+      legacyDiscount,
+      official,
+      legacyKeys: [],
+      portalKeyIds: [],
+      requestIds: [],
+      relatedTaskIds: [],
+    };
+  }
+
+  const legacyKeys = await executor
+    .select({
+      id: newApiKeyBinding.id,
+      portalUserId: newApiKeyBinding.portalUserId,
+      status: newApiKeyBinding.status,
+    })
+    .from(newApiKeyBinding)
+    .where(eq(newApiKeyBinding.groupId, retiredDiscount.id));
+  const portalKeys = await executor
+    .select({ id: portalApiKey.id, status: portalApiKey.status })
+    .from(portalApiKey)
+    .where(eq(portalApiKey.groupId, retiredDiscount.id));
+  if (
+    legacyKeys.some((key: { status: string }) =>
+      requireRemoteDeletion
+        ? key.status !== 'deleted'
+        : !['disabled', 'deleted'].includes(key.status)
+    ) ||
+    portalKeys.some(
+      (key: { status: string }) => !['disabled', 'deleted'].includes(key.status)
+    )
+  ) {
+    throw new Error(
+      requireRemoteDeletion
+        ? 'catalog group consolidation refused to detach discount-1 legacy keys before remote deletion'
+        : 'catalog group consolidation refused to delete discount-1 with non-disabled API keys'
+    );
+  }
+
+  const requests = await executor
+    .select({ id: requestLedger.id, status: requestLedger.status })
+    .from(requestLedger)
+    .where(eq(requestLedger.portalGroupId, retiredDiscount.id));
+  if (
+    requests.some(
+      (request: { status: string }) =>
+        !['settled', 'failed_unbilled'].includes(request.status)
+    )
+  ) {
+    throw new Error(
+      'catalog group consolidation refused to delete discount-1 with non-terminal requests'
+    );
+  }
+
+  const requestIds = requests.map((request: { id: string }) => request.id);
+  const portalKeyIds = portalKeys.map((key: { id: string }) => key.id);
+  const relatedTasks = [
+    ...(requestIds.length > 0
+      ? await executor
+          .select({ id: gatewayTask.id, status: gatewayTask.status })
+          .from(gatewayTask)
+          .where(inArray(gatewayTask.requestLedgerId, requestIds))
+      : []),
+    ...(portalKeyIds.length > 0
+      ? await executor
+          .select({ id: gatewayTask.id, status: gatewayTask.status })
+          .from(gatewayTask)
+          .where(inArray(gatewayTask.portalKeyId, portalKeyIds))
+      : []),
+  ];
+  if (
+    relatedTasks.some(
+      (task: { status: string }) =>
+        !['completed', 'failed_unbilled'].includes(task.status)
+    )
+  ) {
+    throw new Error(
+      'catalog group consolidation refused to delete discount-1 with non-terminal tasks'
+    );
+  }
+
+  return {
+    legacyDiscount,
+    official,
+    retiredDiscount,
+    legacyKeys,
+    portalKeyIds,
+    requestIds,
+    relatedTaskIds: [
+      ...new Set(relatedTasks.map((task: { id: string }) => task.id)),
+    ],
+  };
+}
+
+async function deleteLegacyPortalKeyThroughSupportedPath(
+  portalUserId: string,
+  keyId: string
+) {
+  const { deletePortalApiKey } = await import(
+    '@/features/newapi-bridge/server/portal'
+  );
+  await deletePortalApiKey(portalUserId, keyId);
+}
+
+async function preparePortalGroupConsolidation(
+  tables: GroupConsolidationTables,
+  deleteLegacyPortalKey: DeleteLegacyPortalKey
+) {
+  const plan = await loadGroupConsolidationPlan(db(), tables, false);
+  if (!plan) return;
+
+  for (const key of plan.legacyKeys) {
+    if (key.status === 'disabled') {
+      await deleteLegacyPortalKey(key.portalUserId, key.id);
+    }
+  }
+}
+
+async function normalizeSeededOfficialGroup(
+  tx: any,
+  catalogGroup: CatalogSchemaTables['catalogGroup']
+) {
+  await tx
+    .update(catalogGroup)
+    .set({
+      name: OFFICIAL_GROUP_NAME,
+      userDescription: OFFICIAL_GROUP_DESCRIPTION,
+    })
+    .where(
+      and(
+        eq(catalogGroup.slug, 'official'),
+        eq(catalogGroup.name, 'Official'),
+        eq(
+          catalogGroup.userDescription,
+          'Default verified model route for production usage.'
+        )
+      )
+    );
+}
+
+async function consolidatePortalGroups(
+  tx: any,
+  tables: GroupConsolidationTables
+) {
+  const {
+    catalogGroup,
+    catalogModelListing,
+    gatewayTask,
+    modelPriceVersion,
+    modelRoute,
+    newApiKeyBinding,
+    portalApiKey,
+    requestLedger,
+  } = tables;
+  const plan = await loadGroupConsolidationPlan(tx, tables, true);
+  if (!plan) return;
+
+  if (plan.official) {
+    await tx
+      .update(catalogGroup)
+      .set({
+        name: OFFICIAL_GROUP_NAME,
+        userDescription: OFFICIAL_GROUP_DESCRIPTION,
+      })
+      .where(eq(catalogGroup.id, plan.official.id));
+  }
+  await tx
+    .update(catalogGroup)
+    .set({
+      slug: DISCOUNT_GROUP_SLUG,
+      name: DISCOUNT_GROUP_NAME,
+      userDescription: DISCOUNT_GROUP_DESCRIPTION,
+    })
+    .where(eq(catalogGroup.id, plan.legacyDiscount.id));
+
+  if (!plan.retiredDiscount) return;
+
+  const { portalKeyIds, requestIds, relatedTaskIds, retiredDiscount } = plan;
+  if (relatedTaskIds.length > 0) {
+    await tx.delete(gatewayTask).where(inArray(gatewayTask.id, relatedTaskIds));
+  }
+  if (requestIds.length > 0) {
+    // 资金流水必须 append-only；其 request_ledger_id 作为历史快照保持不变。
+    await tx.delete(requestLedger).where(inArray(requestLedger.id, requestIds));
+  }
+  if (portalKeyIds.length > 0) {
+    await tx.delete(portalApiKey).where(inArray(portalApiKey.id, portalKeyIds));
+  }
+
+  await tx
+    .delete(catalogModelListing)
+    .where(eq(catalogModelListing.groupId, retiredDiscount.id));
+  await tx
+    .delete(modelRoute)
+    .where(eq(modelRoute.portalGroupId, retiredDiscount.id));
+  await tx
+    .delete(modelPriceVersion)
+    .where(eq(modelPriceVersion.portalGroupId, retiredDiscount.id));
+  // 远端删除已由标准链路完成；本地仅解除已删除 Key 的分组引用。
+  await tx
+    .update(newApiKeyBinding)
+    .set({
+      groupId: null,
+    })
+    .where(eq(newApiKeyBinding.groupId, retiredDiscount.id));
+  await tx.delete(catalogGroup).where(eq(catalogGroup.id, retiredDiscount.id));
+}
+
 function indexBy<T, K extends keyof T & string>(rows: T[], key: K) {
   return Object.fromEntries(rows.map((row) => [row[key], row])) as Record<
     string,
@@ -320,7 +618,9 @@ function requireRow<T>(
   return row;
 }
 
-export async function initCatalog() {
+export async function initCatalog(options?: {
+  deleteLegacyPortalKey?: DeleteLegacyPortalKey;
+}) {
   const {
     catalogVendor,
     catalogCapability,
@@ -333,9 +633,33 @@ export async function initCatalog() {
     catalogModelPricingProfile,
     catalogModelPricingRate,
     catalogModelListing,
+    gatewayTask,
+    modelPriceVersion,
+    modelRoute,
+    newApiKeyBinding,
+    portalApiKey,
+    requestLedger,
   } = await loadSchemaTables();
 
+  const consolidationTables = {
+    catalogGroup,
+    catalogModelListing,
+    gatewayTask,
+    modelPriceVersion,
+    modelRoute,
+    newApiKeyBinding,
+    portalApiKey,
+    requestLedger,
+  };
+  await preparePortalGroupConsolidation(
+    consolidationTables,
+    options?.deleteLegacyPortalKey ?? deleteLegacyPortalKeyThroughSupportedPath
+  );
+
   await db().transaction(async (tx: any) => {
+    await normalizeSeededOfficialGroup(tx, catalogGroup);
+    await consolidatePortalGroups(tx, consolidationTables);
+
     await tx
       .insert(catalogVendor)
       .values(

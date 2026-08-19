@@ -31,7 +31,7 @@ import { assertSmokeIdentity, SMOKE_PORTAL_EMAIL } from './smoke-identities';
 
 const MODEL = 'gpt-image-2';
 const OFFICIAL_GROUP = 'official';
-const CODEX_GROUP = 'codex-discount';
+const DISCOUNT_GROUP = 'discount';
 
 export const IMAGE_UAT_CASES = [
   {
@@ -52,14 +52,14 @@ export const IMAGE_UAT_CASES = [
   },
   {
     id: 'codex-multi-2k',
-    group: CODEX_GROUP,
+    group: DISCOUNT_GROUP,
     endpoint: 'generations',
     resolution: '2k',
     n: 2,
   },
   {
     id: 'codex-edit-4k',
-    group: CODEX_GROUP,
+    group: DISCOUNT_GROUP,
     endpoint: 'edits',
     resolution: '4k',
     n: 1,
@@ -520,7 +520,7 @@ export async function main() {
   let codexKey: Awaited<ReturnType<typeof createGroupKey>> | undefined;
   try {
     officialKey = await createGroupKey(user, OFFICIAL_GROUP, runId);
-    codexKey = await createGroupKey(user, CODEX_GROUP, runId);
+    codexKey = await createGroupKey(user, DISCOUNT_GROUP, runId);
     const targetBalance = Math.max(initialBalance, 20_000_000);
     await adjustWallet(
       userId,
@@ -659,7 +659,7 @@ export async function main() {
       JSON.stringify({
         result: 'passed',
         model: MODEL,
-        groups: [OFFICIAL_GROUP, CODEX_GROUP],
+        groups: [OFFICIAL_GROUP, DISCOUNT_GROUP],
         tasks: [...completed, editCompleted].map((task) => ({
           caseId: task.caseId,
           taskId: task.taskId,

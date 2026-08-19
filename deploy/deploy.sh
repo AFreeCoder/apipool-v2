@@ -9,6 +9,7 @@ LOCK_FILE="${APIPOOL_DEPLOY_LOCK:-/run/apipool-v2-deploy.lock}"
 IMAGE_TAG="${1:-${IMAGE_TAG:-}}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 STATE_ENV_FILE="$APP_DIR/$ENV_FILE"
+PORTAL_DB_PATH="${APIPOOL_PORTAL_DB_PATH:-$APP_DIR/data/portal/portal.db}"
 
 if [ -z "$IMAGE_TAG" ]; then
   echo "usage: $0 <image-tag>" >&2
@@ -43,6 +44,29 @@ compose() {
   docker compose --env-file "$ENV_FILE" --env-file "$RELEASE_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+portal_group_state() {
+  if [ ! -f "$PORTAL_DB_PATH" ] || ! command -v sqlite3 >/dev/null 2>&1; then
+    echo unknown
+    return
+  fi
+
+  local state=""
+  state="$(sqlite3 "$PORTAL_DB_PATH" "
+    select case
+      when exists (select 1 from catalog_group where slug = 'discount')
+       and not exists (select 1 from catalog_group where slug = 'codex-discount')
+      then 'consolidated'
+      when exists (select 1 from catalog_group where slug = 'codex-discount')
+       and not exists (select 1 from catalog_group where slug = 'discount')
+      then 'legacy'
+      else 'unknown' end;
+  " 2>/dev/null || true)"
+  case "$state" in
+    consolidated | legacy) echo "$state" ;;
+    *) echo unknown ;;
+  esac
+}
+
 mkdir -p data/portal data/new-api backups
 chown -R 1001:1001 data/portal
 chmod 700 backups
@@ -51,6 +75,8 @@ old_tag=""
 if [ -f "$RELEASE_FILE" ]; then
   old_tag="$(sed -n 's/^IMAGE_TAG=//p' "$RELEASE_FILE" | tail -1)"
 fi
+
+portal_group_state_before="$(portal_group_state)"
 
 # checkout 已开放的常规发布先冻结新 checkout，再替换镜像。结算路径继续可用，
 # 以便新镜像跑受控充值 smoke；失败时保持冻结。
@@ -143,6 +169,13 @@ compose up -d --remove-orphans
 
 if ! healthcheck; then
   echo "[deploy] healthcheck failed for $IMAGE_TAG" >&2
+  portal_group_state_after="$(portal_group_state)"
+  if ! { [ "$portal_group_state_before" = consolidated ] && [ "$portal_group_state_after" = consolidated ]; } &&
+    ! { [ "$portal_group_state_before" = legacy ] && [ "$portal_group_state_after" = legacy ]; }; then
+    echo "[deploy] Portal group state is migration-sensitive or unknown (before=$portal_group_state_before after=$portal_group_state_after); image-only rollback is forbidden" >&2
+    echo "[deploy] restore the latest pre-deploy archive together with the previous IMAGE_TAG (docs/07-runbook.md section 5)" >&2
+    exit 78
+  fi
   if [ -n "$old_tag" ] && [ "$old_tag" != "$IMAGE_TAG" ]; then
     echo "[deploy] rolling back container image to $old_tag" >&2
     {

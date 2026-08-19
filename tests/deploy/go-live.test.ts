@@ -319,6 +319,29 @@ printf 'TIMESTAMP=fixture\\nIMAGE_TAG=%s\\n' "$tag" >"$APIPOOL_DEPLOY_DIR/.live-
   );
   await executable(join(fixture.dir, 'bin/chown'), '#!/bin/sh\nexit 0\n');
   await executable(
+    join(fixture.dir, 'bin/sqlite3'),
+    `#!/bin/sh
+if [ "${'${MOCK_SQLITE_FAIL:-0}'}" = 1 ]; then exit 1; fi
+tag="$(sed -n 's/^IMAGE_TAG=//p' "$APIPOOL_DEPLOY_DIR/release.env" | tail -1)"
+if [ "${'${MOCK_SQLITE_FAIL_AFTER:-0}'}" = 1 ] && [ "$tag" = sha-new ]; then exit 1; fi
+if [ "${'${MOCK_CONSOLIDATED_BEFORE:-0}'}" = 1 ]; then
+  printf 'consolidated\\n'
+  exit 0
+fi
+if [ "${'${MOCK_MIGRATE_GROUPS:-0}'}" = 1 ] && [ "$tag" = sha-new ]; then
+  printf 'consolidated\\n'
+else
+  printf 'legacy\\n'
+fi
+`
+  );
+  await mkdir(join(fixture.dir, 'data/portal'), { recursive: true });
+  await writeFile(
+    join(fixture.dir, 'data/portal/portal.db'),
+    'fixture',
+    'utf8'
+  );
+  await executable(
     join(fixture.dir, 'bin/curl'),
     `#!/bin/sh
 url=""
@@ -378,6 +401,48 @@ test('portal 最终健康探针失败时发布回滚并返回失败', async () =
     await readFile(join(fixture.dir, 'release.env'), 'utf8'),
     /^IMAGE_TAG=sha-current$/m
   );
+});
+
+test('分组数据迁移后健康失败会拒绝仅回滚旧镜像', async () => {
+  const fixture = await makeDeployFixture('false');
+
+  const result = runDeploy(fixture, '0', {
+    MOCK_CURL_FAIL_URL: 'http://127.0.0.1:3000/',
+    MOCK_MIGRATE_GROUPS: '1',
+  });
+
+  assert.equal(result.status, 78, result.stderr);
+  assert.match(result.stderr, /image-only rollback is forbidden/);
+  assert.doesNotMatch(result.stderr, /rolling back container image/);
+  assert.match(
+    await readFile(join(fixture.dir, 'release.env'), 'utf8'),
+    /^IMAGE_TAG=sha-new$/m
+  );
+});
+
+test('分组状态查询失败时不授权仅回滚旧镜像', async () => {
+  const fixture = await makeDeployFixture('false');
+  const result = runDeploy(fixture, '0', {
+    MOCK_CURL_FAIL_URL: 'http://127.0.0.1:3000/',
+    MOCK_SQLITE_FAIL: '1',
+  });
+
+  assert.equal(result.status, 78, result.stderr);
+  assert.match(result.stderr, /before=unknown after=unknown/);
+  assert.doesNotMatch(result.stderr, /rolling back container image/);
+});
+
+test('已合并分组在发布后状态未知时也不授权仅回滚旧镜像', async () => {
+  const fixture = await makeDeployFixture('false');
+  const result = runDeploy(fixture, '0', {
+    MOCK_CONSOLIDATED_BEFORE: '1',
+    MOCK_CURL_FAIL_URL: 'http://127.0.0.1:3000/',
+    MOCK_SQLITE_FAIL_AFTER: '1',
+  });
+
+  assert.equal(result.status, 78, result.stderr);
+  assert.match(result.stderr, /before=consolidated after=unknown/);
+  assert.doesNotMatch(result.stderr, /rolling back container image/);
 });
 
 test('checkout 已开放的常规发布在 pull 前冻结，充值 smoke 失败时保持冻结', async () => {
