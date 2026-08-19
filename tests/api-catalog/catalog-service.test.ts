@@ -410,12 +410,93 @@ test('group deletion ignores deleted key bindings but blocks active key bindings
 
   await modules.service.deleteGroup(deletedGroup.id);
   assert.equal(await modules.service.getGroupById(deletedGroup.id), undefined);
+  const [detachedBinding] = await modules
+    .db()
+    .select()
+    .from(modules.schema.newApiKeyBinding)
+    .where(eq(modules.schema.newApiKeyBinding.id, 'key_binding_guard_deleted'));
+  assert.equal(detachedBinding.groupId, null);
 
   await assert.rejects(
     () => modules.service.deleteGroup(activeGroup.id),
     (error: unknown) =>
       error instanceof modules.service.CatalogDeleteBlockedError
   );
+});
+
+test('group deletion blocks all gateway history references', async () => {
+  const portalKeyGroup = await createGroup(
+    'portal-key-history-group',
+    'portal-key-history-gateway'
+  );
+  const routeGroup = await createGroup(
+    'route-history-group',
+    'route-history-gateway'
+  );
+  const priceGroup = await createGroup(
+    'price-history-group',
+    'price-history-gateway'
+  );
+  const requestGroup = await createGroup(
+    'request-history-group',
+    'request-history-gateway'
+  );
+  await modules.db().insert(modules.schema.user).values({
+    id: 'group_history_guard_user',
+    name: 'Group History Guard',
+    email: 'group-history-guard@example.com',
+  });
+  await modules.db().insert(modules.schema.portalApiKey).values({
+    id: 'group_history_portal_key',
+    userId: 'group_history_guard_user',
+    groupId: portalKeyGroup.id,
+    keyHash: 'group_history_portal_key_hash',
+    keyPrefix: 'sk-ap-history',
+    status: 'deleted',
+    name: 'Deleted portal key history',
+  });
+  await modules.db().insert(modules.schema.modelRoute).values({
+    id: 'group_history_route',
+    portalGroupId: routeGroup.id,
+    portalModelId: 'history-model',
+    newapiGroup: 'history-upstream',
+    newapiModelId: 'history-model',
+    version: 1,
+    status: 'retired',
+    publishedBy: 'test',
+  });
+  await modules.db().insert(modules.schema.modelPriceVersion).values({
+    id: 'group_history_price',
+    portalGroupId: priceGroup.id,
+    portalModelId: 'history-model',
+    version: 1,
+    status: 'retired',
+    publishedBy: 'test',
+  });
+  await modules.db().insert(modules.schema.requestLedger).values({
+    id: 'group_history_request',
+    newapiRequestId: 'group_history_remote_request',
+    userId: 'group_history_guard_user',
+    portalKeyId: 'group_history_missing_key',
+    portalGroupId: requestGroup.id,
+    portalModelId: 'history-model',
+    newapiGroup: 'history-upstream',
+    newapiModelId: 'history-model',
+    credentialId: 'group_history_credential',
+    routeVersion: 1,
+    priceVersionId: 'group_history_missing_price',
+    endpoint: '/v1/responses',
+    status: 'settled',
+    chargedMicroUsd: 1,
+  });
+
+  for (const group of [portalKeyGroup, routeGroup, priceGroup, requestGroup]) {
+    await assert.rejects(
+      () => modules.service.deleteGroup(group.id),
+      (error: unknown) =>
+        error instanceof modules.service.CatalogDeleteBlockedError
+    );
+  }
 });
 
 test('setModelCapabilities replaces all capability links for a model', async () => {

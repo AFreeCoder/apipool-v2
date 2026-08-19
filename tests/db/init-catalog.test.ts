@@ -80,6 +80,21 @@ async function findBySlug(table: any, slugColumn: any, slug: string) {
   return row;
 }
 
+async function stageLegacyDiscountSlug() {
+  const { catalogGroup } = modules.schema;
+  const discount = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'discount'
+  );
+  assert.ok(discount);
+  await modules
+    .db()
+    .update(catalogGroup)
+    .set({ slug: 'codex-discount' })
+    .where(eq(catalogGroup.id, discount.id));
+}
+
 function isSqliteBusy(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -189,7 +204,7 @@ test('initCatalog seeds the required first catalog data', async () => {
     catalogGroup.slug,
     'official'
   );
-  assert.equal(official?.name, 'Official');
+  assert.equal(official?.name, '官方分组');
   assert.equal(official?.allowCreateKey, true);
   assert.equal(official?.status, 'active');
 
@@ -270,13 +285,13 @@ test('initCatalog 为 gpt-image-2 初始化分组隔离的 token 与按张定价
     catalogGroup.slug,
     'official'
   );
-  const codex = await findBySlug(
+  const discount = await findBySlug(
     catalogGroup,
     catalogGroup.slug,
-    'codex-discount'
+    'discount'
   );
   assert.ok(official);
-  assert.ok(codex);
+  assert.ok(discount);
 
   const officialReadiness =
     await modules.publishReadiness.assessPublishReadiness(
@@ -295,19 +310,382 @@ test('initCatalog 为 gpt-image-2 初始化分组隔离的 token 与按张定价
     input: 5_000_000,
   });
 
-  const codexReadiness = await modules.publishReadiness.assessPublishReadiness(
-    codex.id,
-    'gpt-image-2'
-  );
-  assert.equal(codexReadiness.ready, true);
-  if (!codexReadiness.ready) return;
-  assert.equal(codexReadiness.snapshot.newapiGroup, 'codex特惠');
-  assert.equal(codexReadiness.snapshot.pricingBasis, 'unit');
-  assert.deepEqual(JSON.parse(codexReadiness.snapshot.tiersJson), {
+  const discountReadiness =
+    await modules.publishReadiness.assessPublishReadiness(
+      discount.id,
+      'gpt-image-2'
+    );
+  assert.equal(discountReadiness.ready, true);
+  if (!discountReadiness.ready) return;
+  assert.equal(discountReadiness.snapshot.newapiGroup, 'codex特惠');
+  assert.equal(discountReadiness.snapshot.pricingBasis, 'unit');
+  assert.deepEqual(JSON.parse(discountReadiness.snapshot.tiersJson), {
     default: 8_500,
     'resolution=2k': 14_000,
     'resolution=4k': 21_000,
   });
+});
+
+test('initCatalog 原位重命名特惠分组并清理 discount-1 历史引用', async () => {
+  await modules.initCatalog();
+
+  const {
+    catalogGroup,
+    catalogModel,
+    catalogModelListing,
+    catalogStatus,
+    gatewayTask,
+    modelPriceVersion,
+    modelRoute,
+    newApiKeyBinding,
+    portalApiKey,
+    requestLedger,
+    user,
+    walletAccount,
+    walletLedger,
+  } = modules.schema;
+  const discount = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'discount'
+  );
+  const [discountListing] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.groupId, discount.id))
+    .limit(1);
+  const imageModel = await findBySlug(
+    catalogModel,
+    catalogModel.modelId,
+    'gpt-image-2'
+  );
+  const available = await findBySlug(
+    catalogStatus,
+    catalogStatus.slug,
+    'available'
+  );
+
+  await modules
+    .db()
+    .update(catalogGroup)
+    .set({ slug: 'codex-discount', name: 'codex特惠' })
+    .where(eq(catalogGroup.id, discount.id));
+  await modules.db().insert(catalogGroup).values({
+    id: 'retired_discount_group',
+    slug: 'discount-1',
+    name: '旧特惠分组',
+    userDescription: '可删除的历史分组',
+    allowCreateKey: false,
+    sortOrder: 99,
+    status: 'disabled',
+  });
+  await modules.db().insert(user).values({
+    id: 'retired_discount_user',
+    name: 'Retired Discount User',
+    email: 'retired-discount@example.com',
+  });
+  await modules.db().insert(walletAccount).values({
+    userId: 'retired_discount_user',
+    balanceMicroUsd: 90_000,
+  });
+  await modules.db().insert(portalApiKey).values({
+    id: 'retired_discount_portal_key',
+    userId: 'retired_discount_user',
+    groupId: 'retired_discount_group',
+    keyHash: 'retired_discount_key_hash',
+    keyPrefix: 'sk-ap-retired',
+    status: 'disabled',
+    name: 'Retired discount portal key',
+  });
+  await modules.db().insert(newApiKeyBinding).values({
+    id: 'retired_discount_legacy_key',
+    portalUserId: 'retired_discount_user',
+    newapiUserId: 'retired_discount_remote_user',
+    newapiKeyId: 'retired_discount_remote_key',
+    keyMasked: 'sk-...retired',
+    displayName: 'Retired discount legacy key',
+    status: 'disabled',
+    groupId: 'retired_discount_group',
+    newapiGroup: 'retired-discount-upstream',
+    idempotencyKey: 'retired_discount_legacy_key',
+  });
+  await modules.db().insert(catalogModelListing).values({
+    id: 'retired_discount_listing',
+    modelId: imageModel.id,
+    groupId: 'retired_discount_group',
+    newapiGroup: 'retired-discount-upstream',
+    statusId: available.id,
+    inputMicroUsd: 0,
+    outputMicroUsd: 0,
+  });
+  await modules.db().insert(modelRoute).values({
+    id: 'retired_discount_route',
+    portalGroupId: 'retired_discount_group',
+    portalModelId: 'gpt-image-2',
+    newapiGroup: 'retired-discount-upstream',
+    newapiModelId: 'gpt-image-2',
+    version: 1,
+    status: 'retired',
+    publishedBy: 'migration-test',
+  });
+  await modules.db().insert(modelPriceVersion).values({
+    id: 'retired_discount_price',
+    portalGroupId: 'retired_discount_group',
+    portalModelId: 'gpt-image-2',
+    version: 1,
+    status: 'retired',
+    publishedBy: 'migration-test',
+  });
+  await modules.db().insert(requestLedger).values({
+    id: 'retired_discount_request',
+    newapiRequestId: 'retired_discount_remote_request',
+    userId: 'retired_discount_user',
+    portalKeyId: 'retired_discount_portal_key',
+    portalGroupId: 'retired_discount_group',
+    portalModelId: 'gpt-image-2',
+    newapiGroup: 'retired-discount-upstream',
+    newapiModelId: 'gpt-image-2',
+    credentialId: 'retired_discount_credential',
+    routeVersion: 1,
+    priceVersionId: 'retired_discount_price',
+    endpoint: '/v1/images/generations',
+    status: 'settled',
+    chargedMicroUsd: 10_000,
+  });
+  await modules.db().insert(gatewayTask).values({
+    id: 'retired_discount_task',
+    requestLedgerId: 'retired_discount_request',
+    userId: 'retired_discount_user',
+    portalKeyId: 'retired_discount_portal_key',
+    status: 'failed_unbilled',
+  });
+  await modules.db().insert(walletLedger).values({
+    id: 'retired_discount_wallet_entry',
+    userId: 'retired_discount_user',
+    entryType: 'request_charge',
+    signedAmountMicroUsd: -10_000,
+    balanceAfterMicroUsd: 90_000,
+    requestLedgerId: 'retired_discount_request',
+    idempotencyKey: 'retired_discount_wallet_entry',
+  });
+
+  await assert.rejects(
+    () =>
+      modules.initCatalog({
+        deleteLegacyPortalKey: async () => {
+          throw new Error('remote delete failed');
+        },
+      }),
+    /remote delete failed/
+  );
+  assert.ok(
+    await findBySlug(catalogGroup, catalogGroup.slug, 'codex-discount')
+  );
+  const [keyAfterRemoteFailure] = await modules
+    .db()
+    .select()
+    .from(newApiKeyBinding)
+    .where(eq(newApiKeyBinding.id, 'retired_discount_legacy_key'));
+  assert.equal(keyAfterRemoteFailure.status, 'disabled');
+
+  const remotelyDeletedKeys: Array<[string, string]> = [];
+  await modules.initCatalog({
+    deleteLegacyPortalKey: async (portalUserId: string, keyId: string) => {
+      remotelyDeletedKeys.push([portalUserId, keyId]);
+      await modules
+        .db()
+        .update(newApiKeyBinding)
+        .set({ status: 'deleted', deletedAt: new Date() })
+        .where(eq(newApiKeyBinding.id, keyId));
+    },
+  });
+
+  const renamed = await findBySlug(catalogGroup, catalogGroup.slug, 'discount');
+  assert.deepEqual(remotelyDeletedKeys, [
+    ['retired_discount_user', 'retired_discount_legacy_key'],
+  ]);
+  assert.equal(renamed.id, discount.id);
+  assert.equal(renamed.name, '特惠分组');
+  assert.equal(
+    await findBySlug(catalogGroup, catalogGroup.slug, 'codex-discount'),
+    undefined
+  );
+  assert.equal(
+    await findBySlug(catalogGroup, catalogGroup.slug, 'discount-1'),
+    undefined
+  );
+  const [preservedListing] = await modules
+    .db()
+    .select()
+    .from(catalogModelListing)
+    .where(eq(catalogModelListing.id, discountListing.id));
+  assert.equal(preservedListing.groupId, discount.id);
+
+  for (const [table, column, id] of [
+    [catalogModelListing, catalogModelListing.id, 'retired_discount_listing'],
+    [modelRoute, modelRoute.id, 'retired_discount_route'],
+    [modelPriceVersion, modelPriceVersion.id, 'retired_discount_price'],
+    [requestLedger, requestLedger.id, 'retired_discount_request'],
+    [gatewayTask, gatewayTask.id, 'retired_discount_task'],
+    [portalApiKey, portalApiKey.id, 'retired_discount_portal_key'],
+  ] as const) {
+    const rows = await modules.db().select().from(table).where(eq(column, id));
+    assert.equal(rows.length, 0);
+  }
+
+  const [legacyKey] = await modules
+    .db()
+    .select()
+    .from(newApiKeyBinding)
+    .where(eq(newApiKeyBinding.id, 'retired_discount_legacy_key'));
+  assert.equal(legacyKey.status, 'deleted');
+  assert.equal(legacyKey.groupId, null);
+  assert.ok(legacyKey.deletedAt);
+
+  const [walletEntry] = await modules
+    .db()
+    .select()
+    .from(walletLedger)
+    .where(eq(walletLedger.id, 'retired_discount_wallet_entry'));
+  assert.equal(walletEntry.signedAmountMicroUsd, -10_000);
+  assert.equal(walletEntry.balanceAfterMicroUsd, 90_000);
+  assert.equal(walletEntry.requestLedgerId, 'retired_discount_request');
+});
+
+test('initCatalog 拒绝清理仍有活跃 Key 的 discount-1', async () => {
+  const { catalogGroup, newApiKeyBinding } = modules.schema;
+  await stageLegacyDiscountSlug();
+  await modules.db().insert(catalogGroup).values({
+    id: 'active_discount_group',
+    slug: 'discount-1',
+    name: '有活跃 Key 的旧分组',
+    userDescription: '安全门禁测试',
+    allowCreateKey: false,
+    sortOrder: 99,
+    status: 'disabled',
+  });
+  await modules.db().insert(newApiKeyBinding).values({
+    id: 'active_discount_legacy_key',
+    portalUserId: 'retired_discount_user',
+    newapiUserId: 'active_discount_remote_user',
+    newapiKeyId: 'active_discount_remote_key',
+    keyMasked: 'sk-...active',
+    displayName: 'Active discount legacy key',
+    status: 'active',
+    groupId: 'active_discount_group',
+    newapiGroup: 'active-discount-upstream',
+    idempotencyKey: 'active_discount_legacy_key',
+  });
+
+  await assert.rejects(
+    () => modules.initCatalog(),
+    /refused to delete discount-1 with non-disabled API keys/
+  );
+  assert.ok(await findBySlug(catalogGroup, catalogGroup.slug, 'discount-1'));
+
+  await modules
+    .db()
+    .update(newApiKeyBinding)
+    .set({ status: 'deleted', deletedAt: new Date() })
+    .where(eq(newApiKeyBinding.id, 'active_discount_legacy_key'));
+  await modules.initCatalog();
+  assert.equal(
+    await findBySlug(catalogGroup, catalogGroup.slug, 'discount-1'),
+    undefined
+  );
+});
+
+test('initCatalog 拒绝清理 discount-1 的非终态请求和任务', async () => {
+  const { catalogGroup, gatewayTask, portalApiKey, requestLedger } =
+    modules.schema;
+  await stageLegacyDiscountSlug();
+  await modules.db().insert(catalogGroup).values({
+    id: 'busy_discount_group',
+    slug: 'discount-1',
+    name: '仍有任务的旧分组',
+    userDescription: '非终态门禁测试',
+    allowCreateKey: false,
+    sortOrder: 99,
+    status: 'disabled',
+  });
+  await modules.db().insert(portalApiKey).values({
+    id: 'busy_discount_portal_key',
+    userId: 'retired_discount_user',
+    groupId: 'busy_discount_group',
+    keyHash: 'busy_discount_key_hash',
+    keyPrefix: 'sk-ap-busy',
+    status: 'disabled',
+    name: 'Busy discount portal key',
+  });
+  await modules.db().insert(requestLedger).values({
+    id: 'busy_discount_request',
+    userId: 'retired_discount_user',
+    portalKeyId: 'busy_discount_portal_key',
+    portalGroupId: 'busy_discount_group',
+    portalModelId: 'gpt-image-2',
+    newapiGroup: 'busy-discount-upstream',
+    newapiModelId: 'gpt-image-2',
+    credentialId: 'busy_discount_credential',
+    routeVersion: 1,
+    priceVersionId: 'busy_discount_price',
+    endpoint: '/v1/images/generations',
+    status: 'open',
+  });
+
+  await assert.rejects(
+    () => modules.initCatalog(),
+    /refused to delete discount-1 with non-terminal requests/
+  );
+
+  await modules
+    .db()
+    .update(requestLedger)
+    .set({ status: 'failed_unbilled' })
+    .where(eq(requestLedger.id, 'busy_discount_request'));
+  await modules.db().insert(gatewayTask).values({
+    id: 'busy_discount_task',
+    requestLedgerId: 'busy_discount_request',
+    userId: 'retired_discount_user',
+    portalKeyId: 'busy_discount_portal_key',
+    status: 'processing',
+  });
+  await assert.rejects(
+    () => modules.initCatalog(),
+    /refused to delete discount-1 with non-terminal tasks/
+  );
+
+  await modules
+    .db()
+    .update(gatewayTask)
+    .set({ status: 'failed_unbilled' })
+    .where(eq(gatewayTask.id, 'busy_discount_task'));
+  await modules.initCatalog();
+  assert.equal(
+    await findBySlug(catalogGroup, catalogGroup.slug, 'discount-1'),
+    undefined
+  );
+});
+
+test('initCatalog 不会在一次性迁移完成后删除新建的同名分组', async () => {
+  const { catalogGroup } = modules.schema;
+  await modules.db().insert(catalogGroup).values({
+    id: 'future_discount_group',
+    slug: 'discount-1',
+    name: '未来新建分组',
+    userDescription: '不属于一次性迁移',
+    allowCreateKey: false,
+    sortOrder: 99,
+    status: 'disabled',
+  });
+
+  await modules.initCatalog();
+  assert.ok(await findBySlug(catalogGroup, catalogGroup.slug, 'discount-1'));
+
+  await modules
+    .db()
+    .delete(catalogGroup)
+    .where(eq(catalogGroup.id, 'future_discount_group'));
 });
 
 test('initCatalog 不会为已有售卖项推断模型级映射', async () => {

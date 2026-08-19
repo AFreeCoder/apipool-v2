@@ -35,14 +35,14 @@ test('图片 UAT 覆盖官方低质量 1K、高质量 2K、Codex 双图 2K 与�
       },
       {
         id: 'codex-multi-2k',
-        group: 'codex-discount',
+        group: 'discount',
         endpoint: 'generations',
         resolution: '2k',
         n: 2,
       },
       {
         id: 'codex-edit-4k',
-        group: 'codex-discount',
+        group: 'discount',
         endpoint: 'edits',
         resolution: '4k',
         n: 1,

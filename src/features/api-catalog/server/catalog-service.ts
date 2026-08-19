@@ -14,7 +14,11 @@ import {
   catalogModelPricingRate,
   catalogStatus,
   catalogVendor,
+  modelPriceVersion,
+  modelRoute,
   newApiKeyBinding,
+  portalApiKey,
+  requestLedger,
 } from '@/config/db/schema';
 import { db } from '@/core/db';
 import { getUuid } from '@/shared/lib/hash';
@@ -116,8 +120,12 @@ function assertImmutableSlug(
   throw new Error(`${label} slug is immutable.`);
 }
 
-async function getCatalogReferenceCount(table: any, where: any) {
-  const [result] = await db()
+async function getCatalogReferenceCount(
+  table: any,
+  where: any,
+  executor: any = db()
+) {
+  const [result] = await executor
     .select({ total: count() })
     .from(table)
     .where(where);
@@ -426,30 +434,79 @@ export async function updateGroup(
 }
 
 export async function deleteGroup(id: string): Promise<void> {
-  const group = await getGroupById(id);
-  if (!group) return;
+  await db().transaction(async (tx: any) => {
+    const [group] = await tx
+      .select()
+      .from(catalogGroup)
+      .where(eq(catalogGroup.id, id))
+      .limit(1);
+    if (!group) return;
 
-  ensureNoCatalogReferences('group', [
-    {
-      label: 'catalog_model_listing.group_id',
-      count: await getCatalogReferenceCount(
-        catalogModelListing,
-        eq(catalogModelListing.groupId, group.id)
-      ),
-    },
-    {
-      label: 'newapi_key_binding.group_id',
-      count: await getCatalogReferenceCount(
-        newApiKeyBinding,
+    ensureNoCatalogReferences('group', [
+      {
+        label: 'catalog_model_listing.group_id',
+        count: await getCatalogReferenceCount(
+          catalogModelListing,
+          eq(catalogModelListing.groupId, group.id),
+          tx
+        ),
+      },
+      {
+        label: 'newapi_key_binding.group_id',
+        count: await getCatalogReferenceCount(
+          newApiKeyBinding,
+          and(
+            eq(newApiKeyBinding.groupId, group.id),
+            ne(newApiKeyBinding.status, 'deleted')
+          ),
+          tx
+        ),
+      },
+      {
+        label: 'portal_api_key.group_id',
+        count: await getCatalogReferenceCount(
+          portalApiKey,
+          eq(portalApiKey.groupId, group.id),
+          tx
+        ),
+      },
+      {
+        label: 'model_route.portal_group_id',
+        count: await getCatalogReferenceCount(
+          modelRoute,
+          eq(modelRoute.portalGroupId, group.id),
+          tx
+        ),
+      },
+      {
+        label: 'model_price_version.portal_group_id',
+        count: await getCatalogReferenceCount(
+          modelPriceVersion,
+          eq(modelPriceVersion.portalGroupId, group.id),
+          tx
+        ),
+      },
+      {
+        label: 'request_ledger.portal_group_id',
+        count: await getCatalogReferenceCount(
+          requestLedger,
+          eq(requestLedger.portalGroupId, group.id),
+          tx
+        ),
+      },
+    ]);
+
+    await tx
+      .update(newApiKeyBinding)
+      .set({ groupId: null })
+      .where(
         and(
           eq(newApiKeyBinding.groupId, group.id),
-          ne(newApiKeyBinding.status, 'deleted')
+          eq(newApiKeyBinding.status, 'deleted')
         )
-      ),
-    },
-  ]);
-
-  await db().delete(catalogGroup).where(eq(catalogGroup.id, id));
+      );
+    await tx.delete(catalogGroup).where(eq(catalogGroup.id, id));
+  });
 }
 
 export async function getModels(): Promise<Model[]> {

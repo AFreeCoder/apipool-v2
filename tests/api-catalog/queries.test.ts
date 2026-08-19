@@ -812,7 +812,7 @@ test('getFilterDimensions returns all active admin-configured dimensions in sort
       'empty-key-group',
       'unmapped-group',
       'missing-remote-group',
-      'codex-discount',
+      'discount',
       'read-only-route',
       'capability-only-group',
       'cross-hidden-group',
@@ -858,7 +858,7 @@ test('getGroupsForKeyCreation returns active key-capable groups regardless of li
     'empty-key-group',
     'unmapped-group',
     'missing-remote-group',
-    'codex-discount',
+    'discount',
     'capability-only-group',
     'cross-hidden-group',
   ]);
