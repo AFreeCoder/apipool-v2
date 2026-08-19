@@ -62,17 +62,14 @@ export default async function HomePage({
     title: string;
     description: string;
   }>;
-  // FAQ 里的 base_url 随环境配置动态插值（规范化为恰好一个 /v1），
-  // 避免硬编码生产网关导致 staging/自托管环境把密钥发往错误地址。
-  const trimmedApiBase = APIPOOL_CONFIG.apiBaseUrl.replace(/\/+$/, '');
-  const apiBaseWithV1 = trimmedApiBase.endsWith('/v1')
-    ? trimmedApiBase
-    : `${trimmedApiBase}/v1`;
+  // FAQ 只展示协议中立的公开 API Endpoint；/v1 等协议路径留在接口文档中。
+  // 保留环境配置注入，避免 staging/自托管环境展示生产域名。
+  const apiEndpoint = APIPOOL_CONFIG.apiBaseUrl.replace(/\/+$/, '');
   const faqItems = (
     home.raw('faq.items') as Array<{ q: string; a: string }>
   ).map((item) => ({
     q: item.q,
-    a: item.a.replace('{baseUrl}', apiBaseWithV1),
+    a: item.a.replace('{baseUrl}', apiEndpoint),
   }));
 
   return (

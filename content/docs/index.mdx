@@ -9,12 +9,14 @@ description: Create a key, add credit, and make your first API call in minutes.
 https://app.apipool.dev
 ```
 
-One provider-neutral endpoint and one key for every model. Add the protocol path
-that matches your SDK or provider-compatible format:
+The platform Base URL contains only the provider-neutral endpoint. It does not
+include `/v1` or another protocol path. Use the same key with an interface the
+selected model supports, and follow that interface's path and SDK configuration:
 
-- **OpenAI-compatible protocol (default)** — every model, regardless of vendor,
-  can be called through `/v1/chat/completions`. Most SDKs and tools work by
-  appending the OpenAI-compatible `/v1` prefix to the APIPool endpoint.
+- **OpenAI-compatible protocol** — models that support this protocol can use
+  interfaces such as `/v1/chat/completions`. Here, `/v1` is part of the
+  interface path, not the platform Base URL. Whether a tool adds that path
+  itself depends on the tool; follow its configuration or the SDK examples below.
 - **Vendor-native protocols** — the same endpoint and key also serve native
   formats, such as Anthropic's Messages API at `/v1/messages`. Use these when
   your tooling expects a vendor's own protocol.

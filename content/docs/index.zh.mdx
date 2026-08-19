@@ -9,12 +9,12 @@ description: 几分钟内创建 Key、充值并发出第一个 API 调用。
 https://app.apipool.dev
 ```
 
-一个协议中立的 endpoint、一个 Key 调用所有模型。具体请求路径由你选择的 SDK 或
-provider-compatible 协议决定：
+平台 Base URL 只包含协议中立的 endpoint，不包含 `/v1` 或其他协议路径。一个 Key
+可按模型支持的接口协议发起请求；具体路径和 SDK 配置以对应接口文档为准：
 
-- **OpenAI 兼容协议（默认）**——所有模型（无论厂商）都可以通过
-  `/v1/chat/completions` 调用；OpenAI SDK 这类工具需要把 OpenAI-compatible
-  `/v1` 前缀追加到 APIPool endpoint 后。
+- **OpenAI 兼容协议**——支持该协议的模型可通过 `/v1/chat/completions`
+  等接口调用。这里的 `/v1` 是接口路径，不是平台 Base URL 的一部分；工具是否
+  自行追加该路径，以对应工具或下方 SDK 示例为准。
 - **各家原生协议**——同一入口与 Key 也直接支持厂商原生格式，例如 Anthropic 的
   Messages API（`/v1/messages`）。当你的工具链依赖厂商原生协议时使用。
 

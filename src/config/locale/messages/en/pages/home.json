@@ -3,7 +3,7 @@
     "badge": "OpenAI-compatible · one gateway for every LLM",
     "titleLead": "One API key for ",
     "titleAccent": "every model",
-    "description": "Aggregate OpenAI, Claude, Gemini and more behind a single OpenAI-compatible protocol. Smart routing, real-time billing, transparent pricing — just swap the base_url.",
+    "description": "Reach OpenAI, Claude, Gemini and more through one API Endpoint, then select the protocol path documented for each interface. Smart routing, real-time billing, transparent pricing.",
     "ctaPrimary": "Get started",
     "ctaSecondary": "Read the docs",
     "note": "Pay as you go · Transparent billing · No subscription"
@@ -23,7 +23,7 @@
       {
         "tag": "API",
         "title": "OpenAI-compatible",
-        "description": "Keep your existing SDK — change one base_url line to migrate, zero learning curve."
+        "description": "Keep your existing SDK and use the documented protocol path and key configuration for that interface."
       },
       {
         "tag": "RTE",
@@ -80,7 +80,7 @@
     "items": [
       {
         "q": "How do I get started?",
-        "a": "Create an API key in the console, point your base_url to {baseUrl}, and call every model with your existing OpenAI SDK."
+        "a": "Create an API key in the console, use {baseUrl} as the APIPool API Endpoint, then follow the interface documentation for the model's protocol path and SDK configuration."
       },
       {
         "q": "Which models are supported?",
@@ -92,7 +92,7 @@
       },
       {
         "q": "Is it OpenAI SDK compatible?",
-        "a": "Fully compatible with Chat Completions and other common endpoints — usually just swap base_url and api_key."
+        "a": "APIPool supports Chat Completions and other common interfaces. SDKs join Base URLs and protocol paths differently, so use the matching configuration from the interface documentation."
       },
       {
         "q": "How is my data protected?",

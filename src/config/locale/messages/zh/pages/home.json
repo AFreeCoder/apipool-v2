@@ -3,7 +3,7 @@
     "badge": "OpenAI 兼容 · 一个网关接入全部大模型",
     "titleLead": "一个 API Key，",
     "titleAccent": "接入所有大模型",
-    "description": "用一套 OpenAI 兼容协议聚合 OpenAI、Claude、Gemini 等主流厂商。智能路由、实时计费、价格透明——只需替换 base_url。",
+    "description": "通过统一 API Endpoint 接入 OpenAI、Claude、Gemini 等主流厂商，具体协议路径按接口文档配置。智能路由、实时计费、价格透明。",
     "ctaPrimary": "立即接入",
     "ctaSecondary": "查看文档",
     "note": "随用随充 · 计费透明 · 无需订阅"
@@ -23,7 +23,7 @@
       {
         "tag": "兼容",
         "title": "OpenAI 兼容接口",
-        "description": "沿用现有 SDK，改一行 base_url 即可迁移，零学习成本。"
+        "description": "沿用现有 SDK，按接口文档配置对应的协议路径与密钥。"
       },
       {
         "tag": "路由",
@@ -80,7 +80,7 @@
     "items": [
       {
         "q": "如何开始使用？",
-        "a": "注册后在控制台创建一个 API Key，将请求的 base_url 指向 {baseUrl}，即可用现有的 OpenAI SDK 调用全部模型。"
+        "a": "注册后在控制台创建 API Key，使用 {baseUrl} 作为 APIPool API Endpoint，再按接口文档选择模型所需的协议路径与 SDK 配置。"
       },
       {
         "q": "支持哪些模型？",
@@ -92,7 +92,7 @@
       },
       {
         "q": "兼容 OpenAI SDK 吗？",
-        "a": "完全兼容 Chat Completions 等主流接口，通常只需替换 base_url 与 api_key 两处配置。"
+        "a": "兼容 Chat Completions 等主流接口。不同 SDK 对 Base URL 和协议路径的拼接规则不同，请使用接口文档中的对应配置。"
       },
       {
         "q": "数据安全如何保障？",
