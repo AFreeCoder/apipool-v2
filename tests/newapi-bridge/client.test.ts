@@ -331,6 +331,26 @@ test('provisionUser creates, looks up, logs in, and returns the access token', a
   });
 });
 
+test('provisionUser maps New API max validation failures to newapi_username_too_long', async () => {
+  const { client } = createMockedClient({
+    'GET /api/user/search': () => ok({ items: [] }),
+    'POST /api/user/': () =>
+      fail(
+        "Key: 'User.Username' Error:Field validation for 'Username' failed on the 'max' tag"
+      ),
+  });
+
+  await assert.rejects(
+    client.provisionUser({
+      username: 'very-long-email@example.com',
+      password: 'strong-password',
+    }),
+    (error: any) =>
+      error instanceof NewApiBridgeError &&
+      error.code === 'newapi_username_too_long'
+  );
+});
+
 test('provisionUser reuses an existing remote user without re-creating it', async () => {
   const { client, requests } = createMockedClient({
     'GET /api/user/search': () =>

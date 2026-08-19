@@ -1,5 +1,5 @@
-export const SMOKE_PORTAL_EMAIL = 'smoke.portal@apipool.local';
-export const SMOKE_OPERATOR_EMAIL = 'smoke.operator@apipool.local';
+export const SMOKE_PORTAL_EMAIL = 'smo@apipool.local';
+export const SMOKE_OPERATOR_EMAIL = SMOKE_PORTAL_EMAIL;
 
 function normalizeEmail(value: string | null | undefined) {
   return String(value || '')

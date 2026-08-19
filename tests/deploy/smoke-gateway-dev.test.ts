@@ -57,7 +57,7 @@ test(
     const setup = await setupGatewayIntegrationDb(mock.baseUrl);
     const fixture = await seedGatewayFixture(setup.modules, 'dev-smoke', {
       balanceMicroUsd: 0,
-      email: 'smoke.portal@apipool.local',
+      email: 'smo@apipool.local',
     });
     const distDir = `.next-dev-smoke-${randomUUID()}`;
     const tsconfigPath = join(process.cwd(), 'tsconfig.json');
@@ -124,7 +124,7 @@ test(
         NEWAPI_ADMIN_TOKEN: 'mock-admin-token',
         NEWAPI_ADMIN_USER_ID: '1',
         APIPOOL_SMOKE_PORTAL_USER_ID: fixture.userId,
-        APIPOOL_SMOKE_PORTAL_EMAIL: 'smoke.portal@apipool.local',
+        APIPOOL_SMOKE_PORTAL_EMAIL: 'smo@apipool.local',
         APIPOOL_SMOKE_GROUP_SLUG: fixture.groupId,
         APIPOOL_SMOKE_MODEL: fixture.modelId,
         APIPOOL_SMOKE_GATEWAY_BASE_URL: `http://127.0.0.1:${port}/v1`,

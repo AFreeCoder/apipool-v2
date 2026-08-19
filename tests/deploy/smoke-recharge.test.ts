@@ -14,7 +14,7 @@ test('smoke-recharge 在隔离 DB 闭合 PAID、钱包入账、重放与审计�
   process.env.DB_SCHEMA_FILE = './src/config/db/schema.sqlite.ts';
   process.env.DB_SINGLETON_ENABLED = 'false';
   process.env.NEWAPI_INTEGRATION_ENABLED = 'false';
-  process.env.APIPOOL_SMOKE_PORTAL_EMAIL = 'smoke.portal@apipool.local';
+  process.env.APIPOOL_SMOKE_PORTAL_EMAIL = 'smo@apipool.local';
   process.env.APIPOOL_SMOKE_PORTAL_USER_ID = 'smoke-recharge-user';
 
   const client = createClient({ url: `file:${dbPath}` });
@@ -32,7 +32,7 @@ test('smoke-recharge 在隔离 DB 闭合 PAID、钱包入账、重放与审计�
   const { db } = await import('@/core/db');
   await db().insert(schema.user).values({
     id: 'smoke-recharge-user',
-    email: 'smoke.portal@apipool.local',
+    email: 'smo@apipool.local',
     name: 'Smoke Recharge User',
   });
   const { main } = await import('../../scripts/smoke-recharge');

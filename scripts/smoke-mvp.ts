@@ -450,6 +450,11 @@ export async function main() {
 
   const portalUserId = getEnv('APIPOOL_SMOKE_PORTAL_USER_ID')!;
   const operatorUserId = getEnv('APIPOOL_SMOKE_OPERATOR_USER_ID')!;
+  if (portalUserId !== operatorUserId) {
+    throw new Error(
+      'APIPOOL_SMOKE_PORTAL_USER_ID 与 APIPOOL_SMOKE_OPERATOR_USER_ID 必须指向同一测试账户'
+    );
+  }
   const amountUsd = Number(getEnv('APIPOOL_SMOKE_QUOTA_USD') || '1');
   const smokeGroupSlug = getEnv('APIPOOL_SMOKE_GROUP_SLUG') || 'official';
   const callableListings =

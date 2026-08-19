@@ -196,9 +196,9 @@ ssh apipool_vps 'cd /opt/apipool-v2 && ./deploy/live-smoke.sh'
 
 `APIPOOL_SMOKE_GROUP_SLUG` 可在 VPS `.env.deploy` 中指定真实冒烟分组；默认是
 `official`。若指定 `APIPOOL_SMOKE_MODEL`，该模型必须在冒烟分组中可调用。
-冒烟业务用户和调额操作人分别固定为 `smoke.portal@apipool.local` 与
-`smoke.operator@apipool.local`；脚本会核对 user ID 对应的数据库邮箱，禁止改用
-真实用户账号，以免多轮测试污染用户与审计记录。
+冒烟业务用户和调额操作人统一固定为 `smo@apipool.local`；两组环境变量必须指向
+同一个 user ID。脚本会核对 user ID 对应的数据库邮箱，禁止改用真实用户账号，
+以免多轮测试污染用户与审计记录。
 
 非价格策略发布如只需验证建 Key、调用、用量和禁用闭环，可把第二条命令改为
 `./deploy/live-smoke.sh --no-price-reconciliation`。

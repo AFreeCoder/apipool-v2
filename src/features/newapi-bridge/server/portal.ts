@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 
 import {
@@ -119,14 +119,10 @@ const USAGE_SYNC_LOCK_TTL_MS = 60_000;
 const DUPLICATE_USAGE_LOG_ID_SEPARATOR = '#apipool-duplicate-';
 const DUPLICATE_KEY_NAME_MESSAGE =
   'A key with this name already exists. Delete the existing key or choose another name.';
-const MAX_REMOTE_NEWAPI_USERNAME_LENGTH = 20;
-
 export type NewapiUsernameEmailDiagnosis =
   | {
       ok: true;
       username: string;
-      remoteUsername: string;
-      usesSurrogateUsername: boolean;
     }
   | {
       ok: false;
@@ -151,45 +147,7 @@ export function normalizeNewapiUsernameEmail(
   return {
     ok: true,
     username: normalizedEmail,
-    remoteUsername:
-      normalizedEmail.length <= MAX_REMOTE_NEWAPI_USERNAME_LENGTH
-        ? normalizedEmail
-        : '',
-    usesSurrogateUsername:
-      normalizedEmail.length > MAX_REMOTE_NEWAPI_USERNAME_LENGTH,
   };
-}
-
-function buildSurrogateNewapiUsername(portalUserId: string, email: string) {
-  const hash = createHash('sha256')
-    .update(`${portalUserId}:${email}`)
-    .digest('hex')
-    .slice(0, MAX_REMOTE_NEWAPI_USERNAME_LENGTH - 3);
-  return `pu_${hash}`;
-}
-
-function isUsableRemoteNewapiUsername(username: string | null | undefined) {
-  const normalized = String(username || '').trim();
-  return (
-    normalized.length > 0 &&
-    normalized.length <= MAX_REMOTE_NEWAPI_USERNAME_LENGTH &&
-    !normalized.startsWith('pending:')
-  );
-}
-
-function resolveRemoteNewapiUsername(input: {
-  portalUserId: string;
-  diagnosis: Extract<NewapiUsernameEmailDiagnosis, { ok: true }>;
-  existing?: typeof newApiUserBinding.$inferSelect | null;
-}) {
-  if (!input.diagnosis.usesSurrogateUsername) return input.diagnosis.username;
-  if (isUsableRemoteNewapiUsername(input.existing?.newapiUsername)) {
-    return String(input.existing?.newapiUsername).trim().toLowerCase();
-  }
-  return buildSurrogateNewapiUsername(
-    input.portalUserId,
-    input.diagnosis.username
-  );
 }
 
 function getUnknownErrorMessage(error: unknown) {
@@ -583,11 +541,7 @@ export async function ensurePortalUserBinding(
   }
 
   const targetUsername = diagnosis.username;
-  const username = resolveRemoteNewapiUsername({
-    portalUserId: user.id,
-    diagnosis,
-    existing,
-  });
+  const username = diagnosis.username;
   if (
     existing &&
     existing.status === 'active' &&
@@ -959,11 +913,7 @@ export async function updatePortalUserEmailWithNewapiSync(input: {
   }
 
   const targetUsername = diagnosis.username;
-  const username = resolveRemoteNewapiUsername({
-    portalUserId: input.portalUserId,
-    diagnosis,
-    existing: existingBinding,
-  });
+  const username = diagnosis.username;
   let binding: typeof newApiUserBinding.$inferSelect | undefined;
   const attemptedAt = new Date();
 

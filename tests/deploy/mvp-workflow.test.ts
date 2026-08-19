@@ -52,13 +52,22 @@ test('MVP workflow stays no-secret; production live smoke runs on VPS scripts', 
   assert.match(liveSmoke, /smoke-mvp\.cjs/);
   assert.match(setupSmokeUsers, /pre-smoke-users/);
   assert.match(setupSmokeUsers, /role_operator/);
+  assert.match(setupSmokeUsers, /SMOKE_EMAIL="smo@apipool\.local"/);
   assert.match(
     setupSmokeUsers,
-    /SMOKE_PORTAL_EMAIL="smoke\.portal@apipool\.local"/
+    /set_env_value APIPOOL_SMOKE_PORTAL_EMAIL "\$SMOKE_EMAIL"/
   );
   assert.match(
     setupSmokeUsers,
-    /SMOKE_OPERATOR_EMAIL="smoke\.operator@apipool\.local"/
+    /set_env_value APIPOOL_SMOKE_OPERATOR_EMAIL "\$SMOKE_EMAIL"/
+  );
+  assert.match(
+    setupSmokeUsers,
+    /set_env_value APIPOOL_SMOKE_PORTAL_USER_ID "\$user_id"/
+  );
+  assert.match(
+    setupSmokeUsers,
+    /set_env_value APIPOOL_SMOKE_OPERATOR_USER_ID "\$user_id"/
   );
   assert.doesNotMatch(
     setupSmokeUsers,
