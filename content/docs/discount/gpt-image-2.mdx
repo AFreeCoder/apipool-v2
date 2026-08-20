@@ -1,0 +1,126 @@
+---
+title: GPT Image 2
+description: Generate and edit images with a Discount Group API key and per-delivered-image billing.
+---
+
+> **Discount Group** · `model: gpt-image-2` · **Per-delivered-image billing**
+
+Use an API key created in the **Discount Group**. The API key selects the group;
+keep the public model ID `gpt-image-2` in every request and do not add a `group`
+field.
+
+## At a glance
+
+| Item             | Discount Group behavior                                          |
+| ---------------- | ---------------------------------------------------------------- |
+| API key          | Must belong to the Discount Group                                |
+| Public model ID  | `gpt-image-2`                                                    |
+| Submission       | Asynchronous, returns `202 Accepted`                             |
+| Billing evidence | Successfully delivered image count × `resolution` SKU            |
+| Pricing          | Discount Group 1K, 2K, and 4K rates on the [model list](/models) |
+
+## Generate an image
+
+```bash
+APIPOOL_ENDPOINT="https://app.apipool.dev"
+
+curl "$APIPOOL_ENDPOINT/v1/images/generations" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "An editorial photograph of a green leaf",
+    "size": "1:1",
+    "resolution": "2k",
+    "n": 1
+  }'
+```
+
+## Edit an uploaded image
+
+Use `multipart/form-data` for file uploads:
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/images/edits" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -F "model=gpt-image-2" \
+  -F "prompt=Change the blue circle to green" \
+  -F "image=@./source.png" \
+  -F "size=1:1" \
+  -F "resolution=4k" \
+  -F "n=1"
+```
+
+## Core request parameters
+
+| Field        | Required         | Values and meaning                                                                          |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------------- |
+| `model`      | Yes              | Always `gpt-image-2`                                                                        |
+| `prompt`     | Yes              | Image generation or editing instruction                                                     |
+| `image`      | For file editing | One uploaded source image on `/v1/images/edits`                                             |
+| `size`       | No               | Output aspect ratio, for example `1:1`                                                      |
+| `resolution` | Recommended      | Billing and output tier: `1k`, `2k`, or `4k`; omitted, `auto`, and `1k` use the default SKU |
+| `n`          | No               | Currently supported value: `1`; default `1`                                                 |
+
+Set `resolution` explicitly so the selected output and billing tier are clear.
+The Discount Group currently documents one output per request; send `n: 1` or
+omit it. Image endpoints reject `stream: true`.
+
+## Submission and polling
+
+The submission returns an APIPool task rather than finished images:
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "submitted",
+  "model": "gpt-image-2",
+  "created_at": 1787068800
+}
+```
+
+Poll the task using the same API key:
+
+```bash
+TASK_ID="imgtask_01..."
+
+curl "$APIPOOL_ENDPOINT/v1/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY"
+```
+
+See [Asynchronous image tasks](/docs/common/image-tasks) for all status values,
+polling rules, temporary result URLs, and retryable responses.
+
+## Completed task
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "completed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "data": [
+    {
+      "url": "https://objects.example/results/0.png?...",
+      "expires_at": 1787072442
+    }
+  ],
+  "result_expires_at": 1787155242
+}
+```
+
+Discount Group responses do not fabricate token `usage`. The `data` array is
+the delivered output evidence.
+
+## Billing
+
+APIPool charges the number of successfully delivered `data` items using the
+`resolution` SKU locked at submission time. Current 1K, 2K, and 4K rates are
+shown under the Discount Group on the [model list](/models); this page does not
+duplicate prices that can change.
+
+Need token-based billing and normalized usage? Use a key from the
+[Official Group](/docs/official/gpt-image-2).

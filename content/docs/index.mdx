@@ -35,8 +35,8 @@ once after creation — the list shows a masked value afterward.
 ## Get started
 
 1. [Sign up](/sign-up) and open the console.
-2. Add credit on the [balance page](/dashboard/billing). Usage is billed per
-   token; your balance never expires.
+2. Add credit on the [balance page](/dashboard/billing). Usage is billed using
+   the selected model and group rates; your balance never expires.
 3. [Create an API key](/dashboard/api-keys) and copy it once.
 4. Call any model from the [model list](/models) using the examples below.
 
@@ -148,16 +148,22 @@ curl "$APIPOOL_ENDPOINT/v1/embeddings" \
 ```
 
 Use `/v1/images/generations` for image generation and multipart
-`/v1/images/edits` for editing. Image models are billed **per returned image**
-using the quality/size SKU prices on the model page. Images do not support
-`stream:true`.
+`/v1/images/edits` for editing. GPT Image 2 uses asynchronous tasks: a
+successful submission returns `202 Accepted`, then you query the returned task
+ID. Billing depends on the API key's group—read the
+[Official Group guide](/docs/official/gpt-image-2) or
+[Discount Group guide](/docs/discount/gpt-image-2) before integrating. Images
+do not support `stream:true`.
 
 ```bash
 curl "$APIPOOL_ENDPOINT/v1/images/generations" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-image-2","prompt":"A product photo on a white background","quality":"low","size":"1024x1024"}'
+  -d '{"model":"gpt-image-2","prompt":"A product photo on a white background","size":"1:1","resolution":"1k","n":1}'
 ```
+
+The full `202 + Location + task ID` contract is documented under
+[Asynchronous image tasks](/docs/common/image-tasks).
 
 ## Streaming
 

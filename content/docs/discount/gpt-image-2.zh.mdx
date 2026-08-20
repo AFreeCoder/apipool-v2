@@ -1,0 +1,121 @@
+---
+title: GPT Image 2
+description: 使用特惠分组 API Key 生成和编辑图片，并按实际交付张数计费。
+---
+
+> **特惠分组** · `model: gpt-image-2` · **按实际交付张数计费**
+
+请使用创建于**特惠分组**的 API Key。分组由 API Key 决定；每个请求都保持公开模型 ID
+`gpt-image-2`，不要增加 `group` 字段。
+
+## 概览
+
+| 项目        | 特惠分组行为                                    |
+| ----------- | ----------------------------------------------- |
+| API Key     | 必须属于特惠分组                                |
+| 公开模型 ID | `gpt-image-2`                                   |
+| 提交方式    | 异步提交，返回 `202 Accepted`                   |
+| 计费证据    | 实际成功交付图片数 × `resolution` SKU           |
+| 价格        | [模型列表](/models)中的特惠分组 1K、2K、4K 单价 |
+
+## 生成图片
+
+```bash
+APIPOOL_ENDPOINT="https://app.apipool.dev"
+
+curl "$APIPOOL_ENDPOINT/v1/images/generations" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "An editorial photograph of a green leaf",
+    "size": "1:1",
+    "resolution": "2k",
+    "n": 1
+  }'
+```
+
+## 编辑上传图片
+
+上传文件时使用 `multipart/form-data`：
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/images/edits" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -F "model=gpt-image-2" \
+  -F "prompt=Change the blue circle to green" \
+  -F "image=@./source.png" \
+  -F "size=1:1" \
+  -F "resolution=4k" \
+  -F "n=1"
+```
+
+## 核心请求参数
+
+| 字段         | 必填           | 取值与含义                                                            |
+| ------------ | -------------- | --------------------------------------------------------------------- |
+| `model`      | 是             | 始终为 `gpt-image-2`                                                  |
+| `prompt`     | 是             | 图片生成或编辑指令                                                    |
+| `image`      | 文件编辑时必填 | 在 `/v1/images/edits` 上传一张源图片                                  |
+| `size`       | 否             | 输出宽高比，例如 `1:1`                                                |
+| `resolution` | 建议显式传入   | 计费与输出档位：`1k`、`2k` 或 `4k`；省略、`auto` 和 `1k` 使用默认 SKU |
+| `n`          | 否             | 当前公开支持值为 `1`；默认 `1`                                        |
+
+建议显式填写 `resolution`，让输出和计费档位保持清晰。特惠分组当前只公开单张输出，
+请传 `n: 1` 或省略该字段。图片接口不支持 `stream: true`。
+
+## 提交与轮询
+
+提交接口返回 APIPool 任务，而不是已完成图片：
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "submitted",
+  "model": "gpt-image-2",
+  "created_at": 1787068800
+}
+```
+
+使用同一个 API Key 轮询任务：
+
+```bash
+TASK_ID="imgtask_01..."
+
+curl "$APIPOOL_ENDPOINT/v1/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY"
+```
+
+全部状态值、轮询规则、临时结果地址和可重试响应见
+[图片异步任务](/zh/docs/common/image-tasks)。
+
+## 完成任务
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "completed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "data": [
+    {
+      "url": "https://objects.example/results/0.png?...",
+      "expires_at": 1787072442
+    }
+  ],
+  "result_expires_at": 1787155242
+}
+```
+
+特惠分组不会伪造 token `usage`；`data` 数组就是实际交付证据。
+
+## 计费
+
+APIPool 按 `data` 中成功交付的图片数量，使用提交时锁定的 `resolution` SKU 计费。当前
+1K、2K、4K 单价以[模型列表](/models)中的特惠分组为准，本页不重复可能变化的价格。
+
+如果需要 token 计费和规范化 usage，请改用
+[官方分组](/zh/docs/official/gpt-image-2)的 Key。

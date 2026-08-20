@@ -1,0 +1,127 @@
+---
+title: 图片异步任务
+description: 提交图片任务、轮询 APIPool 状态并下载临时结果。
+---
+
+APIPool 以异步任务运行 GPT Image 2 请求。提交接口会立即返回 APIPool 任务 ID，
+应用随后轮询该任务，直到任务进入终态。
+
+## 提交任务
+
+两个图片接口使用同一套任务协议：
+
+| 操作         | 请求                                                  |
+| ------------ | ----------------------------------------------------- |
+| 生成图片     | 以 JSON 调用 `POST /v1/images/generations`            |
+| 编辑上传图片 | 以 `multipart/form-data` 调用 `POST /v1/images/edits` |
+
+提交成功返回 `202 Accepted`。请保存响应体中的 `id`，或保存 `Location` header 中的
+相对任务地址。
+
+```http
+HTTP/1.1 202 Accepted
+Location: /v1/tasks/imgtask_01...
+X-APIPool-Task-Id: imgtask_01...
+Content-Type: application/json
+```
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "submitted",
+  "model": "gpt-image-2",
+  "created_at": 1787068800
+}
+```
+
+如果 APIPool 仍在核对提交是否已到达图片服务，响应状态可能是
+`submission_unknown`，而不是 `submitted`。此时应保留任务 ID 并正常轮询；不要只因
+这个状态就重复提交同一请求。
+
+## 查询任务
+
+在同一个 Base URL 上向返回的 `Location` 发起 `GET`：
+
+```bash
+APIPOOL_ENDPOINT="https://app.apipool.dev"
+TASK_ID="imgtask_01..."
+
+curl "$APIPOOL_ENDPOINT/v1/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY"
+```
+
+必须使用**提交任务时的同一个 API Key**。即使两个 Key 属于同一账户，其他 Key 也不能
+读取该任务，查询会返回 `404`。
+
+### 状态值
+
+| 状态                 | 含义                       | 客户端处理                         |
+| -------------------- | -------------------------- | ---------------------------------- |
+| `submission_unknown` | 正在核对提交结果           | 继续轮询                           |
+| `submitted`          | 任务已受理                 | 继续轮询                           |
+| `processing`         | 正在生成或编辑图片         | 继续轮询                           |
+| `meter_pending`      | 已有输出，仍在确认结算证据 | 继续轮询                           |
+| `completed`          | 结果已就绪                 | 读取并下载 `data`                  |
+| `failed`             | 任务失败                   | 读取 `error`；该任务不会再产生结果 |
+
+请为非终态任务设置有界轮询间隔，例如每 2 秒查询一次；长任务可以逐步增加间隔。图片
+接口不支持用 `stream: true` 获取任务进度。
+
+## 完成结果
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "completed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "data": [
+    {
+      "url": "https://objects.example/results/0.png?...",
+      "expires_at": 1787072442
+    }
+  ],
+  "result_expires_at": 1787155242
+}
+```
+
+每个 `data[].url` 都是临时签名下载地址，`expires_at` 是该地址的 Unix 过期时间。请在
+过期前下载图片。在保留结果到达 `result_expires_at` 前，如果原地址接近过期，再次查询
+已完成任务可以获得刷新后的签名地址。
+
+官方分组的完成响应还可以包含规范化 token `usage`。特惠分组有意不返回 token
+`usage`，其计费证据是 `data` 中实际成功交付的图片数量。
+
+## 失败结果
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "failed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "error": {
+    "code": "task_failed",
+    "message": "Image generation task failed."
+  }
+}
+```
+
+## 可重试响应
+
+- 新建 Key 的服务凭据仍在准备时，提交可能返回 `503 upstream_unavailable`。请按
+  `Retry-After` 重试提交。
+- 刷新临时结果地址暂时失败时，已完成任务的查询可能返回 `503
+result_url_refresh_failed`。请按 `Retry-After` 重试查询，不要重新提交图片请求。
+- `429 concurrency_limit_exceeded` 表示账户当前进行中的请求过多，请按响应中的
+  `Retry-After` 延迟重试。
+
+请继续阅读对应分组的模型参数与计费说明：
+
+- [官方分组 · GPT Image 2](/zh/docs/official/gpt-image-2)
+- [特惠分组 · GPT Image 2](/zh/docs/discount/gpt-image-2)
