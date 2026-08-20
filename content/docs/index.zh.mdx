@@ -32,7 +32,7 @@ Authorization: Bearer $APIPOOL_API_KEY
 ## 开始使用
 
 1. [注册](/sign-up)并进入控制台。
-2. 在[余额页](/dashboard/billing)充值。按 token 用量计费，余额永不过期。
+2. 在[余额页](/dashboard/billing)充值。按所选模型和分组的公开价格计费，余额永不过期。
 3. [创建 API Key](/dashboard/api-keys) 并立即保存。
 4. 从[模型列表](/models)选择模型，参考下方示例调用。
 
@@ -142,14 +142,20 @@ curl "$APIPOOL_ENDPOINT/v1/embeddings" \
 ```
 
 图片生成使用 `/v1/images/generations`，图片编辑使用 multipart 的
-`/v1/images/edits`。图片模型按公开模型页列出的 quality/size SKU **按实际返回张数、按次计费**；Images 不支持 `stream:true`。
+`/v1/images/edits`。GPT Image 2 采用异步任务：提交成功返回 `202 Accepted`，随后查询
+返回的任务 ID。计费依据由 API Key 所属分组决定，接入前请阅读
+[官方分组文档](/zh/docs/official/gpt-image-2)或
+[特惠分组文档](/zh/docs/discount/gpt-image-2)。Images 不支持 `stream:true`。
 
 ```bash
 curl "$APIPOOL_ENDPOINT/v1/images/generations" \
   -H "Authorization: Bearer $APIPOOL_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-image-2","prompt":"A product photo on a white background","quality":"low","size":"1024x1024"}'
+  -d '{"model":"gpt-image-2","prompt":"A product photo on a white background","size":"1:1","resolution":"1k","n":1}'
 ```
+
+完整的 `202 + Location + task ID` 契约见
+[图片异步任务](/zh/docs/common/image-tasks)。
 
 ## 流式输出
 

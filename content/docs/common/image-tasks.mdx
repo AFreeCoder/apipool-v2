@@ -1,0 +1,133 @@
+---
+title: Asynchronous image tasks
+description: Submit image work, poll APIPool task status, and download temporary results.
+---
+
+APIPool runs GPT Image 2 requests as asynchronous tasks. The submission request
+returns immediately with an APIPool task ID; your application then polls that
+task until it reaches a terminal state.
+
+## Submit a task
+
+Both image endpoints use the same task contract:
+
+| Operation              | Request                                            |
+| ---------------------- | -------------------------------------------------- |
+| Generate an image      | `POST /v1/images/generations` with JSON            |
+| Edit an uploaded image | `POST /v1/images/edits` with `multipart/form-data` |
+
+A successful submission returns `202 Accepted`. Save the `id` from the body or
+the relative task URL from the `Location` header.
+
+```http
+HTTP/1.1 202 Accepted
+Location: /v1/tasks/imgtask_01...
+X-APIPool-Task-Id: imgtask_01...
+Content-Type: application/json
+```
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "submitted",
+  "model": "gpt-image-2",
+  "created_at": 1787068800
+}
+```
+
+`submission_unknown` may be returned instead of `submitted` when APIPool is
+still reconciling whether the submission reached the image service. Keep the
+task ID and poll it normally; do not submit the same request again solely
+because of this state.
+
+## Query a task
+
+Send `GET` to the returned `Location` on the same Base URL:
+
+```bash
+APIPOOL_ENDPOINT="https://app.apipool.dev"
+TASK_ID="imgtask_01..."
+
+curl "$APIPOOL_ENDPOINT/v1/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY"
+```
+
+Use the **same API key that submitted the task**. A different key cannot read
+the task, even when both keys belong to the same account, and receives `404`.
+
+### Status values
+
+| Status               | Meaning                                                        | Client action                                    |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------------ |
+| `submission_unknown` | Submission outcome is being reconciled                         | Keep polling                                     |
+| `submitted`          | Task was accepted                                              | Keep polling                                     |
+| `processing`         | Image work is running                                          | Keep polling                                     |
+| `meter_pending`      | Output exists but settlement evidence is still being finalized | Keep polling                                     |
+| `completed`          | Results are ready                                              | Read and download `data`                         |
+| `failed`             | Task failed                                                    | Read `error`; this task will not produce results |
+
+Poll non-terminal tasks with a bounded delay, for example every 2 seconds. A
+client can increase the delay gradually for long-running tasks. Do not set
+`stream: true`; image endpoints do not stream task progress.
+
+## Completed result
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "completed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "data": [
+    {
+      "url": "https://objects.example/results/0.png?...",
+      "expires_at": 1787072442
+    }
+  ],
+  "result_expires_at": 1787155242
+}
+```
+
+Each `data[].url` is a temporary signed download URL and `expires_at` is its
+Unix expiration time. Download the image before that time. Before the retained
+result reaches `result_expires_at`, querying the completed task again can return
+a refreshed signed URL when the previous link is near expiry.
+
+The Official Group can also include normalized token `usage` in the completed
+body. The Discount Group intentionally omits token `usage`; its billing evidence
+is the number of successfully delivered items in `data`.
+
+## Failed result
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "failed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "error": {
+    "code": "task_failed",
+    "message": "Image generation task failed."
+  }
+}
+```
+
+## Retryable responses
+
+- A newly created key can receive `503 upstream_unavailable` while its service
+  credential is being prepared. Retry the submission using `Retry-After`.
+- A completed task query can temporarily receive `503
+result_url_refresh_failed` when its signed result URL cannot be refreshed.
+  Retry the query using `Retry-After`; do not resubmit the image request.
+- `429 concurrency_limit_exceeded` means the account has too many in-flight
+  requests. Retry after the response's `Retry-After` delay.
+
+Choose a group-specific model guide for request parameters and billing:
+
+- [Official Group · GPT Image 2](/docs/official/gpt-image-2)
+- [Discount Group · GPT Image 2](/docs/discount/gpt-image-2)

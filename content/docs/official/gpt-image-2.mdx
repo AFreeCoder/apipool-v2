@@ -1,0 +1,141 @@
+---
+title: GPT Image 2
+description: Generate and edit images with an Official Group API key and token-based billing.
+---
+
+> **Official Group** · `model: gpt-image-2` · **Token billing**
+
+Use an API key created in the **Official Group**. The API key selects the group;
+keep the public model ID `gpt-image-2` in every request and do not add a `group`
+field.
+
+## At a glance
+
+| Item             | Official Group behavior                                 |
+| ---------------- | ------------------------------------------------------- |
+| API key          | Must belong to the Official Group                       |
+| Public model ID  | `gpt-image-2`                                           |
+| Submission       | Asynchronous, returns `202 Accepted`                    |
+| Billing evidence | Normalized token `usage` in the completed task          |
+| Pricing          | Official Group token rates on the [model list](/models) |
+
+## Generate an image
+
+```bash
+APIPOOL_ENDPOINT="https://app.apipool.dev"
+
+curl "$APIPOOL_ENDPOINT/v1/images/generations" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "A studio product photo of a blue glass sphere",
+    "size": "1:1",
+    "resolution": "1k",
+    "quality": "low",
+    "n": 1
+  }'
+```
+
+## Edit an uploaded image
+
+Use `multipart/form-data` for file uploads:
+
+```bash
+curl "$APIPOOL_ENDPOINT/v1/images/edits" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY" \
+  -F "model=gpt-image-2" \
+  -F "prompt=Change the object to emerald green" \
+  -F "image=@./source.png" \
+  -F "size=1:1" \
+  -F "resolution=1k" \
+  -F "quality=low" \
+  -F "n=1"
+```
+
+## Core request parameters
+
+| Field        | Required         | Values and meaning                               |
+| ------------ | ---------------- | ------------------------------------------------ |
+| `model`      | Yes              | Always `gpt-image-2`                             |
+| `prompt`     | Yes              | Image generation or editing instruction          |
+| `image`      | For file editing | One uploaded source image on `/v1/images/edits`  |
+| `size`       | No               | Output aspect ratio, for example `1:1`           |
+| `resolution` | No               | Output resolution: `1k`, `2k`, or `4k`           |
+| `quality`    | No               | `auto`, `low`, `medium`, or `high`               |
+| `n`          | No               | Number of requested images, `1`–`4`; default `1` |
+
+`size` is the aspect ratio. Do not use it for the resolution tier; use
+`resolution` for `1k`, `2k`, or `4k`. Image endpoints reject `stream: true`.
+
+## Submission and polling
+
+The submission returns an APIPool task rather than the finished image:
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "submitted",
+  "model": "gpt-image-2",
+  "created_at": 1787068800
+}
+```
+
+Poll the task using the same API key:
+
+```bash
+TASK_ID="imgtask_01..."
+
+curl "$APIPOOL_ENDPOINT/v1/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $APIPOOL_API_KEY"
+```
+
+See [Asynchronous image tasks](/docs/common/image-tasks) for all status values,
+polling rules, temporary result URLs, and retryable responses.
+
+## Completed task and usage
+
+Official Group results include normalized token usage after settlement evidence
+is finalized:
+
+```json
+{
+  "id": "imgtask_01...",
+  "object": "image_generation.task",
+  "status": "completed",
+  "model": "gpt-image-2",
+  "created_at": 1787068800,
+  "completed_at": 1787068842,
+  "data": [
+    {
+      "url": "https://objects.example/results/0.png?...",
+      "expires_at": 1787072442
+    }
+  ],
+  "result_expires_at": 1787155242,
+  "usage": {
+    "input_tokens": 18,
+    "input_tokens_details": {
+      "text_tokens": 18,
+      "image_tokens": 0
+    },
+    "output_tokens": 196,
+    "output_tokens_details": {
+      "image_tokens": 196
+    },
+    "total_tokens": 214
+  }
+}
+```
+
+## Billing
+
+APIPool settles the task from its normalized input, image-input, cached-input,
+and image-output token meters using the price version locked at submission time.
+The final task's `usage` is the customer-visible billing evidence. Current rates
+are shown under the Official Group on the [model list](/models); this page does
+not duplicate prices that can change.
+
+Need per-delivered-image billing instead? Use a key from the
+[Discount Group](/docs/discount/gpt-image-2).
