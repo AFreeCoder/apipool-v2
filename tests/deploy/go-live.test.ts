@@ -49,6 +49,7 @@ profile="${'${MOCK_PROBE_PROFILE:-happy}'}"
 status=000
 case "$profile:$url" in
   failure:*) status=500 ;;
+  happy:*app*/v1/models) status=401 ;;
   happy:*api2*/api/status) status=404 ;;
   happy:*api2*/v1/models) status=401 ;;
   happy:*newapi*/v1/models) status=404 ;;
@@ -60,10 +61,25 @@ printf '%s' "$status"
     join(bin, 'docker'),
     `#!/bin/sh
 checkout="$(sed -n 's/^APIPOOL_CHECKOUT_ENABLED=//p' "$APIPOOL_DEPLOY_DIR/.env.deploy" | tail -1)"
+runtime="${'${MOCK_RUNTIME_CHECKOUT:-$checkout}'}"
 echo "docker $* checkout=$checkout" >>"$MOCK_CALL_LOG"
 case "$*" in
+  *"up -d apipool-v2"*)
+    if [ "${'${MOCK_PORTAL_UP_FAIL:-false}'}" = true ]; then exit 1; fi
+    ;;
   *"exec -T apipool-v2 printenv APIPOOL_CHECKOUT_ENABLED"*)
-    printf '%s\\n' "$checkout"
+    if [ "${'${MOCK_RUNTIME_UNAVAILABLE:-false}'}" = true ]; then exit 1; fi
+    printf '%s\\n' "$runtime"
+    ;;
+  *"stop apipool-v2"*)
+    : >"$APIPOOL_DEPLOY_DIR/mock-portal-stopped"
+    ;;
+  *"ps --status running --services apipool-v2"*)
+    if [ "${'${MOCK_STOP_PERSISTS:-false}'}" = true ]; then
+      printf '%s\\n' apipool-v2
+    elif [ ! -f "$APIPOOL_DEPLOY_DIR/mock-portal-stopped" ]; then
+      printf '%s\\n' apipool-v2
+    fi
     ;;
 esac
 exit 0
@@ -81,6 +97,9 @@ case "${'${1:-}'}" in
     ;;
   --gateway)
     printf 'TIMESTAMP=fixture\\nIMAGE_TAG=%s\\n' "$tag" >"$APIPOOL_DEPLOY_DIR/.live-smoke-gateway-ok"
+    ;;
+  --image)
+    printf 'TIMESTAMP=fixture\\nIMAGE_TAG=%s\\n' "$tag" >"$APIPOOL_DEPLOY_DIR/.live-smoke-image-ok"
     ;;
 esac
 `
@@ -115,7 +134,11 @@ function runGoLive(
 }
 
 async function writeMarkers(fixture: { dir: string }, tag = 'sha-current') {
-  for (const name of ['.live-smoke-recharge-ok', '.live-smoke-gateway-ok']) {
+  for (const name of [
+    '.live-smoke-recharge-ok',
+    '.live-smoke-gateway-ok',
+    '.live-smoke-image-ok',
+  ]) {
     await writeFile(
       join(fixture.dir, name),
       `TIMESTAMP=fixture\nIMAGE_TAG=${tag}\n`,
@@ -146,8 +169,10 @@ test('status 只读输出 checkout、发布版本和最终态路由探测', asyn
   const fixture = await makeFixture('false');
   const result = runGoLive(fixture, ['status']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /APIPOOL_CHECKOUT_ENABLED=false/);
+  assert.match(result.stdout, /APIPOOL_CHECKOUT_CONFIGURED=false/);
+  assert.match(result.stdout, /APIPOOL_CHECKOUT_RUNNING=false/);
   assert.match(result.stdout, /IMAGE_TAG=sha-current/);
+  assert.match(result.stdout, /app=401/);
   assert.match(result.stdout, /api2=401/);
   assert.match(result.stdout, /newapi=404/);
   assert.match(result.stdout, /api2-management=404/);
@@ -163,7 +188,7 @@ test('verify 要求 checkout 显式关闭', async () => {
   }
 });
 
-test('verify 在最终态路由通过后依次完成 MVP、充值和网关 smoke', async () => {
+test('verify 在最终态路由通过后依次完成 MVP、充值、长上下文网关和异步图片 smoke', async () => {
   const fixture = await makeFixture();
   const result = runGoLive(fixture, ['verify']);
   assert.equal(result.status, 0, result.stderr);
@@ -171,7 +196,12 @@ test('verify 在最终态路由通过后依次完成 MVP、充值和网关 smoke
   assert.match(log, /live-smoke\s*\n/);
   assert.match(log, /live-smoke --recharge/);
   assert.match(log, /live-smoke --gateway/);
-  for (const marker of ['.live-smoke-recharge-ok', '.live-smoke-gateway-ok']) {
+  assert.match(log, /live-smoke --image/);
+  for (const marker of [
+    '.live-smoke-recharge-ok',
+    '.live-smoke-gateway-ok',
+    '.live-smoke-image-ok',
+  ]) {
     assert.match(
       await readFile(join(fixture.dir, marker), 'utf8'),
       /^IMAGE_TAG=sha-current$/m
@@ -219,6 +249,23 @@ test('open-checkout 拒绝缺失或陈旧的当前镜像 smoke 标志', async ()
     78
   );
 
+  const missingImage = await makeFixture();
+  const missingImageEvidence = await writeRestoreEvidence(missingImage);
+  for (const name of ['.live-smoke-recharge-ok', '.live-smoke-gateway-ok']) {
+    await writeFile(
+      join(missingImage.dir, name),
+      'TIMESTAMP=fixture\nIMAGE_TAG=sha-current\n',
+      'utf8'
+    );
+  }
+  const missingImageResult = runGoLive(missingImage, [
+    'open-checkout',
+    '--evidence',
+    missingImageEvidence,
+  ]);
+  assert.equal(missingImageResult.status, 78, missingImageResult.stderr);
+  assert.match(missingImageResult.stderr, /\.live-smoke-image-ok/);
+
   const stale = await makeFixture();
   const staleEvidence = await writeRestoreEvidence(stale);
   await writeMarkers(stale, 'sha-old');
@@ -254,6 +301,39 @@ test('open-checkout 经确认后原子开收款并验证容器运行态', async 
   );
 });
 
+test('close-checkout 无需确认即可原子冻结收款并验证容器运行态', async () => {
+  const fixture = await makeFixture('true');
+  const result = runGoLive(fixture, ['close-checkout']);
+  assert.equal(result.status, 0, result.stderr);
+  const env = await readFile(join(fixture.dir, '.env.deploy'), 'utf8');
+  assert.match(env, /^APIPOOL_CHECKOUT_ENABLED=false$/m);
+  assert.match(env, /^QUOTED_VALUE='keep \$literal spaces'$/m);
+  const log = await readFile(fixture.log, 'utf8');
+  assert.match(log, /docker compose .* up -d apipool-v2 checkout=false/);
+  assert.match(log, /exec -T apipool-v2 printenv APIPOOL_CHECKOUT_ENABLED/);
+  assert.doesNotMatch(log, /stop apipool-v2/);
+});
+
+test('close-checkout 无法确认运行态关闭时紧急停止门户并返回失败', async () => {
+  const scenarios: Array<Record<string, string>> = [
+    { MOCK_PORTAL_UP_FAIL: 'true', MOCK_RUNTIME_CHECKOUT: 'true' },
+    { MOCK_RUNTIME_CHECKOUT: 'true' },
+  ];
+  for (const env of scenarios) {
+    const fixture = await makeFixture('true');
+    const result = runGoLive(fixture, ['close-checkout'], { env });
+    assert.equal(result.status, 75, result.stderr);
+    assert.doesNotMatch(result.stdout, /checkout 已冻结/);
+    assert.match(result.stderr, /紧急停止门户容器/);
+    assert.match(result.stderr, /门户容器已停止/);
+    const configured = await readFile(join(fixture.dir, '.env.deploy'), 'utf8');
+    assert.match(configured, /^APIPOOL_CHECKOUT_ENABLED=false$/m);
+    const log = await readFile(fixture.log, 'utf8');
+    assert.match(log, /stop apipool-v2/);
+    assert.match(log, /ps --status running --services apipool-v2/);
+  }
+});
+
 test('共享 env 写入只用同目录临时文件与 rename，不用 install 覆盖状态文件', async () => {
   const library = await readFile('deploy/lib.sh', 'utf8');
   assert.match(
@@ -264,9 +344,10 @@ test('共享 env 写入只用同目录临时文件与 rename，不用 install �
   assert.doesNotMatch(library, /install[^\n]*STATE_ENV_FILE/);
 });
 
-test('smoke 工装、镜像产物与 live-smoke 两种专项模式完整接线', async () => {
-  const [gateway, recharge, live, dockerfile] = await Promise.all([
+test('smoke 工装、镜像产物与 live-smoke 三种专项模式完整接线', async () => {
+  const [gateway, image, recharge, live, dockerfile] = await Promise.all([
     readFile('scripts/smoke-gateway.ts', 'utf8'),
+    readFile('scripts/smoke-image.ts', 'utf8'),
     readFile('scripts/smoke-recharge.ts', 'utf8'),
     readFile('deploy/live-smoke.sh', 'utf8'),
     readFile('Dockerfile', 'utf8'),
@@ -285,10 +366,17 @@ test('smoke 工装、镜像产物与 live-smoke 两种专项模式完整接线',
   assert.doesNotMatch(recharge, /WALLET_LEDGER_WRITE_ENABLED/);
   assert.match(live, /--gateway/);
   assert.match(live, /--recharge/);
+  assert.match(live, /--image/);
+  assert.match(live, /https:\/\/app\.apipool\.dev\/v1/);
+  assert.match(live, /APIPOOL_SMOKE_LONG_CONTEXT_MODEL/);
   assert.match(live, /\.live-smoke-gateway-ok/);
   assert.match(live, /\.live-smoke-recharge-ok/);
+  assert.match(live, /\.live-smoke-image-ok/);
+  assert.match(image, /\/images\/generations/);
+  assert.match(image, /response\.status === 202/);
   assert.match(dockerfile, /smoke-gateway\.cjs/);
   assert.match(dockerfile, /smoke-recharge\.cjs/);
+  assert.match(dockerfile, /smoke-image\.cjs/);
 });
 
 async function makeDeployFixture(checkout: string) {

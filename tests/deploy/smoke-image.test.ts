@@ -9,7 +9,7 @@ import {
   validateObjectStorageImageUrl,
 } from '../../scripts/smoke-image';
 
-test('图片 UAT 覆盖官方低质量 1K、高质量 2K、Codex 双图 2K 与图生图 4K', () => {
+test('图片 UAT 覆盖官方低质量 1K、高质量 2K、Codex 单图 2K 与图生图 4K', () => {
   assert.deepEqual(
     IMAGE_UAT_CASES.map(({ id, group, endpoint, resolution, n }) => ({
       id,
@@ -34,11 +34,11 @@ test('图片 UAT 覆盖官方低质量 1K、高质量 2K、Codex 双图 2K 与�
         n: 1,
       },
       {
-        id: 'codex-multi-2k',
+        id: 'codex-single-2k',
         group: 'discount',
         endpoint: 'generations',
         resolution: '2k',
-        n: 2,
+        n: 1,
       },
       {
         id: 'codex-edit-4k',

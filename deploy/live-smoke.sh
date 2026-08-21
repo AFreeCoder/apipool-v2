@@ -8,7 +8,7 @@ RELEASE_FILE="${APIPOOL_RELEASE_FILE:-release.env}"
 
 usage() {
   cat >&2 <<'USAGE'
-usage: deploy/live-smoke.sh [--gateway|--recharge] [--no-price-reconciliation]
+usage: deploy/live-smoke.sh [--gateway|--image|--recharge] [--no-price-reconciliation]
 
 Runs production MVP live smoke on the VPS using server-local .env.deploy.
 Do not run this from GitHub Actions; it intentionally keeps production DB and
@@ -27,6 +27,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --recharge)
       SMOKE_MODE=recharge
+      shift
+      ;;
+    --image)
+      SMOKE_MODE=image
       shift
       ;;
     --no-price-reconciliation)
@@ -62,10 +66,12 @@ set +a
 
 APIPOOL_SMOKE_REQUIRE_LIVE=true
 APIPOOL_SMOKE_PRICE_RECONCILIATION="$PRICE_RECONCILIATION"
+APIPOOL_SMOKE_GATEWAY_BASE_URL=https://app.apipool.dev/v1
 NODE_OPTIONS="${NODE_OPTIONS:---conditions react-server}"
 
 export APIPOOL_SMOKE_REQUIRE_LIVE
 export APIPOOL_SMOKE_PRICE_RECONCILIATION
+export APIPOOL_SMOKE_GATEWAY_BASE_URL
 export NODE_OPTIONS
 
 required_env=(
@@ -81,7 +87,7 @@ if [ "$SMOKE_MODE" = mvp ]; then
   required_env+=(APIPOOL_SMOKE_OPERATOR_EMAIL APIPOOL_SMOKE_OPERATOR_USER_ID)
 fi
 if [ "$SMOKE_MODE" = gateway ]; then
-  required_env+=(APIPOOL_SMOKE_MODEL)
+  required_env+=(APIPOOL_SMOKE_MODEL APIPOOL_SMOKE_LONG_CONTEXT_MODEL)
 fi
 
 missing=()
@@ -122,7 +128,10 @@ run_bundle() {
     -e APIPOOL_SMOKE_MODEL \
     -e APIPOOL_SMOKE_QUOTA_USD \
     -e APIPOOL_SMOKE_RECHARGE_CENTS \
-    -e APIPOOL_SMOKE_GATEWAY_BASE_URL=http://apipool-v2:3000/v1 \
+    -e APIPOOL_SMOKE_GATEWAY_BASE_URL \
+    -e APIPOOL_SMOKE_IMAGE_MODEL \
+    -e APIPOOL_SMOKE_LONG_CONTEXT_MODEL \
+    -e APIPOOL_SMOKE_LONG_CONTEXT_TOKENS \
     -e APIPOOL_SMOKE_USAGE_ATTEMPTS \
     -e APIPOOL_SMOKE_USAGE_DELAY_MS \
     apipool-v2 \
@@ -143,6 +152,13 @@ case "$SMOKE_MODE" in
     printf 'TIMESTAMP=%s\nIMAGE_TAG=%s\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$IMAGE_TAG" >"$marker_tmp"
     mv -f "$marker_tmp" "$APP_DIR/.live-smoke-recharge-ok"
+    ;;
+  image)
+    run_bundle smoke-image.cjs
+    marker_tmp="$(mktemp "$APP_DIR/.live-smoke-image-ok.XXXXXX")"
+    printf 'TIMESTAMP=%s\nIMAGE_TAG=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$IMAGE_TAG" >"$marker_tmp"
+    mv -f "$marker_tmp" "$APP_DIR/.live-smoke-image-ok"
     ;;
   mvp)
     run_bundle smoke-mvp.cjs
