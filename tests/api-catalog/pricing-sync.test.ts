@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 
 function testId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -48,12 +48,12 @@ async function setupDb() {
   };
 
   await modules.initCatalog();
-  // 本文件只验证 gpt-4o-mini 的成本同步；gpt-image-2 的生产种子
-  // 由 init-catalog 专项测试覆盖，避免未放入模拟快照的模型制造无关 partial。
+  // 本文件只验证 gpt-4o-mini 的成本同步；其余生产种子由
+  // init-catalog 专项测试覆盖，避免未放入模拟快照的模型制造无关 partial。
   await modules
     .db()
     .delete(modules.schema.catalogModel)
-    .where(eq(modules.schema.catalogModel.modelId, 'gpt-image-2'));
+    .where(ne(modules.schema.catalogModel.modelId, 'gpt-4o-mini'));
   await modules
     .db()
     .update(modules.schema.catalogModelListing)

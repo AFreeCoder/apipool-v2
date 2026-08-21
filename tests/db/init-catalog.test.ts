@@ -157,6 +157,95 @@ test('migrations seed the minimum official catalog needed at production startup'
   });
 });
 
+test('0020 migration corrects existing group order and GPT discount listings', async () => {
+  const dbPath = join(process.cwd(), '.tmp', 'discount-gpt-migration.db');
+  await rm(dbPath, { force: true });
+  const client = createClient({ url: `file:${dbPath}` });
+  const migrationsDir = join(process.cwd(), 'src/config/db/migrations_sqlite');
+  const migrationFiles = (await readdir(migrationsDir))
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
+
+  for (const file of migrationFiles.filter((name) => name < '0020_')) {
+    await client.executeMultiple(
+      await readFile(join(migrationsDir, file), 'utf8')
+    );
+  }
+  await client.executeMultiple(`
+    UPDATE catalog_group SET sort_order = 1 WHERE slug = 'official';
+    INSERT INTO catalog_group (
+      id, slug, name, allow_create_key, sort_order, status
+    ) VALUES (
+      'migration-discount', 'discount', '特惠分组', 1, 0, 'active'
+    );
+    INSERT INTO catalog_model (
+      id, model_id, display_name, vendor_id, category
+    )
+    SELECT
+      'migration-gpt-5.5', 'gpt-5.5', 'GPT-5.5', id, 'llm'
+    FROM catalog_vendor WHERE slug = 'openai';
+    INSERT INTO catalog_model (
+      id, model_id, display_name, vendor_id, category
+    )
+    SELECT
+      'migration-gpt-image-2', 'gpt-image-2', 'gpt-image-2', id, 'image'
+    FROM catalog_vendor WHERE slug = 'openai';
+    INSERT INTO catalog_model_listing (
+      id, model_id, group_id, status_id, input_micro_usd,
+      output_micro_usd, newapi_group, discount_rate_bps
+    )
+    SELECT
+      'migration-gpt-listing', 'migration-gpt-5.5', 'migration-discount',
+      id, 0, 0, 'codex特惠', NULL
+    FROM catalog_status WHERE slug = 'available';
+    INSERT INTO catalog_model_listing (
+      id, model_id, group_id, status_id, input_micro_usd,
+      output_micro_usd, newapi_group, discount_rate_bps
+    )
+    SELECT
+      'migration-image-listing', 'migration-gpt-image-2',
+      'migration-discount', id, 0, 0, 'codex特惠', NULL
+    FROM catalog_status WHERE slug = 'available';
+  `);
+
+  await client.executeMultiple(
+    await readFile(join(migrationsDir, '0020_discount_gpt_models.sql'), 'utf8')
+  );
+
+  const groups = await client.execute(
+    "SELECT slug, sort_order FROM catalog_group WHERE slug IN ('official', 'discount') ORDER BY sort_order"
+  );
+  assert.deepEqual(groups.rows, [
+    { slug: 'official', sort_order: 10 },
+    { slug: 'discount', sort_order: 20 },
+  ]);
+  const groupTimestampTypes = await client.execute(
+    "SELECT DISTINCT typeof(updated_at) AS type FROM catalog_group WHERE slug IN ('official', 'discount')"
+  );
+  assert.deepEqual(groupTimestampTypes.rows, [{ type: 'integer' }]);
+  const listings = await client.execute(`
+    SELECT catalog_model.model_id, catalog_model_listing.discount_rate_bps,
+      typeof(catalog_model_listing.updated_at) AS updated_at_type
+    FROM catalog_model_listing
+    JOIN catalog_model ON catalog_model.id = catalog_model_listing.model_id
+    WHERE catalog_model_listing.group_id = 'migration-discount'
+    ORDER BY catalog_model.model_id
+  `);
+  assert.deepEqual(listings.rows, [
+    {
+      model_id: 'gpt-5.5',
+      discount_rate_bps: 700,
+      updated_at_type: 'integer',
+    },
+    {
+      model_id: 'gpt-image-2',
+      discount_rate_bps: null,
+      updated_at_type: 'integer',
+    },
+  ]);
+  client.close();
+});
+
 test('initCatalog is idempotent when run twice', async () => {
   await modules.initCatalog();
   const afterFirstRun = await countCatalogRows();
@@ -206,7 +295,15 @@ test('initCatalog seeds the required first catalog data', async () => {
   );
   assert.equal(official?.name, '官方分组');
   assert.equal(official?.allowCreateKey, true);
+  assert.equal(official?.sortOrder, 10);
   assert.equal(official?.status, 'active');
+
+  const discount = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'discount'
+  );
+  assert.equal(discount?.sortOrder, 20);
 
   const openai = await findBySlug(catalogVendor, catalogVendor.slug, 'openai');
   assert.equal(openai?.name, 'OpenAI');
@@ -274,6 +371,122 @@ test('initCatalog seeds the required first catalog data', async () => {
   assert.equal(listing?.statusId, available.id);
   assert.equal(listing?.smokeTested, true);
   assert.equal(listing?.sortOrder, 10);
+});
+
+test('initCatalog 补齐 7 个特惠 GPT 文本模型并统一为 700 bps', async () => {
+  await modules.initCatalog();
+
+  const {
+    catalogGroup,
+    catalogModel,
+    catalogModelListing,
+    catalogModelPricingProfile,
+    catalogModelPricingRate,
+  } = modules.schema;
+  const discount = await findBySlug(
+    catalogGroup,
+    catalogGroup.slug,
+    'discount'
+  );
+  assert.ok(discount);
+
+  const expectedRates: Record<string, Record<string, number>> = {
+    'gpt-5.3-codex-spark': {
+      input: 1_750_000,
+      cached_input: 175_000,
+      output: 14_000_000,
+    },
+    'gpt-5.4': {
+      input: 2_500_000,
+      cached_input: 250_000,
+      output: 15_000_000,
+    },
+    'gpt-5.4-mini': {
+      input: 750_000,
+      cached_input: 75_000,
+      output: 4_500_000,
+    },
+    'gpt-5.5': {
+      input: 5_000_000,
+      cached_input: 500_000,
+      output: 30_000_000,
+    },
+    'gpt-5.6-luna': {
+      input: 1_000_000,
+      cached_input: 100_000,
+      output: 6_000_000,
+    },
+    'gpt-5.6-terra': {
+      input: 2_500_000,
+      cached_input: 250_000,
+      output: 15_000_000,
+    },
+    'gpt-5.6-sol': {
+      input: 5_000_000,
+      cached_input: 500_000,
+      output: 30_000_000,
+    },
+  };
+
+  for (const [modelId, expectedModelRates] of Object.entries(expectedRates)) {
+    const [row] = await modules
+      .db()
+      .select({
+        modelPk: catalogModel.id,
+        listingProfileId: catalogModelListing.pricingProfileId,
+        listingDiscountRateBps: catalogModelListing.discountRateBps,
+        listingNewapiGroup: catalogModelListing.newapiGroup,
+      })
+      .from(catalogModel)
+      .innerJoin(
+        catalogModelListing,
+        and(
+          eq(catalogModelListing.modelId, catalogModel.id),
+          eq(catalogModelListing.groupId, discount.id)
+        )
+      )
+      .where(eq(catalogModel.modelId, modelId));
+    assert.ok(row, modelId);
+    assert.equal(row.listingDiscountRateBps, 700, modelId);
+    assert.equal(row.listingNewapiGroup, 'codex特惠', modelId);
+    assert.ok(row.listingProfileId, modelId);
+
+    const profile = await findBySlug(
+      catalogModelPricingProfile,
+      catalogModelPricingProfile.id,
+      row.listingProfileId
+    );
+    assert.equal(profile?.modelId, row.modelPk, modelId);
+
+    const rates = await modules
+      .db()
+      .select()
+      .from(catalogModelPricingRate)
+      .where(eq(catalogModelPricingRate.profileId, row.listingProfileId));
+    for (const [meterKey, priceMicroUsd] of Object.entries(
+      expectedModelRates
+    )) {
+      assert.equal(
+        rates.find((rate: { meterKey: string }) => rate.meterKey === meterKey)
+          ?.priceMicroUsd,
+        priceMicroUsd,
+        `${modelId}/${meterKey}`
+      );
+    }
+  }
+
+  const [imageListing] = await modules
+    .db()
+    .select({ discountRateBps: catalogModelListing.discountRateBps })
+    .from(catalogModelListing)
+    .innerJoin(catalogModel, eq(catalogModelListing.modelId, catalogModel.id))
+    .where(
+      and(
+        eq(catalogModel.modelId, 'gpt-image-2'),
+        eq(catalogModelListing.groupId, discount.id)
+      )
+    );
+  assert.equal(imageListing.discountRateBps, null);
 });
 
 test('initCatalog 为 gpt-image-2 初始化分组隔离的 token 与按张定价', async () => {

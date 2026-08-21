@@ -137,6 +137,51 @@ const groups = [
   },
 ];
 
+const discountGptModels = [
+  {
+    modelId: 'gpt-5.3-codex-spark',
+    displayName: 'GPT-5.3 Codex Spark',
+    contextWindow: 128000,
+    rates: { input: 1_750_000, cached_input: 175_000, output: 14_000_000 },
+  },
+  {
+    modelId: 'gpt-5.4',
+    displayName: 'GPT-5.4',
+    contextWindow: 1_100_000,
+    rates: { input: 2_500_000, cached_input: 250_000, output: 15_000_000 },
+  },
+  {
+    modelId: 'gpt-5.4-mini',
+    displayName: 'GPT-5.4 Mini',
+    contextWindow: 400000,
+    rates: { input: 750_000, cached_input: 75_000, output: 4_500_000 },
+  },
+  {
+    modelId: 'gpt-5.5',
+    displayName: 'GPT-5.5',
+    contextWindow: 1_100_000,
+    rates: { input: 5_000_000, cached_input: 500_000, output: 30_000_000 },
+  },
+  {
+    modelId: 'gpt-5.6-luna',
+    displayName: 'GPT-5.6 Luna',
+    contextWindow: 1_100_000,
+    rates: { input: 1_000_000, cached_input: 100_000, output: 6_000_000 },
+  },
+  {
+    modelId: 'gpt-5.6-terra',
+    displayName: 'GPT-5.6 Terra',
+    contextWindow: 1_100_000,
+    rates: { input: 2_500_000, cached_input: 250_000, output: 15_000_000 },
+  },
+  {
+    modelId: 'gpt-5.6-sol',
+    displayName: 'GPT-5.6 Sol',
+    contextWindow: 1_100_000,
+    rates: { input: 5_000_000, cached_input: 500_000, output: 30_000_000 },
+  },
+];
+
 const models = [
   {
     modelId: 'gpt-4o-mini',
@@ -145,6 +190,13 @@ const models = [
     contextWindow: 128000,
     category: 'llm',
   },
+  ...discountGptModels.map((model) => ({
+    modelId: model.modelId,
+    displayName: model.displayName,
+    vendorSlug: 'openai',
+    contextWindow: model.contextWindow,
+    category: 'llm',
+  })),
   {
     modelId: 'gpt-image-2',
     displayName: 'gpt-image-2',
@@ -157,6 +209,10 @@ const models = [
 const modelCapabilities = [
   { modelId: 'gpt-4o-mini', capabilitySlug: 'text' },
   { modelId: 'gpt-4o-mini', capabilitySlug: 'vision' },
+  ...discountGptModels.map((model) => ({
+    modelId: model.modelId,
+    capabilitySlug: 'text',
+  })),
   { modelId: 'gpt-image-2', capabilitySlug: 'vision' },
 ];
 
@@ -167,6 +223,7 @@ const listings = [
     newapiGroup: 'official',
     statusSlug: 'available',
     pricingProfileName: '默认售卖价',
+    discountRateBps: null,
     sortOrder: 10,
   },
   {
@@ -175,14 +232,25 @@ const listings = [
     newapiGroup: 'official',
     statusSlug: 'available',
     pricingProfileName: '官方 Token 售卖价',
+    discountRateBps: null,
     sortOrder: 20,
   },
+  ...discountGptModels.map((model) => ({
+    modelId: model.modelId,
+    groupSlug: DISCOUNT_GROUP_SLUG,
+    newapiGroup: 'codex特惠',
+    statusSlug: 'available',
+    pricingProfileName: '默认售卖价',
+    discountRateBps: 700,
+    sortOrder: 0,
+  })),
   {
     modelId: 'gpt-image-2',
     groupSlug: DISCOUNT_GROUP_SLUG,
     newapiGroup: 'codex特惠',
     statusSlug: 'available',
     pricingProfileName: 'Codex 特惠按张价',
+    discountRateBps: null,
     sortOrder: 10,
   },
 ];
@@ -221,6 +289,22 @@ const pricingProfiles = [
       },
     ],
   },
+  ...discountGptModels.map((model) => ({
+    modelId: model.modelId,
+    name: '默认售卖价',
+    pricingBasis: 'token',
+    quantityMeter: null,
+    skuRuleSource: null,
+    skuRuleAstJson: null,
+    compilerVersion: null,
+    ruleHash: null,
+    rates: Object.entries(model.rates).map(([meterKey, priceMicroUsd]) => ({
+      meterKey,
+      skuKey: 'default',
+      unitSize: 1_000_000,
+      priceMicroUsd,
+    })),
+  })),
   {
     modelId: 'gpt-image-2',
     name: '官方 Token 售卖价',
@@ -931,6 +1015,7 @@ export async function initCatalog(options?: {
             // 旧列只为数据库迁移兼容保留，售卖链路不再读取。
             inputMicroUsd: 0,
             outputMicroUsd: 0,
+            discountRateBps: listing.discountRateBps,
             sortOrder: listing.sortOrder,
           };
         })
