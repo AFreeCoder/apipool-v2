@@ -54,8 +54,10 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 
 ### 支付（见 06-payments-ledger.md）
 
-- Stripe：`STRIPE_*`（secret key、webhook secret）
-- Creem：`CREEM_*`（同上）
+- Stripe 与 Creem 配置均通过“管理后台 → 设置 → 支付”写入 Portal `config` 表；
+  生产容器不注入 `STRIPE_*` / `CREEM_*`。密钥字段留空表示保留原值。
+- Stripe 正式环境使用 `pk_live_...`、受限 `rk_live_...` 和对应 Live endpoint 的
+  `whsec_...`；首发只启用 card，Webhook 只订阅 `checkout.session.completed`。
 - webhook 回调地址在渠道后台配置为 `https://app.apipool.dev/api/payment/notify/<provider>`
 
 ### 冒烟
@@ -66,6 +68,9 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - 对应 New API 用户的 `username` 必须精确为 `smo@apipool.local`；不得截断、使用 hash/别名或另建第二个测试用户。
 - `APIPOOL_SMOKE_GROUP_SLUG`（可选；默认 `official`，可指定实际售卖分组如 `discount`）
 - `APIPOOL_SMOKE_MODEL`（可选；设置时必须在 `APIPOOL_SMOKE_GROUP_SLUG` 对应分组中可调用；不设置时使用该分组的默认或首个可调用模型）
+- `deploy/live-smoke.sh` 固定 `APIPOOL_SMOKE_GATEWAY_BASE_URL=https://app.apipool.dev/v1`（最终上线门禁必须经过公网 `app`，不得改回容器内网）
+- `APIPOOL_SMOKE_LONG_CONTEXT_MODEL`（最终上线必填；必须支持超过 272K tokens 的 OpenAI Chat 或 Responses 调用）
+- `APIPOOL_SMOKE_LONG_CONTEXT_TOKENS`（可选；默认 `280000`，必须大于 272K）
 - `APIPOOL_SMOKE_QUOTA_USD`（可选；默认 `1`，必须为正数）
 - `APIPOOL_SMOKE_USAGE_ATTEMPTS` / `APIPOOL_SMOKE_USAGE_DELAY_MS`（可选；用量延迟时调整轮询）
 - `APIPOOL_SMOKE_REQUIRE_LIVE=true`：缺少 live smoke 必需配置时让 smoke 失败，而不是跳过。
@@ -564,12 +569,11 @@ curl -fsS http://127.0.0.1:3001/api/status >/dev/null
 
 ## 6. 最终态上线 runbook
 
-> **当前 checkout/go-live 保持暂停**：门户公开 API 固定使用
-> `app.apipool.dev/v1*`，`api2.apipool.dev/v1*` 则是使用 New API 原生 Key 的
-> 独立数据面，二者不存在切换关系。现有 `live-smoke.sh` 仍通过容器内网验证门户
-> 网关，`go-live.sh` 也尚未把公网 `app` 长请求和异步图片调用纳入硬门禁；这些门禁
-> 补齐并验收前，保持 `APIPOOL_CHECKOUT_ENABLED=false`，不执行
-> `go-live verify` 或 `go-live open-checkout`。
+> 门户公开 API 固定使用 `app.apipool.dev/v1*`，`api2.apipool.dev/v1*` 则是使用
+> New API 原生 Key 的独立数据面，二者不存在切换关系。`go-live verify` 必须通过
+> 公网 `app` 完成长上下文网关 smoke 和异步图片生成/编辑 smoke，并把充值、网关、
+> 图片三类 marker 绑定到当前 `IMAGE_TAG`；任一项缺失或陈旧时继续保持
+> `APIPOOL_CHECKOUT_ENABLED=false`。
 
 本次首次上线基于“线上没有真实用户和真实流量”的事实，直接部署最终态，不维护渐进切流
 状态。真实客户开始使用后，不得继续套用“无流量”前提：
@@ -584,7 +588,7 @@ curl -fsS http://127.0.0.1:3001/api/status >/dev/null
 
 全程在 `/opt/apipool-v2` 执行。`deploy/go-live.sh` 使用 deploy lock；退出 78 表示
 checkout 前态、恢复演练证据、当前镜像 smoke 标志或人工确认不满足，退出 75 表示锁冲突
-或运行态验证失败。
+或运行态验证失败。`status` 分别输出 checkout 配置态与容器运行态；两者必须一致。
 
 ### 6.1 上线顺序
 
@@ -595,11 +599,14 @@ checkout 前态、恢复演练证据、当前镜像 smoke 标志或人工确认�
 4. 在“模型目录 → 模型元数据 → 某模型 → 分组折扣”为每条“门户分组 + 模型 ID”分别配置 New API 分组；同一门户逻辑分组下的不同模型允许映射到不同 New API 分组。随后执行成本守卫同步并复核模型基准价与售卖项状态。网关会据此自动生成路由和不可变价格快照，不再人工发布第二套路由/价格。
 5. 执行生产库只读核验（§6.2）。
 6. 执行 `./deploy/go-live.sh verify`。脚本依次验证固定路由、MVP smoke、充值
-   smoke 和 Gateway smoke，并把两类专项标志绑定到当前 `IMAGE_TAG`。
+   smoke、长上下文 Gateway smoke 和异步图片 smoke，并把充值、网关、图片三类
+   专项标志绑定到当前 `IMAGE_TAG`。
 7. 人工核对 Dashboard 本地钱包、请求账本和钱包充值流水；New API quota 不作为门户余额核对项。
 8. 执行 `./deploy/go-live.sh open-checkout --evidence "$RESTORE_EVIDENCE"`，
    输入 `yes` 后才开放收款。
-9. 按 §6.5 观察并收尾。
+9. 开放后立即完成一笔受控的最小金额 Stripe Live card 支付，并按下文“Live 支付
+   验收”核对原始事件与重放幂等性。失败时立即执行 `close-checkout`，不得进入观察期。
+10. Live 支付验收通过后，按 §6.5 观察并收尾。
 
 ```bash
 cd /opt/apipool-v2
@@ -609,6 +616,35 @@ RESTORE_EVIDENCE=/opt/apipool-v2/evidence/restore-drill-YYYYMMDD.md
 ./deploy/go-live.sh open-checkout --evidence "$RESTORE_EVIDENCE"
 ./deploy/go-live.sh status
 ```
+
+上述 `verify` 中的 `--recharge` 是直接调用入账逻辑的合成 smoke，只验证订单、钱包与
+credit 的内部不变量；它不会创建 Stripe Checkout，也不会验证 Live Webhook 签名，不能
+替代以下 Live 支付验收：
+
+1. 使用专用验收账号选择最小金额充值，确认 Stripe Checkout 页面处于 Live 模式且只
+   提供 card；完成一笔真实支付，并记录订单号、Stripe Checkout Session ID 与 Event ID，
+   不在终端、Issue 或证据文件记录卡号、API key、Webhook signing secret。
+2. 核对 Portal 订单为 `PAID`、`payment_provider=stripe`，该订单恰有一条
+   `wallet_ledger.entry_type=recharge`；钱包余额等于钱包流水之和，且没有新增 credit。
+3. 在 Stripe Dashboard 对该笔 `checkout.session.completed` 执行一次 Resend；确认
+   Webhook 返回 2xx，订单仍为 `PAID`、recharge 流水仍恰好一条、余额未重复增加。
+4. 保存脱敏证据后才进入 §6.5。任一项失败，立即执行：
+
+```bash
+cd /opt/apipool-v2
+./deploy/go-live.sh close-checkout
+./deploy/go-live.sh status
+```
+
+冻结后先对账再处理回滚。Stripe 配置只允许通过管理后台恢复为上线前保存的 Test 配置行，
+禁止整库恢复覆盖已产生的订单和钱包流水。若已经有 Live 成交，必须先在 Stripe 与 Portal
+逐笔对账；需要退款时完成 Stripe 退款，并通过人工负向钱包调账回收对应余额、保留审计
+记录，再决定是否切回 Test。自动退款或争议当前不会反向更新钱包，因此值班人员必须保持
+checkout 冻结直到人工处置完成。
+
+`close-checkout` 只重建门户容器并核对其运行态。若无法确认容器中的
+`APIPOOL_CHECKOUT_ENABLED=false`，脚本会紧急停止门户并以 75 退出；此时不可把磁盘
+配置为 false 当作已恢复服务，必须先排除重建故障，再确认配置态与运行态同时为 false。
 
 恢复演练证据文件必须是仅操作员可读的普通非空文件，建议权限 `600`，至少记录：
 
@@ -717,13 +753,14 @@ SQL
 
 ### 6.3 故障处理与镜像回滚
 
-网关、Caddy、钱包或 smoke 任一失败时保持
+网关、Caddy、钱包、smoke 或 Live 支付验收任一失败时保持
 `APIPOOL_CHECKOUT_ENABLED=false`，不要开放收款。由于当前没有真实用户，不需要切换
 maintenance 数据面；直接修复后重跑 `verify`，或部署上一稳定 `IMAGE_TAG`：
 
 ```bash
 cd /opt/apipool-v2
 ./deploy/go-live.sh status
+./deploy/go-live.sh close-checkout
 ./deploy/deploy.sh sha-<上一稳定完整提交>
 ./deploy/go-live.sh verify
 ```

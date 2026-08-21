@@ -100,6 +100,9 @@ workflow checkout 无权覆盖 `/opt/apipool-v2/docker-compose.prod.yml` 或 `de
   - `/opt/apipool-v2/.env.deploy`
   - `/opt/apipool-v2/release.env`
   - `/opt/apipool-v2/docker-compose.prod.yml`
+- 支付渠道配置不属于上述环境文件：Stripe/Creem 的开关、API key 与 Webhook
+  signing secret 通过“管理后台 → 设置 → 支付”写入 Portal `config` 表。生产切换
+  Stripe Live 时只在管理后台提交一次，密钥不得进入 Git、Issue、终端输出或部署环境变量。
 
 ## NewAPI 受控模型元数据同步
 
@@ -346,7 +349,8 @@ test "$(curl -sS -o /tmp/apipool-api2-models-no-key.out -w '%{http_code}' "$NEWA
 `/v1/models` 应返回门户认证错误。`https://api2.apipool.dev` 是 New API 原生
 直连 endpoint；无 API key 访问
 OpenAI-compatible `/v1/models` 应返回认证错误。真实可调用性使用临时用户的
-New API 原生 Key 做外部 smoke；`deploy/live-smoke.sh --gateway` 验证门户内部网关。
+New API 原生 Key 做外部 smoke；`deploy/live-smoke.sh --gateway` 固定经过
+`https://app.apipool.dev/v1` 验证门户公网网关与长上下文链路，不允许改为容器内网。
 `api.apipool.dev` 在老站排空期继续服务老用户，
 cutover 后再回收给 v2。
 

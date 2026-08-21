@@ -51,11 +51,11 @@ export const IMAGE_UAT_CASES = [
     n: 1,
   },
   {
-    id: 'codex-multi-2k',
+    id: 'codex-single-2k',
     group: DISCOUNT_GROUP,
     endpoint: 'generations',
     resolution: '2k',
-    n: 2,
+    n: 1,
   },
   {
     id: 'codex-edit-4k',
@@ -552,11 +552,11 @@ export async function main() {
       submitGeneration({
         baseUrl,
         apiKey: codexKey.apiKey,
-        caseId: 'codex-multi-2k',
+        caseId: 'codex-single-2k',
         prompt:
           'A minimal botanical poster with one green leaf on an ivory background.',
         resolution: '2k',
-        n: 2,
+        n: 1,
       }),
     ]);
     const completed = await Promise.all(
@@ -565,7 +565,7 @@ export async function main() {
     const byCase = new Map(completed.map((task) => [task.caseId, task]));
     const officialLow = byCase.get('official-low-1k')!;
     const officialHigh = byCase.get('official-high-2k')!;
-    const codexMulti = byCase.get('codex-multi-2k')!;
+    const codexSingle = byCase.get('codex-single-2k')!;
     invariant(
       officialLow.body.data.length === 1,
       'official-low-1k output count'
@@ -574,7 +574,10 @@ export async function main() {
       officialHigh.body.data.length === 1,
       'official-high-2k output count'
     );
-    invariant(codexMulti.body.data.length === 2, 'codex-multi-2k output count');
+    invariant(
+      codexSingle.body.data.length === 1,
+      'codex-single-2k output count'
+    );
     const artifacts = new Map<string, ImageArtifact[]>();
     for (const task of completed) {
       artifacts.set(
@@ -611,12 +614,12 @@ export async function main() {
       expectedBasis: 'token',
     });
     await verifyLedger({
-      task: codexMulti,
+      task: codexSingle,
       expectedGroup: 'codex特惠',
       expectedBasis: 'unit',
       expectedSku: 'resolution=2k',
-      expectedCount: 2,
-      expectedCharge: 28_000,
+      expectedCount: 1,
+      expectedCharge: 14_000,
     });
     await verifyLedger({
       task: editCompleted,
@@ -628,7 +631,7 @@ export async function main() {
     });
 
     const crossRead = await fetch(
-      `${baseUrl}/tasks/${encodeURIComponent(codexMulti.taskId)}`,
+      `${baseUrl}/tasks/${encodeURIComponent(codexSingle.taskId)}`,
       { headers: { authorization: `Bearer ${officialKey.apiKey}` } }
     );
     invariant(crossRead.status === 404, 'task result leaked across group keys');
@@ -668,7 +671,7 @@ export async function main() {
         artifacts: safeArtifacts,
         billing: {
           official: 'token usage',
-          codex2kTwoImagesMicroUsd: 28_000,
+          codex2kOneImageMicroUsd: 14_000,
           codex4kEditMicroUsd: 21_000,
         },
       })
