@@ -166,6 +166,12 @@ export class StripeProvider implements PaymentProvider {
         }
       }
 
+      if (order.type === PaymentType.ONE_TIME) {
+        sessionParams.consent_collection = {
+          terms_of_service: 'required',
+        };
+      }
+
       if (customerId) {
         sessionParams.customer = customerId;
       }
