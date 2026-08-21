@@ -1228,7 +1228,7 @@ test('37 images 响应无法解析张数：进入失败复核路径且不扣费'
   assert.equal(charges.length, 0);
 });
 
-test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图片数异步结算', async () => {
+test('38 同一 gpt-image-2 官方组按 token，Codex 特惠组仅允许单图并按实际图片结算', async () => {
   const official = await seedGatewayFixture(modules, 'gpt-image-2-official', {
     modelId: 'gpt-image-2',
     newapiGroup: 'official',
@@ -1342,7 +1342,18 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
   assert.equal(officialLedger.cachedReadTokens, 0, '不拆分的缓存量不折价');
   assert.equal(officialLedger.status, 'settled');
 
-  const codexSubmit = await invoke(
+  const codexLedgersBefore = await modules
+    .db()
+    .select()
+    .from(modules.schema.requestLedger)
+    .where(eq(modules.schema.requestLedger.userId, codex.userId));
+  const codexTasksBefore = await modules
+    .db()
+    .select()
+    .from(modules.schema.gatewayTask)
+    .where(eq(modules.schema.gatewayTask.userId, codex.userId));
+  const upstreamRequestsBefore = mock.requests.length;
+  const codexMultiSubmit = await invoke(
     codex,
     'normal',
     '/v1/images/generations',
@@ -1354,6 +1365,43 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
       size: '1024x1536',
       resolution: '2k',
       n: 2,
+    })
+  );
+  assert.equal(codexMultiSubmit.status, 400);
+  assert.equal(mock.requests.length, upstreamRequestsBefore);
+  assert.equal(
+    (
+      await modules
+        .db()
+        .select()
+        .from(modules.schema.requestLedger)
+        .where(eq(modules.schema.requestLedger.userId, codex.userId))
+    ).length,
+    codexLedgersBefore.length
+  );
+  assert.equal(
+    (
+      await modules
+        .db()
+        .select()
+        .from(modules.schema.gatewayTask)
+        .where(eq(modules.schema.gatewayTask.userId, codex.userId))
+    ).length,
+    codexTasksBefore.length
+  );
+
+  const codexSubmit = await invoke(
+    codex,
+    'normal',
+    '/v1/images/generations',
+    ['images', 'generations'],
+    JSON.stringify({
+      model: codex.modelId,
+      prompt: 'one cat',
+      quality: 'high',
+      size: '1024x1536',
+      resolution: '2k',
+      n: 1,
     })
   );
   assert.equal(codexSubmit.status, 202);
@@ -1369,10 +1417,7 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
         result: {
           images: [
             {
-              url: [
-                'https://r2.test/codex-1.png?signature=one',
-                'https://r2.test/codex-2.png?signature=one',
-              ],
+              url: ['https://r2.test/codex-1.png?signature=one'],
               expires_at: Math.floor(Date.now() / 1000) + 3600,
             },
           ],
@@ -1394,8 +1439,8 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
   assert.equal(codexLedger.newapiGroup, 'codex特惠');
   assert.equal(codexLedger.pricingBasis, 'unit');
   assert.equal(codexLedger.skuKey, 'resolution=2k');
-  assert.equal(codexLedger.unitCount, 2);
-  assert.equal(codexLedger.chargedMicroUsd, 28_000);
+  assert.equal(codexLedger.unitCount, 1);
+  assert.equal(codexLedger.chargedMicroUsd, 14_000);
 
   const query = await modules.handler.handleGatewayRequest(
     new Request(`http://portal.test/v1/tasks/${codexTask.id}`, {
@@ -1406,7 +1451,7 @@ test('38 同一 gpt-image-2 在官方组按 token、Codex 特惠组按实际图�
   assert.equal(query.status, 200);
   const queried = await query.json();
   assert.equal(queried.status, 'completed');
-  assert.equal(queried.data.length, 2);
+  assert.equal(queried.data.length, 1);
   assert.equal(queried.usage, undefined);
 
   const crossKey = await modules.handler.handleGatewayRequest(
