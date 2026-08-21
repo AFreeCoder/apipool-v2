@@ -706,9 +706,10 @@ WITH required(table_name, column_name) AS (VALUES
   ('runtime_credential','status'),
   ('model_route','portal_group_id'), ('model_route','portal_model_id'),
   ('model_route','newapi_group'), ('model_route','newapi_model_id'),
-  ('model_price_version','cached_input_micro_usd_per_m'),
-  ('model_price_version','cache_write_5m_micro_usd_per_m'),
-  ('model_price_version','cache_write_1h_micro_usd_per_m')
+  ('model_price_version','billing_scheme'),
+  ('model_price_version','rates_json'),
+  ('model_price_version','tiers_json'),
+  ('model_price_version','pricing_spec_json')
 ), missing AS (
   SELECT r.* FROM required r
   WHERE NOT EXISTS (
