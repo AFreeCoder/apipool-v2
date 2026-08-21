@@ -5,7 +5,7 @@ import type Stripe from 'stripe';
 import { StripeProvider } from '@/extensions/payment/stripe';
 import { PaymentType } from '@/extensions/payment/types';
 
-test('USD one-time Checkout uses Dashboard payment methods without paid invoice creation', async () => {
+test('USD one-time Checkout uses Dashboard settings and requires legal consent', async () => {
   let sessionParams: Stripe.Checkout.SessionCreateParams | undefined;
   const provider = new StripeProvider({
     secretKey: 'sk_test_checkout_settings',
@@ -45,4 +45,7 @@ test('USD one-time Checkout uses Dashboard payment methods without paid invoice 
   assert.equal(sessionParams.mode, 'payment');
   assert.equal(sessionParams.invoice_creation, undefined);
   assert.equal(sessionParams.payment_method_types, undefined);
+  assert.deepEqual(sessionParams.consent_collection, {
+    terms_of_service: 'required',
+  });
 });
