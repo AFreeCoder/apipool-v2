@@ -14,6 +14,7 @@ import { gatewayErrorResponse } from '@/features/gateway/lib/errors';
 import { extractImageMultipartRequest } from '@/features/gateway/lib/multipart';
 import {
   createUsageExtractor,
+  extractTopLevelImageCount,
   extractTopLevelModel,
   extractTopLevelStream,
   type RequestAdmissionMetadata,
@@ -334,6 +335,7 @@ export async function handleGatewayRequest(
     }
 
     let requestedModel: string;
+    let requestedImageCount = 1;
     let requestIsStream = false;
     let multipartAdmissionMetadata: RequestAdmissionMetadata | null = null;
     if (endpoint.requestFormat === 'multipart') {
@@ -353,6 +355,7 @@ export async function handleGatewayRequest(
         );
       }
       requestedModel = multipart.fields.model;
+      requestedImageCount = multipart.fields.n ?? 1;
       if (multipart.fields.stream) {
         return early(
           gatewayError(
@@ -380,6 +383,22 @@ export async function handleGatewayRequest(
         );
       }
       requestedModel = extraction.model;
+      if (endpoint.key === 'images_generations') {
+        const countExtraction = extractTopLevelImageCount(bodyResult.body);
+        if (!countExtraction.ok && countExtraction.reason !== 'missing') {
+          return early(
+            gatewayError(
+              protocol,
+              'invalid_request',
+              400,
+              portalRequestId,
+              undefined,
+              'Images n must be a positive integer.'
+            )
+          );
+        }
+        requestedImageCount = countExtraction.ok ? countExtraction.count : 1;
+      }
       if (
         endpoint.responseMode === 'json_or_sse' ||
         endpoint.key === 'images_generations'
@@ -411,6 +430,25 @@ export async function handleGatewayRequest(
     if (!route) {
       return early(
         gatewayError(protocol, 'model_not_found', 404, portalRequestId)
+      );
+    }
+
+    if (
+      (endpoint.key === 'images_generations' ||
+        endpoint.key === 'images_edits') &&
+      route.newapiGroup === 'codex特惠' &&
+      route.newapiModelId === 'gpt-image-2' &&
+      requestedImageCount > 1
+    ) {
+      return early(
+        gatewayError(
+          protocol,
+          'invalid_request',
+          400,
+          portalRequestId,
+          undefined,
+          'The discount group supports n=1 only for gpt-image-2.'
+        )
       );
     }
 

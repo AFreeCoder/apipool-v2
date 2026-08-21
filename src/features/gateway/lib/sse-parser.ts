@@ -8,6 +8,10 @@ export type StreamExtraction =
   | { ok: true; isStream: boolean }
   | { ok: false; reason: 'missing' | 'ambiguous' | 'malformed' };
 
+export type ImageCountExtraction =
+  | { ok: true; count: number }
+  | { ok: false; reason: 'missing' | 'ambiguous' | 'malformed' };
+
 const QUOTE = 0x22;
 const BACKSLASH = 0x5c;
 const COLON = 0x3a;
@@ -18,6 +22,7 @@ const CLOSE_BRACKET = 0x5d;
 const MODEL_VALUE_MAX_BYTES = 512;
 const MODEL_KEY = [0x6d, 0x6f, 0x64, 0x65, 0x6c];
 const STREAM_KEY = [0x73, 0x74, 0x72, 0x65, 0x61, 0x6d];
+const IMAGE_COUNT_KEY = [0x6e];
 const TRUE_VALUE = [0x74, 0x72, 0x75, 0x65];
 const FALSE_VALUE = [0x66, 0x61, 0x6c, 0x73, 0x65];
 const NULL_VALUE = [0x6e, 0x75, 0x6c, 0x6c];
@@ -298,6 +303,74 @@ export function extractTopLevelStream(body: Uint8Array): StreamExtraction {
   if (depth !== 0) return { ok: false, reason: 'malformed' };
   if (isStream === null) return { ok: false, reason: 'missing' };
   return { ok: true, isStream };
+}
+
+export function extractTopLevelImageCount(
+  body: Uint8Array
+): ImageCountExtraction {
+  let count: number | null = null;
+  let depth = 0;
+  let index = 0;
+
+  while (index < body.length) {
+    const byte = body[index];
+    if (byte === QUOTE) {
+      const key = matchJsonString(body, index, IMAGE_COUNT_KEY);
+      if (!key) return { ok: false, reason: 'malformed' };
+      if (depth === 1 && key.matches) {
+        let colonIndex = key.end;
+        while (colonIndex < body.length && isWhitespace(body[colonIndex])) {
+          colonIndex += 1;
+        }
+        if (body[colonIndex] === COLON) {
+          if (count !== null) return { ok: false, reason: 'ambiguous' };
+          let valueIndex = colonIndex + 1;
+          while (valueIndex < body.length && isWhitespace(body[valueIndex])) {
+            valueIndex += 1;
+          }
+          if (body[valueIndex] < 0x31 || body[valueIndex] > 0x39) {
+            return { ok: false, reason: 'malformed' };
+          }
+          let valueEnd = valueIndex + 1;
+          while (body[valueEnd] >= 0x30 && body[valueEnd] <= 0x39) {
+            valueEnd += 1;
+          }
+          let delimiterIndex = valueEnd;
+          while (
+            delimiterIndex < body.length &&
+            isWhitespace(body[delimiterIndex])
+          ) {
+            delimiterIndex += 1;
+          }
+          const next = body[delimiterIndex];
+          if (next !== 0x2c && next !== CLOSE_BRACE) {
+            return { ok: false, reason: 'malformed' };
+          }
+          count = Number(
+            new TextDecoder().decode(body.subarray(valueIndex, valueEnd))
+          );
+          if (!Number.isSafeInteger(count)) {
+            return { ok: false, reason: 'malformed' };
+          }
+          index = delimiterIndex;
+          continue;
+        }
+      }
+      index = key.end;
+      continue;
+    }
+
+    if (byte === OPEN_BRACE || byte === OPEN_BRACKET) depth += 1;
+    if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+      depth -= 1;
+      if (depth < 0) return { ok: false, reason: 'malformed' };
+    }
+    index += 1;
+  }
+
+  if (depth !== 0) return { ok: false, reason: 'malformed' };
+  if (count === null) return { ok: false, reason: 'missing' };
+  return { ok: true, count };
 }
 
 export interface ExtractedUsage {

@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import {
   createUsageExtractor,
+  extractTopLevelImageCount,
   extractTopLevelModel,
   extractTopLevelStream,
 } from '@/features/gateway/lib/sse-parser';
@@ -82,6 +83,27 @@ test('extractTopLevelStream：只读取顶层布尔值并拒绝重复/错误类�
     extractTopLevelStream(enc.encode('{"model":"m1","stream":"true"}')),
     { ok: false, reason: 'malformed' }
   );
+});
+
+test('extractTopLevelImageCount：只读取顶层正整数并拒绝歧义值', () => {
+  assert.deepEqual(
+    extractTopLevelImageCount(enc.encode('{"model":"m1","n":2}')),
+    { ok: true, count: 2 }
+  );
+  assert.deepEqual(
+    extractTopLevelImageCount(enc.encode('{"metadata":{"n":4}}')),
+    { ok: false, reason: 'missing' }
+  );
+  assert.deepEqual(extractTopLevelImageCount(enc.encode('{"n":1,"n":2}')), {
+    ok: false,
+    reason: 'ambiguous',
+  });
+  for (const value of ['0', '-1', '1.5', '"2"', '2 true']) {
+    assert.deepEqual(extractTopLevelImageCount(enc.encode(`{"n":${value}}`)), {
+      ok: false,
+      reason: 'malformed',
+    });
+  }
 });
 
 test('全量扫描：model 在大 body 尾部仍可达', () => {

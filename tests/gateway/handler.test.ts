@@ -36,6 +36,9 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
     markInvalid: async () => {},
     forward: async () => ({ kind: 'no_response', stage: 'connect' }),
     buildModels: async () => new Response('{}'),
+    getImageTask: async () => new Response('{}'),
+    registerImageTask: async () => {},
+    registerUnknownImageTask: async () => {},
     terminalRetryDelaysMs: [0, 0, 0],
     ...overrides,
   };
@@ -712,6 +715,162 @@ test('Images stream=true 在转发前明确拒绝', async () => {
   assert.equal(response.status, 400);
   assert.equal(await errorCode(response), 'invalid_request');
   assert.equal(forwarded, false);
+});
+
+test('特惠 gpt-image-2 的 n>1 在凭证、账本和上游调用前拒绝', async () => {
+  const handler = await loadHandler();
+  const calls = { credential: 0, admit: 0, forward: 0 };
+  const deps = readyDeps({
+    resolveRoute: async () =>
+      readyRoute({
+        newapiGroup: 'codex特惠',
+        newapiModelId: 'gpt-image-2',
+        portalModelId: 'gpt-image-2',
+        billingScheme: 'per_call',
+        tiers: { default: 10_000 },
+      }),
+    ensureCredential: async () => {
+      calls.credential += 1;
+      return { status: 'pending' };
+    },
+    admit: async () => {
+      calls.admit += 1;
+      return true;
+    },
+    forward: async () => {
+      calls.forward += 1;
+      return { kind: 'no_response', stage: 'connect' };
+    },
+  });
+
+  const response = await handler.handleGatewayRequest(
+    request(
+      '/v1/images/generations',
+      '{"model":"gpt-image-2","prompt":"test","n":2}'
+    ),
+    ['images', 'generations'],
+    deps as any
+  );
+
+  assert.equal(response.status, 400);
+  assert.match(await response.text(), /supports n=1 only/);
+  assert.deepEqual(calls, { credential: 0, admit: 0, forward: 0 });
+});
+
+test('特惠 gpt-image-2 图片编辑的 multipart n>1 同样零副作用拒绝', async () => {
+  const handler = await loadHandler();
+  const form = new FormData();
+  form.append('model', 'gpt-image-2');
+  form.append('prompt', 'test');
+  form.append('n', '2');
+  form.append('image', new Blob(['image']), 'source.png');
+  const calls = { credential: 0, admit: 0, forward: 0 };
+
+  const response = await handler.handleGatewayRequest(
+    request('/v1/images/edits', form),
+    ['images', 'edits'],
+    readyDeps({
+      resolveRoute: async () =>
+        readyRoute({
+          newapiGroup: 'codex特惠',
+          newapiModelId: 'gpt-image-2',
+          portalModelId: 'gpt-image-2',
+          billingScheme: 'per_call',
+          tiers: { default: 10_000 },
+        }),
+      ensureCredential: async () => {
+        calls.credential += 1;
+        return { status: 'pending' };
+      },
+      admit: async () => {
+        calls.admit += 1;
+        return true;
+      },
+      forward: async () => {
+        calls.forward += 1;
+        return { kind: 'no_response', stage: 'connect' };
+      },
+    }) as any
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(calls, { credential: 0, admit: 0, forward: 0 });
+});
+
+test('特惠 gpt-image-2 缺省 n 和 n=1 均正常提交', async () => {
+  const handler = await loadHandler();
+  let forwarded = 0;
+  const deps = readyDeps({
+    resolveRoute: async () =>
+      readyRoute({
+        newapiGroup: 'codex特惠',
+        newapiModelId: 'gpt-image-2',
+        portalModelId: 'gpt-image-2',
+        billingScheme: 'per_call',
+        tiers: { default: 10_000 },
+      }),
+    forward: async () => {
+      forwarded += 1;
+      return {
+        kind: 'responded',
+        upstream: new Response(`{"id":"discount-task-${forwarded}"}`),
+        newapiRequestId: `newapi-request-discount-${forwarded}`,
+      };
+    },
+  });
+
+  for (const suffix of ['', ',"n":1']) {
+    const response = await handler.handleGatewayRequest(
+      request(
+        '/v1/images/generations',
+        `{"model":"gpt-image-2","prompt":"test"${suffix}}`
+      ),
+      ['images', 'generations'],
+      deps as any
+    );
+    assert.equal(response.status, 202);
+  }
+  assert.equal(forwarded, 2);
+});
+
+test('官方 gpt-image-2 的 n>1 保持单次正常转发', async () => {
+  const handler = await loadHandler();
+  const forwarded: any[] = [];
+  const response = await handler.handleGatewayRequest(
+    request(
+      '/v1/images/generations',
+      '{"model":"gpt-image-2","prompt":"test","n":4}'
+    ),
+    ['images', 'generations'],
+    readyDeps({
+      resolveRoute: async () =>
+        readyRoute({
+          newapiGroup: 'official',
+          newapiModelId: 'gpt-image-2',
+          portalModelId: 'gpt-image-2',
+        }),
+      forward: async (input: any) => {
+        forwarded.push(input);
+        return {
+          kind: 'responded',
+          upstream: new Response('{"id":"official-task"}'),
+          newapiRequestId: 'newapi-request-official-n4',
+        };
+      },
+    }) as any
+  );
+
+  assert.equal(response.status, 202);
+  assert.equal(forwarded.length, 1);
+  assert.equal(
+    forwarded[0].endpoint.upstreamPath,
+    '/v1/images/async/generations'
+  );
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(forwarded[0].rawBody)), {
+    model: 'gpt-image-2',
+    prompt: 'test',
+    n: 4,
+  });
 });
 
 test('长上下文三态：开态切长档、关态漏拦打标、无能力不检测', async () => {
