@@ -166,12 +166,6 @@ export class StripeProvider implements PaymentProvider {
         }
       }
 
-      if (order.type === PaymentType.ONE_TIME) {
-        sessionParams.invoice_creation = {
-          enabled: true,
-        };
-      }
-
       if (customerId) {
         sessionParams.customer = customerId;
       }

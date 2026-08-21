@@ -506,9 +506,9 @@ export async function getSettings() {
     },
     {
       name: 'stripe_payment_methods',
-      title: 'Stripe Payment Methods',
+      title: 'Stripe CNY Payment Methods',
       type: 'checkbox',
-      tip: 'If not set, only card payment method will be enabled.',
+      tip: 'Only applies to one-time CNY Checkout. USD Checkout uses dynamic payment methods configured in the Stripe Dashboard.',
       options: [
         { title: 'Card', value: 'card' },
         { title: 'Wechat Pay', value: 'wechat_pay' },
