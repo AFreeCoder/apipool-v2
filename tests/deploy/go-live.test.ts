@@ -315,10 +315,11 @@ test('close-checkout 无需确认即可原子冻结收款并验证容器运行�
 });
 
 test('close-checkout 无法确认运行态关闭时紧急停止门户并返回失败', async () => {
-  for (const env of [
+  const scenarios: Array<Record<string, string>> = [
     { MOCK_PORTAL_UP_FAIL: 'true', MOCK_RUNTIME_CHECKOUT: 'true' },
     { MOCK_RUNTIME_CHECKOUT: 'true' },
-  ]) {
+  ];
+  for (const env of scenarios) {
     const fixture = await makeFixture('true');
     const result = runGoLive(fixture, ['close-checkout'], { env });
     assert.equal(result.status, 75, result.stderr);
