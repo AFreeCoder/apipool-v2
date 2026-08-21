@@ -57,7 +57,12 @@ Cloudflare / DNS 变更必须按上述归属分阶段执行。任何把 `apipool
 - Stripe 与 Creem 配置均通过“管理后台 → 设置 → 支付”写入 Portal `config` 表；
   生产容器不注入 `STRIPE_*` / `CREEM_*`。密钥字段留空表示保留原值。
 - Stripe 正式环境使用 `pk_live_...`、受限 `rk_live_...` 和对应 Live endpoint 的
-  `whsec_...`；首发只启用 card，Webhook 只订阅 `checkout.session.completed`。
+  `whsec_...`；USD Checkout 使用 Stripe Dashboard 动态支付方式，Webhook 只订阅
+  `checkout.session.completed`。新增延迟确认方式前，必须先实现并验收对应异步事件。
+- 管理后台的 `stripe_payment_methods` 只影响一次性 CNY Checkout，不控制当前 USD
+  充值。Live Dashboard 必须展示服务条款、隐私政策、退款政策和客服邮箱，并要求客户
+  明确同意法律条款；成功付款收据和退款邮件保持开启。一次性充值不生成额外收费的付款后
+  发票。
 - webhook 回调地址在渠道后台配置为 `https://app.apipool.dev/api/payment/notify/<provider>`
 
 ### 冒烟
@@ -621,8 +626,9 @@ RESTORE_EVIDENCE=/opt/apipool-v2/evidence/restore-drill-YYYYMMDD.md
 credit 的内部不变量；它不会创建 Stripe Checkout，也不会验证 Live Webhook 签名，不能
 替代以下 Live 支付验收：
 
-1. 使用专用验收账号选择最小金额充值，确认 Stripe Checkout 页面处于 Live 模式且只
-   提供 card；完成一笔真实支付，并记录订单号、Stripe Checkout Session ID 与 Event ID，
+1. 使用专用验收账号选择最小金额充值，确认 Stripe Checkout 页面处于 Live 模式，法律
+   政策、客服邮箱和条款同意框均已显示，支付方式符合 Live Dashboard 配置；使用 card
+   完成一笔真实支付，并记录订单号、Stripe Checkout Session ID 与 Event ID，
    不在终端、Issue 或证据文件记录卡号、API key、Webhook signing secret。
 2. 核对 Portal 订单为 `PAID`、`payment_provider=stripe`，该订单恰有一条
    `wallet_ledger.entry_type=recharge`；钱包余额等于钱包流水之和，且没有新增 credit。
